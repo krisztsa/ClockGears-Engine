@@ -1,0 +1,61 @@
+﻿=== ESPACIO LIBRE EN C: ===
+Libre: 28.3 GB
+
+=== EJECUTABLES MAYORES DE 5 MB EN NEW MOTOR (debe haber solo los de ClockGears Engine\ y bin\) ===
+   139.8 MB  06/11 19:18  C:\Proyectos\NEW MOTOR\ClockGears Engine\bin\clockgears.windows.editor.x86_64.exe
+   139.8 MB  06/11 19:18  C:\Proyectos\NEW MOTOR\ClockGears Engine\ClockGears.exe
+
+=== ARCHIVOS DEL MODULO RELACIONADOS CON LAS FASES (nombre y lÃ­neas) ===
+   524 lineas  modules\clockgears\core\clockgears_time_manager.cpp
+   137 lineas  modules\clockgears\core\clockgears_time_manager.h
+   232 lineas  modules\clockgears\clockgears_damage_engine.cpp
+    35 lineas  modules\clockgears\clockgears_damage_engine.h
+   347 lineas  modules\clockgears\clockgears_turn_battle.cpp
+    57 lineas  modules\clockgears\clockgears_turn_battle.h
+
+=== TESTS DE test_project (*.gd que empiezan con test_) ===
+
+--- test_database_fase5.gd ---
+Colgado (matado a los 90 s): False
+PASS: 0   FAIL: 1   SCRIPT ERROR: 1
+Ãšltimas 12 lÃ­neas:
+ClockGears Engine v1.0.stable.custom_build.b251066fb (2026-11-02 14:57:47 UTC) - https://clockgears.engine
+
+SCRIPT ERROR: Parse Error: Static function "get_singleton()" not found in base "GDScriptNativeClass".
+   at: GDScript::reload (res://test_database_fase5.gd:8)
+ERROR: Failed to load script "res://test_database_fase5.gd" with error "Parse error".
+   at: load (modules\gdscript\gdscript_resource_format.cpp:50)
+
+--- test_fase5_database.gd ---
+Colgado (matado a los 90 s): False
+PASS: 7   FAIL: 0   SCRIPT ERROR: 0
+Ãšltimas 12 lÃ­neas:
+==================================================
+[TEST] ClockGears Fase 5 Database & Map Verification
+==================================================
+[PASS] Regla Cero verified: All categories initialized completely empty.
+[PASS] Database successfully saved to res://clockgears_data.
+[PASS] Atomic JSON files verified on disk.
+[PASS] Full database reload verified with 100% data integrity.
+[PASS] ClockGearsMap layers verified: 5 default layers, 0 duplicates, no collision.
+[PASS] Map independence verified: Each map is an isolated .tscn scene with unique events and properties.
+==================================================
+ALL FASE 5 VERIFICATION TESTS PASSED 100%
+==================================================
+
+--- test_rpg_core.gd ---
+Colgado (matado a los 90 s): False
+PASS: 1   FAIL: 0   SCRIPT ERROR: 0
+Ãšltimas 12 lÃ­neas:
+Batalla por turnos inicializada con Ã©xito en estado: 1
+
+âœ… Â¡TODOS LOS SUBSISTEMAS DEL NÃšCLEO RPG HAN PASADO EXITOSAMENTE!
+==================================================
+ERROR: 2 RID allocations of type 'P11GodotArea2D' were leaked at exit.
+ERROR: 10 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+WARNING: 1 RID of type "Canvas" was leaked.
+   at: _free_rids (servers\rendering\renderer_canvas_cull.cpp:2733)
+WARNING: 23 RIDs of type "CanvasItem" were leaked.
+   at: _free_rids (servers\rendering\renderer_canvas_cull.cpp:2735)
+WARNING: 60 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core\object\object.cpp:2609)

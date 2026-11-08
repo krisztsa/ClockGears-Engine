@@ -1,0 +1,121 @@
+﻿=== CODIGO DE SALIDA ===
+Codigo: -1073741819  (0 = cierre normal; otro valor = fallo)
+
+=== BACKTRACE / CRASH HANDLER DE GODOT ===
+		Object[0] - VK_OBJECT_TYPE_INSTANCE, Handle 2348070722848
+CrashHandlerException: Program crashed with signal 11
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] 7ff6d371735d (main+3f6735d) - no debug info in PE/COFF executable
+[2] 7ffd0d8c4b92 (ntdll.dll+124b92) - no debug info in PE/COFF executable
+[3] 7ffd0d9064ae (ntdll.dll+1664ae) - no debug info in PE/COFF executable
+[4] 7ffd0d864064 (ntdll.dll+c4064) - no debug info in PE/COFF executable
+[5] 7ffd0d905ded (ntdll.dll+165ded) - no debug info in PE/COFF executable
+[6] 7ff6d1e1e346 (main+266e346) - no debug info in PE/COFF executable
+[7] 7ff6cfbec014 (main+43c014) - no debug info in PE/COFF executable
+[8] 7ff6d403f6f3 (main+488f6f3) - no debug info in PE/COFF executable
+[9] 7ff6d33b43e9 (main+3c043e9) - no debug info in PE/COFF executable
+[10] 7ff6d33bcff8 (main+3c0cff8) - no debug info in PE/COFF executable
+[11] 7ff6d0f82272 (main+17d2272) - no debug info in PE/COFF executable
+[12] 7ff6d0fa5ed9 (main+17f5ed9) - no debug info in PE/COFF executable
+[13] 7ff6d0fb3c80 (main+1803c80) - no debug info in PE/COFF executable
+[14] 7ff6d33c0ca9 (main+3c10ca9) - no debug info in PE/COFF executable
+[15] 7ff6d33c0eb4 (main+3c10eb4) - no debug info in PE/COFF executable
+[16] 7ff6d1bd353a (main+242353a) - no debug info in PE/COFF executable
+[17] 7ff6cf80b9fb (main+5b9fb) - no debug info in PE/COFF executable
+[18] 7ff6cf7b3180 (main+3180) - no debug info in PE/COFF executable
+[19] 7ff6cf807d81 (main+57d81) - no debug info in PE/COFF executable
+[20] 7ff6cf807dbd (main+57dbd) - no debug info in PE/COFF executable
+[21] 7ff6cf7b13b9 (main+13b9) - no debug info in PE/COFF executable
+[22] 7ff6cf7b1050 (main+1050) - no debug info in PE/COFF executable
+[23] 7ffd0b8ddda6 (kernel32.dll+2dda6) - no debug info in PE/COFF executable
+[24] 7ffd0d81ee4b (ntdll.dll+7ee4b) - no debug info in PE/COFF executable
+[25] -1 (main+-7ff6cf7b0001) - no debug info in PE/COFF executable
+-- END OF C++ BACKTRACE --
+
+=== ULTIMAS 60 LINEAS DEL LOG (lo ultimo que hizo antes de cerrarse) ===
+[18] 7ff6cf7b3180 (main+3180) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[19] 7ff6cf807d81 (main+57d81) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[20] 7ff6cf807dbd (main+57dbd) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[21] 7ff6cf7b13b9 (main+13b9) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[22] 7ff6cf7b1050 (main+1050) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[23] 7ffd0b8ddda6 (kernel32.dll+2dda6) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[24] 7ffd0d81ee4b (ntdll.dll+7ee4b) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+[25] -1 (main+-7ff6cf7b0001) - no debug info in PE/COFF executable
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+-- END OF C++ BACKTRACE --
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+================================================================
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+While attempting to print an error, another error was printed:
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+
+=== ERRORES Y WARNINGS (sin los de p_image), CON SU LINEA 'at:' ===
+WARNING: ClockGearsFormulas: Divisi├│n entre cero detectada; devolviendo 0.
+   at: _eval_ast (modules\clockgears\core\clockgears_formulas.cpp:584)
+WARNING: Instantiated Theme used as default value for ClockGearsCommandSelector's "theme" property.
+   at: class_get_default_property_value (core\object\class_db.cpp:1945)
+WARNING: Instantiated Theme used as default value for ClockGearsDatabaseDialog's "theme" property.
+   at: class_get_default_property_value (core\object\class_db.cpp:1945)
+
+=== EVENTOS DE WINDOWS (Application Error desde que abriste el motor) ===
+14:14:18
+Nombre de aplicación con errores: clockgears.windows.editor.x86_64.exe, versión: 1.0.0.0, marca de tiempo: 0x6aee340d
+Nombre del módulo con errores: clockgears.windows.editor.x86_64.exe, versión: 1.0.0.0, marca de tiempo: 0x6aee340d
+Código de excepción: 0xc0000005
+Desplazamiento con errores: 0x000000000266e347
+Id. de proceso con errores: 0x342C
+Tiempo de inicio de aplicación con errores: 0x1DD6E2B64A5CEB6
+Ruta de aplicación con errores: C:\Proyectos\NEW MOTOR\ClockGears Engine\bin\clockgears.windows.editor.x86_64.exe
+Ruta de módulo con errores: C:\Proyectos\NEW MOTOR\ClockGears Engine\bin\clockgears.windows.editor.x86_64.exe
+Id. de informe: 78280cee-eeee-4466-b8b8-c95842f58cbf
+Nombre completo del paquete con errores: 
+Id. de aplicación relacionado con el paquete con errores: 
+---
+
+=== LO QUE ESTABA HACIENDO EL USUARIO ===
+cargando

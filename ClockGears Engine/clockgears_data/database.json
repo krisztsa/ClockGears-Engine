@@ -1,0 +1,27 @@
+{
+	"author": "Kris'ZtS",
+	"engine": "ClockGears Engine",
+	"files": [
+		"actors.json",
+		"classes.json",
+		"skills.json",
+		"items.json",
+		"weapons.json",
+		"armors.json",
+		"accessories.json",
+		"enemies.json",
+		"troops.json",
+		"states.json",
+		"flora.json",
+		"fauna.json",
+		"animations.json",
+		"tilesets.json",
+		"common_events.json",
+		"system.json",
+		"types.json",
+		"vocabulary.json",
+		"switches_vars.json"
+	],
+	"saved_at": "2026-11-07T21:39:03",
+	"schema_version": 2
+}

@@ -1,0 +1,18 @@
+﻿=== ORIGEN DE 'Cannot get path of node' (linea 'at:' que sigue al error) ===
+Total de errores: 78
+   76  at: get_path (scene\main\node.cpp:2463)
+    1  Leaked instance: Object:361666465805
+    1  Leaked instance: StyleBoxEmpty:9223372070325323190 - Reference count: 12
+
+=== CONTEXTO DEL PRIMER ERROR (5 lineas antes y 3 despues) ===
+Leaked instance: StyleBoxFlat:9223372070090442152 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070107219369 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070123996586 - Reference count: 24
+Leaked instance: StyleBoxFlat:9223372070140773803 - Reference count: 24
+Leaked instance: StyleBoxFlat:9223372070157551020 - Reference count: 24
+ERROR: Cannot get path of node as it is not in a scene tree.
+Leaked instance: StyleBoxEmpty:9223372070325323190 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070342100407 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070392432058 - Reference count: 12
+
+=== OTROS ERRORES (sin fugas ni 'Cannot get path') CON SU LINEA 'at:' ===

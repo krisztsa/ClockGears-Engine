@@ -1,0 +1,146 @@
+﻿ClockGears Engine v1.0.stable.custom_build.b251066fb (2026-11-02 14:57:47 UTC) - https://clockgears.engine
+
+======================================================================
+   TEST FASE 6: BASE DE DATOS > TILESETS & MAP RUNTIME (PROBLEMAS A/B/C/3)
+======================================================================
+
+--- 1. Verificando PROBLEMA A (Layout en 820x480 y 1440x860 + Persistencia tamaño) ---
+[Layout 820x480] { "window_size": (820, 480), "left_min_w": 150, "col1_min_w": 140, "col2_min_w": 220, "col3_min_w": 220, "picker_min_w": 257, "total_min_w": 809, "alloc_col1_w": 140, "alloc_col2_w": 231, "alloc_col3_w": 257, "help_wraps": true, "picker_has_scrollbars": true, "fits_horizontally": true }
+[Layout 1440x860] { "window_size": (1440, 860), "left_min_w": 150, "col1_min_w": 140, "col2_min_w": 220, "col3_min_w": 220, "picker_min_w": 257, "total_min_w": 809, "alloc_col1_w": 252, "alloc_col2_w": 455, "alloc_col3_w": 541, "help_wraps": true, "picker_has_scrollbars": true, "fits_horizontally": true }
+[Window Size Persistence] Guardado=(1280, 760) -> Leído=(1280, 760)
+
+--- 2. Verificando PROBLEMA B (Botones +/- e importador con validación y consola) ---
+[ClockGears DB Tilesets] Botón '+' -> Creado Tileset #001 ('Tileset 001'). Total: 1.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='(Vacío)' | Metadatos=0 entradas
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='(Vacío)' | Metadatos=0 entradas
+[ClockGears DB Tilesets] Botón '+' -> Creado Tileset #002 ('Tileset 002'). Total: 2.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='(Vacío)' | Metadatos=0 entradas
+[Lista Tilesets] Creados IDs: 0, 1 | Total=2
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='(Vacío)' | Metadatos=0 entradas
+[ClockGears DB Tilesets] Botón '-' -> Eliminado Tileset #001 ('Tileset Temporal'). Restantes: 1.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='(Vacío)' | Metadatos=0 entradas
+[Lista Tilesets] Eliminado índice 0 | Total restante=1
+[ClockGears DB Tilesets] Importando hoja 'res://archivo_inexistente_corrupto.png' en ranura 'A5'...
+[ClockGears Tileset] Paso 1/5: Validando ruta de entrada 'res://archivo_inexistente_corrupto.png'...
+[ClockGears Tileset] ERROR en Paso 1/5: El archivo de tileset no existe:
+'res://archivo_inexistente_corrupto.png'
+[ClockGears DB Tilesets] ERROR al importar en ranura 'A5': El archivo de tileset no existe:
+'res://archivo_inexistente_corrupto.png'
+[Importación inválida] resultado=false (esperado: false)
+
+--- 3. Verificando PROBLEMA C (Carga en A5 y B + Drag-Painting O/X/★ + Persistencia) ---
+[ClockGears DB Tilesets] Importando hoja 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/tmp_import_src/suelo_a5_test.png' en ranura 'A5'...
+[ClockGears Tileset] Paso 1/5: Validando ruta de entrada 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/tmp_import_src/suelo_a5_test.png'...
+[ClockGears Tileset] Paso 2/5: Decodificando imagen 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/tmp_import_src/suelo_a5_test.png'...
+[ClockGears Tileset] Paso 3/5: Copiando a 'res://img/tilesets/' y configurando preset Pixel Art NEAREST...
+[ClockGears Tileset] Paso 4/5: Creando textura y cortando hoja de 128x64 px en celdas de 32x32...
+[ClockGears Tileset] Paso 5/5: OK: Importado 'res://img/tilesets/suelo_a5_test.png' (128x64 px -> 4x2 = 8 tiles de 32x32).
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=0 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[ClockGears DB Tilesets] ÉXITO: Ranura 'A5' del Tileset #001 actualizada con 'res://img/tilesets/suelo_a5_test.png'.
+[ClockGears DB Tilesets] Importando hoja 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/tmp_import_src/objetos_b_test.png' en ranura 'B'...
+[ClockGears Tileset] Paso 1/5: Validando ruta de entrada 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/tmp_import_src/objetos_b_test.png'...
+[ClockGears Tileset] Paso 2/5: Decodificando imagen 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/tmp_import_src/objetos_b_test.png'...
+[ClockGears Tileset] Paso 3/5: Copiando a 'res://img/tilesets/' y configurando preset Pixel Art NEAREST...
+[ClockGears Tileset] Paso 4/5: Creando textura y cortando hoja de 96x96 px en celdas de 32x32...
+[ClockGears Tileset] Paso 5/5: OK: Importado 'res://img/tilesets/objetos_b_test.png' (96x96 px -> 3x3 = 9 tiles de 32x32).
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/objetos_b_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/objetos_b_test.png' (96x96 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 3 cols x 3 rows = 9 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'B' | Ruta='res://img/tilesets/objetos_b_test.png' | Metadatos=0 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/objetos_b_test.png' | dimensiones=96x96 px | rejilla 32x32: 3x3 = 9 tiles | zoom=1.0x
+[ClockGears DB Tilesets] ÉXITO: Ranura 'B' del Tileset #001 actualizada con 'res://img/tilesets/objetos_b_test.png'.
+[Carga A5 y B] ok_a5=true (res://img/tilesets/suelo_a5_test.png) | ok_b=true (res://img/tilesets/objetos_b_test.png)
+[Drag-Painting A5] Marcando celdas (0,0) a (1,0) con [X / Bloqueado]...
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=0 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=0 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=1 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[Drag-Painting A5] Marcando celdas (2,0) a (3,0) con [O / Pasable]...
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=2 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=2 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/suelo_a5_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/suelo_a5_test.png' (128x64 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 4 cols x 2 rows = 8 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'A5' | Ruta='res://img/tilesets/suelo_a5_test.png' | Metadatos=3 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/suelo_a5_test.png' | dimensiones=128x64 px | rejilla 32x32: 4x2 = 8 tiles | zoom=1.0x
+[Drag-Painting B] Marcando celdas (0,1) a (1,1) con [★ / Pasa por detrás (layer=1)]...
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/objetos_b_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/objetos_b_test.png' (96x96 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 3 cols x 3 rows = 9 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'B' | Ruta='res://img/tilesets/objetos_b_test.png' | Metadatos=0 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/objetos_b_test.png' | dimensiones=96x96 px | rejilla 32x32: 3x3 = 9 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/objetos_b_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/objetos_b_test.png' (96x96 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 3 cols x 3 rows = 9 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'B' | Ruta='res://img/tilesets/objetos_b_test.png' | Metadatos=0 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/objetos_b_test.png' | dimensiones=96x96 px | rejilla 32x32: 3x3 = 9 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/objetos_b_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/objetos_b_test.png' (96x96 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 3 cols x 3 rows = 9 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'B' | Ruta='res://img/tilesets/objetos_b_test.png' | Metadatos=1 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/objetos_b_test.png' | dimensiones=96x96 px | rejilla 32x32: 3x3 = 9 tiles | zoom=1.0x
+[ClockGears Database] Paso 1/4: Comprobando ruta 'res://img/tilesets/objetos_b_test.png'...
+[ClockGears Database] Paso 2/4: Imagen cargada exitosamente desde 'C:/Proyectos/NEW MOTOR/ClockGears Engine/test_project/img/tilesets/objetos_b_test.png' (96x96 px).
+[ClockGears Database] Paso 3/4: Recorte en tiles 32x32: 3 cols x 3 rows = 9 tiles.
+[ClockGears Database] Paso 4/4: Textura asignada al visor de Tilesets.
+[ClockGears DB Tilesets] Refrescando visor: Ranura 'B' | Ruta='res://img/tilesets/objetos_b_test.png' | Metadatos=2 entradas
+[ClockGears TilePicker] Hoja cargada en visor: ruta='res://img/tilesets/objetos_b_test.png' | dimensiones=96x96 px | rejilla 32x32: 3x3 = 9 tiles | zoom=1.0x
+[Persistencia Disco] Guardado y recargado desde res://clockgears_data/tilesets_data.json | Total tilesets=1
+[Verificación Drag-Painting Post-Recarga]
+  A5 (0,0) [esperado X/passage=0]: { "layer": 0, "mode": 1, "passage": 0 }
+  A5 (1,0) [esperado X/passage=0]: { "layer": 0, "mode": 1, "passage": 0 }
+  A5 (2,0) [esperado O/passage=15]: { "layer": 0, "mode": 0, "passage": 15 }
+  A5 (3,0) [esperado O/passage=15]: { "layer": 0, "mode": 0, "passage": 15 }
+  B  (0,1) [esperado ★/layer=1]: { "bush": true, "layer": 1, "passage": 15 }
+  B  (1,1) [esperado ★/layer=1]: { "bush": true, "layer": 1, "passage": 15 }
+
+--- 4. Verificando PROBLEMA 3 (Asignar Tileset a Mapa, Pintado y Runtime Collision) ---
+[ClockGears Tileset] OK: Importado 'res://img/tilesets/suelo_a5_test.png' (128x64 px -> 4x2 = 8 tiles de 32x32).
+[Mapa import_tileset_png] ok=true | Map Tileset ID=1
+[Pintado de Tiles en Mapa]
+  Celda (1,1) pintada con atlas coords (0,0) [X]
+  Celda (1,2) pintada con atlas coords (2,0) [O]
+  Celda (1,3) pintada con atlas coords (0,1) [★]
+[Capa Superior ★] Coordenadas en LAYER_OVERHEAD celda (1,3)=(0, 1) (z_index=4)
+[Pasabilidad Mapa] Celda (1,1) X bloqueado=true | Celda (1,2) O pasable=true | Celda (1,3) ★ pasable=true
+[Runtime Collision Player]
+  Jugador en (1,0) intentando mover a (1,1) [X]: permitido=false (esperado: false [BLOQUEADO])
+  Jugador en (1,0) intentando mover a (1,2) [O]: permitido=true (esperado: true [PASABLE])
+  Jugador en (1,0) intentando mover a (1,3) [★]: permitido=true (esperado: true [PASA POR DETRÁS])
+======================================================================
+RESULTADO FINAL: TODOS LOS TESTS DE TILESETS DB Y RUNTIME PASARON (0 FALLOS)
+[ClockGears Runtime] Comprobando condiciones en 'Mapa001': Actores=0, PosiciónInicial=OK (Mapa='', X=0, Y=0, Dir=2)

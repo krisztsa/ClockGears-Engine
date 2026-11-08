@@ -1,0 +1,9 @@
+short_name = "clockgears"
+name = "ClockGears Engine"
+major = 1
+minor = 0
+patch = 0
+status = "stable"
+module_config = ""
+website = "https://clockgears.engine"
+docs = "latest"

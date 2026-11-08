@@ -1,0 +1,6 @@
+WARNING: Attempting to access theme items too early in ClockGearsDatabaseDialog; prefer NOTIFICATION_POSTINITIALIZE and NOTIFICATION_THEME_CHANGED
+   at: has_theme_icon (scene\main\window.cpp:2899)
+ERROR: Class 'EditorTheme' isn't exposed.
+   at: _instantiate_internal (core\object\class_db.cpp:584)
+ERROR: Condition "r.is_null()" is true. Returning: Ref<Resource>()
+   at: _duplicate (core\io\resource.cpp:395)

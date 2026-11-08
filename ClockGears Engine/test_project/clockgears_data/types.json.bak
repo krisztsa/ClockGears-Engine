@@ -1,0 +1,41 @@
+{
+	"armor_types": [
+		"Armadura General",
+		"Armadura Mágica",
+		"Armadura Ligera",
+		"Armadura Pesada",
+		"Escudo Pequeño",
+		"Escudo Grande"
+	],
+	"elements": [
+		"Físico",
+		"Fuego",
+		"Hielo",
+		"Rayo",
+		"Agua",
+		"Tierra",
+		"Viento",
+		"Luz",
+		"Oscuridad"
+	],
+	"equip_slots": [
+		"Mano Derecha (Arma)",
+		"Mano Izquierda (Escudo)",
+		"Cabeza (Casco)",
+		"Cuerpo (Pechera)",
+		"Accesorio"
+	],
+	"weapon_types": [
+		"Daga",
+		"Espada",
+		"Mandoble",
+		"Hacha",
+		"Lanza",
+		"Arco",
+		"Bastón",
+		"Arma de Fuego",
+		"Garras",
+		"Guantelete",
+		"Látigo"
+	]
+}

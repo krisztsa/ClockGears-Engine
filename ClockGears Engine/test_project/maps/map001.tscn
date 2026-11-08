@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[node name="MAP001" type="ClockGearsMap" unique_id=687647157]
+map_name = "Pradera"
+
+[node name="Capa_Suelo" type="TileMapLayer" parent="." unique_id=81280257]
+texture_filter = 1
+
+[node name="Capa_Decoracion" type="TileMapLayer" parent="." unique_id=579295665]
+z_index = 1
+texture_filter = 1
+
+[node name="Capa_Objetos" type="TileMapLayer" parent="." unique_id=1982433105]
+z_index = 2
+texture_filter = 1
+
+[node name="Eventos" type="Node2D" parent="." unique_id=1213865446]
+z_index = 3
+texture_filter = 1
+
+[node name="EV_Cofre" type="ClockGearsEvent" parent="Eventos" unique_id=782587891]
+position = Vector2(64, 64)
+event_name = "Cofre"
+
+[node name="Capa_Techo" type="TileMapLayer" parent="." unique_id=1207146659]
+z_index = 4
+texture_filter = 1

@@ -1,0 +1,55 @@
+[gd_scene format=4]
+
+[ext_resource type="Texture2D" path="res://img/tilesets/test_palette_sheet.png" id="1_yjk11"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_smf1b"]
+texture = ExtResource("1_yjk11")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+1:0/0 = 0
+2:0/0 = 0
+3:0/0 = 0
+0:1/0 = 0
+1:1/0 = 0
+2:1/0 = 0
+3:1/0 = 0
+0:2/0 = 0
+1:2/0 = 0
+2:2/0 = 0
+3:2/0 = 0
+0:3/0 = 0
+1:3/0 = 0
+2:3/0 = 0
+3:3/0 = 0
+
+[sub_resource type="TileSet" id="TileSet_hs05f"]
+tile_size = Vector2i(32, 32)
+sources/0 = SubResource("TileSetAtlasSource_smf1b")
+
+[node name="MapPaintTest" type="ClockGearsMap" unique_id=1355229021]
+map_name = "Mapa Prueba Pintado"
+tileset_id = 1
+
+[node name="Capa_Suelo" type="TileMapLayer" parent="." unique_id=29569526]
+texture_filter = 1
+tile_map_data = PackedByteArray("AAACAAMAAAAAAAAAAAAEAAQAAAABAAAAAAAFAAQAAAABAAAAAAAGAAQAAAABAAAAAAAEAAUAAAABAAAAAAAFAAUAAAABAAAAAAAGAAUAAAABAAAAAAAEAAYAAAABAAAAAAAFAAYAAAABAAAAAAAGAAYAAAABAAAAAAA=")
+tile_set = SubResource("TileSet_hs05f")
+
+[node name="Capa_Decoracion" type="TileMapLayer" parent="." unique_id=2045340383]
+z_index = 1
+texture_filter = 1
+tile_set = SubResource("TileSet_hs05f")
+
+[node name="Capa_Objetos" type="TileMapLayer" parent="." unique_id=2104754246]
+z_index = 2
+texture_filter = 1
+tile_set = SubResource("TileSet_hs05f")
+
+[node name="Eventos" type="Node2D" parent="." unique_id=1515012977]
+z_index = 3
+texture_filter = 1
+
+[node name="Capa_Techo" type="TileMapLayer" parent="." unique_id=2039525507]
+z_index = 4
+texture_filter = 1
+tile_set = SubResource("TileSet_hs05f")

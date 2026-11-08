@@ -1,0 +1,18 @@
+[
+	{
+		"agi": 20,
+		"atk": 25,
+		"def": 10,
+		"graphic_path": "res://img/characters/kris.png",
+		"hp": 100,
+		"id": 1,
+		"level": 1,
+		"luk": 10,
+		"mat": 10,
+		"max_hp": 100,
+		"max_mp": 20,
+		"mdf": 10,
+		"mp": 20,
+		"name": "Kris"
+	}
+]

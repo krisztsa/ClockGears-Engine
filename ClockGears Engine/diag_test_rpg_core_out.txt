@@ -1,0 +1,28 @@
+ClockGears Engine v1.0.stable.custom_build.b251066fb (2026-11-02 14:57:47 UTC) - https://clockgears.engine
+
+==================================================
+🧪 VERIFICACIÓN DEL NÚCLEO DE SISTEMAS RPG (ClockGears Engine)
+==================================================
+
+--- [1] Prueba de Battlers y Curvas de Estadísticas ---
+Heroe Nv. 1 -> PV: 450/450, ATK: 35, DEF: 25, AGI: 22, LUK: 18
+Heroe Nv. 10 (Tras Curva) -> PV: 450/867, ATK: 46, DEF: 35, AGI: 38, LUK: 22
+
+--- [2] Prueba de Enemigos y Afinidades Elementales ---
+Slime Afinidades: Tasa Fuego = -1.0, Tasa Hielo = 1.5, Tasa Físico = 1.0
+
+--- [3] Prueba del Evaluador de Fórmulas de Daño ---
+Ataque Físico [Formula: a.atk * 4 - b.def * 2] -> Dmg: 154, Crit: false, Mult: 1.0
+Hechizo de Hielo (Debilidad) -> Dmg: 167, Débil: true, Mult: 1.5
+Hechizo de Fuego (Absorción) -> Dmg: -112, Absorbido: true
+
+--- [4] Prueba de Combate Dinámico en Tiempo Real (Action RPG) ---
+Impacto Action RPG registrado: Dmg causados al Slime = 123 (PV restantes: 127/250)
+
+--- [5] Prueba de Inicialización de Combate por Turnos ---
+Batalla por turnos inicializada con éxito en estado: 1
+
+✅ ¡TODOS LOS SUBSISTEMAS DEL NÚCLEO RPG HAN PASADO EXITOSAMENTE!
+==================================================
+ERROR: 2 RID allocations of type 'P11GodotArea2D' were leaked at exit.
+ERROR: 10 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.

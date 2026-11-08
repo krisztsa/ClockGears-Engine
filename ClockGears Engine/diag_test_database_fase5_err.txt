@@ -1,0 +1,4 @@
+SCRIPT ERROR: Parse Error: Static function "get_singleton()" not found in base "GDScriptNativeClass".
+   at: GDScript::reload (res://test_database_fase5.gd:8)
+ERROR: Failed to load script "res://test_database_fase5.gd" with error "Parse error".
+   at: load (modules\gdscript\gdscript_resource_format.cpp:50)

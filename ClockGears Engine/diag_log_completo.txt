@@ -1,0 +1,1009 @@
+﻿WorkerThreadPool: 8 threads, 6 max low-priority.
+ClockGears Engine v1.0.stable.custom_build.b251066fb (2026-11-02 14:57:47 UTC) - https://clockgears.engine
+TextServer: Added interface "Dummy" (dummy)
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)" (advanced)
+Windows.UI.Notifications.ToastNotificationManager initialized for AppID 'Godot.GodotEditor.1.0.stable'.
+clockgears.windows.editor.x86_64.exe : WARNING: GENERAL - Message Id Number: 0 | Message Id Name: Loader Message
+En C:\Proyectos\NEW MOTOR\ClockGears Engine\diag_clockgears.ps1: 16 Carácter: 1
++ & $exe --path test_project --editor --quit-after 1 --verbose 2>&1 | O ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: GENERA... Loader Message:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+	windows_read_data_files_in_registry: Registry lookup failed to get layer manifest files.
+	Objects - 1
+		Object[0] - VK_OBJECT_TYPE_INSTANCE, Handle 2637951907392
+   at: _debug_messenger_callback (drivers\vulkan\rendering_context_driver_vulkan.cpp:657)
+Devices:
+  #0: Intel Intel(R) Iris(R) Xe Graphics - Supported, Integrated
+Optional Vulkan device extension VK_EXT_fragment_density_map not found
+Optional Vulkan device extension VK_EXT_fragment_density_map2 not found
+Optional Vulkan device extension VK_QCOM_fragment_density_map_offset not found
+Optional Vulkan device extension VK_EXT_astc_decode_mode not found
+Optional Vulkan device extension VK_EXT_texture_compression_astc_hdr not found
+Optional Vulkan device extension VK_KHR_acceleration_structure not found
+Optional Vulkan device extension VK_KHR_deferred_host_operations not found
+Optional Vulkan device extension VK_KHR_ray_tracing_pipeline not found
+Optional Vulkan device extension VK_NV_ray_tracing_validation not found
+Optional Vulkan device extension VK_KHR_ray_query not found
+Optional Vulkan device extension VK_KHR_external_memory_fd not found
+Optional Vulkan device extension VK_EXT_device_fault not found
+Optional Vulkan device extension VK_EXT_debug_marker not found
+- Vulkan Variable Rate Shading not supported
+- Vulkan Fragment Density Map not supported
+- Vulkan multiview supported:
+  max view count: 16
+  max instances: 268435454
+- Vulkan subgroup:
+  size: 32
+  min size: 8
+  max size: 32
+  stages: STAGE_VERTEX, STAGE_TESSELLATION_CONTROL, STAGE_TESSELLATION_EVALUATION, STAGE_GEOMETRY, STAGE_FRAGMENT, STAGE_COMPUTE
+  supported ops: FEATURE_BASIC, FEATURE_VOTE, FEATURE_ARITHMETIC, FEATURE_BALLOT, FEATURE_SHUFFLE, FEATURE_SHUFFLE_RELATIVE, FEATURE_CLUSTERED, FEATURE_QUAD
+  quad operations in all stages
+- Vulkan Acceleration Structure not supported
+- Vulkan Raytracing not supported
+Vulkan 1.4.323 - Forward+ - Using Device #0: Intel - Intel(R) Iris(R) Xe Graphics
+Startup PSO cache (0.0 MiB)
+SDL: Init OK!
+Using "winink" pen tablet driver...
+Creating VMA small objects pool for memory type index 0
+Shader 'CanvasSdfShaderRD' (group 0) SHA256: 41a3d920253eefa4f6a083f2bc5d52896e7111bd362da670c6269deafc3bc1d1
+Shader 'SkeletonShaderRD' (group 0) SHA256: c80c9ada9b43f5afcd1224971022f8b7807f2b08646fa48e09e6995651fa48e4
+Shader 'SortShaderRD' (group 0) SHA256: 7b82f8deae42d3a0c7f6be536778c17a3f23de6fcad355418daa908c40084c7f
+Shader 'ParticlesShaderRD' (group 0) SHA256: 71faf8f595c0d34be62b2e59b37f85e3ccffaf93bbb2869e3de5539ce8a6d0e8
+Shader 'ParticlesCopyShaderRD' (group 0) SHA256: b7e5febd50bd8844f7f6d1432d25ce8089d9ebc2ef747be33c6b1702683a6fe7
+Shader 'CanvasShaderRD' (group 0) SHA256: 50d0b9ebdf434d1ae7cc508683eb7e81e4f66fe21a930fb8852625e58f89b16a
+Shader 'CanvasOcclusionShaderRD' (group 0) SHA256: 272496abd58772e25156f8a0fcf595c1413675e55121cc01f4e60ce10afd6f96
+Shader 'TexBlitShaderRD' (group 0) SHA256: a312b73a2fe66c496f13ec045e3c48601d14e3450b04130fcfd5906b766faaf0
+Shader 'ClusterRenderShaderRD' (group 0) SHA256: b9dfa3a61ad26343a567ed04364b1d5263e13e8d94c93e5637df7bd2fa1bb57c
+Shader 'ClusterStoreShaderRD' (group 0) SHA256: 76689c4ca76a4d59a7b6d6a99d7cf14c6b8ea875b5505bf0f573b673b544ca77
+Shader 'ClusterDebugShaderRD' (group 0) SHA256: e128e8d7532b729791c6b7ddd287d6e62a2d974eb0d06efcf6bea173b149c2a2
+Shader 'SceneForwardClusteredShaderRD' (group 0) SHA256: 76a2b676caa101894060fd3955b38240e72d120b45cdb05a608f3ce1f27a0b9b
+Shader 'SceneForwardClusteredShaderRD' (group 1) SHA256: 09d1da7f03a605b369d74d777377bae42a17185ba927b2b13485bc23dc441c1f
+Shader 'SceneForwardClusteredShaderRD' (group 2) SHA256: c20c3202217532f61c486f832059512519acdeaddb4c3366e1aef961710b8969
+Shader 'SceneForwardClusteredShaderRD' (group 3) SHA256: 2026ff0afaace3484e8597b03de698f45753ce0c10988bfb0fd10802a3a7ba12
+Shader 'BestFitNormalShaderRD' (group 0) SHA256: 2b8a1340c53714127af7c1d4401e731170b67183d5d7760eb1d867696f52753b
+Shader 'IntegrateDfgShaderRD' (group 0) SHA256: 619dd48287cc584b934963666784e4c7d0dfed564c9b94886fc6b87857f780aa
+Shader 'TaaResolveShaderRD' (group 0) SHA256: 19a60dd0596668a4d74b90ad517c1d50a5ae0837378db544b5f7f0a4d2ba3406
+Shader 'Fsr2DepthClipPassShaderRD' (group 0) SHA256: 92809b65163bc220745ad2a74fb56fe103b933fc876266cc8d7def52e35cfe01
+Shader 'Fsr2ReconstructPreviousDepthPassShaderRD' (group 0) SHA256: 2901976d4825d0339f67a65d75ad4e77e40623572e97f0a9d055fbac6544935a
+Shader 'Fsr2LockPassShaderRD' (group 0) SHA256: 24c42a4d2d372b3ff4ae27e4a09a3a5a6710e691ed1b5e9ba9e38e6c10dccdc5
+Shader 'Fsr2AccumulatePassShaderRD' (group 0) SHA256: a0d243778d09062a1c3c65562e7ecfbc15d2c890af0e93423302da3568ae1bd0
+Shader 'Fsr2RcasPassShaderRD' (group 0) SHA256: ca3f2fbfdd28f62e2379fd4b1e38901146e037ea12d3783298fec29a5aaef955
+Shader 'Fsr2ComputeLuminancePyramidPassShaderRD' (group 0) SHA256: c464bdbab6134c8fbe26628aff1dbf62aa82e09471c469c1667e3c2e13b44fa0
+Shader 'Fsr2AutogenReactivePassShaderRD' (group 0) SHA256: 268bcd223ed69c8274d8551f2084de5a75c5c562e8cb9758815b885ab83fc1f7
+Shader 'Fsr2TcrAutogenPassShaderRD' (group 0) SHA256: 43cd05624937283c7cf957cf509ce80c7c404315c96bf25fd2f6b51b04fccdda
+Shader 'SsEffectsDownsampleShaderRD' (group 0) SHA256: d494de53a9e14212a143110da059411d4c05587763324a72b30d1ba800d132fd
+Shader 'SsilShaderRD' (group 0) SHA256: e6846fec96b8d26527182b865d54c14d8192803d7b10cd4c07184a2e13fd6f83
+Shader 'SsilImportanceMapShaderRD' (group 0) SHA256: f9d165344bca218dc00c1d11d98193d8e358fc7815588fda365846a48f0ee958
+Shader 'SsilBlurShaderRD' (group 0) SHA256: 32e5a4f7f3a4afbb7cdf502d3169be7b6dc8e647461483ec41caeecc1f4779bf
+Shader 'SsilInterleaveShaderRD' (group 0) SHA256: d9c38ff4ce51382c649e5276ca2a6c992f7591b0edc0680ec8995f68190591a0
+Shader 'SsaoShaderRD' (group 0) SHA256: 78da73b7d6773e2f2b7b363c082d559838113e482fce076c0a94bcb16fd38fb1
+Shader 'SsaoImportanceMapShaderRD' (group 0) SHA256: 139d45ca153a8f975d6964e3e5528a0931de49a83d4bbfedc9243f451382487d
+Shader 'SsaoBlurShaderRD' (group 0) SHA256: 5361168a97a0712b94f77f3c753a1ef0d50b0563c47ac59a3efcbe23ee3dd389
+Shader 'SsaoInterleaveShaderRD' (group 0) SHA256: 3fc0a1cef773daf13eabd548b0ac06e7e06f6aa0416f2e9036bcca79d7bde0cc
+Shader 'ScreenSpaceReflectionDownsampleShaderRD' (group 0) SHA256: a51392f822b549d7ceccd44609999b2ce654d8a2ce2fa8bb521979dac2d90e5e
+Shader 'ScreenSpaceReflectionHizShaderRD' (group 0) SHA256: 454aac01eef81cc72a71bcbad1d111833681426aa6068611fde394be710f935f
+Shader 'ScreenSpaceReflectionShaderRD' (group 0) SHA256: 36f86a090f75563ce869db9cf3e61be9d9d5e9567d7b2fb7d93750957ce38357
+Shader 'ScreenSpaceReflectionFilterShaderRD' (group 0) SHA256: edd31a35e25b1cd1939c0e627c4ac351d0f4561a818e5af58ba52e70c975dd27
+Shader 'ScreenSpaceReflectionResolveShaderRD' (group 0) SHA256: 4ee790e053f77e1588fc1f9ec22b743d8e19fe311c5fc016f25bf61a77ae9303
+Shader 'ScreenSpaceContactShadowsShaderRD' (group 0) SHA256: 281631ecaebc4b386f09b3368202fce34f1063643625a335c5d7a0f29b2be005
+Shader 'SubsurfaceScatteringShaderRD' (group 0) SHA256: 46fd0448f05bd22b3ea2ae7e50b452b0d36cb6d597edbd40d21dc7f11c29be63
+Shader 'SkyShaderRD' (group 0) SHA256: 35c31ec675cb711af1dfdbd6546c3c6345da3580508bc9103ccb60ef420b7c7e
+Shader 'VoxelGiShaderRD' (group 0) SHA256: d79e7cbef0e3d8bd200404a2ade0b18a61e3270bc54ac7e42922e7add869bcc5
+Shader 'VoxelGiDebugShaderRD' (group 0) SHA256: 0e3aea287f5e0b8327334293109677b40f736211e45a7301694447a099ec098e
+Shader 'SdfgiPreprocessShaderRD' (group 0) SHA256: 987ac143dc69740b91c5beaba9d642b430aba79e2b8140745068a9cf995c5fff
+Shader 'SdfgiDirectLightShaderRD' (group 0) SHA256: 358a21fcc39e185bedbc2866ae1be83de162b5455aab811642faeb819d156427
+Shader 'SdfgiIntegrateShaderRD' (group 0) SHA256: 00137ff60b6f93b637fd4bddf5da3cec7297756004d41299b9a341c226cc634f
+Shader 'GiShaderRD' (group 0) SHA256: 5ff7af6ba9c464fc0cac8b2ffee89d1fd926e74895c0d323c0812f08674251df
+Shader 'GiShaderRD' (group 1) SHA256: 5b380e3a4e0f93dfe96c437f23fbb6b271ba811faede6a4d4c4d4e2bf0dd8f61
+Shader 'SdfgiDebugShaderRD' (group 0) SHA256: 42f3d17e126c753affcf1f37b39195d7e100c8d9b79161f838068253ba09c0bb
+Shader 'SdfgiDebugProbesShaderRD' (group 0) SHA256: 0ca527ea9324b1d4aa27da7f3dd29ef228062d88b6861655fb53a8921ae8641c
+Shader 'VolumetricFogShaderRD' (group 0) SHA256: 460b9be752d165a08048ebfed3e38666490b264f9c19702d3e6b66272af5bab9
+Shader 'VolumetricFogShaderRD' (group 1) SHA256: 4845e413e084c301b5db2e5516424a53124d8d819b071fcca19b9ce9cdea1467
+Shader 'VolumetricFogShaderRD' (group 2) SHA256: 77d40cffe5e5ce93f407001f74d4df33a122100e4e4721b80ce5eb37664a9e7b
+Shader 'VolumetricFogShaderRD' (group 3) SHA256: 2469823bea5a26133fc5d380f7a1930e8207f48a9cfb6a8720d630fdb37879b2
+Shader 'VolumetricFogProcessShaderRD' (group 0) SHA256: d40ea0efc902793064a686c18242f274dd12dd6064da55ea4754a47031b9b0e5
+Shader 'VolumetricFogProcessShaderRD' (group 1) SHA256: 8db1354291be8a4067a7b74337694319dd27b00c698657f1752ff2459bf2cf2f
+Shader 'VolumetricFogProcessShaderRD' (group 2) SHA256: fc9c334079597593afb31a808c9a50b1f8fb12ed53352915f68f423fc6b45395
+Shader 'VolumetricFogProcessShaderRD' (group 3) SHA256: 62b572ba69781beac0c4deddae660ba8de1e66940ce99c7ed0e351100161a5f0
+Shader 'BokehDofShaderRD' (group 0) SHA256: 4362bdf766bbf09f8255a825176bed5308bd12f84e754a59387464fa067a33c5
+Shader 'CopyShaderRD' (group 0) SHA256: 43b3e554da8f43d5f384b301869ba2f2aecb8a9b4303a36431e143f0fb4ffb4f
+Shader 'CopyToFbShaderRD' (group 0) SHA256: 3a974b4f0761cf40194b848c77c485552d2bf9079b667b4b8a6acc5d17b6455f
+Shader 'CubeToDpShaderRD' (group 0) SHA256: aec3e5c62f58840591ca89c51a610ee4e8957666277cd9fdefb7db92a1565bdd
+Shader 'CubeToOctmapShaderRD' (group 0) SHA256: a7a3b82520dff34e00a21bd4d8d165f54dae915e32af9bb8bd4bab1b6b4c0262
+Shader 'OctmapDownsamplerShaderRD' (group 0) SHA256: 558600332f52a670e08dbe1bc39c5d9d3eeca2d872e26fac11f4551f3ff892f6
+Shader 'OctmapFilterShaderRD' (group 0) SHA256: 62f3ac9e5d6886e9e329afbd3b70d54ec838530ac5730c85bb253d48a2ce87d3
+Shader 'OctmapRoughnessShaderRD' (group 0) SHA256: cd3a9814866a3a20dee0df3f8fcbc52b673c7b3fabf402b4ed24a1cf1a2f1d98
+Shader 'SpecularMergeShaderRD' (group 0) SHA256: 5e952bfaacf17e74bebe4b6ecf2beb3a888a550a22c3943e6ce9d587abc948af
+Shader 'ShadowFrustumShaderRD' (group 0) SHA256: 84a2bced18aa8af4a3b8c87e1b3d0ebdd15b223e303c601c3414436bc4c22724
+Shader 'MotionVectorsShaderRD' (group 0) SHA256: 11efe589da5399de318cbbc8a606a0b9a5a654020089a87a74a3f3ab6de9c808
+Shader 'LuminanceReduceShaderRD' (group 0) SHA256: b8306e87a3bd174f47835025cca9140069c05dc06d789bc2907645a43d8cb447
+Shader 'SmaaEdgeDetectionShaderRD' (group 0) SHA256: fb49ac69737f0fd2b624857f88d7ecaf7a69e3c3c5a966bdcc015f7e946a63e0
+Shader 'SmaaWeightCalculationShaderRD' (group 0) SHA256: 6056c62e7c88fb361104079d52ebf9e4f862688602f048a15deacb2d87c2ae33
+Shader 'SmaaBlendingShaderRD' (group 0) SHA256: d2141ba34f79de8c522ccaf304fac5e7208e40ce7fbc125143831a9ee51e7341
+Shader 'TonemapShaderRD' (group 0) SHA256: 727b52c6938fe1910557f7e310fa6efa02d6066f3d17eab12a8f1e74fb2a4536
+Shader 'FsrUpscaleShaderRD' (group 0) SHA256: 772acc36ae366a7e654c068b642fe3a013323c8dc7b1193993e263bfba6777ee
+Shader 'ResolveShaderRD' (group 0) SHA256: 28446b4d58686358c9d95da3fa3aa18f75a33b206c3b53881025a5664c391aee
+Shader 'BlitShaderRD' (group 0) SHA256: 6e8a800b93c3b580946d937d14a25ceb088a98a590706d604e2529a6f4fa5d2f
+WASAPI: Activated output_device using IAudioClient3 interface
+WASAPI: wFormatTag = 65534
+WASAPI: nChannels = 2
+WASAPI: nSamplesPerSec = 48000
+WASAPI: nAvgBytesPerSec = 384000
+WASAPI: nBlockAlign = 8
+WASAPI: wBitsPerSample = 32
+WASAPI: cbSize = 22
+WASAPI: mix_rate = 48000
+WASAPI: fundamental_period_frames = 480
+WASAPI: min_period_frames = 480
+WASAPI: max_period_frames = 480
+WASAPI: selected a period frame size of 480
+WASAPI: detected 2 channels
+WASAPI: audio buffer frames: 480 calculated latency: 10ms
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)" (advanced).
+WARNING: ClockGearsFormulas: Divisi├│n entre cero detectada; devolviendo 0.
+   at: _eval_ast (modules\clockgears\core\clockgears_formulas.cpp:584)
+TextureStreaming settings: enabled=0, budget_mb=512, min_lod=0, max_lod=3
+CORE API HASH: 1598333238
+EDITOR API HASH: 4056739230
+SceneTreeFTI: traversal method DEFAULT
+Loading resource: C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres remapped: C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres
+Completed load for: 'C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres' remapped 'C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres' at thread -1
+EditorSettings: Load OK!
+EditorTheme: Generating new theme for the config '2304365973'.
+EditorTheme: Generating new icons.
+EditorTheme: Generating new fonts.
+EditorTheme: Generating new styles.
+Loading resource: C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res remapped: C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res
+Loaded system CA certificates
+Completed load for: 'C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res' remapped 'C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res' at thread -1
+WARNING: Scan thread aborted...
+   at: _notification (editor\file_system\editor_file_system.cpp:1754)
+Script docs haven't been properly loaded or regenerated, so don't save them to disk.
+WARNING: 6 RIDs of type "Canvas" were leaked.
+   at: _free_rids (servers\rendering\renderer_canvas_cull.cpp:2735)
+WARNING: 60 RIDs of type "CanvasItem" were leaked.
+   at: _free_rids (servers\rendering\renderer_canvas_cull.cpp:2735)
+WARNING: 68 RIDs of type "Texture" were leaked.
+   at: finalize (servers\rendering\rendering_device.cpp:9156)
+WARNING: 455 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core\object\object.cpp:2609)
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Freeing Default Tex_Blit Shader
+MultiUmaBuffer 'RENDER_LIST_OPAQUE' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_MOTION' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_ALPHA' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'RENDER_LIST_SECONDARY' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer 'CANVAS_INSTANCE_DATA' used a total of 2 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+ERROR: 6 RID allocations of type 'N10RendererRD12LightStorage11ShadowAtlasE' were leaked at exit.
+ERROR: 6 RID allocations of type 'N10RendererRD14TextureStorage12RenderTargetE' were leaked at exit.
+ERROR: 34 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+ERROR: 6 RID allocations of type 'N16RendererViewport8ViewportE' were leaked at exit.
+Updated PSO cache (2.8 MiB)
+ERROR: 180 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+Leaked instance: DPITexture:9223372068161061300 - Reference count: 12
+Leaked instance: DPITexture:9223372068177838523 - Reference count: 12
+Leaked instance: DPITexture:9223372068127506970 - Reference count: 12
+Leaked instance: DPITexture:9223372068278501968 - Reference count: 1
+Leaked instance: DPITexture:9223372068110729810 - Reference count: 12
+Leaked instance: DPITexture:9223372068597269265 - Reference count: 12
+Leaked instance: FontFile:9223372067909403542 - Reference count: 48
+Leaked instance: DPITexture:9223372068614046648 - Reference count: 12
+Leaked instance: DPITexture:9223372068580492429 - Reference count: 12
+Leaked instance: DPITexture:9223372068765042009 - Reference count: 12
+Leaked instance: DPITexture:9223372068781819226 - Reference count: 12
+Leaked instance: DPITexture:9223372068798596443 - Reference count: 12
+Leaked instance: DPITexture:9223372068815373660 - Reference count: 12
+Leaked instance: DPITexture:9223372068832150877 - Reference count: 12
+Leaked instance: DPITexture:9223372068848928094 - Reference count: 12
+Leaked instance: DPITexture:9223372069050254698 - Reference count: 12
+Leaked instance: DPITexture:9223372069067031915 - Reference count: 12
+Leaked instance: DPITexture:9223372069083809132 - Reference count: 12
+Leaked instance: DPITexture:9223372069419353472 - Reference count: 12
+Leaked instance: DPITexture:9223372069436130689 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372069754897812 - Reference count: 36
+Leaked instance: StyleBoxFlat:9223372069989778850 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070006556067 - Reference count: 12
+Leaked instance: ImageTexture:9223372070073664935 - Reference count: 144
+Leaked instance: StyleBoxFlat:9223372070090442152 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070107219369 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070123996586 - Reference count: 24
+Leaked instance: StyleBoxFlat:9223372070140773803 - Reference count: 24
+Leaked instance: StyleBoxFlat:9223372070157551020 - Reference count: 24
+ERROR: Cannot get path of node as it is not in a scene tree.
+Leaked instance: StyleBoxEmpty:9223372070325323190 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070342100407 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070392432058 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070409209275 - Reference count: 12
+Leaked instance: StyleBoxLine:9223372070476318143 - Reference count: 36
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+Leaked instance: StyleBoxFlat:9223372070509872577 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372070526649794 - Reference count: 12
+Leaked instance: StyleBoxFlat:9223372071298401775 - Reference count: 24
+Leaked instance: DPITexture:9223372073798207077 - Reference count: 1
+Leaked instance: DPITexture:9223372073831761511 - Reference count: 1
+Leaked instance: DPITexture:9223372074066642549 - Reference count: 1
+Leaked instance: DPITexture:9223372074200860285 - Reference count: 1
+Leaked instance: DPITexture:9223372074704176795 - Reference count: 1
+Leaked instance: DPITexture:9223372075945690853 - Reference count: 1
+Leaked instance: DPITexture:9223372075979245287 - Reference count: 1
+Leaked instance: DPITexture:9223372077338199864 - Reference count: 1
+Leaked instance: DPITexture:9223372078445496186 - Reference count: 1
+Leaked instance: DPITexture:9223372078797817743 - Reference count: 1
+Leaked instance: DPITexture:9223372079150139300 - Reference count: 1
+Leaked instance: DPITexture:9223372079787673546 - Reference count: 1
+Leaked instance: DPITexture:9223372080995633170 - Reference count: 1
+Leaked instance: DPITexture:9223372084451739872 - Reference count: 1
+Leaked instance: DPITexture:9223372084619512042 - Reference count: 1
+Leaked instance: DPITexture:9223372086750218601 - Reference count: 1
+Leaked instance: DPITexture:9223372087001876856 - Reference count: 1
+Leaked instance: DPITexture:9223372087186426243 - Reference count: 1
+Leaked instance: DPITexture:9223372087387752847 - Reference count: 1
+Leaked instance: DPITexture:9223372089048697330 - Reference count: 1
+Leaked instance: PopupMenu:64273517724 - Node path: 
+Leaked instance: World2D:9223372101145070749 - Reference count: 1
+Leaked instance: ViewportTexture:9223372101161847966 - Reference count: 1
+Leaked instance: Object:64323849375
+Leaked instance: PanelContainer:64340626592 - Node path: 
+Leaked instance: Object:64357403809
+Leaked instance: VBoxContainer:64374181026 - Node path: 
+Leaked instance: Object:64390958243
+Leaked instance: LineEdit:64407735460 - Node path: 
+Leaked instance: Object:64424512677
+Leaked instance: Image:9223372101296065702 - Reference count: 1
+Leaked instance: ScrollContainer:64458067111 - Node path: 
+Leaked instance: Object:64474844328
+Leaked instance: TextureRect:64491621545 - Node path: 
+Leaked instance: Object:64508398762
+Leaked instance: TextureRect:64525175979 - Node path: 
+Leaked instance: Object:64541953196
+Leaked instance: HScrollBar:64558730413 - Node path: 
+Leaked instance: Object:64575507630
+Leaked instance: VScrollBar:64592284847 - Node path: 
+Leaked instance: Object:64609062064
+Leaked instance: PanelContainer:64625839281 - Node path: 
+Leaked instance: Object:64642616498
+Leaked instance: StyleBoxEmpty:9223372101514169523 - Reference count: 1
+Leaked instance: PopupMenuItems:64676170932 - Node path: 
+Leaked instance: Object:64692948149
+Leaked instance: Timer:64709725366 - Node path: 
+Leaked instance: Timer:64726502583 - Node path: 
+Leaked instance: TextLine:9223373312292296411 - Reference count: 1
+Leaked instance: TextLine:9223373312275519198 - Reference count: 1
+Leaked instance: InputEventKey:9223372393152532173 - Reference count: 2
+Leaked instance: Shortcut:9223372393169309390 - Reference count: 2
+Leaked instance: InputEventKey:9223372393219641041 - Reference count: 2
+Leaked instance: Shortcut:9223372393236418258 - Reference count: 2
+Leaked instance: InputEventKey:9223372393253195475 - Reference count: 2
+Leaked instance: Shortcut:9223372393269972692 - Reference count: 2
+Leaked instance: InputEventKey:9223372393286749909 - Reference count: 2
+Leaked instance: Shortcut:9223372393303527126 - Reference count: 2
+Leaked instance: Shortcut:9223372393320304343 - Reference count: 2
+Leaked instance: Shortcut:9223372393337081560 - Reference count: 2
+Leaked instance: Shortcut:9223372393353858777 - Reference count: 2
+Leaked instance: Shortcut:9223372393370635994 - Reference count: 2
+Leaked instance: Shortcut:9223372393387413211 - Reference count: 2
+Leaked instance: Shortcut:9223372393404190428 - Reference count: 2
+Leaked instance: InputEventKey:9223372393420967645 - Reference count: 2
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+Leaked instance: Shortcut:9223372393437744862 - Reference count: 2
+Leaked instance: InputEventKey:9223372393454522079 - Reference count: 2
+Leaked instance: Shortcut:9223372393471299296 - Reference count: 2
+Leaked instance: InputEventKey:9223372393488076513 - Reference count: 2
+Leaked instance: Shortcut:9223372393504853730 - Reference count: 2
+Leaked instance: InputEventKey:9223372393521630947 - Reference count: 2
+Leaked instance: Shortcut:9223372393538408164 - Reference count: 2
+Leaked instance: InputEventKey:9223372393739734768 - Reference count: 2
+Leaked instance: Shortcut:9223372393756511985 - Reference count: 2
+Leaked instance: InputEventKey:9223372393773289202 - Reference count: 2
+Leaked instance: Shortcut:9223372393790066419 - Reference count: 2
+Leaked instance: InputEventKey:9223372393806843636 - Reference count: 2
+Leaked instance: Shortcut:9223372393823620853 - Reference count: 2
+Leaked instance: InputEventKey:9223372393840398070 - Reference count: 2
+Leaked instance: Shortcut:9223372393857175287 - Reference count: 2
+Leaked instance: PopupMenu:360710164436 - Node path: 
+Leaked instance: World2D:9223372397581717461 - Reference count: 1
+Leaked instance: ViewportTexture:9223372397598494678 - Reference count: 1
+Leaked instance: Object:360760496087
+Leaked instance: PanelContainer:360777273304 - Node path: 
+Leaked instance: Object:360794050521
+Leaked instance: VBoxContainer:360810827738 - Node path: 
+Leaked instance: Object:360827604955
+Leaked instance: LineEdit:360844382172 - Node path: 
+Leaked instance: Object:360861159389
+Leaked instance: ScrollContainer:360877936606 - Node path: 
+Leaked instance: Object:360894713823
+Leaked instance: TextureRect:360911491040 - Node path: 
+Leaked instance: Object:360928268257
+Leaked instance: TextureRect:360945045474 - Node path: 
+Leaked instance: Object:360961822691
+Leaked instance: HScrollBar:360978599908 - Node path: 
+Leaked instance: Object:360995377125
+Leaked instance: VScrollBar:361012154342 - Node path: 
+Leaked instance: Object:361028931559
+Leaked instance: PanelContainer:361045708776 - Node path: 
+Leaked instance: Object:361062485993
+Leaked instance: StyleBoxEmpty:9223372397934039018 - Reference count: 1
+Leaked instance: PopupMenuItems:361096040427 - Node path: 
+Leaked instance: Object:361112817644
+Leaked instance: Timer:361129594861 - Node path: 
+Leaked instance: Timer:361146372078 - Node path: 
+Leaked instance: PopupMenu:361163149295 - Node path: 
+Leaked instance: World2D:9223372398034702320 - Reference count: 1
+Leaked instance: ViewportTexture:9223372398051479537 - Reference count: 1
+Leaked instance: Object:361213480946
+Leaked instance: PanelContainer:361230258163 - Node path: 
+Leaked instance: Object:361247035380
+Leaked instance: VBoxContainer:361263812597 - Node path: 
+Leaked instance: Object:361280589814
+Leaked instance: LineEdit:361297367031 - Node path: 
+Leaked instance: Object:361314144248
+Leaked instance: ScrollContainer:361330921465 - Node path: 
+Leaked instance: Object:361347698682
+Leaked instance: TextureRect:361364475899 - Node path: 
+Leaked instance: Object:361381253116
+Leaked instance: TextureRect:361398030333 - Node path: 
+Leaked instance: Object:361414807550
+Leaked instance: HScrollBar:361431584767 - Node path: 
+Leaked instance: Object:361448361984
+Leaked instance: VScrollBar:361465139201 - Node path: 
+Leaked instance: Object:361481916418
+Leaked instance: PanelContainer:361498693635 - Node path: 
+Leaked instance: Object:361515470852
+Leaked instance: StyleBoxEmpty:9223372398387023877 - Reference count: 1
+Leaked instance: PopupMenuItems:361549025286 - Node path: 
+Leaked instance: Object:361565802503
+Leaked instance: Timer:361582579720 - Node path: 
+Leaked instance: Timer:361599356937 - Node path: 
+Leaked instance: PopupMenu:361616134154 - Node path: 
+Leaked instance: World2D:9223372398487687179 - Reference count: 1
+Leaked instance: ViewportTexture:9223372398504464396 - Reference count: 1
+ERROR: Cannot get path of node as it is not in a scene tree.
+Leaked instance: Object:361666465805
+Leaked instance: PanelContainer:361683243022 - Node path: 
+Leaked instance: Object:361700020239
+Leaked instance: VBoxContainer:361716797456 - Node path: 
+Leaked instance: Object:361733574673
+Leaked instance: LineEdit:361750351890 - Node path: 
+Leaked instance: Object:361767129107
+Leaked instance: ScrollContainer:361783906324 - Node path: 
+Leaked instance: Object:361800683541
+Leaked instance: TextureRect:361817460758 - Node path: 
+Leaked instance: Object:361834237975
+Leaked instance: TextureRect:361851015192 - Node path: 
+Leaked instance: Object:361867792409
+Leaked instance: HScrollBar:361884569626 - Node path: 
+Leaked instance: Object:361901346843
+Leaked instance: VScrollBar:361918124060 - Node path: 
+Leaked instance: Object:361934901277
+Leaked instance: PanelContainer:361951678494 - Node path: 
+Leaked instance: Object:361968455711
+Leaked instance: StyleBoxEmpty:9223372398840008736 - Reference count: 1
+Leaked instance: PopupMenuItems:362002010145 - Node path: 
+Leaked instance: Object:362018787362
+Leaked instance: Timer:362035564579 - Node path: 
+Leaked instance: Timer:362052341796 - Node path: 
+Leaked instance: TextLine:9223372401339814069 - Reference count: 1
+Leaked instance: TextLine:9223372401356591286 - Reference count: 1
+Leaked instance: TextLine:9223372401373368503 - Reference count: 1
+Leaked instance: TextLine:9223372401390145720 - Reference count: 1
+Leaked instance: TextLine:9223372401406922937 - Reference count: 1
+Leaked instance: TextLine:9223372401423700154 - Reference count: 1
+Leaked instance: TextLine:9223372401440477371 - Reference count: 1
+Leaked instance: TextLine:9223372401457254588 - Reference count: 1
+Leaked instance: TextLine:9223372401474031805 - Reference count: 1
+Leaked instance: TextLine:9223372401490809022 - Reference count: 1
+Leaked instance: TextLine:9223372427243837110 - Reference count: 1
+Leaked instance: TextLine:9223372427260614327 - Reference count: 1
+Leaked instance: TextLine:9223372427277391544 - Reference count: 1
+Leaked instance: TextLine:9223372427294168761 - Reference count: 1
+Leaked instance: TextLine:9223372427310945978 - Reference count: 1
+Leaked instance: TextLine:9223372427327723195 - Reference count: 1
+Leaked instance: TextLine:9223372427344500412 - Reference count: 1
+Leaked instance: TextLine:9223372427361277629 - Reference count: 1
+Leaked instance: TextLine:9223372427378054846 - Reference count: 1
+Leaked instance: TextLine:9223372427394832063 - Reference count: 1
+Leaked instance: TextLine:9223372427411609280 - Reference count: 1
+Leaked instance: TextLine:9223372427428386497 - Reference count: 1
+Leaked instance: PopupMenu:390590387906 - Node path: 
+Leaked instance: World2D:9223372427461940931 - Reference count: 1
+Leaked instance: ViewportTexture:9223372427478718148 - Reference count: 1
+Leaked instance: Object:390640719557
+Leaked instance: PanelContainer:390657496774 - Node path: 
+Leaked instance: Object:390674273991
+Leaked instance: VBoxContainer:390691051208 - Node path: 
+Leaked instance: Object:390707828425
+Leaked instance: LineEdit:390724605642 - Node path: 
+Leaked instance: Object:390741382859
+Leaked instance: ScrollContainer:390758160076 - Node path: 
+Leaked instance: Object:390774937293
+Leaked instance: TextureRect:390791714510 - Node path: 
+Leaked instance: Object:390808491727
+Leaked instance: TextureRect:390825268944 - Node path: 
+Leaked instance: Object:390842046161
+Leaked instance: HScrollBar:390858823378 - Node path: 
+Leaked instance: Object:390875600595
+Leaked instance: VScrollBar:390892377812 - Node path: 
+Leaked instance: Object:390909155029
+Leaked instance: PanelContainer:390925932246 - Node path: 
+Leaked instance: Object:390942709463
+Leaked instance: StyleBoxEmpty:9223372427814262488 - Reference count: 1
+Leaked instance: PopupMenuItems:390976263897 - Node path: 
+Leaked instance: Object:390993041114
+Leaked instance: Timer:391009818331 - Node path: 
+Leaked instance: Timer:391026595548 - Node path: 
+Leaked instance: TextLine:9223372427898148573 - Reference count: 1
+Leaked instance: TextLine:9223372427914925790 - Reference count: 1
+Leaked instance: TextLine:9223372427931703007 - Reference count: 1
+Leaked instance: TextLine:9223372427948480224 - Reference count: 1
+Leaked instance: TextLine:9223372427965257441 - Reference count: 1
+Leaked instance: TextLine:9223372427982034658 - Reference count: 1
+Leaked instance: TextLine:9223372427998811875 - Reference count: 1
+Leaked instance: TextLine:9223372428015589092 - Reference count: 1
+Leaked instance: TextLine:9223372428032366309 - Reference count: 1
+Leaked instance: TextLine:9223372428049143526 - Reference count: 1
+Leaked instance: TextLine:9223372428065920743 - Reference count: 1
+Leaked instance: TextLine:9223372428082697960 - Reference count: 1
+Leaked instance: TextLine:9223372428099475177 - Reference count: 1
+Leaked instance: TextLine:9223372428116252394 - Reference count: 1
+Leaked instance: TextLine:9223372428133029611 - Reference count: 1
+Leaked instance: TextLine:9223372428149806828 - Reference count: 1
+Leaked instance: TextLine:9223372428166584045 - Reference count: 1
+Leaked instance: TextLine:9223372428183361262 - Reference count: 1
+Leaked instance: TextLine:9223372428200138479 - Reference count: 1
+Leaked instance: TextLine:9223372428216915696 - Reference count: 1
+Leaked instance: TextLine:9223372428233692913 - Reference count: 1
+Leaked instance: TextLine:9223372428250470130 - Reference count: 1
+Leaked instance: TextLine:9223372428267247347 - Reference count: 1
+Leaked instance: TextLine:9223372428284024564 - Reference count: 1
+Leaked instance: PopupMenu:391446025973 - Node path: 
+Leaked instance: World2D:9223372428317578998 - Reference count: 1
+Leaked instance: ViewportTexture:9223372428334356215 - Reference count: 1
+Leaked instance: Object:391496357624
+Leaked instance: PanelContainer:391513134841 - Node path: 
+Leaked instance: Object:391529912058
+Leaked instance: VBoxContainer:391546689275 - Node path: 
+Leaked instance: Object:391563466492
+Leaked instance: LineEdit:391580243709 - Node path: 
+Leaked instance: Object:391597020926
+Leaked instance: ScrollContainer:391613798143 - Node path: 
+Leaked instance: Object:391630575360
+Leaked instance: TextureRect:391647352577 - Node path: 
+Leaked instance: Object:391664129794
+Leaked instance: TextureRect:391680907011 - Node path: 
+Leaked instance: Object:391697684228
+Leaked instance: HScrollBar:391714461445 - Node path: 
+Leaked instance: Object:391731238662
+Leaked instance: VScrollBar:391748015879 - Node path: 
+Leaked instance: Object:391764793096
+Leaked instance: PanelContainer:391781570313 - Node path: 
+Leaked instance: Object:391798347530
+Leaked instance: StyleBoxEmpty:9223372428669900555 - Reference count: 1
+Leaked instance: PopupMenuItems:391831901964 - Node path: 
+Leaked instance: Object:391848679181
+Leaked instance: Timer:391865456398 - Node path: 
+Leaked instance: Timer:391882233615 - Node path: 
+Leaked instance: TextLine:9223372428753786640 - Reference count: 1
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+Leaked instance: TextLine:9223372428770563857 - Reference count: 1
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+Leaked instance: TextLine:9223372428787341074 - Reference count: 1
+Leaked instance: TextLine:9223372428804118291 - Reference count: 1
+Leaked instance: TextLine:9223372428820895508 - Reference count: 1
+Leaked instance: TextLine:9223372428837672725 - Reference count: 1
+Leaked instance: TextLine:9223372428854449942 - Reference count: 1
+Leaked instance: TextLine:9223372428871227159 - Reference count: 1
+Leaked instance: TextLine:9223372428888004376 - Reference count: 1
+Leaked instance: TextLine:9223372428904781593 - Reference count: 1
+Leaked instance: TextLine:9223372428921558810 - Reference count: 1
+Leaked instance: TextLine:9223372428938336027 - Reference count: 1
+Leaked instance: TextLine:9223372428955113244 - Reference count: 1
+Leaked instance: TextLine:9223372428971890461 - Reference count: 1
+Leaked instance: TextLine:9223372428988667678 - Reference count: 1
+Leaked instance: TextLine:9223372429005444895 - Reference count: 1
+Leaked instance: TextLine:9223372429022222112 - Reference count: 1
+Leaked instance: TextLine:9223372429038999329 - Reference count: 1
+Leaked instance: TextLine:9223372429055776546 - Reference count: 1
+Leaked instance: TextLine:9223372429072553763 - Reference count: 1
+Leaked instance: Shortcut:9223372434105718862 - Reference count: 2
+Leaked instance: Shortcut:9223372481568465749 - Reference count: 2
+Leaked instance: InputEventKey:9223372484152157164 - Reference count: 2
+Leaked instance: Shortcut:9223372484168934381 - Reference count: 2
+Leaked instance: Shortcut:9223372533544284001 - Reference count: 2
+Leaked instance: Shortcut:9223372548157240003 - Reference count: 2
+Leaked instance: Shortcut:9223372557669922039 - Reference count: 2
+Leaked instance: Shortcut:9223372558978544965 - Reference count: 2
+Leaked instance: InputEventKey:9223372560186504589 - Reference count: 2
+Leaked instance: Shortcut:9223372560203281806 - Reference count: 2
+Leaked instance: InputEventKey:9223372607313707124 - Reference count: 2
+Leaked instance: Shortcut:9223372607330484341 - Reference count: 2
+Leaked instance: Shortcut:9223372638234118046 - Reference count: 2
+Leaked instance: TextLine:9223372638250895263 - Reference count: 1
+Leaked instance: TextLine:9223372638267672480 - Reference count: 1
+Leaked instance: Shortcut:9223372638284449697 - Reference count: 2
+Leaked instance: TextLine:9223372638301226914 - Reference count: 1
+Leaked instance: TextLine:9223372638318004131 - Reference count: 1
+Leaked instance: TextLine:9223372638334781348 - Reference count: 1
+Leaked instance: TextLine:9223372638351558565 - Reference count: 1
+Leaked instance: Shortcut:9223372638368335782 - Reference count: 2
+Leaked instance: TextLine:9223372638385112999 - Reference count: 1
+Leaked instance: TextLine:9223372638401890216 - Reference count: 1
+Leaked instance: Shortcut:9223372638418667433 - Reference count: 2
+Leaked instance: TextLine:9223372638435444650 - Reference count: 1
+Leaked instance: TextLine:9223372638452221867 - Reference count: 1
+Leaked instance: Shortcut:9223372638468999084 - Reference count: 2
+Leaked instance: TextLine:9223372638485776301 - Reference count: 1
+Leaked instance: TextLine:9223372638502553518 - Reference count: 1
+Leaked instance: Shortcut:9223372638519330735 - Reference count: 2
+Leaked instance: TextLine:9223372638536107952 - Reference count: 1
+Leaked instance: TextLine:9223372638552885169 - Reference count: 1
+Leaked instance: TextLine:9223372638569662386 - Reference count: 1
+Leaked instance: TextLine:9223372638586439603 - Reference count: 1
+Leaked instance: Shortcut:9223372638603216820 - Reference count: 2
+Leaked instance: TextLine:9223372638619994037 - Reference count: 1
+Leaked instance: TextLine:9223372638636771254 - Reference count: 1
+Leaked instance: TextLine:9223372638653548471 - Reference count: 1
+Leaked instance: TextLine:9223372638670325688 - Reference count: 1
+Leaked instance: Shortcut:9223372638687102905 - Reference count: 2
+Leaked instance: TextLine:9223372638703880122 - Reference count: 1
+Leaked instance: TextLine:9223372638720657339 - Reference count: 1
+Leaked instance: Shortcut:9223372638737434556 - Reference count: 2
+Leaked instance: TextLine:9223372638754211773 - Reference count: 1
+Leaked instance: TextLine:9223372638770988990 - Reference count: 1
+Leaked instance: Shortcut:9223372638787766207 - Reference count: 2
+Leaked instance: TextLine:9223372638804543424 - Reference count: 1
+Leaked instance: TextLine:9223372638821320641 - Reference count: 1
+Leaked instance: TextLine:9223372638838097858 - Reference count: 1
+Leaked instance: TextLine:9223372638854875075 - Reference count: 1
+Leaked instance: TextLine:9223372638871652292 - Reference count: 1
+Leaked instance: TextLine:9223372638888429509 - Reference count: 1
+Leaked instance: Shortcut:9223373204230279010 - Reference count: 2
+Leaked instance: TextLine:9223373204263833445 - Reference count: 1
+Leaked instance: TextLine:9223373204247056232 - Reference count: 1
+Leaked instance: InputEventKey:9223372765589972192 - Reference count: 2
+Leaked instance: Shortcut:9223372765606749409 - Reference count: 2
+Leaked instance: InputEventKey:9223372775018768140 - Reference count: 2
+Leaked instance: Shortcut:9223372775035545357 - Reference count: 2
+Leaked instance: InputEventKey:9223372875682070124 - Reference count: 2
+Leaked instance: Shortcut:9223372875698847341 - Reference count: 2
+Leaked instance: TextLine:9223372949652819871 - Reference count: 1
+Leaked instance: TextLine:9223372949669597088 - Reference count: 1
+Leaked instance: TextLine:9223372949686374305 - Reference count: 1
+Leaked instance: Shortcut:9223373204179978441 - Reference count: 2
+Leaked instance: TextLine:9223373204196755659 - Reference count: 1
+Leaked instance: TextLine:9223373204213532877 - Reference count: 1
+Leaked instance: TextLine:9223373204280641742 - Reference count: 1
+Leaked instance: TextLine:9223373204297418959 - Reference count: 1
+Leaked instance: Shortcut:9223373204347750609 - Reference count: 2
+Leaked instance: TextLine:9223373204364527826 - Reference count: 1
+Leaked instance: TextLine:9223373204381305043 - Reference count: 1
+Leaked instance: TextLine:9223373541251025129 - Reference count: 1
+Leaked instance: TextLine:9223373541267802346 - Reference count: 1
+Leaked instance: TextLine:9223373541217470699 - Reference count: 1
+Leaked instance: TextLine:9223373541234247916 - Reference count: 1
+Leaked instance: TextLine:9223373541183916269 - Reference count: 1
+Leaked instance: TextLine:9223373541200693486 - Reference count: 1
+Leaked instance: TextLine:9223373541150361839 - Reference count: 1
+Leaked instance: TextLine:9223373541167139056 - Reference count: 1
+Leaked instance: TextLine:9223373541116807409 - Reference count: 1
+Leaked instance: TextLine:9223373541133584626 - Reference count: 1
+Leaked instance: TextLine:9223373541083252979 - Reference count: 1
+Leaked instance: TextLine:9223373541100030196 - Reference count: 1
+Leaked instance: TextLine:9223373541049698549 - Reference count: 1
+Leaked instance: TextLine:9223373541066475766 - Reference count: 1
+Leaked instance: TextLine:9223373541016144119 - Reference count: 1
+Leaked instance: TextLine:9223373541032921336 - Reference count: 1
+Leaked instance: TextLine:9223373540982589689 - Reference count: 1
+Leaked instance: TextLine:9223373540999366906 - Reference count: 1
+Leaked instance: TextLine:9223373540949035259 - Reference count: 1
+Leaked instance: TextLine:9223373540965812476 - Reference count: 1
+Leaked instance: TextLine:9223373540915480829 - Reference count: 1
+Leaked instance: TextLine:9223373540932258046 - Reference count: 1
+Leaked instance: TextLine:9223373540881926399 - Reference count: 1
+Leaked instance: TextLine:9223373540898703616 - Reference count: 1
+Leaked instance: TextLine:9223373540848371969 - Reference count: 1
+Leaked instance: TextLine:9223373540865149186 - Reference count: 1
+Leaked instance: TextLine:9223373540814817539 - Reference count: 1
+Leaked instance: TextLine:9223373540831594756 - Reference count: 1
+Leaked instance: TextLine:9223373540781263109 - Reference count: 1
+Leaked instance: TextLine:9223373540798040326 - Reference count: 1
+Leaked instance: TextLine:9223373540747708679 - Reference count: 1
+Leaked instance: TextLine:9223373540764485896 - Reference count: 1
+Leaked instance: TextLine:9223373245535816461 - Reference count: 1
+Leaked instance: TextLine:9223373245552593690 - Reference count: 1
+Leaked instance: TextLine:9223373245519039262 - Reference count: 1
+Leaked instance: TextLine:9223373246592781092 - Reference count: 1
+Leaked instance: TextLine:9223373246911548207 - Reference count: 1
+Leaked instance: TextLine:9223373246928325424 - Reference count: 1
+Leaked instance: TextLine:9223373246945102641 - Reference count: 1
+Leaked instance: TextLine:9223373250921302947 - Reference count: 1
+Leaked instance: TextLine:9223373250938080164 - Reference count: 1
+Leaked instance: TextLine:9223373250954857381 - Reference count: 1
+Leaked instance: TextLine:9223373303031336410 - Reference count: 1
+Leaked instance: TextLine:9223373449513211879 - Reference count: 1
+Leaked instance: TextLine:9223373449563543528 - Reference count: 1
+Leaked instance: TextLine:9223373456979073053 - Reference count: 1
+Leaked instance: TextLine:9223373457062959138 - Reference count: 1
+Leaked instance: TextLine:9223373457079736355 - Reference count: 1
+Leaked instance: TextLine:9223373457096513572 - Reference count: 1
+Leaked instance: TextLine:9223373457113290789 - Reference count: 1
+Leaked instance: TextLine:9223373457146845222 - Reference count: 1
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+ERROR: Cannot get path of node as it is not in a scene tree.
+   at: get_path (scene\main\node.cpp:2463)
+Leaked instance: TextLine:9223373457163622439 - Reference count: 1
+Leaked instance: TextLine:9223373457180399656 - Reference count: 1
+Leaked instance: TextLine:9223373457734047804 - Reference count: 1
+Leaked instance: TextLine:9223373457750825021 - Reference count: 1
+Leaked instance: TextLine:9223373457767602238 - Reference count: 1
+Leaked instance: TextLine:9223373457784379455 - Reference count: 1
+Leaked instance: TextLine:9223373457801156672 - Reference count: 1
+Leaked instance: TextLine:9223373457817933889 - Reference count: 1
+Leaked instance: TextLine:9223373471340370550 - Reference count: 1
+Leaked instance: TextLine:9223373486959959101 - Reference count: 1
+Leaked instance: TextLine:9223373486976736318 - Reference count: 1
+Leaked instance: TextLine:9223373486993513535 - Reference count: 1
+Leaked instance: TextLine:9223373487010290752 - Reference count: 1
+Leaked instance: TextLine:9223373487027067969 - Reference count: 1
+Hint: Leaked instances typically happen when nodes are removed from the scene tree (with `remove_child()`) but not freed (with `free()` or `queue_free()`).
+Orphan StringName: indeterminate (static: 0, total: 6)
+Orphan StringName: _vp_input64273517724 (static: 0, total: 1)
+Orphan StringName: title_outline_modulate (static: 0, total: 6)
+Orphan StringName: scroll_hint_vertical (static: 0, total: 6)
+Orphan StringName: visibility_changed (static: 0, total: 162)
+Orphan StringName: title_font (static: 4, total: 10)
+Orphan StringName: unchecked_disabled (static: 0, total: 6)
+Orphan StringName: radio_checked (static: 0, total: 6)
+Orphan StringName: value_changed_sound (static: 0, total: 12)
+Orphan StringName: font_accelerator_color (static: 0, total: 6)
+Orphan StringName: _vp_input361616134154 (static: 0, total: 1)
+Orphan StringName: item_start_padding (static: 0, total: 6)
+Orphan StringName: search (static: 1, total: 7)
+Orphan StringName: labeled_separator_left (static: 0, total: 6)
+Orphan StringName: scrollbar_margin_left (static: 0, total: 6)
+Orphan StringName: decrement_highlight (static: 1, total: 13)
+Orphan StringName: padding_bottom (static: 0, total: 6)
+Orphan StringName: increment (static: 1, total: 13)
+Orphan StringName: close_pressed (static: 0, total: 6)
+Orphan StringName: @Timer@87 (static: 0, total: 2)
+Orphan StringName: @Timer@88 (static: 0, total: 2)
+Orphan StringName: @LineEdit@4576 (static: 0, total: 2)
+Orphan StringName: @LineEdit@4585 (static: 0, total: 2)
+Orphan StringName: @LineEdit@4594 (static: 0, total: 2)
+Orphan StringName: submenu_mirrored (static: 0, total: 6)
+Orphan StringName: gutter_compact (static: 0, total: 6)
+Orphan StringName: scroll (static: 0, total: 12)
+Orphan StringName: _vp_input361163149295 (static: 0, total: 1)
+Orphan StringName: focus_sound (static: 0, total: 6)
+Orphan StringName: drag_ended_sound (static: 0, total: 12)
+Orphan StringName: search_bar_separation (static: 0, total: 6)
+Orphan StringName: text_changed (static: 0, total: 18)
+Orphan StringName: @PanelContainer@4574 (static: 0, total: 2)
+Orphan StringName: @PanelContainer@4583 (static: 0, total: 2)
+Orphan StringName: @PanelContainer@4592 (static: 0, total: 2)
+Orphan StringName: _vp_unhandled_input64273517724 (static: 0, total: 1)
+Orphan StringName: @TextureRect@4577 (static: 0, total: 2)
+Orphan StringName: @TextureRect@4578 (static: 0, total: 2)
+Orphan StringName: @TextureRect@4586 (static: 0, total: 2)
+Orphan StringName: @TextureRect@4587 (static: 0, total: 2)
+Orphan StringName: @TextureRect@4595 (static: 0, total: 2)
+Orphan StringName: @TextureRect@4596 (static: 0, total: 2)
+Orphan StringName: Control (static: 3, total: 9)
+Orphan StringName: @ScrollContainer@4579 (static: 0, total: 2)
+Orphan StringName: @ScrollContainer@4588 (static: 0, total: 2)
+Orphan StringName: @ScrollContainer@4597 (static: 0, total: 2)
+Orphan StringName: _vp_input391446025973 (static: 0, total: 1)
+Orphan StringName: @VBoxContainer@81 (static: 0, total: 2)
+Orphan StringName: _vp_unhandled_input360710164436 (static: 0, total: 1)
+Orphan StringName: scrollbar_h_separation (static: 0, total: 6)
+Orphan StringName: radio_unchecked (static: 0, total: 6)
+Orphan StringName: font_selected_color (static: 2, total: 8)
+Orphan StringName: separator_outline_size (static: 0, total: 6)
+Orphan StringName: minimum_size_changed (static: 0, total: 162)
+Orphan StringName: increment_highlight (static: 1, total: 13)
+Orphan StringName: _v_scroll (static: 0, total: 12)
+Orphan StringName: scroll_focus (static: 0, total: 12)
+Orphan StringName: scroll_hint_horizontal_color (static: 0, total: 6)
+Orphan StringName: _vp_shortcut_input64273517724 (static: 0, total: 1)
+Orphan StringName: text_submitted_sound (static: 0, total: 6)
+Orphan StringName: @Timer@4581 (static: 0, total: 2)
+Orphan StringName: @Timer@4582 (static: 0, total: 2)
+Orphan StringName: @Timer@4590 (static: 0, total: 2)
+Orphan StringName: @Timer@4591 (static: 0, total: 2)
+Orphan StringName: @Timer@4599 (static: 0, total: 2)
+Orphan StringName: @PopupMenuItems@4580 (static: 0, total: 2)
+Orphan StringName: @PopupMenuItems@4589 (static: 0, total: 2)
+Orphan StringName: @PopupMenuItems@4598 (static: 0, total: 2)
+Orphan StringName: close_v_offset (static: 0, total: 6)
+Orphan StringName: @Timer@4600 (static: 0, total: 2)
+Orphan StringName: focus (static: 0, total: 18)
+Orphan StringName: labeled_separator_right (static: 0, total: 6)
+Orphan StringName: font_size (static: 1, total: 13)
+Orphan StringName: Font (static: 0, total: 1)
+Orphan StringName: separator (static: 1, total: 7)
+Orphan StringName: submenu (static: 0, total: 6)
+Orphan StringName: scrollbar_v_separation (static: 0, total: 6)
+Orphan StringName: text_change_rejected_sound (static: 0, total: 6)
+Orphan StringName: _vp_unhandled_input390590387906 (static: 0, total: 1)
+Orphan StringName: title_outline_size (static: 0, total: 6)
+Orphan StringName: item_end_padding (static: 0, total: 6)
+Orphan StringName: increment_pressed (static: 0, total: 12)
+Orphan StringName: checked (static: 0, total: 6)
+Orphan StringName: @VBoxContainer@5208 (static: 0, total: 2)
+Orphan StringName: @VBoxContainer@5219 (static: 0, total: 2)
+Orphan StringName: maximum_size_changed (static: 0, total: 162)
+Orphan StringName: font_separator_outline_color (static: 0, total: 6)
+Orphan StringName: clear (static: 0, total: 6)
+Orphan StringName: decrement (static: 1, total: 13)
+Orphan StringName: _focus (static: 0, total: 12)
+Orphan StringName: title_font_size (static: 0, total: 6)
+Orphan StringName: unchecked (static: 0, total: 6)
+Orphan StringName: _vp_unhandled_key_input64273517724 (static: 0, total: 1)
+Orphan StringName: _vp_unhandled_key_input360710164436 (static: 0, total: 1)
+Orphan StringName: radio_unchecked_disabled (static: 0, total: 6)
+Orphan StringName: caret_width (static: 0, total: 6)
+Orphan StringName: _vp_unhandled_input361616134154 (static: 0, total: 1)
+Orphan StringName: item_activated_sound (static: 0, total: 6)
+Orphan StringName: normal (static: 5, total: 11)
+Orphan StringName: size_flags_changed (static: 0, total: 162)
+Orphan StringName: indeterminate_disabled (static: 0, total: 6)
+Orphan StringName: @TextureRect@83 (static: 0, total: 2)
+Orphan StringName: @TextureRect@84 (static: 0, total: 2)
+Orphan StringName: checked_disabled (static: 0, total: 6)
+Orphan StringName: font_uneditable_color (static: 0, total: 6)
+Orphan StringName: timeout (static: 1, total: 37)
+Orphan StringName: value_change_rejected_sound (static: 0, total: 12)
+Orphan StringName: font_outline_color (static: 1, total: 13)
+Orphan StringName: icon_max_width (static: 2, total: 8)
+Orphan StringName: font_separator_color (static: 0, total: 6)
+Orphan StringName: caret_moved_sound (static: 0, total: 6)
+Orphan StringName: _vp_shortcut_input360710164436 (static: 0, total: 1)
+Orphan StringName: _vp_unhandled_input361163149295 (static: 0, total: 1)
+Orphan StringName: @ScrollContainer@85 (static: 0, total: 2)
+Orphan StringName: read_only (static: 0, total: 6)
+Orphan StringName: separation (static: 16, total: 22)
+Orphan StringName: _vp_unhandled_key_input390590387906 (static: 0, total: 1)
+Orphan StringName: resize_margin (static: 0, total: 6)
+Orphan StringName: close (static: 0, total: 6)
+Orphan StringName: text_changed_sound (static: 0, total: 6)
+Orphan StringName: scrollbar_margin_right (static: 0, total: 6)
+Orphan StringName: original (static: 0, total: 43)
+Orphan StringName: @LineEdit@5209 (static: 0, total: 2)
+Orphan StringName: @LineEdit@5220 (static: 0, total: 2)
+Orphan StringName: _vp_unhandled_input391446025973 (static: 0, total: 1)
+Orphan StringName: _h_scroll (static: 0, total: 12)
+Orphan StringName: @PopupMenu@5216 (static: 0, total: 2)
+Orphan StringName: @PopupMenu@5217 (static: 0, total: 2)
+Orphan StringName: @PopupMenu@5227 (static: 0, total: 2)
+Orphan StringName: @PanelContainer@80 (static: 0, total: 2)
+Orphan StringName: focus_entered (static: 0, total: 18)
+Orphan StringName: decrement_pressed (static: 0, total: 12)
+Orphan StringName: font_disabled_color (static: 6, total: 12)
+Orphan StringName: _vp_unhandled_key_input361616134154 (static: 0, total: 1)
+Orphan StringName: close_h_offset (static: 0, total: 6)
+Orphan StringName: padding_top (static: 0, total: 6)
+Orphan StringName: h_separation (static: 12, total: 18)
+Orphan StringName: embedded_unfocused_border (static: 0, total: 6)
+Orphan StringName: @PanelContainer@5207 (static: 0, total: 2)
+Orphan StringName: @PanelContainer@5218 (static: 0, total: 2)
+Orphan StringName: title_color (static: 1, total: 7)
+Orphan StringName: grabber_pressed (static: 0, total: 12)
+Orphan StringName: _vp_shortcut_input390590387906 (static: 0, total: 1)
+Orphan StringName: embedded_border (static: 0, total: 6)
+Orphan StringName: @TextureRect@5210 (static: 0, total: 2)
+Orphan StringName: @TextureRect@5211 (static: 0, total: 2)
+Orphan StringName: @TextureRect@5221 (static: 0, total: 2)
+Orphan StringName: @TextureRect@5222 (static: 0, total: 2)
+Orphan StringName: @ScrollContainer@5212 (static: 0, total: 2)
+Orphan StringName: @ScrollContainer@5223 (static: 0, total: 2)
+Orphan StringName: grabber_highlight (static: 2, total: 14)
+Orphan StringName: _desired_size_changed (static: 0, total: 162)
+Orphan StringName: EditorIcons (static: 5, total: 6)
+Orphan StringName: item_activated_disabled_sound (static: 0, total: 6)
+Orphan StringName: _vp_unhandled_key_input361163149295 (static: 0, total: 1)
+Orphan StringName: _vp_shortcut_input361616134154 (static: 0, total: 1)
+Orphan StringName: indent (static: 0, total: 6)
+Orphan StringName: panel (static: 0, total: 30)
+Orphan StringName: v_separation (static: 5, total: 11)
+Orphan StringName: @Timer@5214 (static: 0, total: 2)
+Orphan StringName: @Timer@5215 (static: 0, total: 2)
+Orphan StringName: @Timer@5225 (static: 0, total: 2)
+Orphan StringName: @Timer@5226 (static: 0, total: 2)
+Orphan StringName: @PopupMenuItems@5213 (static: 0, total: 2)
+Orphan StringName: @PopupMenuItems@5224 (static: 0, total: 2)
+Orphan StringName: radio_checked_disabled (static: 0, total: 6)
+Orphan StringName: clear_button_color (static: 0, total: 6)
+Orphan StringName: hover (static: 0, total: 6)
+Orphan StringName: value_changed (static: 0, total: 36)
+Orphan StringName: draw (static: 0, total: 18)
+Orphan StringName: _vp_unhandled_key_input391446025973 (static: 0, total: 1)
+Orphan StringName: _vp_input360710164436 (static: 0, total: 1)
+Orphan StringName: grabber (static: 2, total: 14)
+Orphan StringName: font_hover_color (static: 2, total: 8)
+Orphan StringName: scroll_hint_vertical_color (static: 0, total: 6)
+Orphan StringName: _vp_shortcut_input361163149295 (static: 0, total: 1)
+Orphan StringName: @PopupMenuItems@86 (static: 0, total: 2)
+Orphan StringName: font_separator_size (static: 0, total: 6)
+Orphan StringName: icon_max_size (static: 0, total: 12)
+Orphan StringName: font (static: 1, total: 13)
+Orphan StringName: clear_button_color_pressed (static: 0, total: 6)
+Orphan StringName: font_placeholder_color (static: 0, total: 6)
+Orphan StringName: title_height (static: 0, total: 6)
+Orphan StringName: @VBoxContainer@4575 (static: 0, total: 2)
+Orphan StringName: @VBoxContainer@4584 (static: 0, total: 2)
+Orphan StringName: @VBoxContainer@4593 (static: 0, total: 2)
+Orphan StringName: Texture2D (static: 0, total: 6)
+Orphan StringName: Window (static: 5, total: 6)
+Orphan StringName: minimum_character_width (static: 0, total: 6)
+Orphan StringName: outline_size (static: 1, total: 13)
+Orphan StringName: _vp_shortcut_input391446025973 (static: 0, total: 1)
+Orphan StringName: padding_left (static: 0, total: 6)
+Orphan StringName: item_hovered_sound (static: 0, total: 6)
+Orphan StringName: scrollbar_margin_bottom (static: 0, total: 6)
+Orphan StringName: popup_hide (static: 3, total: 12)
+Orphan StringName: scrollbar_margin_top (static: 0, total: 6)
+Orphan StringName: scroll_hint_horizontal (static: 0, total: 6)
+Orphan StringName: padding_right (static: 0, total: 6)
+Orphan StringName: drag_started_sound (static: 0, total: 12)
+Orphan StringName: font_color (static: 0, total: 12)
+Orphan StringName: selection_color (static: 0, total: 6)
+Orphan StringName: caret_color (static: 0, total: 6)
+Orphan StringName: caret_move_rejected_sound (static: 0, total: 6)
+Orphan StringName: font_separator (static: 0, total: 6)
+Orphan StringName: _vp_input390590387906 (static: 0, total: 1)
+Orphan StringName: changed (static: 0, total: 147)
+Orphan StringName: @LineEdit@82 (static: 0, total: 2)
+StringName: 207 unclaimed string names at exit.

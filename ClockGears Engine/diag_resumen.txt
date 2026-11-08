@@ -1,0 +1,120 @@
+﻿=== LINEAS CON SelfTest / ClockGears ===
+ClockGears Engine v1.0.stable.custom_build.b251066fb (2026-11-02 14:57:47 UTC) - https://clockgears.engine
+clockgears.windows.editor.x86_64.exe : WARNING: GENERAL - Message Id Number: 0 | Message Id Name: Loader Message
+En C:\Proyectos\NEW MOTOR\ClockGears Engine\diag_clockgears.ps1: 16 Carácter: 1
+WARNING: ClockGearsFormulas: Divisi├│n entre cero detectada; devolviendo 0.
+   at: _eval_ast (modules\clockgears\core\clockgears_formulas.cpp:584)
+Loading resource: C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres remapped: C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres
+Completed load for: 'C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres' remapped 'C:/Users/Kris/AppData/Roaming/Clockgears/editor_settings-1.0.tres' at thread -1
+Loading resource: C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res remapped: C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res
+Completed load for: 'C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res' remapped 'C:/Users/Kris/AppData/Local/Clockgears/editor_doc_cache-1.0.res' at thread -1
+
+=== ERRORES Y WARNINGS (sin los de fugas) ===
+WARNING: ClockGearsFormulas: Divisi├│n entre cero detectada; devolviendo 0.
+WARNING: Scan thread aborted...
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+ERROR: Cannot get path of node as it is not in a scene tree.
+
+=== CLASES FILTRADAS EN ObjectDB (top 25) ===
+  174  TextLine
+   66  Object
+   43  Shortcut
+   39  DPITexture
+   18  InputEventKey
+   14  StyleBoxFlat
+   12  TextureRect
+   12  PanelContainer
+   12  Timer
+    7  StyleBoxEmpty
+    6  ScrollContainer
+    6  PopupMenuItems
+    6  VScrollBar
+    6  HScrollBar
+    6  ViewportTexture
+    6  World2D
+    6  PopupMenu
+    6  LineEdit
+    6  VBoxContainer
+    1  StyleBoxLine
+    1  Image
+    1  ImageTexture
+    1  FontFile
+
+=== CLASES CON 'ClockGears' EN LAS FUGAS ===
+(ninguna)

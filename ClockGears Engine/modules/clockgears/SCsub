@@ -1,0 +1,14 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_clockgears = env_modules.Clone()
+env_clockgears.Prepend(CPPPATH=[Dir("."), Dir("core"), Dir("icons"), Dir("editor"), Dir("runtime")])
+
+env_clockgears.add_source_files(env.modules_sources, "*.cpp")
+env_clockgears.add_source_files(env.modules_sources, "core/*.cpp")
+env_clockgears.add_source_files(env.modules_sources, "icons/*.cpp")
+env_clockgears.add_source_files(env.modules_sources, "editor/*.cpp")
+env_clockgears.add_source_files(env.modules_sources, "runtime/*.cpp")

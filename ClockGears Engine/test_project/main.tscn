@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[node name="ClockGearsMap" type="ClockGearsMap"]
+grid_resolution = 32
+snap_to_grid = true
+combat_mode = 0
+map_name = ""

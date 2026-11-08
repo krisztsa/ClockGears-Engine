@@ -1,0 +1,63 @@
+[
+	{
+		"agi": 5,
+		"animations": {
+			"idle": {
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 32,
+				"frame_w": 32,
+				"frames": [
+					0,
+					1,
+					2,
+					3
+				],
+				"loop": true,
+				"name": "idle",
+				"rows": 1,
+				"spritesheet_path": "res://img/battlers/cañón_musgoso_down.png"
+			}
+		},
+		"atk": 12,
+		"def": 8,
+		"exp": 30,
+		"gold": 20,
+		"graphic_path": "res://img/battlers/cañón_musgoso_down.png",
+		"hp": 60,
+		"id": 1,
+		"luk": 5,
+		"mat": 5,
+		"max_hp": 60,
+		"max_mp": 0,
+		"mdf": 5,
+		"mp": 0,
+		"name": "Cañón Musgoso",
+		"sprite_data": {
+			"animations": {
+				"idle": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [
+						0,
+						1,
+						2,
+						3
+					],
+					"loop": true,
+					"name": "idle",
+					"rows": 1,
+					"spritesheet_path": "res://img/battlers/cañón_musgoso_down.png"
+				}
+			},
+			"cols": 4,
+			"frame_h": 32,
+			"frame_w": 32,
+			"margin": 0,
+			"rows": 1,
+			"spacing": 0
+		}
+	}
+]

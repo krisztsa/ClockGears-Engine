@@ -1,0 +1,14 @@
+{
+	"autosave_minutes": 5,
+	"camera_clamp": true,
+	"camera_smooth": true,
+	"camera_zoom": 2,
+	"combat_mode": 0,
+	"currency_unit": "G",
+	"game_title": "",
+	"max_followers": 3,
+	"sell_price_ratio": 0.5,
+	"start_map": "",
+	"start_x": 0,
+	"start_y": 0
+}

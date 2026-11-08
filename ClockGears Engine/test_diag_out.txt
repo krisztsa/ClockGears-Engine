@@ -1,0 +1,9 @@
+ClockGears Engine v1.0.stable.custom_build.b251066fb (2026-11-02 14:57:47 UTC) - https://clockgears.engine
+OpenGL API 3.3.0 - Build 32.0.101.7088 - Compatibility - Using Device: Intel - Intel(R) Iris(R) Xe Graphics
+
+[ClockGears Module] Build: Nov  7 2026 01:44:43
+[ClockGears PosDiag Viewport] Capa_Suelo global_position: (0.000000, 0.000000), scale: (1.000000, 1.000000) | Viewport visible_rect: [pos: (0.000000, 0.000000), size: (1046.000000, 593.000000)] | Transform: [scale: (1.000000, 1.000000), origin: (166.000000, 111.000000)]
+[ClockGears Paleta] Cargando ranuras del Tileset #001 ('Mazmorra Clockwork') para el mapa actual...
+[ClockGears Paleta] Cargando ranuras del Tileset #001 ('Mazmorra Clockwork') para el mapa actual...
+[ClockGears PosDiag Viewport] Capa_Suelo global_position: (0.000000, 0.000000), scale: (1.000000, 1.000000) | Viewport visible_rect: [pos: (0.000000, 0.000000), size: (1046.000000, 593.000000)] | Transform: [scale: (1.000000, 1.000000), origin: (166.000000, 111.000000)]
+[ClockGears PosDiag Viewport] Capa_Suelo global_position: (0.000000, 0.000000), scale: (1.000000, 1.000000) | Viewport visible_rect: [pos: (0.000000, 0.000000), size: (1046.000000, 601.000000)] | Transform: [scale: (1.000000, 1.000000), origin: (166.000000, 111.000000)]

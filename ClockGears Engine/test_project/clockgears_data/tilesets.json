@@ -1,0 +1,44 @@
+[
+	{
+		"agi": 10,
+		"atk": 10,
+		"collisions": {},
+		"def": 10,
+		"desc": "",
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"graphic_path": "res://img/tilesets/forest-tilemap.png",
+		"hp": 100,
+		"id": 1,
+		"luk": 10,
+		"mat": 10,
+		"mdf": 10,
+		"mp": 20,
+		"name": "TestTS",
+		"secondary_type": 0,
+		"slot_collisions": {
+			"A1": {},
+			"A2": {},
+			"A3": {},
+			"A4": {},
+			"A5": {},
+			"B": {},
+			"C": {},
+			"D": {},
+			"E": {}
+		},
+		"slots": {
+			"A1": "",
+			"A2": "",
+			"A3": "",
+			"A4": "",
+			"A5": "res://img/tilesets/forest-tilemap.png",
+			"B": "",
+			"C": "",
+			"D": "",
+			"E": ""
+		},
+		"tertiary_type": 0,
+		"traits": [],
+		"type": 0
+	}
+]

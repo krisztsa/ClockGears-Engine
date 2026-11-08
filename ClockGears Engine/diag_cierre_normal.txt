@@ -1,0 +1,152 @@
+﻿=== CONTEOS ===
+Lineas con 'leaked': 0
+Errores 'Cannot get path of node': 0
+Lineas ERROR en total: 70
+
+=== ERRORES / WARNINGS (sin fugas), CON SU LINEA 'at:' ===
+WARNING: Instantiated Theme used as default value for ClockGearsCommandSelector's "theme" property.
+   at: class_get_default_property_value (core\object\class_db.cpp:1945)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+WARNING: Instantiated Theme used as default value for ClockGearsDatabaseDialog's "theme" property.
+   at: class_get_default_property_value (core\object\class_db.cpp:1945)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+ERROR: Condition "p_image.is_null()" is true.
+   at: add_image (scene\gui\rich_text_label.cpp:4565)
+
+=== LINEAS DE FUGAS ===
