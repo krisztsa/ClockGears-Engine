@@ -54,126 +54,115 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 
 
 ---
-*ARCO 1: Cimientos (1–8)
+# 🗺 Hoja de ruta de ClockGears Engine hacia la 1.0
 
-1. Estabilización 0.1: cerrar combate, tropas y animaciones de la 8A · guardado de proyecto robusto · suite de regresión automática · limpieza de logs y del error de debug_settings · lista de bugs conocidos en cero
+**ClockGears Engine** es un motor de RPG 2D por rejillas con editor visual al estilo RPG Maker MZ, hecho en C++ por **Kris'ZtS**. Esta es la ruta de 55 fases hasta la versión 1.0.
 
-2. Componentes compartidos: un solo selector de objetos, sprites y audio · layouts con expansión y scroll en todos los paneles · tema centralizado en un solo archivo · tooltips en vez de textos largos · atajos de teclado base
+> ⚠️ Es una hoja de ruta, no una promesa. El orden y el contenido pueden cambiar según la dificultad y el costo de cada fase.
 
-3. Animaciones II: duración por frame y orden aleatorio · sonidos y flashes por fotograma · tabla de triggers (ataque, daño, muerte) en Actores y Enemigos · efectos sobre el objetivo en Habilidades y Objetos · vista previa con Play
+**Leyenda:** ✅ Hecha · 🔧 En curso · ⏳ Planeada · 🚀 **Update** (hito grande con mejoras masivas)
 
-4. Eventos II: ramas anidadas con contenido (elecciones, condicionales) · bucles, etiquetas y saltos · copiar y pegar comandos · buscar y reemplazar en eventos · comentarios
+---
 
-5. Eventos III: rutas de movimiento · seguidores del grupo · control de cámara y scroll · tintes, sacudidas y flashes de pantalla · imágenes en pantalla
+## Arco 1: Núcleo del motor (Fases 1–11)
 
-6. Mapas II: autotiles A1–A4 completos · regiones · capas de eventos y tiles · copiar o exportar mapas · rejillas 16, 32 y 48 con “salir de la casilla”
+| # | Fase | Qué trae |
+|---|------|----------|
+| 1 | Base y rebranding ✅ | Rebranding completo a ClockGears Engine · créditos de Kris'ZtS en "Acerca de" · icono propio del ejecutable · compilación aislada en un solo exe · banderas de compilación reducidas |
+| 2 | Interfaz MZ y tema Dark 🔧 | Barra superior de accesos rápidos · tema ClockGears Dark · iconos SVG pixel art · selectores (pickers) · validación en vivo |
+| 3 | Mapas y rejilla ✅ | Rejillas de 16, 32 y 48 · "Salir de la casilla" (colocación libre) · importar imágenes al mapa · árbol de mapas · deshacer y rehacer · herramientas de dibujo |
+| 4 | Eventos sin código ✅ | Editor de eventos estilo MZ · páginas, condiciones y disparadores · lista de comandos editable · interruptores y variables · pestaña Code opcional |
+| 5 | Base de datos ✅ | Actores, clases, habilidades, objetos, armas, armaduras y accesorios · enemigos, tropas y estados · importar y exportar assets · selectores con pestañas y búsqueda |
+| 6 | Tilesets y colisiones ✅ | 9 ranuras (A1–A5, B, C, D, E) · máscara ○ pasable, × bloqueado, ★ pasa por detrás · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7 · selector de tileset por mapa · paleta por pestañas |
+| 7 | Sistema narrativo (7A ✅ · 7B ⏳) | 7A: ventana de mensajes, códigos de escape, retratos con expresiones, caja de nombre, opciones y entrada de número, historial, modos AUTO y SALTAR, vista previa en vivo · 7B: por completar |
+| 8 | Combate y animaciones 🔧 | Comando "Iniciar Batalla" · orden de turnos por AGI · Atacar, Habilidad, Objeto, Defender y Huir · fórmulas, estados, EXP, oro y drops · panel de depuración F3 · editor de animaciones de sprites |
+| 9 | Por completar ⏳ | (pendiente de definir) |
+| 10 | Por completar ⏳ | (pendiente de definir) |
+| 11 | Por completar ⏳ | (pendiente de definir) |
 
-7. Narrativa II (tu 7B, ajústala): cinemáticas sencillas con eventos · mensajes de mapa y nombres flotantes · diálogos con variables · textos exportables para traducir · retratos animados
+---
 
-8. Primer Engranaje Update: plantilla de proyecto vacía · título, guardar y cargar, game over · menú de opciones in-game · proyecto demo con assets propios · primer instalador de prueba
+## Arco 2: RPG completo (Fases 12–25)
 
-ARCO 2: RPG completo (9–19)
+| # | Fase | Qué trae |
+|---|------|----------|
+| 12 | Animaciones II y cierre de combate | Duración por frame y orden aleatorio · triggers de ataque, daño y muerte en Actores y Enemigos · sonidos y flashes por fotograma · tropas con varios enemigos y posiciones · regresión completa del combate |
+| 13 | Eventos II | Ramas anidadas (elecciones y condiciones) · bucles, etiquetas y saltos · copiar, pegar y buscar comandos · comentarios · eventos comunes |
+| 14 | Eventos III | Rutas de movimiento · seguidores del grupo · control de cámara y scroll · tintes, sacudidas y flashes · imágenes en pantalla |
+| 15 | Mapas II | Autotiles A1–A4 completos · regiones · capas de tiles y eventos · copiar y exportar mapas · transiciones y teletransportes |
+| 16 | Combate II | Elementos y resistencias · críticos, evasión y fallo · objetivos múltiples y aleatorios · estados avanzados · editor de fórmulas con validación |
+| 17 | Combate III | Costes, recargas y tipos de habilidad · pasivas y rasgos · habilidades encadenadas · invocaciones · contraataque y cobertura · IA enemiga por patrones y condiciones |
+| 18 | Combate IV | Jefes con fases · eventos dentro de la batalla · emboscadas y huida configurables · vistas frontal y lateral · fondos por mapa o región · recompensas especiales |
+| 19 | 🚀 **Cronómetro Update** | Sistemas de turno a elegir (clásico, ATB, ticks) · simulador de batallas con balance automático · curvas de nivel y dificultad · cola de turnos visual · auto-batalla |
+| 20 | Progresión | Clases y multiclase · árboles de habilidades · slots de equipo configurables · curvas de EXP por actor · ascensos |
+| 21 | Inventario y economía | Tiendas y su editor · crafteo con recetas · peso y límites · objetos clave · monedas múltiples |
+| 22 | Sistema de juego | Menú principal editable · estado, formación y equipo · guardado en ranuras con captura · opciones de dificultad · créditos |
+| 23 | Misiones y diario | Misiones con objetivos · diario y bestiario · enciclopedia de objetos · marcadores en el mapa · recompensas |
+| 24 | Automatización | Presets de movimiento en 2, 4, 6 y 8 direcciones · puertas, cofres y teletransportes listos · NPC con ruta · plantillas de eventos comunes · auto-conexión sin configurar inputs |
+| 25 | 🚀 **Crónicas Update** | Ciclo de día y noche · clima por mapa · calendario y tiempo del mundo · horarios de NPC · afinidad con personajes · logros |
 
-9. Combate II: elementos y resistencias · críticos, evasión y fallo · objetivos (todos, aleatorio, aliados) · estados avanzados · editor de fórmulas con validación
+---
 
-10. Combate III: tipos de habilidad, costes y recargas · pasivas y rasgos · habilidades encadenadas · invocaciones · contraataque y cobertura
+## Arco 3: Motor visual (Fases 26–40)
 
-11. Combate IV: IA enemiga por patrones y condiciones · jefes con fases · eventos dentro de la batalla · huida y emboscadas configurables · recompensas especiales
+| # | Fase | Qué trae |
+|---|------|----------|
+| 26 | Render base | Orden por Y y capas de profundidad · sombras de tiles · luces 2D puntuales · mapas de normales · máscaras de luz |
+| 27 | Partículas I | Editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo · importar y exportar |
+| 28 | Partículas II | Comando de evento "Mostrar partículas" · partículas en combate y habilidades · colisión con tiles · estelas y sub-emisores · límites de rendimiento |
+| 29 | 🚀 **Péndulo Update** | Biblioteca de efectos prehechos · lluvia, nieve y niebla · hechizos con partículas y luz · shaders listos · editor de efectos unificado |
+| 30 | Post-proceso | Bloom · viñeta y aberración cromática · grano y pixelado · corrección de color con LUT · pila de efectos por mapa |
+| 31 | Cámara 2.5D | Perspectiva inclinada · rotación por pasos de 90° · sprites billboard · zoom y seguimiento suave · presets de cámara |
+| 32 | Mapas 2.5D | Tiles con altura · escaleras y desniveles · techos que se ocultan · objetos 3D low poly (glTF) · parallax en capas |
+| 33 | Luz y sombras | Sombras proyectadas de sprites · luces dinámicas y emisivos · reflejos en agua · día y noche con luz coherente · lightmaps horneados opcionales |
+| 34 | Profundidad de campo | DoF y tilt-shift · bokeh · enfoque controlado por eventos · cámara cinematográfica · desenfoque de fondo en diálogos |
+| 35 | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla lista · presets de cámara, luz y DoF · partículas integradas · mapa demo |
+| 36 | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · salida a pantallas HDR · calibración dentro del juego |
+| 37 | FSR | Escalado FSR · resolución interna ajustable · selector de calidad · nitidez ajustable · alternativa sin soporte |
+| 38 | DLSS y XeSS | DLSS mediante el SDK de NVIDIA · XeSS de Intel · detección de hardware · desactivación automática si no hay soporte · ajustes en el menú |
+| 39 | Rendimiento | Perfilador integrado · culling y batching · atlas de texturas · presets Bajo, Medio y Alto · límite de FPS y VSync |
+| 40 | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura y grabación · paquete final de shaders |
 
-12. Combate V: vista frontal, lateral e isométrica · posiciones de formación · fondos de batalla por mapa o región · cámara de combate · transiciones de entrada y salida
+---
 
-13. Cronómetro Update: sistemas de turno a elegir (clásico, ATB, por ticks) · simulador de batallas con balance automático · curvas de nivel y dificultad · cola de turnos visual · modo auto-batalla
+## Arco 4: Interfaz y editor (Fases 41–47)
 
-14. Progresión: clases y multiclase · árboles de habilidades · slots de equipo configurables · curvas de EXP por actor · ascensos y reencarnación
+| # | Fase | Qué trae |
+|---|------|----------|
+| 41 | HUD I | Editor WYSIWYG con arrastrar y soltar · barras de vida y MP · ventanas con anclas · rejillas y alineación · vista previa en varias resoluciones |
+| 42 | HUD II | Skins de ventana 9-patch · fuentes bitmap · animaciones de UI · cursores y sonidos de menú · estados (normal, hover, presionado) |
+| 43 | HUD III | Plantillas de título, menú, tienda y batalla · widgets reutilizables · enlaces a datos del juego · pantallas modales · pruebas de resolución |
+| 44 | Personalización del editor | Paleta de 8 colores de acento · tema Retro Pixelart · tema Dark OLED · tema Classic JRPG Blue · preferencias guardadas |
+| 45 | Identidad y editor reorganizado | Iconos SVG y tipografía propios · logo, splash discreto e icono de ejecutable · paneles acoplables · búsqueda global · interfaz en español e inglés |
+| 46 | Accesibilidad y aprendizaje | Tamaño de fuente y modos para daltonismo · remapeo de controles y mando · tutorial interactivo · documentación dentro del editor · plantillas comentadas |
+| 47 | 🚀 **Relojería Update** | Limpieza visual casi total del origen Godot · nombres internos y menús propios · tema final · modo ventana pequeña · revisión de cada pantalla |
 
-15. Inventario y economía: tiendas y su editor · crafteo con recetas · peso y límites · objetos clave · moneda múltiple
+---
 
-16. Sistema de juego: menú principal editable · estado, formación y equipo · guardado en ranuras con captura · opciones de dificultad · pantalla de créditos
+## Arco 5: Audio, código y cine (Fases 48–50)
 
-17. Misiones y diario: misiones con objetivos · diario y bestiario · enciclopedia de objetos · marcadores en el mapa · recompensas
+| # | Fase | Qué trae |
+|---|------|----------|
+| 48 | Audio | Editor de BGM, BGS, ME y SE · bucles con puntos y crossfade · buses y volúmenes por categoría · sonido posicional y reverb por mapa · música adaptativa y ducking en diálogos |
+| 49 | Código y datos | Pestaña Code con API estable · hooks y plugins · importar y exportar JSON y CSV · localización de textos · migraciones y copias de seguridad |
+| 50 | 🚀 **Telón Update** | Editor de cinemáticas con línea de tiempo · pistas de cámara, diálogo, partículas y audio · cortes y transiciones · reproducción dentro del juego · exportar a vídeo |
 
-18. Automatización: presets de movimiento en 2, 4, 6 y 8 direcciones · presets de puertas, cofres y teletransportes · NPC con ruta · plantillas de eventos comunes · auto-conexión sin configurar inputs
+---
 
-19. Crónicas Update: ciclo día y noche · clima por mapa · calendario y tiempo del mundo · horarios de NPC · afinidad con personajes · logros
+## Arco 6: Plataformas (Fases 51–53)
 
-ARCO 3: Motor visual (20–34)
+| # | Fase | Qué trae |
+|---|------|----------|
+| 51 | Exportación PC | Windows y Linux en 1 o 2 clics · instalador · ejecutable con icono propio · compresión de assets · licencias incluidas en el paquete |
+| 52 | Android | SDK y keystore automáticos · controles táctiles · pantalla adaptable · APK y AAB · pruebas en dispositivo |
+| 53 | Web, macOS e integraciones | Build web · build macOS · paquete base para consolas · Steam e itch.io · guardado en la nube |
 
-20. Render base: orden por Y y capas de profundidad · sombras de tiles · luces 2D puntuales · mapas de normales · máscaras de luz
+---
 
-21. Partículas I: editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo · importar y exportar
+## Arco 7: Cierre (Fases 54–55)
 
-22. Partículas II: comando de evento “Mostrar partículas” · partículas en combate y en habilidades · colisión con tiles · trails y sub-emisores · límites de rendimiento
+| # | Fase | Qué trae |
+|---|------|----------|
+| 54 | Calidad y beta | Pruebas automáticas por pantalla · proyectos de prueba y de rendimiento · informe de regresión · manual completo · sistema de reportes con captura |
+| 55 | 🚀 **Maestro Relojero 1.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · web y página de descarga · lanzamiento |
 
-23. Péndulo Update: biblioteca de efectos prehechos · clima (lluvia, nieve, niebla) · hechizos con partículas y luz · shaders listos · editor de efectos unificado
-
-24. Post-proceso: bloom · viñeta y aberración cromática · grano y pixelado · corrección de color con LUT · pila de efectos por mapa
-
-25. Cámara 2.5D: perspectiva inclinada · rotación por pasos de 90° · sprites billboard · zoom y seguimiento suave · presets de cámara
-
-26. Mapas 2.5D: tiles con altura · escaleras y desniveles · techos que se ocultan · objetos 3D low poly (glTF) · parallax en capas
-
-27. Luz y sombras: sombras proyectadas de sprites · luces dinámicas y emisivos · reflejos en agua · día y noche con luz coherente · lightmaps horneados opcionales
-
-28. Profundidad de campo: DoF y tilt-shift · bokeh · enfoque controlado por eventos · cámara cinematográfica · desenfoque de fondo en diálogos
-
-29. Diorama Update: estilo propio Diorama 2.5D (pixel art sobre escenarios 3D) · plantilla lista · presets de cámara, luz y DoF · partículas integradas · mapa demo
-
-30. HDR: pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · salida a pantallas HDR · calibración in-game
-
-31. FSR: integrar FSR (la base ya trae alguna versión) · escalado por resolución interna · selector de calidad · nitidez ajustable · fallback sin soporte
-
-32. DLSS y XeSS: DLSS vía SDK de NVIDIA · XeSS de Intel · detección de hardware · desactivación automática si no hay soporte · ajustes en el menú
-
-33. Rendimiento: perfilador integrado · culling y batching · atlas de texturas · presets Bajo, Medio y Alto · límites de FPS y VSync
-
-34. Cristal de Cuarzo Update: panel único de calidad gráfica · benchmark automático · modo foto · captura y grabación · paquete final de shaders
-
-ARCO 4: Interfaz y editor (35–43)
-
-35. HUD I: editor WYSIWYG con arrastrar y soltar · barras de vida y MP · ventanas con anclas · alineación y rejillas · vista previa en varias resoluciones
-
-36. HUD II: skins de ventana 9-patch · fuentes bitmap · animaciones de UI · cursores y sonidos de menú · estados (normal, hover, presionado)
-
-37. HUD III: plantillas de título, menú, tienda y batalla · widgets reutilizables · enlaces a datos del juego · pantallas modales · pruebas de resolución
-
-38. Personalización del editor: paleta de 8 acentos · tema Retro Pixelart · Dark OLED · Classic JRPG Blue · guardado de preferencias
-
-39. Identidad visual: iconos SVG propios · tipografía propia · logo y splash discreto · iconos de archivo y de ejecutable · coherencia de marca
-
-40. Editor reorganizado: barra superior estilo MZ · paneles acoplables y recordados · búsqueda global · historial de deshacer visible · interfaz en español e inglés
-
-41. Accesibilidad: tamaño de fuente · modos para daltonismo · remapeo de controles · soporte de mando · subtítulos y avisos visuales
-
-42. Aprendizaje integrado: tutorial interactivo de primer uso · documentación dentro del editor · ejemplos abribles · tooltips con enlace al manual · plantillas con comentarios
-
-43. Relojería Update: limpieza visual casi total del origen Godot · nombres internos y menús propios · tema final · modo ventana pequeña · revisión de cada pantalla
-
-ARCO 5: Audio, datos y código (44–48)
-
-44. Audio I: editor de BGM, BGS, ME y SE · bucles con puntos · crossfade · buses y volúmenes por categoría · previsualización
-
-45. Audio II: sonido posicional · reverb por mapa · música adaptativa · ducking en diálogos · importar y exportar audios
-
-46. Código opcional: pestaña Code con API estable · hooks y plugins · documentación de la API · ejemplos · aislamiento de errores de scripts
-
-47. Datos y localización: importar y exportar JSON y CSV · traducción de textos · versionado del proyecto · migraciones automáticas · copias de seguridad
-
-48. Telón Update: editor de cinemáticas con línea de tiempo · pistas de cámara, diálogo, partículas y audio · cortes y transiciones · reproducción dentro del juego · exportar a vídeo
-
-ARCO 6: Plataformas (49–52)
-
-49. Exportación PC: Windows y Linux en 1 clic · instalador · ejecutable con tu icono · compresión de assets · avisos de licencias incluidos
-
-50. Android: SDK y keystore automáticos · controles táctiles · pantalla adaptable · APK y AAB · pruebas en dispositivo
-
-51. Web, macOS y consolas: build web · build macOS · paquete base para consolas (sin SDK, que exige acuerdos) · guía de portado · validación de límites de memoria
-
-52. Integraciones: logros y nube de Steam · itch.io · guardado en la nube · actualizador de proyecto · telemetría opcional de errores
-
-ARCO 7: Cierre (53–55)
-
-53. Calidad: pruebas automáticas por pantalla · proyectos de prueba · pruebas de rendimiento · fuzzing de datos · informe de regresión
-
-54. Beta pública: manual completo · plantillas y tutoriales en vídeo · canal de comunidad · sistema de reportes con captura · ciclo de hotfix
-
-55. Maestro Relojero 1.0 Update: congelar la API · documentación final · proyecto de ejemplo completo · web y página de descarga · lanzamiento.*
