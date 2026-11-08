@@ -1,0 +1,17 @@
+# Binarios compilados y temporales de SCons / C++
+bin/
+*.obj
+*.o
+*.a
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.pch
+*.idb
+*.sconsign*
+.sconf_temp/
+config.log
+.vs/
+.vscode/
+*.exe
