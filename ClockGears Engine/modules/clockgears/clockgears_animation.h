@@ -26,7 +26,9 @@ enum ClockGearsAnimTrigger {
 	ANIM_TRIGGER_MAP_WALK = 9,
 	ANIM_TRIGGER_MAP_TALK = 10,
 	ANIM_TRIGGER_CUSTOM = 11,
-	ANIM_TRIGGER_MAX = 12
+	ANIM_TRIGGER_IDLE = 12,
+	ANIM_TRIGGER_DEFEND = 13,
+	ANIM_TRIGGER_MAX = 14
 };
 
 // ============================================================================
@@ -79,6 +81,22 @@ struct ClockGearsAnimDef {
 struct ClockGearsAnimationFrame {
 	String sheet_path;
 	Rect2i region;
+	float duration = 0.0f; // 0.0 = por defecto (1.0f / fps de la animación)
+	bool is_random_duration = false;
+	float duration_min = 0.1f;
+	float duration_max = 0.5f;
+
+	float get_duration(float p_default_fps = 6.0f) const {
+		if (is_random_duration) {
+			float dmin = MAX(0.01f, duration_min);
+			float dmax = MAX(dmin, duration_max);
+			return dmin + (float(Math::randf()) * (dmax - dmin));
+		}
+		if (duration > 0.0f) {
+			return duration;
+		}
+		return 1.0f / MAX(0.1f, p_default_fps);
+	}
 
 	Dictionary to_dict() const {
 		Dictionary d;
@@ -87,6 +105,10 @@ struct ClockGearsAnimationFrame {
 		d["y"] = region.position.y;
 		d["w"] = region.size.x;
 		d["h"] = region.size.y;
+		d["duration"] = duration;
+		d["is_random_duration"] = is_random_duration;
+		d["duration_min"] = duration_min;
+		d["duration_max"] = duration_max;
 		return d;
 	}
 
@@ -102,6 +124,10 @@ struct ClockGearsAnimationFrame {
 			int h = int(p_d.get("h", 32));
 			region = Rect2i(x, y, w, h);
 		}
+		duration = float(p_d.get("duration", 0.0f));
+		is_random_duration = bool(p_d.get("is_random_duration", false));
+		duration_min = float(p_d.get("duration_min", 0.1f));
+		duration_max = float(p_d.get("duration_max", 0.5f));
 	}
 };
 
@@ -117,6 +143,7 @@ struct ClockGearsSpriteAnimation {
 	int rows = 1;
 	float fps = 6.0f;
 	bool loop = true;
+	bool random_order = false;
 	Vector<ClockGearsAnimationFrame> frames_data;
 	Vector<int> frames;
 
@@ -126,12 +153,15 @@ struct ClockGearsSpriteAnimation {
 
 	ClockGearsAnimationFrame get_frame(int p_idx, int p_tex_w = 0, int p_tex_h = 0) const {
 		if (p_idx >= 0 && p_idx < frames_data.size()) {
-			return frames_data[p_idx];
+			ClockGearsAnimationFrame f = frames_data[p_idx];
+			if (f.sheet_path.is_empty()) f.sheet_path = spritesheet_path;
+			return f;
 		}
 		ClockGearsAnimationFrame f;
 		f.sheet_path = spritesheet_path;
 		int fn = (p_idx >= 0 && p_idx < frames.size()) ? frames[p_idx] : 0;
 		f.region = get_frame_rect(fn, p_tex_w, p_tex_h);
+		f.duration = 1.0f / MAX(0.1f, fps);
 		return f;
 	}
 
@@ -163,6 +193,7 @@ struct ClockGearsSpriteAnimation {
 		d["rows"] = rows;
 		d["fps"] = fps;
 		d["loop"] = loop;
+		d["random_order"] = random_order;
 
 		Array arr;
 		for (int i = 0; i < frames_data.size(); i++) {
@@ -187,6 +218,7 @@ struct ClockGearsSpriteAnimation {
 		rows = int(p_d.get("rows", rows > 0 ? rows : 1));
 		fps = float(p_d.get("fps", fps > 0 ? fps : 6.0f));
 		loop = bool(p_d.get("loop", loop));
+		random_order = bool(p_d.get("random_order", false));
 
 		frames_data.clear();
 		frames.clear();

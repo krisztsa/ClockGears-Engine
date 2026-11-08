@@ -1,4 +1,4 @@
-﻿*.exe
+*.exe
 *.pdb
 *.obj
 *.o
@@ -7,6 +7,16 @@
 *.exp
 *.ilk
 *.pch
+*.idb
+*.sconsign*
 **/bin/
 **/.sconf_temp/
-**/.sconsign*
+**/.vs/
+**/.vscode/
+ClockGears.exe
+ClockGears Engine/#ClockGears Engine.exe
+ClockGears Engine/#ClockGears.exe
+ClockGears Engine/ClockGears.exe
+ClockGears Engine/ClockGears.old.exe
+ClockGears Engine/ClockGears.old2.exe
+ClockGears Engine/bin/clockgears.windows.editor.x86_64.exe
