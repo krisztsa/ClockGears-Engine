@@ -17,6 +17,10 @@
 
 Su objetivo principal es **facilitar la creación de videojuegos RPG sin tener que pagar**, integrando de serie todas las herramientas que necesitas para armar tu juego sin programar sistemas desde cero.
 
+## Créditos y licencia
+Creado por **Kris'ZtS**. Basado en [Godot Engine](https://godotengine.org), distribuido bajo licencia MIT. Conserva el aviso de copyright original de Godot en el repositorio.
+
+
 ---
 
 ## ✨ Qué incluye
