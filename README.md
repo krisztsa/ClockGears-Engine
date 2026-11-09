@@ -80,9 +80,9 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 | 6 | Tilesets y colisiones ✅ | 9 ranuras (A1–A5, B, C, D, E) · máscara ○ pasable, × bloqueado, ★ pasa por detrás · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7 · selector de tileset por mapa · paleta por pestañas |
 | 7 | Sistema narrativo (7A ✅ · 7B ⏳) | 7A: ventana de mensajes, códigos de escape, retratos con expresiones, caja de nombre, opciones y entrada de número, historial, modos AUTO y SALTAR, vista previa en vivo · 7B: por completar |
 | 8 | Combate y animaciones 🔧 | Comando "Iniciar Batalla" · orden de turnos por AGI · Atacar, Habilidad, Objeto, Defender y Huir · fórmulas, estados, EXP, oro y drops · panel de depuración F3 · editor de animaciones de sprites |
-| 9 | Por completar ⏳ | (pendiente de definir) |
-| 10 | Por completar ⏳ | (pendiente de definir) |
-| 11 | Por completar ⏳ | (pendiente de definir) |
+| 9 | Por completar ⏳ | Sistema de Combate en Tiempo Real (Action RPG) |
+| 10 | Por completar ⏳ | Menús Estándar del Juego y Flujo de Menú Principa |
+| 11 | Por completar ⏳ | Exportación Simplificada y Empaquetado Final de la primera etapa |
 
 ---
 
