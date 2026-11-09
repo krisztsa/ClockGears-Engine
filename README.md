@@ -73,12 +73,12 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 | # | Fase | Qué trae |
 |---|------|----------|
 | 1 | Base y rebranding ✅ | Rebranding completo a ClockGears Engine · créditos de Kris'ZtS en "Acerca de" · icono propio del ejecutable · compilación aislada en un solo exe · banderas de compilación reducidas |
-| 2 | Interfaz MZ y tema Dark 🔧 | Barra superior de accesos rápidos · tema ClockGears Dark · iconos SVG pixel art · selectores (pickers) · validación en vivo |
+| 2 | Interfaz MZ y tema Dark ✅️ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos SVG pixel art · selectores (pickers) · validación en vivo |
 | 3 | Mapas y rejilla ✅ | Rejillas de 16, 32 y 48 · "Salir de la casilla" (colocación libre) · importar imágenes al mapa · árbol de mapas · deshacer y rehacer · herramientas de dibujo |
 | 4 | Eventos sin código ✅ | Editor de eventos estilo MZ · páginas, condiciones y disparadores · lista de comandos editable · interruptores y variables · pestaña Code opcional |
 | 5 | Base de datos ✅ | Actores, clases, habilidades, objetos, armas, armaduras y accesorios · enemigos, tropas y estados · importar y exportar assets · selectores con pestañas y búsqueda |
 | 6 | Tilesets y colisiones ✅ | 9 ranuras (A1–A5, B, C, D, E) · máscara ○ pasable, × bloqueado, ★ pasa por detrás · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7 · selector de tileset por mapa · paleta por pestañas |
-| 7 | Sistema narrativo (7A ✅ · 7B ⏳) | 7A: ventana de mensajes, códigos de escape, retratos con expresiones, caja de nombre, opciones y entrada de número, historial, modos AUTO y SALTAR, vista previa en vivo · 7B: por completar |
+| 7 | Sistema narrativo (7A ✅ · 7B ✅️) | 7A: ventana de mensajes, códigos de escape, retratos con expresiones, caja de nombre, opciones y entrada de número, historial, modos AUTO y SALTAR, vista previa en vivo · 7B: por completar |
 | 8 | Combate y animaciones 🔧 | Comando "Iniciar Batalla" · orden de turnos por AGI · Atacar, Habilidad, Objeto, Defender y Huir · fórmulas, estados, EXP, oro y drops · panel de depuración F3 · editor de animaciones de sprites |
 | 9 | Por completar ⏳ | Sistema de Combate en Tiempo Real (Action RPG) |
 | 10 | Por completar ⏳ | Menús Estándar del Juego y Flujo de Menú Principa |
