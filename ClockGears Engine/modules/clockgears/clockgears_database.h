@@ -235,13 +235,26 @@ private:
 	// 4. Reproducción y Ajustes
 	SpinBox *anim_fps_spin = nullptr;
 	CheckBox *anim_loop_chk = nullptr;
+	CheckBox *anim_random_order_chk = nullptr;
 	Button *btn_anim_play = nullptr;
 	TextureRect *anim_preview_rect = nullptr;
 	Ref<AtlasTexture> anim_preview_atlas;
 
 	bool anim_preview_playing = false;
 	float anim_preview_timer = 0.0f;
+	int anim_preview_frame_idx = 0;
+	float anim_preview_frame_target_dur = 0.1f;
 	ClockGearsSpriteSheetData current_sprite_data;
+
+	// Sección: Conexión - Animaciones de combate (Actores y Enemigos)
+	VBoxContainer *combat_anims_box = nullptr;
+	OptionButton *opt_anim_idle = nullptr;
+	OptionButton *opt_anim_attack = nullptr;
+	OptionButton *opt_anim_damage = nullptr;
+	OptionButton *opt_anim_death = nullptr;
+	OptionButton *opt_anim_victory = nullptr;
+	OptionButton *opt_anim_defend = nullptr;
+	Label *lbl_anim_victory = nullptr;
 
 	// Sección 4.2 / 5.1 / 5.3: Editor de Rasgos (Traits) en Columna 3
 	VBoxContainer *traits_box = nullptr;
@@ -419,6 +432,14 @@ private:
 	void _on_sheet_importer_clear_sel_pressed();
 	void _on_sheet_importer_add_confirmed();
 	void _update_sheet_importer_ui();
+
+	void _setup_combat_anims_ui();
+	void _refresh_combat_anims_dropdowns();
+	void _on_combat_anim_selected(int p_unused = 0);
+	void _on_frame_duration_changed(double p_val, int p_idx);
+	void _on_frame_random_toggled(bool p_pressed, int p_idx);
+	void _on_frame_min_dur_changed(double p_val, int p_idx);
+	void _on_frame_max_dur_changed(double p_val, int p_idx);
 
 	void _refresh_frames_timeline();
 	void _refresh_anim_preview();

@@ -26,6 +26,19 @@
 
 #define CG_DB_TR(m_str) String::utf8(m_str)
 
+static String s_fix_mojibake(const String &p_str) {
+	if (p_str.find(String::utf8("Ã")) == -1) {
+		return p_str;
+	}
+	PackedByteArray bytes;
+	for (int i = 0; i < p_str.length(); i++) {
+		char32_t c = p_str[i];
+		bytes.append((uint8_t)(c & 0xFF));
+	}
+	String fixed = String::utf8((const char *)bytes.ptr(), bytes.size());
+	return fixed.is_empty() ? p_str : fixed;
+}
+
 // ============================================================================
 // ClockGearsTilesetCollisionEditor
 // ============================================================================
@@ -169,7 +182,8 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 
 void ClockGearsDatabaseDialog::_notification(int p_what) {
 	switch (p_what) {
-		case NOTIFICATION_PROCESS: {
+		case NOTIFICATION_PROCESS:
+		case NOTIFICATION_INTERNAL_PROCESS: {
 			if (anim_preview_playing && is_visible()) {
 				_update_anim_playback(get_process_delta_time());
 			}
@@ -298,6 +312,14 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 	d["traits"] = Array();
 	if (p_category == CAT_ACTORS) {
 		d["class_id"] = 0;
+		Dictionary ca;
+		ca["idle"] = "";
+		ca["attack"] = "";
+		ca["damage"] = "";
+		ca["death"] = "";
+		ca["defend"] = "";
+		ca["victory"] = "";
+		d["combat_animations"] = ca;
 	} else if (p_category == CAT_CLASSES) {
 		// Sección 9.3: Parámetros por defecto de la fórmula de EXP (base=30, extra=20, acc_a=30, acc_b=30)
 		d["exp_base"] = 30;
@@ -308,6 +330,7 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 		// Sección 5.1: Armas, Armaduras y Accesorios
 		d["price"] = 0;
 		d["attack_anim_id"] = 0;
+		d["animation_id"] = 0;
 		if (p_category == CAT_WEAPONS) {
 			d["secondary_type"] = 0; // Mano Derecha (Arma)
 		} else if (p_category == CAT_ARMORS) {
@@ -318,6 +341,8 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 	} else if (p_category == CAT_ITEMS || p_category == CAT_SKILLS) {
 		// Sección 5.2: Objetos y Habilidades
 		d["price"] = 0;
+		d["attack_anim_id"] = 0;
+		d["animation_id"] = 0;
 		d["consumable"] = true;
 		d["speed"] = 0;
 		d["success_rate"] = 100;
@@ -334,6 +359,13 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 		d["gold"] = 0;
 		d["battler_frames"] = 1;
 		d["battler_fps"] = 8;
+		Dictionary ca;
+		ca["idle"] = "";
+		ca["attack"] = "";
+		ca["damage"] = "";
+		ca["death"] = "";
+		ca["defend"] = "";
+		d["combat_animations"] = ca;
 		Array drops;
 		for (int s = 0; s < 3; s++) {
 			Dictionary dr;
@@ -427,25 +459,46 @@ Ref<Texture2D> ClockGearsDatabaseDialog::_load_texture_from_path(const String &p
 		return Ref<Texture2D>();
 	}
 
-	String fname = p_path.get_file();
-	Vector<String> candidates;
-	candidates.push_back(p_path);
-	if (ProjectSettings::get_singleton()) {
-		candidates.push_back(ProjectSettings::get_singleton()->globalize_path(p_path));
-	}
-	candidates.push_back(String("res://img/battlers/").path_join(fname));
-	candidates.push_back(String("res://img/characters/").path_join(fname));
-	candidates.push_back(String("res://img/enemies/").path_join(fname));
-	candidates.push_back(String("res://img/tilesets/").path_join(fname));
-	candidates.push_back(String("res://img/system/").path_join(fname));
-	candidates.push_back(String("res://img/").path_join(fname));
-	candidates.push_back(String("res://").path_join(fname));
+	String fixed_path = s_fix_mojibake(p_path);
 
-	const char *known_subdirs[] = { "img/battlers", "img/characters", "img/enemies", "img/tilesets", "img/system", "img" };
-	for (size_t s = 0; s < sizeof(known_subdirs) / sizeof(known_subdirs[0]); s++) {
-		String g_dir = ClockGearsProjectStructure::resolve_project_folder_global(known_subdirs[s]);
-		if (!g_dir.is_empty()) {
-			candidates.push_back(g_dir.path_join(fname));
+	Vector<String> candidates;
+	candidates.push_back(fixed_path);
+	if (fixed_path != p_path) {
+		candidates.push_back(p_path);
+	}
+	if (ProjectSettings::get_singleton()) {
+		String loc_p = ProjectSettings::get_singleton()->localize_path(fixed_path);
+		if (!loc_p.is_empty() && loc_p != fixed_path) {
+			candidates.push_back(loc_p);
+		}
+		String glob_p = ProjectSettings::get_singleton()->globalize_path(fixed_path);
+		if (!glob_p.is_empty() && glob_p != fixed_path) {
+			candidates.push_back(glob_p);
+		}
+	}
+	String fname = fixed_path.get_file();
+	if (!fname.is_empty()) {
+		candidates.push_back(String("res://img/battlers/").path_join(fname));
+		candidates.push_back(String("res://img/characters/").path_join(fname));
+		candidates.push_back(String("res://img/enemies/").path_join(fname));
+		candidates.push_back(String("res://img/tilesets/").path_join(fname));
+		candidates.push_back(String("res://img/system/").path_join(fname));
+		candidates.push_back(String("res://img/").path_join(fname));
+		candidates.push_back(String("res://").path_join(fname));
+
+		if (ProjectSettings::get_singleton()) {
+			candidates.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/battlers/" + fname));
+			candidates.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/enemies/" + fname));
+			candidates.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/characters/" + fname));
+			candidates.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/" + fname));
+		}
+
+		const char *known_subdirs[] = { "img/battlers", "img/characters", "img/enemies", "img/tilesets", "img/system", "img" };
+		for (size_t s = 0; s < sizeof(known_subdirs) / sizeof(known_subdirs[0]); s++) {
+			String g_dir = ClockGearsProjectStructure::resolve_project_folder_global(known_subdirs[s]);
+			if (!g_dir.is_empty()) {
+				candidates.push_back(g_dir.path_join(fname));
+			}
 		}
 	}
 
@@ -465,6 +518,29 @@ Ref<Texture2D> ClockGearsDatabaseDialog::_load_texture_from_path(const String &p
 				Ref<ImageTexture> itex = ImageTexture::create_from_image(img);
 				itex->set_path(cand, true);
 				return itex;
+			}
+		}
+	}
+
+	// Fallback por escaneo en subdirectorios img/
+	String search_dirs[] = { "res://img/battlers", "res://img/enemies", "res://img/characters", "res://img" };
+	for (size_t d = 0; d < sizeof(search_dirs) / sizeof(search_dirs[0]); d++) {
+		Ref<DirAccess> da = DirAccess::open(search_dirs[d]);
+		if (da.is_valid()) {
+			da->list_dir_begin();
+			String file = da->get_next();
+			while (!file.is_empty()) {
+				if (!da->current_is_dir() && !file.ends_with(".import")) {
+					if (file.to_lower() == fname.to_lower() || (fname.get_extension() == file.get_extension() && file.begins_with(fname.substr(0, 3)))) {
+						String cand_p = search_dirs[d].path_join(file);
+						Ref<Image> s_img = Image::load_from_file(cand_p);
+						if (s_img.is_valid() && !s_img->is_empty()) {
+							Ref<ImageTexture> it = ImageTexture::create_from_image(s_img);
+							if (it.is_valid()) return it;
+						}
+					}
+				}
+				file = da->get_next();
 			}
 		}
 	}
@@ -847,10 +923,11 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		sell_price_label->set_visible(show_price);
 	}
 
-	// Sección 5.1: Animación de Ataque en Armas
-	bool show_atk_anim = (current_category == CAT_WEAPONS);
+	// Sección 5.1: Animación de Efecto en Armas, Habilidades y Objetos
+	bool show_atk_anim = (current_category == CAT_WEAPONS || current_category == CAT_SKILLS || current_category == CAT_ITEMS);
 	if (attack_anim_label) {
 		attack_anim_label->set_visible(show_atk_anim);
+		attack_anim_label->set_text(CG_DB_TR("Animación de efecto:"));
 	}
 	if (attack_anim_option) {
 		attack_anim_option->set_visible(show_atk_anim);
@@ -1195,7 +1272,8 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 	}
 	_update_sell_price_label(price_val);
 	if (attack_anim_option) {
-		_select_option_by_id_or_index(attack_anim_option, int(d.get("attack_anim_id", 0)));
+		int anim_val = int(d.get("attack_anim_id", d.get("animation_id", 0)));
+		_select_option_by_id_or_index(attack_anim_option, anim_val);
 	}
 	if (consumable_check) {
 		consumable_check->set_pressed(bool(d.get("consumable", true)));
@@ -1577,9 +1655,11 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 		d["price"] = pval;
 		_update_sell_price_label(pval);
 	}
-	if (current_category == CAT_WEAPONS && attack_anim_option) {
+	if ((current_category == CAT_WEAPONS || current_category == CAT_SKILLS || current_category == CAT_ITEMS) && attack_anim_option) {
 		int sa = attack_anim_option->get_selected();
-		d["attack_anim_id"] = (sa >= 0) ? attack_anim_option->get_item_id(sa) : 0;
+		int aid = (sa >= 0) ? attack_anim_option->get_item_id(sa) : 0;
+		d["attack_anim_id"] = aid;
+		d["animation_id"] = aid;
 	}
 	if (current_category == CAT_ITEMS && consumable_check) {
 		d["consumable"] = consumable_check->is_pressed();
@@ -1623,8 +1703,37 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
 		d["sprite_data"] = current_sprite_data.to_dict();
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
-		d["battler_frames"] = current_sprite_data.cols;
-		d["battler_fps"] = current_sprite_data.animations.has("idle") ? current_sprite_data.animations["idle"].fps : 6.0f;
+		Dictionary ca = d.get("combat_animations", Dictionary());
+		if (opt_anim_idle) {
+			ca["idle"] = opt_anim_idle->get_selected() > 0 ? opt_anim_idle->get_item_text(opt_anim_idle->get_selected()) : "";
+		}
+		if (opt_anim_attack) {
+			ca["attack"] = opt_anim_attack->get_selected() > 0 ? opt_anim_attack->get_item_text(opt_anim_attack->get_selected()) : "";
+		}
+		if (opt_anim_damage) {
+			ca["damage"] = opt_anim_damage->get_selected() > 0 ? opt_anim_damage->get_item_text(opt_anim_damage->get_selected()) : "";
+		}
+		if (opt_anim_death) {
+			ca["death"] = opt_anim_death->get_selected() > 0 ? opt_anim_death->get_item_text(opt_anim_death->get_selected()) : "";
+		}
+		if (opt_anim_defend) {
+			ca["defend"] = opt_anim_defend->get_selected() > 0 ? opt_anim_defend->get_item_text(opt_anim_defend->get_selected()) : "";
+		}
+		if (current_category == CAT_ACTORS && opt_anim_victory) {
+			ca["victory"] = opt_anim_victory->get_selected() > 0 ? opt_anim_victory->get_item_text(opt_anim_victory->get_selected()) : "";
+		}
+		d["combat_animations"] = ca;
+
+		Dictionary tt = d.get("trigger_table", Dictionary());
+		tt[itos(ANIM_TRIGGER_IDLE)] = ca["idle"];
+		tt[itos(ANIM_TRIGGER_ATTACK)] = ca["attack"];
+		tt[itos(ANIM_TRIGGER_DAMAGE)] = ca["damage"];
+		tt[itos(ANIM_TRIGGER_DEATH)] = ca["death"];
+		tt[itos(ANIM_TRIGGER_DEFEND)] = ca["defend"];
+		if (current_category == CAT_ACTORS) {
+			tt[itos(ANIM_TRIGGER_VICTORY)] = ca.get("victory", "");
+		}
+		d["trigger_table"] = tt;
 	}
 
 	const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
@@ -3157,6 +3266,7 @@ void ClockGearsDatabaseDialog::_on_spinbox_line_edit_focus_exited(SpinBox *p_spi
 ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	singleton = this;
 	set_process(true);
+	set_process_internal(true);
 	set_title(CG_DB_TR("Base de Datos - ClockGears Engine"));
 	// Bug 4c / PROBLEMA A: Redimensionable, recuerda su tamaño y ajusta los 3 paneles sin desbordar
 	set_wrap_controls(false);
@@ -4251,6 +4361,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	anim_loop_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
 	settings_row->add_child(anim_loop_chk);
 
+	anim_random_order_chk = memnew(CheckBox(CG_DB_TR("Orden aleatorio")));
+	anim_random_order_chk->set_pressed(false);
+	anim_random_order_chk->set_tooltip_text(CG_DB_TR("Elige el siguiente frame al azar en vez de seguir la tira"));
+	anim_random_order_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
+	settings_row->add_child(anim_random_order_chk);
+
 	btn_anim_play = memnew(Button(CG_DB_TR("▶ Probar")));
 	btn_anim_play->set_custom_minimum_size(Size2(75 * EDSCALE, 0));
 	btn_anim_play->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_play_pressed));
@@ -4275,7 +4391,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	frames_bar->add_child(btn_open_sheet_importer);
 
 	frames_strip_scroll = memnew(ScrollContainer);
-	frames_strip_scroll->set_custom_minimum_size(Size2(0, 92 * EDSCALE));
+	frames_strip_scroll->set_custom_minimum_size(Size2(0, 165 * EDSCALE));
 	frames_strip_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	frames_strip_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	frames_strip_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
@@ -4322,6 +4438,11 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	anim_preview_atlas.instantiate();
 	anim_preview_rect->set_texture(anim_preview_atlas);
 	prev_panel->add_child(anim_preview_rect);
+
+	// ==========================================
+	// BLOQUE 5: ANIMACIONES DE COMBATE (Idle, Ataque, Daño, Muerte, Defender, Victoria)
+	// ==========================================
+	_setup_combat_anims_ui();
 
 	// ==========================================
 	// VENTANA: "AÑADIR FRAMES DESDE SPRITESHEET" (Modal estilo Godot)
@@ -4997,9 +5118,11 @@ void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
 		updating_ui = false;
 		if (anim_fps_spin) anim_fps_spin->set_value(6);
 		if (anim_loop_chk) anim_loop_chk->set_pressed(true);
+		if (anim_random_order_chk) anim_random_order_chk->set_pressed(false);
 		_refresh_frames_timeline();
 		_refresh_anim_preview();
 	}
+	_refresh_combat_anims_dropdowns();
 }
 
 void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
@@ -5016,6 +5139,7 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	const ClockGearsSpriteAnimation &a = current_sprite_data.animations[anim_name];
 	if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : 6.0f);
 	if (anim_loop_chk) anim_loop_chk->set_pressed(a.loop);
+	if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
 	if (anim_item_list) {
 		for (int i = 0; i < anim_item_list->get_item_count(); i++) {
 			if (anim_item_list->get_item_text(i) == anim_name) {
@@ -5445,7 +5569,7 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 	for (int s = 0; s < total_frames; s++) {
 		ClockGearsAnimationFrame frame = a.get_frame(s, 0, 0);
 		PanelContainer *pnl = memnew(PanelContainer);
-		pnl->set_custom_minimum_size(Size2(54 * EDSCALE, 72 * EDSCALE));
+		pnl->set_custom_minimum_size(Size2(64 * EDSCALE, 145 * EDSCALE));
 
 		Ref<StyleBoxFlat> sb;
 		sb.instantiate();
@@ -5498,6 +5622,75 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 		Button *btn_x = memnew(Button("x"));
 		btn_x->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_frame_remove).bind(s));
 		btn_row->add_child(btn_x);
+
+		// Duración individual del frame
+		HBoxContainer *dur_hb = memnew(HBoxContainer);
+		dur_hb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+		dur_hb->add_theme_constant_override("separation", 2);
+		vb->add_child(dur_hb);
+
+		Label *lbl_d = memnew(Label("s:"));
+		lbl_d->add_theme_font_size_override("font_size", 9);
+		dur_hb->add_child(lbl_d);
+
+		SpinBox *sp_dur = memnew(SpinBox);
+		sp_dur->set_min(0.01);
+		sp_dur->set_max(60.0);
+		sp_dur->set_step(0.01);
+		sp_dur->set_custom_minimum_size(Size2(54 * EDSCALE, 0));
+		float cur_dur = frame.duration > 0.001f ? frame.duration : (a.fps > 0 ? 1.0f / a.fps : 0.16f);
+		sp_dur->set_value(cur_dur);
+		_bind_numeric_spinbox(sp_dur);
+		sp_dur->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_frame_duration_changed).bind(s));
+		dur_hb->add_child(sp_dur);
+
+		// Opción Aleatorio por frame
+		CheckBox *chk_rnd = memnew(CheckBox);
+		chk_rnd->set_text(CG_DB_TR("🎲"));
+		chk_rnd->set_tooltip_text(CG_DB_TR("Duración aleatoria entre Mín y Máx"));
+		chk_rnd->set_pressed(frame.is_random_duration);
+		chk_rnd->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_frame_random_toggled).bind(s));
+		vb->add_child(chk_rnd);
+
+		if (frame.is_random_duration) {
+			HBoxContainer *min_hb = memnew(HBoxContainer);
+			min_hb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+			min_hb->add_theme_constant_override("separation", 2);
+			vb->add_child(min_hb);
+
+			Label *lbl_min = memnew(Label("Mín:"));
+			lbl_min->add_theme_font_size_override("font_size", 8);
+			min_hb->add_child(lbl_min);
+
+			SpinBox *sp_min = memnew(SpinBox);
+			sp_min->set_min(0.01);
+			sp_min->set_max(60.0);
+			sp_min->set_step(0.01);
+			sp_min->set_custom_minimum_size(Size2(48 * EDSCALE, 0));
+			sp_min->set_value(frame.duration_min > 0.001f ? frame.duration_min : cur_dur);
+			_bind_numeric_spinbox(sp_min);
+			sp_min->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_frame_min_dur_changed).bind(s));
+			min_hb->add_child(sp_min);
+
+			HBoxContainer *max_hb = memnew(HBoxContainer);
+			max_hb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+			max_hb->add_theme_constant_override("separation", 2);
+			vb->add_child(max_hb);
+
+			Label *lbl_max = memnew(Label("Máx:"));
+			lbl_max->add_theme_font_size_override("font_size", 8);
+			max_hb->add_child(lbl_max);
+
+			SpinBox *sp_max = memnew(SpinBox);
+			sp_max->set_min(0.01);
+			sp_max->set_max(60.0);
+			sp_max->set_step(0.01);
+			sp_max->set_custom_minimum_size(Size2(48 * EDSCALE, 0));
+			sp_max->set_value(frame.duration_max > 0.001f ? frame.duration_max : cur_dur * 1.5f);
+			_bind_numeric_spinbox(sp_max);
+			sp_max->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_frame_max_dur_changed).bind(s));
+			max_hb->add_child(sp_max);
+		}
 
 		frames_strip_hbox->add_child(pnl);
 	}
@@ -5597,12 +5790,21 @@ void ClockGearsDatabaseDialog::_on_anim_playback_settings_changed() {
 	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_anim_name];
 	if (anim_fps_spin) a.fps = float(anim_fps_spin->get_value());
 	if (anim_loop_chk) a.loop = anim_loop_chk->is_pressed();
+	if (anim_random_order_chk) a.random_order = anim_random_order_chk->is_pressed();
 	_on_param_changed();
 }
 
 void ClockGearsDatabaseDialog::_on_anim_play_pressed() {
 	anim_preview_playing = !anim_preview_playing;
 	anim_preview_timer = 0.0f;
+	anim_preview_frame_idx = 0;
+	String cur_name = _get_active_anim_name();
+	if (current_sprite_data.animations.has(cur_name)) {
+		const ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
+		if (a.get_frame_count() > 0) {
+			anim_preview_frame_target_dur = a.get_frame(0, 0, 0).get_duration();
+		}
+	}
 	if (btn_anim_play) {
 		btn_anim_play->set_text(anim_preview_playing ? CG_DB_TR("⏹ Detener") : CG_DB_TR("▶ Probar"));
 	}
@@ -5616,22 +5818,36 @@ void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 	int total = a.get_frame_count();
 	if (total == 0) return;
 
-	float speed = MAX(0.5f, a.fps);
-	float frame_duration = 1.0f / speed;
-	anim_preview_timer += p_delta;
-	int step = int(anim_preview_timer / frame_duration);
-
-	if (a.loop) {
-		step = step % total;
-	} else if (step >= total) {
-		step = total - 1;
-		anim_preview_playing = false;
-		if (btn_anim_play) {
-			btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
-		}
+	if (anim_preview_frame_target_dur <= 0.001f) {
+		float speed = MAX(0.5f, a.fps);
+		anim_preview_frame_target_dur = 1.0f / speed;
 	}
 
-	ClockGearsAnimationFrame f = a.get_frame(step, 0, 0);
+	anim_preview_timer += p_delta;
+	while (anim_preview_timer >= anim_preview_frame_target_dur && anim_preview_playing) {
+		anim_preview_timer -= anim_preview_frame_target_dur;
+		if (a.random_order && total > 1) {
+			anim_preview_frame_idx = Math::rand() % total;
+		} else {
+			anim_preview_frame_idx++;
+			if (anim_preview_frame_idx >= total) {
+				if (a.loop) {
+					anim_preview_frame_idx = 0;
+				} else {
+					anim_preview_frame_idx = total - 1;
+					anim_preview_playing = false;
+					if (btn_anim_play) {
+						btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
+					}
+					break;
+				}
+			}
+		}
+		ClockGearsAnimationFrame next_f = a.get_frame(anim_preview_frame_idx, 0, 0);
+		anim_preview_frame_target_dur = next_f.get_duration();
+	}
+
+	ClockGearsAnimationFrame f = a.get_frame(anim_preview_frame_idx, 0, 0);
 	Ref<Texture2D> tex = _load_texture_from_path(f.sheet_path);
 	if (tex.is_valid()) {
 		if (anim_preview_atlas.is_null()) anim_preview_atlas.instantiate();
@@ -5642,5 +5858,162 @@ void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 		if (anim_preview_rect) {
 			anim_preview_rect->set_texture(anim_preview_atlas);
 		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_setup_combat_anims_ui() {
+	combat_anims_box = memnew(VBoxContainer);
+	combat_anims_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	combat_anims_box->add_theme_constant_override("separation", 6);
+	sprite_anim_editor_box->add_child(combat_anims_box);
+
+	combat_anims_box->add_child(memnew(HSeparator));
+	Label *lbl_title = memnew(Label(CG_DB_TR("5. Animaciones de combate:")));
+	lbl_title->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
+	combat_anims_box->add_child(lbl_title);
+
+	GridContainer *ca_grid = memnew(GridContainer);
+	ca_grid->set_columns(2);
+	ca_grid->add_theme_constant_override("h_separation", 8);
+	ca_grid->add_theme_constant_override("v_separation", 6);
+	combat_anims_box->add_child(ca_grid);
+
+	// 1. Reposo (Idle)
+	ca_grid->add_child(memnew(Label(CG_DB_TR("Reposo (Idle):"))));
+	opt_anim_idle = memnew(OptionButton);
+	opt_anim_idle->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	opt_anim_idle->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_anim_selected));
+	ca_grid->add_child(opt_anim_idle);
+
+	// 2. Ataque
+	ca_grid->add_child(memnew(Label(CG_DB_TR("Ataque:"))));
+	opt_anim_attack = memnew(OptionButton);
+	opt_anim_attack->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	opt_anim_attack->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_anim_selected));
+	ca_grid->add_child(opt_anim_attack);
+
+	// 3. Daño recibido
+	ca_grid->add_child(memnew(Label(CG_DB_TR("Daño recibido:"))));
+	opt_anim_damage = memnew(OptionButton);
+	opt_anim_damage->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	opt_anim_damage->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_anim_selected));
+	ca_grid->add_child(opt_anim_damage);
+
+	// 4. Muerte
+	ca_grid->add_child(memnew(Label(CG_DB_TR("Muerte:"))));
+	opt_anim_death = memnew(OptionButton);
+	opt_anim_death->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	opt_anim_death->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_anim_selected));
+	ca_grid->add_child(opt_anim_death);
+
+	// 5. Defender
+	ca_grid->add_child(memnew(Label(CG_DB_TR("Defender:"))));
+	opt_anim_defend = memnew(OptionButton);
+	opt_anim_defend->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	opt_anim_defend->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_anim_selected));
+	ca_grid->add_child(opt_anim_defend);
+
+	// 6. Victoria (solo Actores)
+	lbl_anim_victory = memnew(Label(CG_DB_TR("Victoria:")));
+	ca_grid->add_child(lbl_anim_victory);
+	opt_anim_victory = memnew(OptionButton);
+	opt_anim_victory->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	opt_anim_victory->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_anim_selected));
+	ca_grid->add_child(opt_anim_victory);
+}
+
+void ClockGearsDatabaseDialog::_refresh_combat_anims_dropdowns() {
+	if (!opt_anim_idle || !opt_anim_attack || !opt_anim_damage || !opt_anim_death || !opt_anim_defend) {
+		return;
+	}
+
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	Dictionary d;
+	if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[current_category].size()) {
+		d = category_data[current_category][sel[0]];
+	}
+	Dictionary ca = d.get("combat_animations", Dictionary());
+	Dictionary tt = d.get("trigger_table", Dictionary());
+
+	OptionButton *opts[] = { opt_anim_idle, opt_anim_attack, opt_anim_damage, opt_anim_death, opt_anim_defend, opt_anim_victory };
+	const char *keys[] = { "idle", "attack", "damage", "death", "defend", "victory" };
+	int triggers[] = { ANIM_TRIGGER_IDLE, ANIM_TRIGGER_ATTACK, ANIM_TRIGGER_DAMAGE, ANIM_TRIGGER_DEATH, ANIM_TRIGGER_DEFEND, ANIM_TRIGGER_VICTORY };
+
+	for (int i = 0; i < 6; i++) {
+		if (!opts[i]) continue;
+		opts[i]->clear();
+		opts[i]->add_item(CG_DB_TR("(ninguna - frame 0)"), 0);
+
+		int item_idx = 1;
+		int to_select = 0;
+		String target_anim = String(ca.get(keys[i], "")).strip_edges();
+		if (target_anim.is_empty() && tt.has(itos(triggers[i]))) {
+			target_anim = String(tt.get(itos(triggers[i]), "")).strip_edges();
+		}
+
+		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
+			opts[i]->add_item(E.key, item_idx);
+			if (!target_anim.is_empty() && E.key.to_lower() == target_anim.to_lower()) {
+				to_select = item_idx;
+			}
+			item_idx++;
+		}
+		opts[i]->select(to_select);
+	}
+
+	if (lbl_anim_victory && opt_anim_victory) {
+		bool is_act = (current_category == CAT_ACTORS);
+		lbl_anim_victory->set_visible(is_act);
+		opt_anim_victory->set_visible(is_act);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_combat_anim_selected(int p_unused) {
+	if (updating_ui) return;
+	_on_param_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_frame_duration_changed(double p_val, int p_idx) {
+	if (updating_ui) return;
+	String cur_name = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_name)) return;
+	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
+	if (p_idx >= 0 && p_idx < a.frames_data.size()) {
+		a.frames_data.write[p_idx].duration = (float)p_val;
+		_on_param_changed();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_frame_random_toggled(bool p_pressed, int p_idx) {
+	if (updating_ui) return;
+	String cur_name = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_name)) return;
+	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
+	if (p_idx >= 0 && p_idx < a.frames_data.size()) {
+		a.frames_data.write[p_idx].is_random_duration = p_pressed;
+		_on_param_changed();
+		callable_mp(this, &ClockGearsDatabaseDialog::_refresh_frames_timeline).call_deferred();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_frame_min_dur_changed(double p_val, int p_idx) {
+	if (updating_ui) return;
+	String cur_name = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_name)) return;
+	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
+	if (p_idx >= 0 && p_idx < a.frames_data.size()) {
+		a.frames_data.write[p_idx].duration_min = (float)p_val;
+		_on_param_changed();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_frame_max_dur_changed(double p_val, int p_idx) {
+	if (updating_ui) return;
+	String cur_name = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_name)) return;
+	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
+	if (p_idx >= 0 && p_idx < a.frames_data.size()) {
+		a.frames_data.write[p_idx].duration_max = (float)p_val;
+		_on_param_changed();
 	}
 }

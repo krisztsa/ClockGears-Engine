@@ -32,20 +32,24 @@ void ClockGearsAnimationTriggerTable::_bind_methods() {
 	BIND_CONSTANT(ANIM_TRIGGER_MAP_WALK);
 	BIND_CONSTANT(ANIM_TRIGGER_MAP_TALK);
 	BIND_CONSTANT(ANIM_TRIGGER_CUSTOM);
+	BIND_CONSTANT(ANIM_TRIGGER_IDLE);
+	BIND_CONSTANT(ANIM_TRIGGER_DEFEND);
 }
 
 int ClockGearsAnimationTriggerTable::string_to_trigger(const String &p_name) {
 	String n = p_name.to_lower().strip_edges();
-	if (n == "attack" || n == "atacar") return ANIM_TRIGGER_ATTACK;
+	if (n == "attack" || n == "atacar" || n == "ataque") return ANIM_TRIGGER_ATTACK;
 	if (n == "skill" || n == "habilidad") return ANIM_TRIGGER_SKILL;
 	if (n == "item" || n == "objeto") return ANIM_TRIGGER_ITEM;
-	if (n == "damage" || n == "dano" || n == "daño") return ANIM_TRIGGER_DAMAGE;
+	if (n == "damage" || n == "dano" || n == "daño" || n == "daño recibido" || n == "dano recibido" || n == "hurt") return ANIM_TRIGGER_DAMAGE;
 	if (n == "state_add" || n == "estado") return ANIM_TRIGGER_STATE_ADD;
 	if (n == "death" || n == "morir" || n == "muerte") return ANIM_TRIGGER_DEATH;
 	if (n == "turn_start" || n == "turno") return ANIM_TRIGGER_TURN_START;
 	if (n == "victory" || n == "victoria") return ANIM_TRIGGER_VICTORY;
 	if (n == "map_walk" || n == "caminar") return ANIM_TRIGGER_MAP_WALK;
 	if (n == "map_talk" || n == "hablar") return ANIM_TRIGGER_MAP_TALK;
+	if (n == "idle" || n == "reposo") return ANIM_TRIGGER_IDLE;
+	if (n == "defend" || n == "defender" || n == "defensa") return ANIM_TRIGGER_DEFEND;
 	if (n == "custom") return ANIM_TRIGGER_CUSTOM;
 	return ANIM_TRIGGER_NONE;
 }
@@ -62,6 +66,8 @@ String ClockGearsAnimationTriggerTable::trigger_to_string(int p_trigger) {
 		case ANIM_TRIGGER_VICTORY: return "victory";
 		case ANIM_TRIGGER_MAP_WALK: return "map_walk";
 		case ANIM_TRIGGER_MAP_TALK: return "map_talk";
+		case ANIM_TRIGGER_IDLE: return "idle";
+		case ANIM_TRIGGER_DEFEND: return "defend";
 		case ANIM_TRIGGER_CUSTOM: return "custom";
 		default: return "none";
 	}

@@ -1,4 +1,5 @@
 #include "clockgears_event_editor_dialog.h"
+#include "clockgears_choice_utils.h"
 #include "clockgears_editor_plugin.h"
 #include "core/clockgears_data_manager.h"
 #include "core/io/dir_access.h"
@@ -229,26 +230,92 @@ void ClockGearsEventEditorDialog::_set_active_page_commands(const Array &p_cmds)
 	}
 }
 
+int ClockGearsEventEditorDialog::_get_selected_command_index() const {
+	if (!command_tree) return -1;
+	TreeItem *sel = command_tree->get_selected();
+	if (!sel) return -1;
+	Variant meta = sel->get_metadata(0);
+	if (meta.get_type() == Variant::DICTIONARY) {
+		Dictionary d = meta;
+		if (bool(d.get("is_placeholder", false))) {
+			return -1;
+		}
+		return int(d.get("index", -1));
+	} else if (meta.get_type() == Variant::INT) {
+		return int(meta);
+	}
+	return -1;
+}
+
+int ClockGearsEventEditorDialog::_get_insertion_index() const {
+	if (!command_tree) return -1;
+	TreeItem *sel = command_tree->get_selected();
+	if (!sel) return -1;
+	Array cmds = _get_active_page_commands();
+	Variant meta = sel->get_metadata(0);
+	if (meta.get_type() == Variant::DICTIONARY) {
+		Dictionary d = meta;
+		if (bool(d.get("is_placeholder", false))) {
+			return int(d.get("insert_index", cmds.size()));
+		}
+		int idx = int(d.get("index", -1));
+		if (idx >= 0 && idx < cmds.size()) {
+			return idx + 1;
+		}
+	} else if (meta.get_type() == Variant::INT) {
+		int idx = int(meta);
+		if (idx >= 0 && idx < cmds.size()) {
+			return idx + 1;
+		}
+	}
+	return cmds.size();
+}
+
+void ClockGearsEventEditorDialog::_select_command_by_index(int p_idx) {
+	if (!command_tree) return;
+	TreeItem *root = command_tree->get_root();
+	if (!root) return;
+	TreeItem *it = root->get_first_child();
+	while (it) {
+		Variant meta = it->get_metadata(0);
+		if (meta.get_type() == Variant::DICTIONARY) {
+			Dictionary d = meta;
+			if (!bool(d.get("is_placeholder", false)) && int(d.get("index", -1)) == p_idx) {
+				command_tree->set_selected(it);
+				command_tree->scroll_to_item(it);
+				break;
+			}
+		} else if (meta.get_type() == Variant::INT && int(meta) == p_idx) {
+			command_tree->set_selected(it);
+			command_tree->scroll_to_item(it);
+			break;
+		}
+		it = it->get_next();
+	}
+}
+
 void ClockGearsEventEditorDialog::_append_command_to_active_page(const Dictionary &p_cmd) {
 	Array cmds = _get_active_page_commands();
+	int new_sel_idx = -1;
 	if (editing_command_index >= 0 && editing_command_index < cmds.size()) {
 		cmds[editing_command_index] = p_cmd;
+		new_sel_idx = editing_command_index;
 		editing_command_index = -1;
 	} else {
-		TreeItem *sel = command_tree ? command_tree->get_selected() : nullptr;
-		if (sel) {
-			int sel_idx = int(sel->get_metadata(0));
-			if (sel_idx >= 0 && sel_idx < cmds.size()) {
-				cmds.insert(sel_idx + 1, p_cmd);
-			} else {
-				cmds.push_back(p_cmd);
-			}
+		int insert_idx = _get_insertion_index();
+		if (insert_idx >= 0 && insert_idx <= cmds.size()) {
+			cmds.insert(insert_idx, p_cmd);
+			new_sel_idx = insert_idx;
 		} else {
 			cmds.push_back(p_cmd);
+			new_sel_idx = cmds.size() - 1;
 		}
 	}
 	_set_active_page_commands(cmds);
 	_refresh_command_list();
+	if (new_sel_idx >= 0) {
+		_select_command_by_index(new_sel_idx);
+	}
 }
 
 void ClockGearsEventEditorDialog::_update_graphic_preview(const String &p_path) {
@@ -437,18 +504,20 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 	if (!command_tree) {
 		return;
 	}
-	TreeItem *selected = command_tree->get_selected();
-	if (!selected) {
-		_on_add_command_pressed();
-		return;
-	}
-	int idx = int(selected->get_metadata(0));
+	int idx = _get_selected_command_index();
 	Array cmds = _get_active_page_commands();
 	if (idx < 0 || idx >= cmds.size()) {
 		_on_add_command_pressed();
 		return;
 	}
 	Dictionary d = cmds[idx];
+	if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d) || ClockGearsChoiceUtils::is_branch_end(d)) {
+		int b_start = ClockGearsChoiceUtils::find_block_start(cmds, idx);
+		if (b_start >= 0) {
+			idx = b_start;
+			d = cmds[idx];
+		}
+	}
 	editing_command_index = idx;
 	String type = d.get("type", "");
 
@@ -459,14 +528,23 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 		if (msg_pos_opt) msg_pos_opt->select(CLAMP(int(d.get("position", d.get("pos", 0))), 0, msg_pos_opt->get_item_count() - 1));
 		_update_msg_live_preview();
 		dlg_msg->popup_centered(Size2(640, 520) * EDSCALE);
-	} else if (type == "choices" && dlg_choices) {
+	} else if ((type == "choices" || ClockGearsChoiceUtils::is_choices_start(d)) && dlg_choices) {
 		if (choice_1_edit) choice_1_edit->set_text(d.get("c1", ""));
 		if (choice_2_edit) choice_2_edit->set_text(d.get("c2", ""));
 		if (choice_3_edit) choice_3_edit->set_text(d.get("c3", ""));
 		if (choice_4_edit) choice_4_edit->set_text(d.get("c4", ""));
 		if (choice_5_edit) choice_5_edit->set_text(d.get("c5", ""));
 		if (choice_6_edit) choice_6_edit->set_text(d.get("c6", ""));
-		if (choice_cancel_opt) choice_cancel_opt->select(CLAMP(int(d.get("cancel_opt", d.get("cancel", 0))), 0, choice_cancel_opt->get_item_count() - 1));
+		_update_choice_cancel_options();
+		int c_opt = int(d.get("cancel_opt", d.get("cancel_type", 0)));
+		if (choice_cancel_opt) {
+			for (int opt_i = 0; opt_i < choice_cancel_opt->get_item_count(); opt_i++) {
+				if (int(choice_cancel_opt->get_item_metadata(opt_i)) == c_opt) {
+					choice_cancel_opt->select(opt_i);
+					break;
+				}
+			}
+		}
 		dlg_choices->popup_centered(Size2(420, 360) * EDSCALE);
 	} else if (type == "number_input" && dlg_number_input) {
 		if (num_input_var_spin) num_input_var_spin->set_value(int(d.get("variable", 1)));
@@ -720,53 +798,41 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 
 void ClockGearsEventEditorDialog::_on_move_command_up() {
 	if (!command_tree) return;
-	TreeItem *selected = command_tree->get_selected();
-	if (!selected) return;
-	int idx = int(selected->get_metadata(0));
+	int idx = _get_selected_command_index();
 	Array cmds = _get_active_page_commands();
-	if (idx > 0 && idx < cmds.size()) {
-		Variant tmp = cmds[idx];
-		cmds[idx] = cmds[idx - 1];
-		cmds[idx - 1] = tmp;
+	if (idx < 0 || idx >= cmds.size()) return;
+
+	Dictionary d = cmds[idx];
+	if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d) || ClockGearsChoiceUtils::is_branch_end(d)) {
+		int b_start = ClockGearsChoiceUtils::find_block_start(cmds, idx);
+		if (b_start >= 0) idx = b_start;
+	}
+
+	int new_idx = ClockGearsChoiceUtils::move_up(cmds, idx);
+	if (new_idx != idx) {
 		_set_active_page_commands(cmds);
 		_refresh_command_list();
-		TreeItem *root = command_tree->get_root();
-		if (root) {
-			TreeItem *it = root->get_first_child();
-			while (it) {
-				if (int(it->get_metadata(0)) == idx - 1) {
-					command_tree->set_selected(it);
-					break;
-				}
-				it = it->get_next();
-			}
-		}
+		_select_command_by_index(new_idx);
 	}
 }
 
 void ClockGearsEventEditorDialog::_on_move_command_down() {
 	if (!command_tree) return;
-	TreeItem *selected = command_tree->get_selected();
-	if (!selected) return;
-	int idx = int(selected->get_metadata(0));
+	int idx = _get_selected_command_index();
 	Array cmds = _get_active_page_commands();
-	if (idx >= 0 && idx < cmds.size() - 1) {
-		Variant tmp = cmds[idx];
-		cmds[idx] = cmds[idx + 1];
-		cmds[idx + 1] = tmp;
+	if (idx < 0 || idx >= cmds.size()) return;
+
+	Dictionary d = cmds[idx];
+	if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d) || ClockGearsChoiceUtils::is_branch_end(d)) {
+		int b_start = ClockGearsChoiceUtils::find_block_start(cmds, idx);
+		if (b_start >= 0) idx = b_start;
+	}
+
+	int new_idx = ClockGearsChoiceUtils::move_down(cmds, idx);
+	if (new_idx != idx) {
 		_set_active_page_commands(cmds);
 		_refresh_command_list();
-		TreeItem *root = command_tree->get_root();
-		if (root) {
-			TreeItem *it = root->get_first_child();
-			while (it) {
-				if (int(it->get_metadata(0)) == idx + 1) {
-					command_tree->set_selected(it);
-					break;
-				}
-				it = it->get_next();
-			}
-		}
+		_select_command_by_index(new_idx);
 	}
 }
 
@@ -781,12 +847,14 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 			break;
 		case CMD_SHOW_CHOICES:
 			if (dlg_choices) {
+				editing_command_index = -1;
 				if (choice_1_edit) choice_1_edit->set_text("");
 				if (choice_2_edit) choice_2_edit->set_text("");
 				if (choice_3_edit) choice_3_edit->set_text("");
 				if (choice_4_edit) choice_4_edit->set_text("");
 				if (choice_5_edit) choice_5_edit->set_text("");
 				if (choice_6_edit) choice_6_edit->set_text("");
+				_update_choice_cancel_options();
 				dlg_choices->popup_centered(Size2(420, 360) * EDSCALE);
 			}
 			break;
@@ -944,43 +1012,175 @@ void ClockGearsEventEditorDialog::_on_confirm_msg() {
 	_append_command_to_active_page(cmd);
 }
 
+void ClockGearsEventEditorDialog::_on_choice_line_edit_changed(const String &p_text) {
+	_update_choice_cancel_options();
+}
+
+void ClockGearsEventEditorDialog::_update_choice_cancel_options() {
+	if (!choice_cancel_opt) return;
+	int current_sel_meta = 0;
+	if (choice_cancel_opt->get_selected() >= 0 && choice_cancel_opt->get_item_count() > 0) {
+		current_sel_meta = int(choice_cancel_opt->get_selected_metadata());
+	}
+
+	choice_cancel_opt->clear();
+	choice_cancel_opt->add_item(CG_TR("No permitir"));
+	choice_cancel_opt->set_item_metadata(choice_cancel_opt->get_item_count() - 1, 0);
+
+	choice_cancel_opt->add_item(CG_TR("Rama"));
+	choice_cancel_opt->set_item_metadata(choice_cancel_opt->get_item_count() - 1, -1);
+
+	LineEdit *edits[6] = { choice_1_edit, choice_2_edit, choice_3_edit, choice_4_edit, choice_5_edit, choice_6_edit };
+	for (int i = 0; i < 6; i++) {
+		String txt = edits[i] ? edits[i]->get_text().strip_edges() : "";
+		if (!txt.is_empty()) {
+			String label = vformat(CG_TR("Opción %d: %s"), i + 1, txt);
+			choice_cancel_opt->add_item(label);
+			choice_cancel_opt->set_item_metadata(choice_cancel_opt->get_item_count() - 1, i + 1);
+		}
+	}
+
+	int found_idx = 0;
+	for (int i = 0; i < choice_cancel_opt->get_item_count(); i++) {
+		if (int(choice_cancel_opt->get_item_metadata(i)) == current_sel_meta) {
+			found_idx = i;
+			break;
+		}
+	}
+	choice_cancel_opt->select(found_idx);
+}
+
 void ClockGearsEventEditorDialog::_on_confirm_choices() {
 	if (!target_event) return;
-	bool is_new = (editing_command_index < 0);
 	Dictionary cmd;
 	cmd["type"] = "choices";
-	cmd["c1"] = choice_1_edit->get_text();
-	cmd["c2"] = choice_2_edit->get_text();
-	cmd["c3"] = choice_3_edit->get_text();
+	cmd["code"] = CMD_SHOW_CHOICES;
+	cmd["c1"] = choice_1_edit ? choice_1_edit->get_text() : "";
+	cmd["c2"] = choice_2_edit ? choice_2_edit->get_text() : "";
+	cmd["c3"] = choice_3_edit ? choice_3_edit->get_text() : "";
 	cmd["c4"] = choice_4_edit ? choice_4_edit->get_text() : "";
 	cmd["c5"] = choice_5_edit ? choice_5_edit->get_text() : "";
 	cmd["c6"] = choice_6_edit ? choice_6_edit->get_text() : "";
-	int cancel_opt = choice_cancel_opt ? choice_cancel_opt->get_selected() : 0;
-	cmd["cancel_opt"] = cancel_opt;
-	_append_command_to_active_page(cmd);
 
-	if (is_new) {
-		int opt_idx = 0;
+	int cancel_opt = 0;
+	if (choice_cancel_opt && choice_cancel_opt->get_selected() >= 0) {
+		cancel_opt = int(choice_cancel_opt->get_selected_metadata());
+	}
+	cmd["cancel_opt"] = cancel_opt;
+	cmd["cancel_type"] = cancel_opt;
+
+	Array cmds = _get_active_page_commands();
+
+	if (editing_command_index >= 0 && editing_command_index < cmds.size()) {
+		int start_idx = editing_command_index;
+		int end_idx = ClockGearsChoiceUtils::find_block_end(cmds, start_idx);
+		if (end_idx < 0) {
+			end_idx = start_idx;
+		}
+
+		HashMap<int, Array> existing_branches = ClockGearsChoiceUtils::extract_branches(cmds, start_idx);
+
+		Vector<String> active_opts;
 		for (int c = 1; c <= 6; c++) {
 			String key = "c" + itos(c);
 			String txt = cmd.get(key, "");
 			if (!txt.strip_edges().is_empty()) {
-				Dictionary b;
-				b["type"] = "when_choice";
-				b["choice"] = opt_idx++;
-				b["text"] = txt;
-				_append_command_to_active_page(b);
+				active_opts.push_back(txt);
 			}
 		}
-		if (cancel_opt == 2) {
-			Dictionary bcanc;
-			bcanc["type"] = "when_cancel";
-			bcanc["choice"] = -1;
-			_append_command_to_active_page(bcanc);
+
+		bool losing_commands = false;
+		for (const KeyValue<int, Array> &E : existing_branches) {
+			int b_idx = E.key;
+			if (E.value.is_empty()) continue;
+
+			if (b_idx == -1) {
+				if (cancel_opt != -1) {
+					losing_commands = true;
+					break;
+				}
+			} else {
+				if (b_idx >= active_opts.size()) {
+					losing_commands = true;
+					break;
+				}
+			}
 		}
-		Dictionary bend;
-		bend["type"] = "branch_end_choice";
-		_append_command_to_active_page(bend);
+
+		if (losing_commands) {
+			pending_rebuild_choice_cmd = cmd;
+			pending_rebuild_branches = existing_branches;
+			pending_rebuild_choice_idx = start_idx;
+			if (dlg_confirm_remove_choice_branch) {
+				dlg_confirm_remove_choice_branch->popup_centered();
+			}
+			return;
+		}
+
+		Array new_block = ClockGearsChoiceUtils::rebuild_choice_block(cmd, existing_branches);
+		int old_count = end_idx - start_idx + 1;
+		for (int i = 0; i < old_count; i++) {
+			cmds.remove_at(start_idx);
+		}
+		for (int i = 0; i < new_block.size(); i++) {
+			cmds.insert(start_idx + i, new_block[i]);
+		}
+		editing_command_index = -1;
+		_set_active_page_commands(cmds);
+		_refresh_command_list();
+		_select_command_by_index(start_idx);
+	} else {
+		HashMap<int, Array> empty_branches;
+		Array new_block = ClockGearsChoiceUtils::rebuild_choice_block(cmd, empty_branches);
+		int insert_idx = _get_insertion_index();
+		if (insert_idx >= 0 && insert_idx <= cmds.size()) {
+			for (int i = 0; i < new_block.size(); i++) {
+				cmds.insert(insert_idx + i, new_block[i]);
+			}
+		} else {
+			insert_idx = cmds.size();
+			for (int i = 0; i < new_block.size(); i++) {
+				cmds.push_back(new_block[i]);
+			}
+		}
+		_set_active_page_commands(cmds);
+		_refresh_command_list();
+		_select_command_by_index(insert_idx);
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_remove_choice_branch() {
+	if (pending_rebuild_choice_idx < 0) return;
+	Array cmds = _get_active_page_commands();
+	int start_idx = pending_rebuild_choice_idx;
+	int end_idx = ClockGearsChoiceUtils::find_block_end(cmds, start_idx);
+	if (end_idx < 0) end_idx = start_idx;
+
+	Array new_block = ClockGearsChoiceUtils::rebuild_choice_block(pending_rebuild_choice_cmd, pending_rebuild_branches);
+	int old_count = end_idx - start_idx + 1;
+	for (int i = 0; i < old_count; i++) {
+		cmds.remove_at(start_idx);
+	}
+	for (int i = 0; i < new_block.size(); i++) {
+		cmds.insert(start_idx + i, new_block[i]);
+	}
+	editing_command_index = -1;
+	pending_rebuild_choice_idx = -1;
+	_set_active_page_commands(cmds);
+	_refresh_command_list();
+	_select_command_by_index(start_idx);
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_delete_choice_block() {
+	if (pending_delete_choice_idx < 0) return;
+	Array cmds = _get_active_page_commands();
+	ClockGearsChoiceUtils::delete_choice_block(cmds, pending_delete_choice_idx);
+	int sel_idx = pending_delete_choice_idx;
+	pending_delete_choice_idx = -1;
+	_set_active_page_commands(cmds);
+	_refresh_command_list();
+	if (sel_idx < cmds.size()) {
+		_select_command_by_index(sel_idx);
 	}
 }
 
@@ -1844,32 +2044,53 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_choices->add_child(cv);
 	cv->add_child(memnew(Label(CG_TR("Opción 1:"))));
 	choice_1_edit = memnew(LineEdit);
+	choice_1_edit->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_choice_line_edit_changed));
 	cv->add_child(choice_1_edit);
 	cv->add_child(memnew(Label(CG_TR("Opción 2:"))));
 	choice_2_edit = memnew(LineEdit);
+	choice_2_edit->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_choice_line_edit_changed));
 	cv->add_child(choice_2_edit);
 	cv->add_child(memnew(Label(CG_TR("Opción 3 (Opcional):"))));
 	choice_3_edit = memnew(LineEdit);
+	choice_3_edit->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_choice_line_edit_changed));
 	cv->add_child(choice_3_edit);
 	cv->add_child(memnew(Label(CG_TR("Opción 4 (Opcional):"))));
 	choice_4_edit = memnew(LineEdit);
+	choice_4_edit->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_choice_line_edit_changed));
 	cv->add_child(choice_4_edit);
 	cv->add_child(memnew(Label(CG_TR("Opción 5 (Opcional):"))));
 	choice_5_edit = memnew(LineEdit);
+	choice_5_edit->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_choice_line_edit_changed));
 	cv->add_child(choice_5_edit);
 	cv->add_child(memnew(Label(CG_TR("Opción 6 (Opcional):"))));
 	choice_6_edit = memnew(LineEdit);
+	choice_6_edit->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_choice_line_edit_changed));
 	cv->add_child(choice_6_edit);
 	HBoxContainer *ccanc = memnew(HBoxContainer);
 	ccanc->add_child(memnew(Label(CG_TR("Al Cancelar:"))));
 	choice_cancel_opt = memnew(OptionButton);
-	choice_cancel_opt->add_item(CG_TR("Opción 2"), 0);
-	choice_cancel_opt->add_item(CG_TR("Prohibir"), 1);
-	choice_cancel_opt->add_item(CG_TR("Rama Propia"), 2);
 	ccanc->add_child(choice_cancel_opt);
 	cv->add_child(ccanc);
+	_update_choice_cancel_options();
+
 	dlg_choices->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_choices));
 	add_child(dlg_choices);
+
+	dlg_confirm_delete_choice_block = memnew(ConfirmationDialog);
+	dlg_confirm_delete_choice_block->set_title(CG_TR("Eliminar Elecciones"));
+	dlg_confirm_delete_choice_block->set_text(CG_TR("El bloque de Elecciones contiene comandos en sus ramas.\n¿Deseas eliminar todo el bloque y su contenido?"));
+	dlg_confirm_delete_choice_block->set_ok_button_text(CG_TR("Eliminar Todo"));
+	dlg_confirm_delete_choice_block->set_cancel_button_text(CG_TR("Cancelar"));
+	dlg_confirm_delete_choice_block->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_delete_choice_block));
+	add_child(dlg_confirm_delete_choice_block);
+
+	dlg_confirm_remove_choice_branch = memnew(ConfirmationDialog);
+	dlg_confirm_remove_choice_branch->set_title(CG_TR("Eliminar Rama de Elección"));
+	dlg_confirm_remove_choice_branch->set_text(CG_TR("Se van a eliminar opciones o la rama de cancelación que contienen comandos.\n¿Deseas eliminarlas y perder esos comandos?"));
+	dlg_confirm_remove_choice_branch->set_ok_button_text(CG_TR("Eliminar Opciones"));
+	dlg_confirm_remove_choice_branch->set_cancel_button_text(CG_TR("Conservar"));
+	dlg_confirm_remove_choice_branch->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_remove_choice_branch));
+	add_child(dlg_confirm_remove_choice_branch);
 
 	// Entrada de Número (CMD_INPUT_NUMBER)
 	dlg_number_input = memnew(ConfirmationDialog);
@@ -3881,6 +4102,88 @@ void ClockGearsEventEditorDialog::edit_event(ClockGearsEvent *p_event) {
 	}
 }
 
+String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) const {
+	String type = d.get("type", "Unknown");
+	if (type == "message") {
+		return vformat(CG_TR("◆ Mostrar Mensaje: \"%s\""), d.get("text", ""));
+	} else if (type == "number_input") {
+		return vformat(CG_TR("◆ Entrada de Número: Variable [%s], %d dígitos"), d.get("variable", 1), d.get("digits", 3));
+	} else if (type == "switch") {
+		return vformat(CG_TR("◆ Control Interruptor: [%s] = %s"), d.get("name", ""), d.get("val", true) ? "ON" : "OFF");
+	} else if (type == "self_switch") {
+		return vformat(CG_TR("◆ Control Interruptor Local: [%s] = %s"), d.get("letter", "A"), d.get("val", true) ? "ON" : "OFF");
+	} else if (type == "variable") {
+		return vformat(CG_TR("◆ Control Variable: [%s] %s %s"), d.get("name", ""), d.get("op", "="), d.get("val", 0));
+	} else if (type == "wait") {
+		return vformat(CG_TR("◆ Esperar: %d fotogramas"), int(d.get("frames", 60)));
+	} else if (type == "teleport") {
+		return vformat(CG_TR("◆ Transferir Jugador: %s a (%d, %d) [%s]"), d.get("map", ""), int(d.get("x", 0)), int(d.get("y", 0)), d.get("dir", ""));
+	} else if (type == "move_route") {
+		return vformat(CG_TR("◆ Fijar Ruta [%s]: %s"), d.get("target", "Este Evento"), d.get("action", ""));
+	} else if (type == "item") {
+		return vformat(CG_TR("◆ Cambiar Objeto: %s%d %s"), d.get("op", "+"), int(d.get("qty", 1)), d.get("name", ""));
+	} else if (type == "gold") {
+		return vformat(CG_TR("◆ Cambiar Dinero: %s%d Oro"), d.get("op", "+"), int(d.get("amount", 0)));
+	} else if (type == "hp_mp") {
+		return vformat(CG_TR("◆ Cambiar %s: %s%d"), d.get("stat", "HP"), d.get("op", "+"), int(d.get("amount", 50)));
+	} else if (type == "audio") {
+		return vformat(CG_TR("◆ Reproducir Audio: %s"), d.get("file", ""));
+	} else if (type == "se") {
+		return vformat(CG_TR("◆ Reproducir SE: %s"), d.get("file", ""));
+	} else if (type == "flash") {
+		return vformat(CG_TR("◆ Efecto de Flash: %s (%d f)"), d.get("color", ""), int(d.get("duration", 30)));
+	} else if (type == "tint") {
+		return vformat(CG_TR("◆ Teñir Pantalla: %s (%d f)"), d.get("preset", ""), int(d.get("duration", 60)));
+	} else if (type == "fade") {
+		return vformat(CG_TR("◆ Fundido de Pantalla: %s (%d f)"), d.get("mode", "Oscurecer"), int(d.get("duration", 30)));
+	} else if (type == "battle") {
+		return vformat(CG_TR("◆ Iniciar Batalla: [%s] (Huir: %s, Derrota: %s)"), d.get("troop", "1"), bool(d.get("can_escape", true)) ? "Sí" : "No", bool(d.get("can_lose", false)) ? "Permitida" : "Game Over");
+	} else if (type == "show_picture" || type == "picture") {
+		int dur_m = int(d.get("duration_mode", 0));
+		String dur_str;
+		if (dur_m == 1) {
+			dur_str = vformat(" (%.1fs%s%s)", float(d.get("duration_sec", 3.0f)), bool(d.get("auto_fadeout", false)) ? " + fundido" : "", bool(d.get("wait", false)) ? " [esperar]" : "");
+		} else if (dur_m == 2) {
+			dur_str = " (hasta próx. mensaje)";
+		}
+		return vformat(CG_TR("◆ Mostrar Imagen: #%d \"%s\" en (%d, %d)%s"), int(d.get("id", 1)), d.get("path", ""), int(d.get("x", 0)), int(d.get("y", 0)), dur_str);
+	} else if (type == "move_picture") {
+		return vformat(CG_TR("◆ Mover Imagen: #%d a (%d, %d) en %d f"), int(d.get("id", 1)), int(d.get("x", 0)), int(d.get("y", 0)), int(d.get("duration", 60)));
+	} else if (type == "rotate_picture") {
+		return vformat(CG_TR("◆ Rotar Imagen: #%d a %.1f°/s"), int(d.get("id", 1)), float(d.get("speed", 0.0f)));
+	} else if (type == "tint_picture") {
+		return vformat(CG_TR("◆ Teñir Imagen: #%d (%s, %d f)"), int(d.get("id", 1)), d.get("preset", "Normal"), int(d.get("duration", 60)));
+	} else if (type == "erase_picture") {
+		return vformat(CG_TR("◆ Borrar Imagen: #%d"), int(d.get("id", 1)));
+	} else if (type == "shake_screen" || type == "shake") {
+		return vformat(CG_TR("◆ Temblor de Pantalla: Potencia %d, Vel %d (%d f)"), int(d.get("power", 5)), int(d.get("speed", 5)), int(d.get("duration", 60)));
+	} else if (type == "weather") {
+		return vformat(CG_TR("◆ Clima: %s, Potencia %d (%d f)"), d.get("weather", "none"), int(d.get("power", 5)), int(d.get("duration", 60)));
+	} else if (type == "play_bgs" || type == "bgs") {
+		return vformat(CG_TR("◆ Reproducir BGS: %s (Vol %d%%)"), d.get("file", ""), int(d.get("volume", 90)));
+	} else if (type == "play_me" || type == "me") {
+		return vformat(CG_TR("◆ Reproducir ME: %s (Vol %d%%)"), d.get("file", ""), int(d.get("volume", 90)));
+	} else if (type == "stop_fade_bgm") {
+		return vformat(CG_TR("◆ Parar / Fundir BGM: %s (%d f)"), d.get("action", "fade") == "stop" ? CG_TR("Parar") : CG_TR("Fundir"), int(d.get("duration", 60)));
+	} else if (type == "save_bgm") {
+		return CG_TR("◆ Guardar BGM");
+	} else if (type == "restore_bgm") {
+		return vformat(CG_TR("◆ Restaurar BGM (%d f)"), int(d.get("duration", 30)));
+	} else if (type == "audio_stems" || type == "stems") {
+		return vformat(CG_TR("◆ Stem Audio #%d: Vol %d%%"), int(d.get("stem", 0)), int(float(d.get("volume", 1.0f)) * 100.0f));
+	} else if (type == "change_camera_zoom") {
+		return vformat(CG_TR("◆ Cambiar Zoom de Cámara: %.1fx (Duración: %d f%s)"), float(d.get("zoom", 2.0f)), int(d.get("duration", 0)), bool(d.get("wait", false)) ? CG_TR(", Esperar") : "");
+	} else if (type == "play_cutscene" || type == "cutscene") {
+		if (d.has("cutscene_dict")) {
+			Dictionary csd = d.get("cutscene_dict", Dictionary());
+			return vformat(CG_TR("◆ Cinemática: \"%s\" (%.1f s, %d kf)"), csd.get("name", "Cinematica"), float(csd.get("duration", 5.0f)), Array(csd.get("keyframes", Array())).size());
+		} else {
+			return vformat(CG_TR("◆ Reproducir Cinemática: %s"), d.get("path", ""));
+		}
+	}
+	return vformat(CG_TR("◆ Comando: %s"), type);
+}
+
 void ClockGearsEventEditorDialog::_refresh_command_list() {
 	if (!command_tree) {
 		return;
@@ -3892,13 +4195,55 @@ void ClockGearsEventEditorDialog::_refresh_command_list() {
 	}
 
 	Array cmds = _get_active_page_commands();
+	int depth = 0;
+	struct ChoiceStackItem {
+		int base_depth = 0;
+		int cancel_opt = 0;
+	};
+	Vector<ChoiceStackItem> choice_stack;
+
 	for (int i = 0; i < cmds.size(); i++) {
 		Dictionary d = cmds[i];
 		String type = d.get("type", "Unknown");
+
+		// Branch placeholder ◆ before when_choice (except the first branch), before when_cancel, and before branch_end_choice
+		if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d) || ClockGearsChoiceUtils::is_branch_end(d)) {
+			if (i > 0 && !ClockGearsChoiceUtils::is_choices_start(cmds[i - 1])) {
+				TreeItem *ph_item = command_tree->create_item(root);
+				String ph_indent;
+				for (int s = 0; s < depth; s++) {
+					ph_indent += "   ";
+				}
+				ph_item->set_text(0, ph_indent + String::utf8("◆"));
+				Dictionary ph_meta;
+				ph_meta["is_placeholder"] = true;
+				ph_meta["insert_index"] = i;
+				ph_item->set_metadata(0, ph_meta);
+			}
+		}
+
+		if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d)) {
+			if (!choice_stack.is_empty()) {
+				depth = choice_stack[choice_stack.size() - 1].base_depth + 1;
+			}
+		} else if (ClockGearsChoiceUtils::is_branch_end(d)) {
+			if (!choice_stack.is_empty()) {
+				depth = choice_stack[choice_stack.size() - 1].base_depth + 1;
+			}
+		}
+
+		String indent;
+		for (int s = 0; s < depth; s++) {
+			indent += "   ";
+		}
+
 		String text;
-		if (type == "message") {
-			text = vformat(CG_TR("◆ Mostrar Mensaje: \"%s\""), d.get("text", ""));
-		} else if (type == "choices") {
+		if (ClockGearsChoiceUtils::is_choices_start(d)) {
+			ChoiceStackItem csi;
+			csi.base_depth = depth;
+			csi.cancel_opt = int(d.get("cancel_opt", d.get("cancel_type", 0)));
+			choice_stack.push_back(csi);
+
 			PackedStringArray opts;
 			for (int c = 1; c <= 6; c++) {
 				String key = "c" + itos(c);
@@ -3906,113 +4251,96 @@ void ClockGearsEventEditorDialog::_refresh_command_list() {
 					opts.push_back(d[key]);
 				}
 			}
-			text = vformat(CG_TR("◆ Mostrar Elecciones: [%s]"), String(", ").join(opts));
-		} else if (type == "when_choice" || int(d.get("code", 0)) == 402) {
-			text = vformat(CG_TR(" : Cuando [%s]"), d.get("text", vformat(CG_TR("Opción %d"), int(d.get("choice", 0)) + 1)));
-		} else if (type == "when_cancel" || int(d.get("code", 0)) == 403) {
-			text = CG_TR(" : Cuando Cancelar");
-		} else if (type == "branch_end_choice" || int(d.get("code", 0)) == 404) {
-			text = CG_TR(" : Fin Elecciones");
-		} else if (type == "number_input") {
-			text = vformat(CG_TR("◆ Entrada de Número: Variable [%s], %d dígitos"), d.get("variable", 1), d.get("digits", 3));
-		} else if (type == "switch") {
-			text = vformat(CG_TR("◆ Control Interruptor: [%s] = %s"), d.get("name", ""), d.get("val", true) ? "ON" : "OFF");
-		} else if (type == "self_switch") {
-			text = vformat(CG_TR("◆ Control Interruptor Local: [%s] = %s"), d.get("letter", "A"), d.get("val", true) ? "ON" : "OFF");
-		} else if (type == "variable") {
-			text = vformat(CG_TR("◆ Control Variable: [%s] %s %s"), d.get("name", ""), d.get("op", "="), d.get("val", 0));
-		} else if (type == "wait") {
-			text = vformat(CG_TR("◆ Esperar: %d fotogramas"), int(d.get("frames", 60)));
-		} else if (type == "teleport") {
-			text = vformat(CG_TR("◆ Transferir Jugador: %s a (%d, %d) [%s]"), d.get("map", ""), int(d.get("x", 0)), int(d.get("y", 0)), d.get("dir", ""));
-		} else if (type == "move_route") {
-			text = vformat(CG_TR("◆ Fijar Ruta [%s]: %s"), d.get("target", "Este Evento"), d.get("action", ""));
-		} else if (type == "item") {
-			text = vformat(CG_TR("◆ Cambiar Objeto: %s%d %s"), d.get("op", "+"), int(d.get("qty", 1)), d.get("name", ""));
-		} else if (type == "gold") {
-			text = vformat(CG_TR("◆ Cambiar Dinero: %s%d Oro"), d.get("op", "+"), int(d.get("amount", 0)));
-		} else if (type == "hp_mp") {
-			text = vformat(CG_TR("◆ Cambiar %s: %s%d"), d.get("stat", "HP"), d.get("op", "+"), int(d.get("amount", 50)));
-		} else if (type == "audio") {
-			text = vformat(CG_TR("◆ Reproducir Audio: %s"), d.get("file", ""));
-		} else if (type == "se") {
-			text = vformat(CG_TR("◆ Reproducir SE: %s"), d.get("file", ""));
-		} else if (type == "flash") {
-			text = vformat(CG_TR("◆ Efecto de Flash: %s (%d f)"), d.get("color", ""), int(d.get("duration", 30)));
-		} else if (type == "tint") {
-			text = vformat(CG_TR("◆ Teñir Pantalla: %s (%d f)"), d.get("preset", ""), int(d.get("duration", 60)));
-		} else if (type == "fade") {
-			text = vformat(CG_TR("◆ Fundido de Pantalla: %s (%d f)"), d.get("mode", "Oscurecer"), int(d.get("duration", 30)));
-		} else if (type == "battle") {
-			text = vformat(CG_TR("◆ Iniciar Batalla: [%s] (Huir: %s, Derrota: %s)"), d.get("troop", "1"), bool(d.get("can_escape", true)) ? "Sí" : "No", bool(d.get("can_lose", false)) ? "Permitida" : "Game Over");
-		} else if (type == "show_picture" || type == "picture") {
-			int dur_m = int(d.get("duration_mode", 0));
-			String dur_str;
-			if (dur_m == 1) {
-				dur_str = vformat(" (%.1fs%s%s)", float(d.get("duration_sec", 3.0f)), bool(d.get("auto_fadeout", false)) ? " + fundido" : "", bool(d.get("wait", false)) ? " [esperar]" : "");
-			} else if (dur_m == 2) {
-				dur_str = " (hasta próx. mensaje)";
-			}
-			text = vformat(CG_TR("◆ Mostrar Imagen: #%d \"%s\" en (%d, %d)%s"), int(d.get("id", 1)), d.get("path", ""), int(d.get("x", 0)), int(d.get("y", 0)), dur_str);
-		} else if (type == "move_picture") {
-			text = vformat(CG_TR("◆ Mover Imagen: #%d a (%d, %d) en %d f"), int(d.get("id", 1)), int(d.get("x", 0)), int(d.get("y", 0)), int(d.get("duration", 60)));
-		} else if (type == "rotate_picture") {
-			text = vformat(CG_TR("◆ Rotar Imagen: #%d a %.1f°/s"), int(d.get("id", 1)), float(d.get("speed", 0.0f)));
-		} else if (type == "tint_picture") {
-			text = vformat(CG_TR("◆ Teñir Imagen: #%d (%s, %d f)"), int(d.get("id", 1)), d.get("preset", "Normal"), int(d.get("duration", 60)));
-		} else if (type == "erase_picture") {
-			text = vformat(CG_TR("◆ Borrar Imagen: #%d"), int(d.get("id", 1)));
-		} else if (type == "shake_screen" || type == "shake") {
-			text = vformat(CG_TR("◆ Temblor de Pantalla: Potencia %d, Vel %d (%d f)"), int(d.get("power", 5)), int(d.get("speed", 5)), int(d.get("duration", 60)));
-		} else if (type == "weather") {
-			text = vformat(CG_TR("◆ Clima: %s, Potencia %d (%d f)"), d.get("weather", "none"), int(d.get("power", 5)), int(d.get("duration", 60)));
-		} else if (type == "play_bgs" || type == "bgs") {
-			text = vformat(CG_TR("◆ Reproducir BGS: %s (Vol %d%%)"), d.get("file", ""), int(d.get("volume", 90)));
-		} else if (type == "play_me" || type == "me") {
-			text = vformat(CG_TR("◆ Reproducir ME: %s (Vol %d%%)"), d.get("file", ""), int(d.get("volume", 90)));
-		} else if (type == "stop_fade_bgm") {
-			text = vformat(CG_TR("◆ Parar / Fundir BGM: %s (%d f)"), d.get("action", "fade") == "stop" ? CG_TR("Parar") : CG_TR("Fundir"), int(d.get("duration", 60)));
-		} else if (type == "save_bgm") {
-			text = CG_TR("◆ Guardar BGM");
-		} else if (type == "restore_bgm") {
-			text = vformat(CG_TR("◆ Restaurar BGM (%d f)"), int(d.get("duration", 30)));
-		} else if (type == "audio_stems" || type == "stems") {
-			text = vformat(CG_TR("◆ Stem Audio #%d: Vol %d%%"), int(d.get("stem", 0)), int(float(d.get("volume", 1.0f)) * 100.0f));
-		} else if (type == "change_camera_zoom") {
-			text = vformat(CG_TR("◆ Cambiar Zoom de Cámara: %.1fx (Duración: %d f%s)"), float(d.get("zoom", 2.0f)), int(d.get("duration", 0)), bool(d.get("wait", false)) ? CG_TR(", Esperar") : "");
-		} else if (type == "play_cutscene" || type == "cutscene") {
-			if (d.has("cutscene_dict")) {
-				Dictionary csd = d.get("cutscene_dict", Dictionary());
-				text = vformat(CG_TR("◆ Cinemática: \"%s\" (%.1f s, %d kf)"), csd.get("name", "Cinematica"), float(csd.get("duration", 5.0f)), Array(csd.get("keyframes", Array())).size());
+			text = indent + vformat(CG_TR("◆ Mostrar Elecciones: [%s]"), String(", ").join(opts));
+			depth = csi.base_depth + 1;
+		} else if (ClockGearsChoiceUtils::is_when_choice(d)) {
+			int ch_idx = int(d.get("choice", 0));
+			int parent_cancel = choice_stack.is_empty() ? 0 : choice_stack[choice_stack.size() - 1].cancel_opt;
+			bool is_cancel = (parent_cancel == ch_idx + 1);
+			String cancel_suffix = is_cancel ? CG_TR(" (cancelar)") : "";
+			text = indent + vformat(CG_TR(" : Cuando [%s]%s"), d.get("text", vformat(CG_TR("Opción %d"), ch_idx + 1)), cancel_suffix);
+			depth++;
+		} else if (ClockGearsChoiceUtils::is_when_cancel(d)) {
+			text = indent + CG_TR(" : Cuando Cancelar");
+			depth++;
+		} else if (ClockGearsChoiceUtils::is_branch_end(d)) {
+			text = indent + CG_TR(" : Fin Elecciones");
+			if (!choice_stack.is_empty()) {
+				depth = choice_stack[choice_stack.size() - 1].base_depth;
+				choice_stack.remove_at(choice_stack.size() - 1);
 			} else {
-				text = vformat(CG_TR("◆ Reproducir Cinemática: %s"), d.get("path", ""));
+				if (depth > 0) depth--;
 			}
 		} else {
-			text = vformat(CG_TR("◆ Comando: %s"), type);
+			text = indent + _format_command_text(d);
 		}
+
 		TreeItem *item = command_tree->create_item(root);
 		item->set_text(0, text);
-		item->set_metadata(0, i);
+
+		Dictionary meta;
+		meta["is_placeholder"] = false;
+		meta["index"] = i;
+		meta["type"] = type;
+		item->set_metadata(0, meta);
 	}
+
+	// Final placeholder at the bottom of the page
 	TreeItem *end_marker = command_tree->create_item(root);
 	end_marker->set_text(0, String::utf8("◆"));
-	end_marker->set_metadata(0, -1);
+	Dictionary end_meta;
+	end_meta["is_placeholder"] = true;
+	end_meta["insert_index"] = cmds.size();
+	end_marker->set_metadata(0, end_meta);
 }
 
 void ClockGearsEventEditorDialog::_on_remove_command_pressed() {
 	if (!target_event || !command_tree) {
 		return;
 	}
-	TreeItem *sel = command_tree->get_selected();
-	if (!sel) {
+	int idx = _get_selected_command_index();
+	Array cmds = _get_active_page_commands();
+	if (idx < 0 || idx >= cmds.size()) {
 		return;
 	}
-	int idx = int(sel->get_metadata(0));
-	Array cmds = _get_active_page_commands();
-	if (idx >= 0 && idx < cmds.size()) {
-		cmds.remove_at(idx);
+
+	Dictionary d = cmds[idx];
+	if (ClockGearsChoiceUtils::is_choices_start(d)) {
+		if (ClockGearsChoiceUtils::block_has_content(cmds, idx)) {
+			pending_delete_choice_idx = idx;
+			if (dlg_confirm_delete_choice_block) {
+				dlg_confirm_delete_choice_block->popup_centered();
+			}
+			return;
+		}
+		ClockGearsChoiceUtils::delete_choice_block(cmds, idx);
 		_set_active_page_commands(cmds);
 		_refresh_command_list();
+		return;
+	}
+
+	if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d) || ClockGearsChoiceUtils::is_branch_end(d)) {
+		int b_start = ClockGearsChoiceUtils::find_block_start(cmds, idx);
+		if (b_start >= 0) {
+			if (ClockGearsChoiceUtils::block_has_content(cmds, b_start)) {
+				pending_delete_choice_idx = b_start;
+				if (dlg_confirm_delete_choice_block) {
+					dlg_confirm_delete_choice_block->popup_centered();
+				}
+				return;
+			}
+			ClockGearsChoiceUtils::delete_choice_block(cmds, b_start);
+			_set_active_page_commands(cmds);
+			_refresh_command_list();
+		}
+		return;
+	}
+
+	cmds.remove_at(idx);
+	_set_active_page_commands(cmds);
+	_refresh_command_list();
+	if (idx < cmds.size()) {
+		_select_command_by_index(idx);
 	}
 }
 

@@ -24,6 +24,9 @@ struct ClockGearsBattlerVisual {
 	ClockGearsSpriteSheetData sprite_data;
 	String current_anim = "idle";
 	String current_sheet_path;
+	int current_frame_idx = 0;
+	float frame_timer = 0.0f;
+	float current_frame_duration = 0.1f;
 	float anim_timer = 0.0f;
 	float state_duration = 0.0f;
 	bool is_actor = false;
@@ -78,6 +81,25 @@ private:
 	Vector<ClockGearsBattlerVisual> battler_visuals;
 	void _update_battler_visuals(float p_delta);
 	void _trigger_visual_anim(const Ref<ClockGearsBattleUnit> &p_unit, const String &p_anim, float p_duration = 0.45f);
+	void _trigger_unit_trigger(const Ref<ClockGearsBattleUnit> &p_unit, int p_trigger, const String &p_fallback, float p_min_duration = 0.45f);
+
+	enum BattleActionSeqState {
+		SEQ_IDLE = 0,
+		SEQ_ATTACK_ANIM,
+		SEQ_EFFECT_ANIM,
+		SEQ_DAMAGE_ANIM
+	};
+	BattleActionSeqState action_seq_state = SEQ_IDLE;
+	float action_seq_timer = 0.0f;
+	Ref<ClockGearsBattleUnit> seq_attacker;
+	Ref<ClockGearsBattleUnit> seq_target;
+	int seq_action_type = 0;
+	int seq_sub_id = 0;
+	String seq_sub_str;
+	int seq_target_idx = 0;
+
+	void _start_action_sequence(int p_action_type, int p_target_idx, int p_sub_id = 0, const String &p_sub_str = "");
+	void _step_action_sequence(float p_delta);
 
 	void _setup_ui();
 	void _refresh_ui();
@@ -113,6 +135,7 @@ public:
 	Ref<ClockGearsBattleController> get_controller() const { return controller; }
 
 	// Métodos para pruebas automatizadas y control programático
+	void advance_time(float p_delta);
 	bool select_action_attack(int p_target_idx);
 	bool select_action_skill(int p_skill_id, int p_target_idx);
 	bool select_action_item(const String &p_item_name, int p_target_idx);

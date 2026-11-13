@@ -36,6 +36,8 @@ void ClockGearsMessageWindow::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_skip_mode", "enable"), &ClockGearsMessageWindow::set_skip_mode);
 	ClassDB::bind_method(D_METHOD("get_skip_mode"), &ClockGearsMessageWindow::get_skip_mode);
 	ClassDB::bind_method(D_METHOD("is_busy"), &ClockGearsMessageWindow::is_busy);
+	ClassDB::bind_method(D_METHOD("handle_choice_cancel"), &ClockGearsMessageWindow::_handle_choice_cancel);
+	ClassDB::bind_method(D_METHOD("unhandled_input", "event"), &ClockGearsMessageWindow::unhandled_input);
 
 	ADD_SIGNAL(MethodInfo("message_completed"));
 	ADD_SIGNAL(MethodInfo("choice_selected", PropertyInfo(Variant::INT, "index")));
@@ -596,7 +598,7 @@ void ClockGearsMessageWindow::show_choices(const PackedStringArray &p_choices, i
 		Button *btn = memnew(Button(p_choices[i]));
 		btn->set_h_size_flags(SIZE_EXPAND_FILL);
 		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
-		btn->set_focus_mode(FOCUS_NONE);
+		btn->set_focus_mode(FOCUS_ALL);
 		btn->connect("pressed", callable_mp(this, &ClockGearsMessageWindow::_on_choice_btn_pressed).bind(i));
 		choices_vbox->add_child(btn);
 		choice_buttons.push_back(btn);
@@ -608,6 +610,13 @@ void ClockGearsMessageWindow::show_choices(const PackedStringArray &p_choices, i
 	}
 	current_state = STATE_CHOICES;
 	show();
+
+	if (!choice_buttons.is_empty() && is_inside_tree()) {
+		int def = CLAMP(p_default_idx, 0, choice_buttons.size() - 1);
+		if (choice_buttons[def]->is_inside_tree()) {
+			choice_buttons[def]->grab_focus();
+		}
+	}
 }
 
 void ClockGearsMessageWindow::_on_choice_btn_pressed(int p_idx) {
@@ -616,6 +625,23 @@ void ClockGearsMessageWindow::_on_choice_btn_pressed(int p_idx) {
 	}
 	close_window();
 	emit_signal("choice_selected", p_idx);
+}
+
+void ClockGearsMessageWindow::_handle_choice_cancel() {
+	if (current_state != STATE_CHOICES) {
+		return;
+	}
+	if (choice_cancel_type == 0) {
+		// "No permitir": Esc no hace nada
+		return;
+	} else if (choice_cancel_type == -1) {
+		// "Rama": ejecuta la rama Cancelar
+		_on_choice_btn_pressed(-1);
+	} else if (choice_cancel_type >= 1) {
+		// "Opción N": ejecuta la rama de esa opción (1-based -> 0-based idx)
+		int target_choice = choice_cancel_type - 1;
+		_on_choice_btn_pressed(target_choice);
+	}
 }
 
 void ClockGearsMessageWindow::show_number_input(int p_variable_id, int p_digits) {
@@ -905,7 +931,7 @@ void ClockGearsMessageWindow::_advance_typewriter(float p_delta) {
 }
 
 void ClockGearsMessageWindow::unhandled_input(const Ref<InputEvent> &p_event) {
-	if (current_state == STATE_CLOSED || !is_visible_in_tree()) {
+	if (current_state == STATE_CLOSED || !is_visible()) {
 		return;
 	}
 
@@ -948,6 +974,26 @@ void ClockGearsMessageWindow::unhandled_input(const Ref<InputEvent> &p_event) {
 			get_viewport()->set_input_as_handled();
 			return;
 		}
+	}
+
+	if (current_state == STATE_CHOICES) {
+		if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+			if (k->get_keycode() == Key::ESCAPE || k->get_keycode() == Key::X) {
+				if (get_viewport()) {
+					get_viewport()->set_input_as_handled();
+				}
+				_handle_choice_cancel();
+				return;
+			}
+		}
+		if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::RIGHT) {
+			if (get_viewport()) {
+				get_viewport()->set_input_as_handled();
+			}
+			_handle_choice_cancel();
+			return;
+		}
+		return;
 	}
 
 	if (current_state == STATE_NUMBER_INPUT) {

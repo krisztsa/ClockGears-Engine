@@ -1393,7 +1393,14 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 			clean_opts.push_back(CG_RT_TR("Sí"));
 			clean_opts.push_back(CG_RT_TR("No"));
 		}
-		int cancel_opt = int(p_cmd.get("cancel_opt", p_cmd.get("cancel", 0)));
+		int cancel_opt = 0;
+		if (p_cmd.has("cancel_opt")) {
+			cancel_opt = int(p_cmd.get("cancel_opt", 0));
+		} else if (p_cmd.has("cancel_type")) {
+			cancel_opt = int(p_cmd.get("cancel_type", 0));
+		} else if (p_cmd.has("cancel")) {
+			cancel_opt = int(p_cmd.get("cancel", 0));
+		}
 		_build_runtime_ui();
 		if (message_window) {
 			message_window->show_choices(clean_opts, cancel_opt, 0);

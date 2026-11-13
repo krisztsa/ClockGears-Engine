@@ -265,9 +265,24 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			} else if (d.has("animations")) {
 				Dictionary sp;
 				sp["animations"] = d.get("animations", Dictionary());
-				sp["cols"] = int(d.get("battler_frames", 4));
+				sp["cols"] = int(d.get("cols", 4));
 				sp["rows"] = 1;
 				u->set_sprite_data_dict(sp);
+			}
+			if (d.has("trigger_table")) {
+				Ref<ClockGearsAnimationTriggerTable> tt;
+				tt.instantiate();
+				tt->deserialize(d.get("trigger_table", Dictionary()));
+				u->set_trigger_table(tt);
+			} else if (d.has("combat_animations")) {
+				Ref<ClockGearsAnimationTriggerTable> tt;
+				tt.instantiate();
+				Dictionary ca = d.get("combat_animations", Dictionary());
+				Array keys = ca.keys();
+				for (int k = 0; k < keys.size(); k++) {
+					tt->bind_trigger_named(keys[k], ca[keys[k]]);
+				}
+				u->set_trigger_table(tt);
 			}
 			party.push_back(u);
 		}
@@ -374,9 +389,24 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			} else if (en_data.has("animations")) {
 				Dictionary sp;
 				sp["animations"] = en_data.get("animations", Dictionary());
-				sp["cols"] = int(en_data.get("battler_frames", 4));
+				sp["cols"] = int(en_data.get("cols", 4));
 				sp["rows"] = 1;
 				en->set_sprite_data_dict(sp);
+			}
+			if (en_data.has("trigger_table")) {
+				Ref<ClockGearsAnimationTriggerTable> tt;
+				tt.instantiate();
+				tt->deserialize(en_data.get("trigger_table", Dictionary()));
+				en->set_trigger_table(tt);
+			} else if (en_data.has("combat_animations")) {
+				Ref<ClockGearsAnimationTriggerTable> tt;
+				tt.instantiate();
+				Dictionary ca = en_data.get("combat_animations", Dictionary());
+				Array keys = ca.keys();
+				for (int k = 0; k < keys.size(); k++) {
+					tt->bind_trigger_named(keys[k], ca[keys[k]]);
+				}
+				en->set_trigger_table(tt);
 			}
 			enemies.push_back(en);
 		}

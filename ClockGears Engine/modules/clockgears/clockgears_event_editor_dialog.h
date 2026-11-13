@@ -129,6 +129,18 @@ private:
 	LineEdit *choice_5_edit = nullptr;
 	LineEdit *choice_6_edit = nullptr;
 	OptionButton *choice_cancel_opt = nullptr;
+	void _update_choice_cancel_options();
+	void _on_choice_line_edit_changed(const String &p_text);
+
+	ConfirmationDialog *dlg_confirm_delete_choice_block = nullptr;
+	int pending_delete_choice_idx = -1;
+	void _on_confirm_delete_choice_block();
+
+	ConfirmationDialog *dlg_confirm_remove_choice_branch = nullptr;
+	Dictionary pending_rebuild_choice_cmd;
+	HashMap<int, Array> pending_rebuild_branches;
+	int pending_rebuild_choice_idx = -1;
+	void _on_confirm_remove_choice_branch();
 
 	ConfirmationDialog *dlg_number_input = nullptr;
 	SpinBox *num_input_var_spin = nullptr;
@@ -350,6 +362,10 @@ private:
 
 	void _setup_command_subdialogs();
 	void _refresh_command_list();
+	int _get_selected_command_index() const;
+	int _get_insertion_index() const;
+	void _select_command_by_index(int p_idx);
+	String _format_command_text(const Dictionary &p_cmd) const;
 	void _on_add_command_pressed();
 	void _on_edit_command_pressed();
 	void _on_remove_command_pressed();

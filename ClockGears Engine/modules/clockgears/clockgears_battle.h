@@ -161,6 +161,14 @@ public:
 	void set_trigger_table(const Ref<ClockGearsAnimationTriggerTable> &p_table) { trigger_table = p_table; }
 	Ref<ClockGearsAnimationTriggerTable> get_trigger_table() const { return trigger_table; }
 
+	String get_combat_animation(int p_trigger, const String &p_fallback = "") const {
+		if (trigger_table.is_valid() && trigger_table->has_trigger(p_trigger)) {
+			String a = trigger_table->get_animation(p_trigger);
+			if (!a.is_empty()) return a;
+		}
+		return p_fallback;
+	}
+
 	// Conversión para ClockGearsFormulas
 	Dictionary to_formula_dict() const;
 

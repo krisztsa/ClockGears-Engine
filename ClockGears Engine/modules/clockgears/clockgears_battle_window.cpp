@@ -3,10 +3,24 @@
 #include "editor/themes/editor_scale.h"
 #include "core/config/project_settings.h"
 #include "core/input/input_event.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image_loader.h"
 #include "core/io/resource_loader.h"
 #include "scene/resources/style_box_flat.h"
+
+static String s_fix_mojibake(const String &p_str) {
+	if (p_str.find(String::utf8("Ã")) == -1) {
+		return p_str;
+	}
+	PackedByteArray bytes;
+	for (int i = 0; i < p_str.length(); i++) {
+		char32_t c = p_str[i];
+		bytes.append((uint8_t)(c & 0xFF));
+	}
+	String fixed = String::utf8((const char *)bytes.ptr(), bytes.size());
+	return fixed.is_empty() ? p_str : fixed;
+}
 
 static const ClockGearsSpriteAnimation *s_find_animation_ci(const ClockGearsSpriteSheetData &p_data, const String &p_name, int p_tex_h = 0) {
 	const ClockGearsSpriteAnimation *best_match = nullptr;
@@ -15,15 +29,9 @@ static const ClockGearsSpriteAnimation *s_find_animation_ci(const ClockGearsSpri
 		if (E.key.to_lower() == target_lower) {
 			if (!best_match) {
 				best_match = &E.value;
-			} else {
-				// Preferir la animación que coincide con el alto real de la textura o que tiene más frames
-				if (p_tex_h > 0 && E.value.frame_h == p_tex_h && best_match->frame_h != p_tex_h) {
-					best_match = &E.value;
-				} else if (E.value.frames.size() > best_match->frames.size()) {
-					best_match = &E.value;
-				} else if (E.key == p_name) {
-					best_match = &E.value;
-				}
+			} else if (E.value.get_frame_count() > best_match->get_frame_count()) {
+				// Siempre preferir la animación que tenga más frames (ej. Idle de 17 frames vs idle viejo de 2 frames)
+				best_match = &E.value;
 			}
 		}
 	}
@@ -33,27 +41,34 @@ static const ClockGearsSpriteAnimation *s_find_animation_ci(const ClockGearsSpri
 Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &p_path) {
 	if (p_path.strip_edges().is_empty()) return Ref<Texture2D>();
 
-	if (ResourceLoader::exists(p_path)) {
+	String fixed_path = s_fix_mojibake(p_path);
+
+	if (ResourceLoader::exists(fixed_path)) {
+		Ref<Texture2D> t = ResourceLoader::load(fixed_path);
+		if (t.is_valid()) return t;
+	}
+	if (fixed_path != p_path && ResourceLoader::exists(p_path)) {
 		Ref<Texture2D> t = ResourceLoader::load(p_path);
 		if (t.is_valid()) return t;
 	}
 
 	Vector<String> try_paths;
-	try_paths.push_back(p_path);
+	try_paths.push_back(fixed_path);
+	if (fixed_path != p_path) try_paths.push_back(p_path);
 
 	// Localizar ruta absoluta si pertenece al proyecto
 	if (ProjectSettings::get_singleton()) {
-		String loc_path = ProjectSettings::get_singleton()->localize_path(p_path);
-		if (!loc_path.is_empty() && loc_path != p_path) {
+		String loc_path = ProjectSettings::get_singleton()->localize_path(fixed_path);
+		if (!loc_path.is_empty() && loc_path != fixed_path) {
 			try_paths.push_back(loc_path);
 		}
-		String gpath = ProjectSettings::get_singleton()->globalize_path(p_path);
-		if (!gpath.is_empty() && gpath != p_path) {
+		String gpath = ProjectSettings::get_singleton()->globalize_path(fixed_path);
+		if (!gpath.is_empty() && gpath != fixed_path) {
 			try_paths.push_back(gpath);
 		}
 	}
 
-	String fname = p_path.get_file();
+	String fname = fixed_path.get_file();
 	if (!fname.is_empty()) {
 		try_paths.push_back("res://img/battlers/" + fname);
 		try_paths.push_back("res://img/enemies/" + fname);
@@ -83,12 +98,37 @@ Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &
 			}
 		}
 	}
+
+	// Fallback por escaneo en subdirectorios img/
+	String search_dirs[] = { "res://img/battlers", "res://img/enemies", "res://img/characters", "res://img" };
+	for (size_t d = 0; d < sizeof(search_dirs) / sizeof(search_dirs[0]); d++) {
+		Ref<DirAccess> da = DirAccess::open(search_dirs[d]);
+		if (da.is_valid()) {
+			da->list_dir_begin();
+			String file = da->get_next();
+			while (!file.is_empty()) {
+				if (!da->current_is_dir() && !file.ends_with(".import")) {
+					if (file.to_lower() == fname.to_lower() || (fname.get_extension() == file.get_extension() && file.begins_with(fname.substr(0, 3)))) {
+						String cand_p = search_dirs[d].path_join(file);
+						Ref<Image> img = Image::load_from_file(cand_p);
+						if (img.is_valid() && !img->is_empty()) {
+							Ref<ImageTexture> it = ImageTexture::create_from_image(img);
+							if (it.is_valid()) return it;
+						}
+					}
+				}
+				file = da->get_next();
+			}
+		}
+	}
+
 	return Ref<Texture2D>();
 }
 
 void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup_battle", "troop_id", "can_escape", "can_lose", "bgm", "msg_window"), &ClockGearsBattleScene::setup_battle, DEFVAL(""), DEFVAL((ClockGearsMessageWindow *)nullptr));
 	ClassDB::bind_method(D_METHOD("get_controller"), &ClockGearsBattleScene::get_controller);
+	ClassDB::bind_method(D_METHOD("advance_time", "delta"), &ClockGearsBattleScene::advance_time);
 	ClassDB::bind_method(D_METHOD("select_action_attack", "target_idx"), &ClockGearsBattleScene::select_action_attack);
 	ClassDB::bind_method(D_METHOD("select_action_skill", "skill_id", "target_idx"), &ClockGearsBattleScene::select_action_skill);
 	ClassDB::bind_method(D_METHOD("select_action_item", "item_name", "target_idx"), &ClockGearsBattleScene::select_action_item);
@@ -99,6 +139,10 @@ void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_battle_finished"), &ClockGearsBattleScene::is_battle_finished);
 
 	ADD_SIGNAL(MethodInfo("battle_finished", PropertyInfo(Variant::INT, "result")));
+}
+
+void ClockGearsBattleScene::advance_time(float p_delta) {
+	_update_battler_visuals(p_delta);
 }
 
 void ClockGearsBattleScene::_notification(int p_what) {
@@ -128,6 +172,10 @@ void ClockGearsBattleScene::_setup_ui() {
 	Ref<StyleBoxFlat> empty_sb;
 	empty_sb.instantiate();
 	empty_sb->set_bg_color(Color(0, 0, 0, 0));
+	empty_sb->set_content_margin(SIDE_LEFT, 16);
+	empty_sb->set_content_margin(SIDE_RIGHT, 24);
+	empty_sb->set_content_margin(SIDE_TOP, 12);
+	empty_sb->set_content_margin(SIDE_BOTTOM, 16);
 	main_container->add_theme_style_override("panel", empty_sb);
 	add_child(main_container);
 
@@ -203,8 +251,12 @@ void ClockGearsBattleScene::_setup_ui() {
 	act_sb->set_border_width_all(2);
 	act_sb->set_border_color(Color(0.35f, 0.5f, 0.75f, 0.9f));
 	act_sb->set_corner_radius_all(6);
+	act_sb->set_content_margin(SIDE_LEFT, 8);
+	act_sb->set_content_margin(SIDE_RIGHT, 8);
+	act_sb->set_content_margin(SIDE_TOP, 6);
+	act_sb->set_content_margin(SIDE_BOTTOM, 6);
 	actions_panel->add_theme_style_override("panel", act_sb);
-	actions_panel->set_custom_minimum_size(Size2(180, 130));
+	actions_panel->set_custom_minimum_size(Size2(160, 130));
 	bottom_row->add_child(actions_panel);
 
 	actions_vbox = memnew(VBoxContainer);
@@ -287,42 +339,76 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 		if (vis.base_texture.is_null() || vis.atlas_texture.is_null()) continue;
 
 		if (vis.unit.is_valid() && vis.unit->get_is_dead()) {
-			const ClockGearsSpriteAnimation *death_anim = s_find_animation_ci(vis.sprite_data, "death");
+			String death_name = vis.unit->get_combat_animation(ANIM_TRIGGER_DEATH, "death");
+			const ClockGearsSpriteAnimation *death_anim = s_find_animation_ci(vis.sprite_data, death_name);
 			if (death_anim && vis.current_anim != death_anim->name) {
 				vis.current_anim = death_anim->name;
-				vis.anim_timer = 0.0f;
+				vis.current_frame_idx = 0;
+				vis.frame_timer = 0.0f;
+				vis.current_frame_duration = 0.0f;
 			}
 		} else {
 			if (vis.state_duration > 0.0f) {
 				vis.state_duration -= p_delta;
 				if (vis.state_duration <= 0.0f) {
-					const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(vis.sprite_data, "idle");
-					vis.current_anim = idle_anim ? idle_anim->name : "idle";
-					vis.anim_timer = 0.0f;
+					String idle_name = vis.unit.is_valid() ? vis.unit->get_combat_animation(ANIM_TRIGGER_IDLE, "idle") : "idle";
+					const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(vis.sprite_data, idle_name);
+					vis.current_anim = idle_anim ? idle_anim->name : idle_name;
+					vis.current_frame_idx = 0;
+					vis.frame_timer = 0.0f;
+					vis.current_frame_duration = 0.0f;
 				}
 			}
 		}
 
-		vis.anim_timer += p_delta;
-
-		int frame_num = 0;
 		Rect2i r;
-		const ClockGearsSpriteAnimation *cur_anim = s_find_animation_ci(vis.sprite_data, vis.current_anim);
-		if (!cur_anim) {
-			cur_anim = s_find_animation_ci(vis.sprite_data, "idle");
+		const ClockGearsSpriteAnimation *cur_anim = nullptr;
+		if (vis.sprite_data.animations.has(vis.current_anim)) {
+			cur_anim = &vis.sprite_data.animations[vis.current_anim];
 		}
+		const ClockGearsSpriteAnimation *ci_anim = s_find_animation_ci(vis.sprite_data, vis.current_anim);
+		if (ci_anim && (!cur_anim || ci_anim->get_frame_count() > cur_anim->get_frame_count())) {
+			cur_anim = ci_anim;
+		}
+		if (!cur_anim) {
+			String idle_name = vis.unit.is_valid() ? vis.unit->get_combat_animation(ANIM_TRIGGER_IDLE, "idle") : "idle";
+			cur_anim = s_find_animation_ci(vis.sprite_data, idle_name);
+		}
+
 		if (cur_anim && cur_anim->get_frame_count() > 0) {
 			const ClockGearsSpriteAnimation &an = *cur_anim;
-			bool loop = (vis.current_anim.to_lower() == "idle") ? true : an.loop;
-			float step_dur = 1.0f / MAX(0.5f, an.fps);
 			int total_f = an.get_frame_count();
-			int step = int(vis.anim_timer / step_dur);
-			if (loop) {
-				step = step % total_f;
-			} else {
-				step = MIN(step, total_f - 1);
+			bool loop = (vis.current_anim.to_lower().find("idle") != -1) ? true : an.loop;
+
+			if (vis.current_frame_idx < 0 || vis.current_frame_idx >= total_f) {
+				vis.current_frame_idx = 0;
 			}
-			ClockGearsAnimationFrame f = an.get_frame(step, vis.base_texture.is_valid() ? vis.base_texture->get_width() : 0, vis.base_texture.is_valid() ? vis.base_texture->get_height() : 0);
+			if (vis.current_frame_duration <= 0.0f) {
+				ClockGearsAnimationFrame f0 = an.get_frame(vis.current_frame_idx);
+				vis.current_frame_duration = f0.get_duration(an.fps);
+			}
+
+			vis.frame_timer += p_delta;
+			while (vis.frame_timer >= vis.current_frame_duration && vis.current_frame_duration > 0.0f) {
+				vis.frame_timer -= vis.current_frame_duration;
+				if (an.random_order) {
+					vis.current_frame_idx = (total_f > 1) ? (Math::rand() % total_f) : 0;
+				} else {
+					vis.current_frame_idx++;
+					if (vis.current_frame_idx >= total_f) {
+						if (loop) {
+							vis.current_frame_idx = 0;
+						} else {
+							vis.current_frame_idx = total_f - 1;
+							break;
+						}
+					}
+				}
+				ClockGearsAnimationFrame next_f = an.get_frame(vis.current_frame_idx);
+				vis.current_frame_duration = next_f.get_duration(an.fps);
+			}
+
+			ClockGearsAnimationFrame f = an.get_frame(vis.current_frame_idx, vis.base_texture.is_valid() ? vis.base_texture->get_width() : 0, vis.base_texture.is_valid() ? vis.base_texture->get_height() : 0);
 			if (!f.sheet_path.is_empty() && f.sheet_path != vis.current_sheet_path) {
 				Ref<Texture2D> new_tex = load_texture_with_fallbacks(f.sheet_path);
 				if (new_tex.is_valid()) {
@@ -333,35 +419,25 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 			}
 			r = f.region;
 		} else {
-			// Si falta la animación, usa el frame 0 de idle o default sin romperse
-			const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(vis.sprite_data, "idle");
-			if (idle_anim && idle_anim->get_frame_count() > 0) {
-				ClockGearsAnimationFrame f0 = idle_anim->get_frame(0, vis.base_texture.is_valid() ? vis.base_texture->get_width() : 0, vis.base_texture.is_valid() ? vis.base_texture->get_height() : 0);
-				if (!f0.sheet_path.is_empty() && f0.sheet_path != vis.current_sheet_path) {
-					Ref<Texture2D> new_tex = load_texture_with_fallbacks(f0.sheet_path);
-					if (new_tex.is_valid()) {
-						vis.base_texture = new_tex;
-						vis.atlas_texture->set_atlas(vis.base_texture);
-						vis.current_sheet_path = f0.sheet_path;
-					}
-				}
-				r = f0.region;
-			} else {
-				int cols = vis.sprite_data.cols > 0 ? vis.sprite_data.cols : 4;
-				int fw = vis.sprite_data.frame_w > 0 ? vis.sprite_data.frame_w : (vis.base_texture.is_valid() ? vis.base_texture->get_width() / cols : 32);
-				int fh = vis.sprite_data.frame_h > 0 ? vis.sprite_data.frame_h : (vis.base_texture.is_valid() ? vis.base_texture->get_height() : 32);
-				if (vis.base_texture.is_valid() && vis.base_texture->get_width() > vis.base_texture->get_height() && (fw >= vis.base_texture->get_width() || fw <= 0)) {
-					fw = vis.base_texture->get_height();
-				}
-				if (vis.base_texture.is_valid()) {
-					if (fw <= 0 || fw > vis.base_texture->get_width()) fw = vis.base_texture->get_width();
-					if (fh <= 0 || fh > vis.base_texture->get_height()) fh = vis.base_texture->get_height();
-				}
-				r = Rect2i(0, 0, fw, fh);
+			// Si no hay animación configurada, usar frame 0 sin romperse
+			int cols = vis.sprite_data.cols > 0 ? vis.sprite_data.cols : 4;
+			int fw = vis.sprite_data.frame_w > 0 ? vis.sprite_data.frame_w : (vis.base_texture.is_valid() ? vis.base_texture->get_width() / cols : 32);
+			int fh = vis.sprite_data.frame_h > 0 ? vis.sprite_data.frame_h : (vis.base_texture.is_valid() ? vis.base_texture->get_height() : 32);
+			if (vis.base_texture.is_valid() && vis.base_texture->get_width() > vis.base_texture->get_height() && (fw >= vis.base_texture->get_width() || fw <= 0)) {
+				fw = vis.base_texture->get_height();
 			}
+			if (vis.base_texture.is_valid()) {
+				if (fw <= 0 || fw > vis.base_texture->get_width()) fw = vis.base_texture->get_width();
+				if (fh <= 0 || fh > vis.base_texture->get_height()) fh = vis.base_texture->get_height();
+			}
+			r = Rect2i(0, 0, fw, fh);
 		}
 
 		vis.atlas_texture->set_region(Rect2(r.position.x, r.position.y, r.size.x, r.size.y));
+	}
+
+	if (action_seq_state != SEQ_IDLE) {
+		_step_action_sequence(p_delta);
 	}
 }
 
@@ -371,9 +447,75 @@ void ClockGearsBattleScene::_trigger_visual_anim(const Ref<ClockGearsBattleUnit>
 		if (vis.unit == p_unit) {
 			const ClockGearsSpriteAnimation *found_anim = s_find_animation_ci(vis.sprite_data, p_anim);
 			vis.current_anim = found_anim ? found_anim->name : p_anim;
-			vis.anim_timer = 0.0f;
+			vis.current_frame_idx = 0;
+			vis.frame_timer = 0.0f;
+			vis.current_frame_duration = 0.0f;
 			vis.state_duration = p_duration;
 			break;
+		}
+	}
+}
+
+void ClockGearsBattleScene::_trigger_unit_trigger(const Ref<ClockGearsBattleUnit> &p_unit, int p_trigger, const String &p_fallback, float p_min_duration) {
+	if (!p_unit.is_valid()) return;
+	String anim_name = p_unit->get_combat_animation(p_trigger, p_fallback);
+	if (anim_name.is_empty()) anim_name = p_fallback;
+	_trigger_visual_anim(p_unit, anim_name, p_min_duration);
+}
+
+void ClockGearsBattleScene::_start_action_sequence(int p_action_type, int p_target_idx, int p_sub_id, const String &p_sub_str) {
+	seq_action_type = p_action_type;
+	seq_target_idx = p_target_idx;
+	seq_sub_id = p_sub_id;
+	seq_sub_str = p_sub_str;
+
+	seq_attacker = controller.is_valid() ? controller->get_active_unit() : Ref<ClockGearsBattleUnit>();
+	Array tgts = (p_action_type == 3) ? (controller.is_valid() ? controller->get_party_units() : Array()) : (controller.is_valid() ? controller->get_enemy_units() : Array());
+	seq_target = (p_target_idx >= 0 && p_target_idx < tgts.size()) ? Ref<ClockGearsBattleUnit>(tgts[p_target_idx]) : Ref<ClockGearsBattleUnit>();
+
+	// 1. Reproducir Ataque en el atacante
+	_trigger_unit_trigger(seq_attacker, ANIM_TRIGGER_ATTACK, "attack", 0.45f);
+	action_seq_state = SEQ_ATTACK_ANIM;
+	action_seq_timer = 0.45f;
+
+	if (btn_attack) btn_attack->set_disabled(true);
+	if (btn_skill) btn_skill->set_disabled(true);
+	if (btn_item) btn_item->set_disabled(true);
+	if (btn_defend) btn_defend->set_disabled(true);
+	if (btn_flee) btn_flee->set_disabled(true);
+}
+
+void ClockGearsBattleScene::_step_action_sequence(float p_delta) {
+	action_seq_timer -= p_delta;
+	if (action_seq_timer <= 0.0f) {
+		if (action_seq_state == SEQ_ATTACK_ANIM) {
+			// 2. Ejecutar acción de daño y reproducir Daño/Muerte en el objetivo
+			if (controller.is_valid()) {
+				if (seq_action_type == 1) {
+					controller->action_attack(seq_target_idx);
+				} else if (seq_action_type == 2) {
+					controller->action_skill(seq_sub_id, seq_target_idx);
+				} else if (seq_action_type == 3) {
+					controller->action_item(seq_sub_str, seq_target_idx);
+				}
+			}
+			if (seq_target.is_valid()) {
+				if (seq_target->get_is_dead()) {
+					_trigger_unit_trigger(seq_target, ANIM_TRIGGER_DEATH, "death", 0.6f);
+				} else {
+					_trigger_unit_trigger(seq_target, ANIM_TRIGGER_DAMAGE, "hurt", 0.4f);
+				}
+			}
+			action_seq_state = SEQ_DAMAGE_ANIM;
+			action_seq_timer = 0.4f;
+		} else if (action_seq_state == SEQ_DAMAGE_ANIM) {
+			// 3. Fin de la secuencia: UI lista para el siguiente turno limpio
+			action_seq_state = SEQ_IDLE;
+			_refresh_ui();
+			_check_battle_state();
+			if (btn_attack && !btn_attack->is_disabled()) {
+				btn_attack->grab_focus();
+			}
 		}
 	}
 }
@@ -515,7 +657,18 @@ void ClockGearsBattleScene::_refresh_ui() {
 
 		ClockGearsSpriteSheetData sp_data = en->get_sprite_data();
 		String tex_path = en->get_graphic_path();
-		const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(sp_data, "idle");
+		String idle_name = en->get_combat_animation(ANIM_TRIGGER_IDLE, "idle");
+		const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(sp_data, idle_name);
+		if (!idle_anim && sp_data.animations.has(idle_name)) {
+			idle_anim = &sp_data.animations[idle_name];
+		}
+		if (!idle_anim) {
+			idle_anim = s_find_animation_ci(sp_data, "idle");
+		}
+		if (!idle_anim && !sp_data.animations.is_empty()) {
+			idle_anim = &sp_data.animations.begin()->value;
+		}
+
 		if (idle_anim && !idle_anim->spritesheet_path.is_empty()) {
 			tex_path = idle_anim->spritesheet_path;
 		}
@@ -523,33 +676,32 @@ void ClockGearsBattleScene::_refresh_ui() {
 		Ref<AtlasTexture> atlas;
 		atlas.instantiate();
 
-		if (base_tex.is_valid()) {
-			idle_anim = s_find_animation_ci(sp_data, "idle", base_tex->get_height());
-			atlas->set_atlas(base_tex);
-			int init_frame = 0;
-			Rect2i r;
-			if (idle_anim) {
-				if (!idle_anim->frames.is_empty()) {
-					init_frame = idle_anim->frames[0];
-				}
-				r = idle_anim->get_frame_rect(init_frame, base_tex->get_width(), base_tex->get_height());
-			} else {
-				// Frame 0 por defecto si no hay animación idle
-				int cols = sp_data.cols > 0 ? sp_data.cols : 4;
-				int fw = sp_data.frame_w > 0 ? sp_data.frame_w : (base_tex->get_width() / cols);
-				int fh = sp_data.frame_h > 0 ? sp_data.frame_h : base_tex->get_height();
-				if (base_tex->get_width() > base_tex->get_height() && (fw >= base_tex->get_width() || fw <= 0)) {
-					fw = base_tex->get_height();
-				}
+		Rect2i r;
+		if (idle_anim && idle_anim->get_frame_count() > 0) {
+			ClockGearsAnimationFrame f0 = idle_anim->get_frame(0, base_tex.is_valid() ? base_tex->get_width() : 0, base_tex.is_valid() ? base_tex->get_height() : 0);
+			r = f0.region;
+		} else {
+			// Frame 0 por defecto si no hay animación idle
+			int cols = sp_data.cols > 0 ? sp_data.cols : 4;
+			int fw = sp_data.frame_w > 0 ? sp_data.frame_w : (base_tex.is_valid() ? base_tex->get_width() / cols : 32);
+			int fh = sp_data.frame_h > 0 ? sp_data.frame_h : (base_tex.is_valid() ? base_tex->get_height() : 32);
+			if (base_tex.is_valid() && base_tex->get_width() > base_tex->get_height() && (fw >= base_tex->get_width() || fw <= 0)) {
+				fw = base_tex->get_height();
+			}
+			if (base_tex.is_valid()) {
 				if (fw <= 0 || fw > base_tex->get_width()) fw = base_tex->get_width();
 				if (fh <= 0 || fh > base_tex->get_height()) fh = base_tex->get_height();
-				r = Rect2i(0, 0, fw, fh);
 			}
-			// Si la textura mide 64 de alto pero el frame quedó en 32, ajustar a 64
-			if (base_tex->get_height() > 32 && r.size.y < base_tex->get_height()) {
-				r.size.y = base_tex->get_height();
-				r.size.x = MAX(r.size.x, base_tex->get_height());
-			}
+			r = Rect2i(0, 0, fw, fh);
+		}
+		// Si la textura mide 64 de alto pero el frame quedó en 32, ajustar a 64
+		if (base_tex.is_valid() && base_tex->get_height() > 32 && r.size.y < base_tex->get_height()) {
+			r.size.y = base_tex->get_height();
+			r.size.x = MAX(r.size.x, base_tex->get_height());
+		}
+
+		if (base_tex.is_valid()) {
+			atlas->set_atlas(base_tex);
 			atlas->set_region(Rect2(r.position.x, r.position.y, r.size.x, r.size.y));
 			trect->set_texture(atlas);
 		}
@@ -561,6 +713,9 @@ void ClockGearsBattleScene::_refresh_ui() {
 		vis.atlas_texture = atlas;
 		vis.sprite_data = sp_data;
 		vis.current_anim = en->get_is_dead() ? "death" : (idle_anim ? idle_anim->name : "idle");
+		vis.current_frame_idx = 0;
+		vis.frame_timer = 0.0f;
+		vis.current_frame_duration = (idle_anim && idle_anim->get_frame_count() > 0) ? idle_anim->get_frame(0).get_duration(idle_anim->fps) : 0.1f;
 		vis.anim_timer = 0.0f;
 		vis.state_duration = 0.0f;
 		vis.is_actor = false;
@@ -635,13 +790,21 @@ void ClockGearsBattleScene::_refresh_ui() {
 				ptrect->set_texture(patlas);
 			}
 
+			String h_idle = hero->get_combat_animation(ANIM_TRIGGER_IDLE, "idle");
+			const ClockGearsSpriteAnimation *h_anim = s_find_animation_ci(h_sp, h_idle);
+			if (!h_anim) h_anim = s_find_animation_ci(h_sp, "idle");
+			if (!h_anim && !h_sp.animations.is_empty()) h_anim = &h_sp.animations.begin()->value;
+
 			ClockGearsBattlerVisual h_vis;
 			h_vis.unit = hero;
 			h_vis.texture_rect = ptrect;
 			h_vis.base_texture = p_tex;
 			h_vis.atlas_texture = patlas;
 			h_vis.sprite_data = h_sp;
-			h_vis.current_anim = "idle";
+			h_vis.current_anim = h_anim ? h_anim->name : h_idle;
+			h_vis.current_frame_idx = 0;
+			h_vis.frame_timer = 0.0f;
+			h_vis.current_frame_duration = (h_anim && h_anim->get_frame_count() > 0) ? h_anim->get_frame(0).get_duration(h_anim->fps) : 0.1f;
 			h_vis.anim_timer = 0.0f;
 			h_vis.state_duration = 0.0f;
 			h_vis.is_actor = true;
@@ -984,6 +1147,10 @@ void ClockGearsBattleScene::_on_btn_item_pressed() {
 void ClockGearsBattleScene::_on_btn_defend_pressed() {
 	_close_sub_menu();
 	if (controller.is_valid()) {
+		Ref<ClockGearsBattleUnit> active = controller->get_active_unit();
+		if (active.is_valid()) {
+			_trigger_unit_trigger(active, ANIM_TRIGGER_DEFEND, "defend", 0.5f);
+		}
 		controller->action_defend();
 		_refresh_ui();
 		_check_battle_state();
@@ -1001,40 +1168,28 @@ void ClockGearsBattleScene::_on_btn_flee_pressed() {
 
 void ClockGearsBattleScene::_on_target_selected(int p_action_type, int p_target_idx, int p_sub_id, const String &p_sub_str) {
 	_close_sub_menu();
-	if (!controller.is_valid()) return;
-
-	Ref<ClockGearsBattleUnit> active = controller->get_active_unit();
-	if (active.is_valid()) {
-		_trigger_visual_anim(active, "attack", 0.45f);
-	}
-
-	Array targets = (p_action_type == 3) ? controller->get_party_units() : controller->get_enemy_units();
-	if (p_target_idx >= 0 && p_target_idx < targets.size()) {
-		Ref<ClockGearsBattleUnit> tgt = targets[p_target_idx];
-		if (tgt.is_valid()) {
-			_trigger_visual_anim(tgt, tgt->get_is_dead() ? "death" : "hurt", 0.45f);
-		}
-	}
-
-	if (p_action_type == 1) {
-		controller->action_attack(p_target_idx);
-	} else if (p_action_type == 2) {
-		controller->action_skill(p_sub_id, p_target_idx);
-	} else if (p_action_type == 3) {
-		controller->action_item(p_sub_str, p_target_idx);
-	}
-
-	_refresh_ui();
-	_check_battle_state();
-
-	if (btn_attack && !btn_attack->is_disabled()) {
-		btn_attack->grab_focus();
-	}
+	_start_action_sequence(p_action_type, p_target_idx, p_sub_id, p_sub_str);
 }
 
 bool ClockGearsBattleScene::select_action_attack(int p_target_idx) {
 	if (!controller.is_valid()) return false;
+	Ref<ClockGearsBattleUnit> active = controller->get_active_unit();
+	if (active.is_valid()) {
+		_trigger_unit_trigger(active, ANIM_TRIGGER_ATTACK, "attack", 0.45f);
+	}
+	Array targets = controller->get_enemy_units();
+	Ref<ClockGearsBattleUnit> tgt;
+	if (p_target_idx >= 0 && p_target_idx < targets.size()) {
+		tgt = targets[p_target_idx];
+	}
 	bool res = controller->action_attack(p_target_idx);
+	if (tgt.is_valid()) {
+		if (tgt->get_is_dead()) {
+			_trigger_unit_trigger(tgt, ANIM_TRIGGER_DEATH, "death", 0.6f);
+		} else {
+			_trigger_unit_trigger(tgt, ANIM_TRIGGER_DAMAGE, "hurt", 0.4f);
+		}
+	}
 	_refresh_ui();
 	_check_battle_state();
 	return res;
@@ -1042,7 +1197,23 @@ bool ClockGearsBattleScene::select_action_attack(int p_target_idx) {
 
 bool ClockGearsBattleScene::select_action_skill(int p_skill_id, int p_target_idx) {
 	if (!controller.is_valid()) return false;
+	Ref<ClockGearsBattleUnit> active = controller->get_active_unit();
+	if (active.is_valid()) {
+		_trigger_unit_trigger(active, ANIM_TRIGGER_SKILL, "attack", 0.45f);
+	}
+	Array targets = controller->get_enemy_units();
+	Ref<ClockGearsBattleUnit> tgt;
+	if (p_target_idx >= 0 && p_target_idx < targets.size()) {
+		tgt = targets[p_target_idx];
+	}
 	bool res = controller->action_skill(p_skill_id, p_target_idx);
+	if (tgt.is_valid()) {
+		if (tgt->get_is_dead()) {
+			_trigger_unit_trigger(tgt, ANIM_TRIGGER_DEATH, "death", 0.6f);
+		} else {
+			_trigger_unit_trigger(tgt, ANIM_TRIGGER_DAMAGE, "hurt", 0.4f);
+		}
+	}
 	_refresh_ui();
 	_check_battle_state();
 	return res;
@@ -1050,6 +1221,10 @@ bool ClockGearsBattleScene::select_action_skill(int p_skill_id, int p_target_idx
 
 bool ClockGearsBattleScene::select_action_item(const String &p_item_name, int p_target_idx) {
 	if (!controller.is_valid()) return false;
+	Ref<ClockGearsBattleUnit> active = controller->get_active_unit();
+	if (active.is_valid()) {
+		_trigger_unit_trigger(active, ANIM_TRIGGER_ITEM, "idle", 0.45f);
+	}
 	bool res = controller->action_item(p_item_name, p_target_idx);
 	_refresh_ui();
 	_check_battle_state();
@@ -1058,6 +1233,10 @@ bool ClockGearsBattleScene::select_action_item(const String &p_item_name, int p_
 
 bool ClockGearsBattleScene::select_action_defend() {
 	if (!controller.is_valid()) return false;
+	Ref<ClockGearsBattleUnit> active = controller->get_active_unit();
+	if (active.is_valid()) {
+		_trigger_unit_trigger(active, ANIM_TRIGGER_DEFEND, "defend", 0.5f);
+	}
 	bool res = controller->action_defend();
 	_refresh_ui();
 	_check_battle_state();

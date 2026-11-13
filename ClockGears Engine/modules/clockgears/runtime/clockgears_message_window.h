@@ -126,6 +126,7 @@ private:
 	void _advance_typewriter(float p_delta);
 	void _process_current_token();
 	void _on_choice_btn_pressed(int p_idx);
+	void _handle_choice_cancel();
 	void _update_number_display();
 	void _confirm_number_input();
 
