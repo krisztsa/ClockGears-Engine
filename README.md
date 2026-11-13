@@ -57,10 +57,9 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 
 
 
----
 # 🗺 Hoja de ruta de ClockGears Engine hacia la 1.0
 
-**ClockGears Engine** es un motor de RPG 2D por rejillas con editor visual al estilo RPG Maker MZ, hecho en C++ por **Kris'ZtS**. Esta es la ruta de 55 fases hasta la versión 1.0.
+**ClockGears Engine** es un motor de RPG 2D por rejillas con editor visual al estilo RPG Maker MZ, hecho en C++ por **Kris'ZtS · ClockGears Studio**. Esta es la ruta de 55 fases hasta la versión 1.0.
 
 > ⚠️ Es una hoja de ruta, no una promesa. El orden y el contenido pueden cambiar según la dificultad y el costo de cada fase.
 
@@ -73,16 +72,17 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 | # | Fase | Qué trae |
 |---|------|----------|
 | 1 | Base y rebranding ✅ | Rebranding completo a ClockGears Engine · créditos de Kris'ZtS en "Acerca de" · icono propio del ejecutable · compilación aislada en un solo exe · banderas de compilación reducidas |
-| 2 | Interfaz MZ y tema Dark ✅️ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos SVG pixel art · selectores (pickers) · validación en vivo |
+| 2 | Interfaz MZ y tema Dark ✅ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos SVG pixel art · selectores (pickers) · validación en vivo |
 | 3 | Mapas y rejilla ✅ | Rejillas de 16, 32 y 48 · "Salir de la casilla" (colocación libre) · importar imágenes al mapa · árbol de mapas · deshacer y rehacer · herramientas de dibujo |
 | 4 | Eventos sin código ✅ | Editor de eventos estilo MZ · páginas, condiciones y disparadores · lista de comandos editable · interruptores y variables · pestaña Code opcional |
 | 5 | Base de datos ✅ | Actores, clases, habilidades, objetos, armas, armaduras y accesorios · enemigos, tropas y estados · importar y exportar assets · selectores con pestañas y búsqueda |
 | 6 | Tilesets y colisiones ✅ | 9 ranuras (A1–A5, B, C, D, E) · máscara ○ pasable, × bloqueado, ★ pasa por detrás · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7 · selector de tileset por mapa · paleta por pestañas |
-| 7 | Sistema narrativo (7A ✅ · 7B ✅️) | 7A: ventana de mensajes, códigos de escape, retratos con expresiones, caja de nombre, opciones y entrada de número, historial, modos AUTO y SALTAR, vista previa en vivo · |
-| 8 | Combate y animaciones 🔧 | Comando "Iniciar Batalla" · orden de turnos por AGI · Atacar, Habilidad, Objeto, Defender y Huir · fórmulas, estados, EXP, oro y drops · panel de depuración F3 · editor de animaciones de sprites |
-| 9 | Por completar ⏳ | Sistema de Combate en Tiempo Real (Action RPG) |
-| 10 | Por completar ⏳ | Menús Estándar del Juego y Flujo de Menú Principa |
-| 11 | Por completar ⏳ | Exportación Simplificada y Empaquetado Final de la primera etapa |
+| 7 | Sistema narrativo ✅ | Ventana de mensajes · códigos de escape · retratos con expresiones · caja de nombre · opciones y entrada de número · historial · modos AUTO y SALTAR · vista previa en vivo |
+| 8 | Combate por turnos y animaciones 🔧 | Comando "Iniciar Batalla" · orden de turnos por AGI · Atacar, Habilidad, Objeto, Defender y Huir · fórmulas, estados, EXP, oro y drops · panel de depuración F3 · editor de animaciones de sprites |
+| 9A | Combate en tiempo real (ARPG) ⏳ | Movimiento en 4 u 8 direcciones a elegir · animaciones por ranuras con nombre (caminar, correr, atacar por dirección) · editor de hitboxes y hurtboxes por frame con maniquí de referencia · combate en tiempo real estilo Zelda · herramientas (hacha, pico, pala, azada) · habilidades físicas con recurso propio |
+| 9B | 🚀 **Magic Update** ⏳ | Base de datos por capítulos (Magia, Equipo, Objetos…) · hechizos con 10 elementos y 8 estados · grimorios por tipo con hechizos por nivel · báculos y objetos canalizadores · barra de acceso rápido 1–9 · reglas de equipo configurables y modo "Lv 100" en F3 |
+| 10 | Menús del juego y menú principal ⏳ | Menús estándar del juego (objetos, equipo, estado, guardar) · flujo de menú principal (título, nuevo juego, cargar, opciones, salir) |
+| 11 | Exportación y empaquetado de la primera etapa ⏳ | Exportación simplificada en 1 o 2 clics · empaquetado final de la primera etapa · licencias incluidas en el paquete |
 
 ---
 
@@ -94,7 +94,7 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 | 13 | Eventos II | Ramas anidadas (elecciones y condiciones) · bucles, etiquetas y saltos · copiar, pegar y buscar comandos · comentarios · eventos comunes |
 | 14 | Eventos III | Rutas de movimiento · seguidores del grupo · control de cámara y scroll · tintes, sacudidas y flashes · imágenes en pantalla |
 | 15 | Mapas II | Autotiles A1–A4 completos · regiones · capas de tiles y eventos · copiar y exportar mapas · transiciones y teletransportes |
-| 16 | Combate II | Elementos y resistencias · críticos, evasión y fallo · objetivos múltiples y aleatorios · estados avanzados · editor de fórmulas con validación |
+| 16 | Combate II | Resistencias y debilidades por elemento y estado · críticos, evasión y fallo · objetivos múltiples y aleatorios · estados avanzados · editor de fórmulas con validación |
 | 17 | Combate III | Costes, recargas y tipos de habilidad · pasivas y rasgos · habilidades encadenadas · invocaciones · contraataque y cobertura · IA enemiga por patrones y condiciones |
 | 18 | Combate IV | Jefes con fases · eventos dentro de la batalla · emboscadas y huida configurables · vistas frontal y lateral · fondos por mapa o región · recompensas especiales |
 | 19 | 🚀 **Cronómetro Update** | Sistemas de turno a elegir (clásico, ATB, ticks) · simulador de batallas con balance automático · curvas de nivel y dificultad · cola de turnos visual · auto-batalla |
@@ -170,3 +170,9 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 | 54 | Calidad y beta | Pruebas automáticas por pantalla · proyectos de prueba y de rendimiento · informe de regresión · manual completo · sistema de reportes con captura |
 | 55 | 🚀 **Maestro Relojero 1.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · web y página de descarga · lanzamiento |
 
+---
+
+## Notas
+
+- **Estilo Diorama 2.5D:** es una técnica visual propia (pixel art sobre escenarios 3D). No se usan nombres, assets ni iconografía de otros juegos.
+- **Licencia:** las modificaciones y el código original son de Kris'ZtS · ClockGears Studio (ver `LICENSE-CLOCKGEARS.txt`). El código de [Godot Engine](https://godotengine.org) que contiene se mantiene bajo su licencia MIT, con sus avisos originales conservados. Los juegos creados con el motor son de sus creadores, sin regalías ni suscripciones.
