@@ -131,6 +131,7 @@ private:
 	float arpg_knockback_timer = 0.0f;
 	Vector2 arpg_knockback_velocity;
 	float arpg_hitstop_timer = 0.0f;
+	float arpg_hp_bar_timer = 0.0f;
 	Ref<ClockGearsAttackSwingTracker> ev_swing_tracker;
 	int64_t ev_attack_swing_id = 0;
 
@@ -260,6 +261,8 @@ public:
 	bool is_arpg_dying() const { return arpg_dying; }
 	bool is_arpg_dead() const { return arpg_dead; }
 	bool is_arpg_alive() const { return behavior_type == 3 && !arpg_dying && !arpg_dead && is_visible(); }
+	bool is_arpg_hp_bar_visible() const { return behavior_type == 3 && !arpg_dying && !arpg_dead && is_visible() && arpg_hp_bar_timer > 0.0f; }
+	float get_arpg_hp_bar_remaining() const { return arpg_hp_bar_timer; }
 	float get_arpg_hitstop_remaining() const { return arpg_hitstop_timer; }
 	float get_arpg_knockback_remaining() const { return arpg_knockback_timer; }
 	Vector2 get_arpg_world_center() const;

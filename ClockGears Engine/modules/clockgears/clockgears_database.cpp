@@ -458,6 +458,11 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_main_editor_tabs"), &ClockGearsDatabaseDialog::get_main_editor_tabs);
 	ClassDB::bind_method(D_METHOD("select_main_tab_by_name", "name"), &ClockGearsDatabaseDialog::select_main_tab_by_name);
 	ClassDB::bind_method(D_METHOD("check_all_tabs_layout", "window_size"), &ClockGearsDatabaseDialog::check_all_tabs_layout);
+	ClassDB::bind_method(D_METHOD("adapt_to_window_size", "window_size"), &ClockGearsDatabaseDialog::adapt_to_window_size);
+	ClassDB::bind_method(D_METHOD("is_realtime_combat_section_visible"), &ClockGearsDatabaseDialog::is_realtime_combat_section_visible);
+	ClassDB::bind_method(D_METHOD("set_system_combat_mode", "mode"), &ClockGearsDatabaseDialog::set_system_combat_mode);
+	ClassDB::bind_method(D_METHOD("get_system_config_copy"), &ClockGearsDatabaseDialog::get_system_config_copy);
+	ClassDB::bind_method(D_METHOD("set_system_realtime_value", "key", "value"), &ClockGearsDatabaseDialog::set_system_realtime_value);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -1380,6 +1385,45 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 			int spd_blk = CLAMP(int(system_config.get("arpg_block_move_speed_pct", 50)), 0, 200);
 			sys_arpg_blk_spd_spin->set_value(spd_blk);
 			sys_arpg_blk_spd_spin->set_meta("cg_last_valid_val", double(spd_blk));
+		}
+		if (sys_arpg_invuln_spin && sys_arpg_invuln_slider) {
+			double inv = CLAMP(double(system_config.get("arpg_invuln_seconds", 0.5)), 0.0, 3.0);
+			sys_arpg_invuln_spin->set_value(inv);
+			sys_arpg_invuln_spin->set_meta("cg_last_valid_val", inv);
+			sys_arpg_invuln_slider->set_value(inv);
+		}
+		if (sys_arpg_block_red_spin && sys_arpg_block_red_slider) {
+			double red = CLAMP(double(system_config.get("arpg_block_reduction_pct", 50.0)), 0.0, 100.0);
+			sys_arpg_block_red_spin->set_value(red);
+			sys_arpg_block_red_spin->set_meta("cg_last_valid_val", red);
+			sys_arpg_block_red_slider->set_value(red);
+		}
+		if (sys_arpg_dodge_type_opt) {
+			String dt = String(system_config.get("arpg_dodge_type", "voltereta")).to_lower();
+			sys_arpg_dodge_type_opt->select(dt == "dash" ? 1 : 0);
+		}
+		if (sys_arpg_dodge_dur_spin && sys_arpg_dodge_dur_slider) {
+			double dd = CLAMP(double(system_config.get("arpg_dodge_duration", 0.25)), 0.05, 2.0);
+			sys_arpg_dodge_dur_spin->set_value(dd);
+			sys_arpg_dodge_dur_spin->set_meta("cg_last_valid_val", dd);
+			sys_arpg_dodge_dur_slider->set_value(dd);
+		}
+		if (sys_arpg_dodge_dist_spin && sys_arpg_dodge_dist_slider) {
+			double ds = CLAMP(double(system_config.get("arpg_dodge_distance", 96.0)), 16.0, 320.0);
+			sys_arpg_dodge_dist_spin->set_value(ds);
+			sys_arpg_dodge_dist_spin->set_meta("cg_last_valid_val", ds);
+			sys_arpg_dodge_dist_slider->set_value(ds);
+		}
+		if (sys_arpg_dodge_cd_spin && sys_arpg_dodge_cd_slider) {
+			double dc = CLAMP(double(system_config.get("arpg_dodge_cooldown", 0.4)), 0.0, 5.0);
+			sys_arpg_dodge_cd_spin->set_value(dc);
+			sys_arpg_dodge_cd_spin->set_meta("cg_last_valid_val", dc);
+			sys_arpg_dodge_cd_slider->set_value(dc);
+		}
+		if (sys_arpg_show_dmg_chk) {
+			bool show_dmg = bool(system_config.get("arpg_show_damage_numbers", false));
+			system_config["arpg_show_damage_numbers"] = show_dmg;
+			sys_arpg_show_dmg_chk->set_pressed(show_dmg);
 		}
 		_update_system_arpg_controls_visibility();
 		if (sys_movement_dirs_opt) {
@@ -4445,6 +4489,7 @@ void ClockGearsDatabaseDialog::_on_window_size_changed() {
 	if (cur_sz.x >= min_sz.x && cur_sz.y >= min_sz.y) {
 		_save_editor_ui_state();
 	}
+	adapt_to_window_size(cur_sz);
 	if (current_category == CAT_TILESETS) {
 		callable_mp(this, &ClockGearsDatabaseDialog::_update_tileset_split_layout).call_deferred();
 	}
@@ -4736,6 +4781,27 @@ void ClockGearsDatabaseDialog::_on_system_field_changed() {
 	if (sys_arpg_blk_spd_spin) {
 		system_config["arpg_block_move_speed_pct"] = CLAMP(int(sys_arpg_blk_spd_spin->get_value()), 0, 200);
 	}
+	if (sys_arpg_invuln_spin) {
+		system_config["arpg_invuln_seconds"] = CLAMP(double(sys_arpg_invuln_spin->get_value()), 0.0, 3.0);
+	}
+	if (sys_arpg_block_red_spin) {
+		system_config["arpg_block_reduction_pct"] = CLAMP(int(Math::round(sys_arpg_block_red_spin->get_value())), 0, 100);
+	}
+	if (sys_arpg_dodge_type_opt) {
+		system_config["arpg_dodge_type"] = (sys_arpg_dodge_type_opt->get_selected() == 1) ? String("dash") : String("voltereta");
+	}
+	if (sys_arpg_dodge_dur_spin) {
+		system_config["arpg_dodge_duration"] = CLAMP(double(sys_arpg_dodge_dur_spin->get_value()), 0.05, 2.0);
+	}
+	if (sys_arpg_dodge_dist_spin) {
+		system_config["arpg_dodge_distance"] = CLAMP(double(sys_arpg_dodge_dist_spin->get_value()), 16.0, 320.0);
+	}
+	if (sys_arpg_dodge_cd_spin) {
+		system_config["arpg_dodge_cooldown"] = CLAMP(double(sys_arpg_dodge_cd_spin->get_value()), 0.0, 5.0);
+	}
+	if (sys_arpg_show_dmg_chk) {
+		system_config["arpg_show_damage_numbers"] = sys_arpg_show_dmg_chk->is_pressed();
+	}
 	if (ClockGearsDataManager::get_singleton()) {
 		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
 	}
@@ -4773,6 +4839,9 @@ void ClockGearsDatabaseDialog::_update_system_arpg_controls_visibility() {
 	}
 	if (sys_arpg_blk_spd_spin) {
 		sys_arpg_blk_spd_spin->set_visible(is_arpg && allow_blk_move);
+	}
+	if (sys_arpg_realtime_panel) {
+		sys_arpg_realtime_panel->set_visible(is_arpg);
 	}
 }
 
@@ -5255,6 +5324,32 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	main_editor_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_editor_tabs->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	main_editor_tabs->set_tabs_visible(true);
+	{
+		Ref<StyleBoxFlat> db_tab_sel = memnew(StyleBoxFlat);
+		db_tab_sel->set_bg_color(Color(0.18f, 0.21f, 0.27f, 1.0f));
+		db_tab_sel->set_border_color(Color(0.38f, 0.56f, 0.85f, 0.85f));
+		db_tab_sel->set_border_width(SIDE_TOP, 2);
+		db_tab_sel->set_corner_radius(CORNER_TOP_LEFT, int(7 * EDSCALE));
+		db_tab_sel->set_corner_radius(CORNER_TOP_RIGHT, int(7 * EDSCALE));
+		db_tab_sel->set_content_margin_individual(int(12 * EDSCALE), int(6 * EDSCALE), int(12 * EDSCALE), int(6 * EDSCALE));
+
+		Ref<StyleBoxFlat> db_tab_unsel = memnew(StyleBoxFlat);
+		db_tab_unsel->set_bg_color(Color(0.12f, 0.13f, 0.17f, 0.9f));
+		db_tab_unsel->set_corner_radius(CORNER_TOP_LEFT, int(7 * EDSCALE));
+		db_tab_unsel->set_corner_radius(CORNER_TOP_RIGHT, int(7 * EDSCALE));
+		db_tab_unsel->set_content_margin_individual(int(12 * EDSCALE), int(6 * EDSCALE), int(12 * EDSCALE), int(6 * EDSCALE));
+
+		Ref<StyleBoxFlat> db_tab_panel = memnew(StyleBoxFlat);
+		db_tab_panel->set_bg_color(Color(0.14f, 0.15f, 0.19f, 0.96f));
+		db_tab_panel->set_border_width_all(1);
+		db_tab_panel->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.08f));
+		db_tab_panel->set_corner_radius_all(int(8 * EDSCALE));
+
+		main_editor_tabs->add_theme_style_override("tab_selected", db_tab_sel);
+		main_editor_tabs->add_theme_style_override("tab_hovered", db_tab_sel);
+		main_editor_tabs->add_theme_style_override("tab_unselected", db_tab_unsel);
+		main_editor_tabs->add_theme_style_override("panel", db_tab_panel);
+	}
 	two_col_hbox->add_child(main_editor_tabs);
 
 	// Pestaña 0: "General"
@@ -6673,6 +6768,66 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	sys_camera_clamp_check->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_field_changed).unbind(1));
 	cam_flags_vb->add_child(sys_camera_clamp_check);
 	sys_grid->add_child(cam_flags_vb);
+
+	sys_arpg_realtime_panel = memnew(PanelContainer);
+	sys_arpg_realtime_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_arpg_realtime_panel->set_visible(false);
+	{
+		Ref<StyleBoxFlat> rt_sb = memnew(StyleBoxFlat);
+		rt_sb->set_anti_aliased(true);
+		rt_sb->set_bg_color(Color(0.11f, 0.13f, 0.18f, 0.92f));
+		rt_sb->set_border_width_all(1);
+		rt_sb->set_border_color(Color(0.32f, 0.56f, 0.88f, 0.38f));
+		rt_sb->set_corner_radius_all(int(8 * EDSCALE));
+		rt_sb->set_content_margin_all(int(14 * EDSCALE));
+		sys_arpg_realtime_panel->add_theme_style_override("panel", rt_sb);
+	}
+	system_panel->add_child(sys_arpg_realtime_panel);
+
+	VBoxContainer *rt_vb = memnew(VBoxContainer);
+	rt_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rt_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	sys_arpg_realtime_panel->add_child(rt_vb);
+
+	Label *lbl_rt_sec = memnew(Label(CG_DB_TR("Combate en tiempo real")));
+	lbl_rt_sec->add_theme_color_override("font_color", Color(0.46f, 0.78f, 1.0f));
+	rt_vb->add_child(lbl_rt_sec);
+	rt_vb->add_child(memnew(HSeparator));
+
+	GridContainer *rt_grid = memnew(GridContainer);
+	rt_grid->set_columns(2);
+	rt_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rt_grid->add_theme_constant_override("h_separation", int(14 * EDSCALE));
+	rt_grid->add_theme_constant_override("v_separation", int(10 * EDSCALE));
+	rt_vb->add_child(rt_grid);
+
+	_add_realtime_slider_spin_row(rt_grid, CG_DB_TR("Invulnerabilidad tras daño (s):"), 0.0, 3.0, 0.05, 0.5, " s", sys_arpg_invuln_slider, sys_arpg_invuln_spin);
+	_add_realtime_slider_spin_row(rt_grid, CG_DB_TR("Reducción del bloqueo (%):"), 0.0, 100.0, 5.0, 50.0, "%", sys_arpg_block_red_slider, sys_arpg_block_red_spin);
+
+	Label *lbl_dodge_type = memnew(Label(CG_DB_TR("Tipo de esquivar:")));
+	lbl_dodge_type->set_custom_minimum_size(Size2(185 * EDSCALE, 0));
+	rt_grid->add_child(lbl_dodge_type);
+	sys_arpg_dodge_type_opt = memnew(OptionButton);
+	sys_arpg_dodge_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_arpg_dodge_type_opt->set_custom_minimum_size(Size2(180 * EDSCALE, row_h));
+	sys_arpg_dodge_type_opt->add_item(CG_DB_TR("Voltereta"), 0);
+	sys_arpg_dodge_type_opt->add_item(CG_DB_TR("Dash"), 1);
+	sys_arpg_dodge_type_opt->select(0);
+	sys_arpg_dodge_type_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_field_changed).unbind(1));
+	rt_grid->add_child(sys_arpg_dodge_type_opt);
+
+	_add_realtime_slider_spin_row(rt_grid, CG_DB_TR("Duración de esquivar (s):"), 0.05, 2.0, 0.05, 0.25, " s", sys_arpg_dodge_dur_slider, sys_arpg_dodge_dur_spin);
+	_add_realtime_slider_spin_row(rt_grid, CG_DB_TR("Distancia de esquivar (px):"), 16.0, 320.0, 8.0, 96.0, " px", sys_arpg_dodge_dist_slider, sys_arpg_dodge_dist_spin);
+	_add_realtime_slider_spin_row(rt_grid, CG_DB_TR("Enfriamiento de esquivar (s):"), 0.0, 5.0, 0.05, 0.4, " s", sys_arpg_dodge_cd_slider, sys_arpg_dodge_cd_spin);
+
+	Label *lbl_show_dmg = memnew(Label(CG_DB_TR("Indicadores en pantalla:")));
+	lbl_show_dmg->set_custom_minimum_size(Size2(185 * EDSCALE, 0));
+	rt_grid->add_child(lbl_show_dmg);
+	sys_arpg_show_dmg_chk = memnew(CheckBox(CG_DB_TR("Mostrar números de daño")));
+	sys_arpg_show_dmg_chk->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_arpg_show_dmg_chk->set_pressed(false);
+	sys_arpg_show_dmg_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_field_changed).unbind(1));
+	rt_grid->add_child(sys_arpg_show_dmg_chk);
 
 	Label *lbl_party_sec = memnew(Label(CG_DB_TR("Grupo inicial")));
 	lbl_party_sec->set_tooltip_text(CG_DB_TR("Grupo inicial (Party - Máx. 1 Líder + 8 Seguidores)"));
@@ -14713,6 +14868,101 @@ Dictionary ClockGearsDatabaseDialog::check_all_tabs_layout(const Vector2i &p_win
 	out["all_ok"] = all_ok;
 	return out;
 }
+
+void ClockGearsDatabaseDialog::_add_realtime_slider_spin_row(GridContainer *p_grid, const String &p_label, double p_min, double p_max, double p_step, double p_default, const String &p_suffix, HSlider *&r_slider, SpinBox *&r_spin) {
+	if (!p_grid) {
+		return;
+	}
+	Label *lbl = memnew(Label(p_label));
+	lbl->set_custom_minimum_size(Size2(185 * EDSCALE, 0));
+	p_grid->add_child(lbl);
+
+	HBoxContainer *hb = memnew(HBoxContainer);
+	hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	p_grid->add_child(hb);
+
+	r_slider = memnew(HSlider);
+	r_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	r_slider->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	r_slider->set_custom_minimum_size(Size2(120 * EDSCALE, 24 * EDSCALE));
+	r_slider->set_min(p_min);
+	r_slider->set_max(p_max);
+	r_slider->set_step(p_step);
+	r_slider->set_value(p_default);
+	hb->add_child(r_slider);
+
+	r_spin = memnew(SpinBox);
+	r_spin->set_custom_minimum_size(Size2(96 * EDSCALE, 30 * EDSCALE));
+	r_spin->set_min(p_min);
+	r_spin->set_max(p_max);
+	r_spin->set_step(p_step);
+	r_spin->set_value(p_default);
+	if (!p_suffix.is_empty()) {
+		r_spin->set_suffix(p_suffix);
+	}
+	_bind_numeric_spinbox(r_spin);
+	hb->add_child(r_spin);
+
+	r_slider->connect("value_changed", callable_mp(static_cast<Range *>(r_spin), &Range::set_value));
+	r_spin->connect("value_changed", callable_mp(static_cast<Range *>(r_slider), &Range::set_value));
+	r_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_field_changed).unbind(1));
+}
+
+void ClockGearsDatabaseDialog::adapt_to_window_size(const Vector2i &p_window_size) {
+	if (p_window_size.x <= 0 || p_window_size.y <= 0) {
+		return;
+	}
+	if (col2_scroll_container) {
+		col2_scroll_container->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	}
+	if (main_editor_tabs) {
+		for (int i = 0; i < main_editor_tabs->get_tab_count(); i++) {
+			ScrollContainer *sc = Object::cast_to<ScrollContainer>(main_editor_tabs->get_tab_control(i));
+			if (sc && sc != col2_scroll_container) {
+				sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+			}
+		}
+	}
+}
+
+bool ClockGearsDatabaseDialog::is_realtime_combat_section_visible() const {
+	return sys_arpg_realtime_panel && sys_arpg_realtime_panel->is_visible();
+}
+
+void ClockGearsDatabaseDialog::set_system_combat_mode(int p_mode) {
+	if (!combat_mode_selector) {
+		return;
+	}
+	int target_idx = (p_mode == COMBAT_MODE_ACTION_RPG) ? 1 : 0;
+	combat_mode_selector->select(target_idx);
+	_on_combat_mode_selected(target_idx);
+}
+
+Dictionary ClockGearsDatabaseDialog::get_system_config_copy() const {
+	return system_config.duplicate(true);
+}
+
+void ClockGearsDatabaseDialog::set_system_realtime_value(const String &p_key, const Variant &p_val) {
+	if (p_key == "arpg_invuln_seconds" && sys_arpg_invuln_spin) {
+		sys_arpg_invuln_spin->set_value(double(p_val));
+	} else if (p_key == "arpg_block_reduction_pct" && sys_arpg_block_red_spin) {
+		sys_arpg_block_red_spin->set_value(double(p_val));
+	} else if (p_key == "arpg_dodge_type" && sys_arpg_dodge_type_opt) {
+		int idx = (String(p_val).to_lower() == "dash") ? 1 : 0;
+		sys_arpg_dodge_type_opt->select(idx);
+		_on_system_field_changed();
+	} else if (p_key == "arpg_dodge_duration" && sys_arpg_dodge_dur_spin) {
+		sys_arpg_dodge_dur_spin->set_value(double(p_val));
+	} else if (p_key == "arpg_dodge_distance" && sys_arpg_dodge_dist_spin) {
+		sys_arpg_dodge_dist_spin->set_value(double(p_val));
+	} else if (p_key == "arpg_dodge_cooldown" && sys_arpg_dodge_cd_spin) {
+		sys_arpg_dodge_cd_spin->set_value(double(p_val));
+	} else if (p_key == "arpg_show_damage_numbers" && sys_arpg_show_dmg_chk) {
+		sys_arpg_show_dmg_chk->set_pressed(bool(p_val));
+	}
+}
+
 
 
 

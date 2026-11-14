@@ -103,6 +103,9 @@ class ClockGearsMapPanel : public VBoxContainer {
 	int pending_save_width = 0;
 	int pending_save_height = 0;
 	int pending_save_tileset_id = 0;
+	int pending_save_combat_mode = -1;
+	int pending_save_respawn_mode = 0;
+	double pending_save_respawn_minutes = 5.0;
 	bool pending_save_is_new = false;
 
 	void _on_tileset_change_confirmed();

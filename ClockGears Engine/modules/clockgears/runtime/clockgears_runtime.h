@@ -85,6 +85,8 @@ private:
 
 	// Invulnerabilidad, retroceso, esquivar y muerte ARPG (Tanda 3C-2)
 	float arpg_invuln_timer = 0.0f;
+	float arpg_invuln_blink_timer = 0.0f;
+	float arpg_invuln_blink_alpha = 1.0f;
 	float arpg_knockback_timer = 0.0f;
 	Vector2 arpg_knockback_velocity;
 	float arpg_knockback_duration = 0.16f;
@@ -120,6 +122,7 @@ private:
 	void _process_active_attack_hits();
 	void _refresh_dodge_input_action();
 	void _sync_grid_cell_from_world_pos(const Vector2 &p_world_pos);
+	void _update_arpg_invuln_blink(float p_dt);
 	void _begin_arpg_player_death();
 	void _finish_arpg_player_death();
 	void _update_body_sprite_frame();
@@ -152,6 +155,7 @@ public:
 	Dictionary get_arpg_effective_hurtbox() const;
 	bool is_arpg_invulnerable() const { return arpg_invuln_timer > 0.0f || (arpg_dodge_invuln && arpg_dodge_timer > 0.0f); }
 	float get_arpg_invuln_remaining() const { return arpg_invuln_timer; }
+	float get_arpg_invuln_blink_alpha() const { return arpg_invuln_blink_alpha; }
 	bool is_arpg_blocking() const { return action_state_id == "bloquear" || arpg_block_held; }
 	bool is_arpg_dodging() const { return arpg_dodge_timer > 0.0f; }
 	bool is_arpg_dodge_invulnerable() const { return arpg_dodge_invuln && arpg_dodge_timer > 0.0f; }

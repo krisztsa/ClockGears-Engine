@@ -8,9 +8,14 @@
 #include "core/config/engine.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/io/resource_loader.h"
 #include "core/os/os.h"
+#include "icons/clockgears_icons.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/gui/texture_rect.h"
+#include "scene/resources/atlas_texture.h"
+#include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 
@@ -64,8 +69,10 @@ void ClockGearsDebugWorldCanvas::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugWorldCanvas::is_show_bodies_zones);
 	ClassDB::bind_method(D_METHOD("set_show_damage_numbers", "show"), &ClockGearsDebugWorldCanvas::set_show_damage_numbers);
 	ClassDB::bind_method(D_METHOD("is_show_damage_numbers"), &ClockGearsDebugWorldCanvas::is_show_damage_numbers);
+	ClassDB::bind_method(D_METHOD("is_damage_numbers_enabled"), &ClockGearsDebugWorldCanvas::is_damage_numbers_enabled);
 	ClassDB::bind_method(D_METHOD("push_damage_number", "world_pos", "amount", "is_crit"), &ClockGearsDebugWorldCanvas::push_damage_number, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_recent_damage_numbers"), &ClockGearsDebugWorldCanvas::get_recent_damage_numbers);
+	ClassDB::bind_method(D_METHOD("get_visible_damage_numbers_count"), &ClockGearsDebugWorldCanvas::get_visible_damage_numbers_count);
 	ClassDB::bind_method(D_METHOD("clear_damage_numbers"), &ClockGearsDebugWorldCanvas::clear_damage_numbers);
 }
 
@@ -104,14 +111,31 @@ void ClockGearsDebugWorldCanvas::set_show_damage_numbers(bool p_show) {
 	queue_redraw();
 }
 
+bool ClockGearsDebugWorldCanvas::is_damage_numbers_enabled() const {
+	if (show_damage_numbers) {
+		return true;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm && bool(dm->get_system_config().get("arpg_show_damage_numbers", false))) {
+		return true;
+	}
+	return false;
+}
+
+int ClockGearsDebugWorldCanvas::get_visible_damage_numbers_count() const {
+	return is_damage_numbers_enabled() ? floating_damages.size() : 0;
+}
+
 void ClockGearsDebugWorldCanvas::push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit) {
-	FloatingDamageEntry entry;
-	entry.world_pos = p_world_pos;
-	entry.amount = p_amount;
-	entry.is_crit = p_is_crit;
-	entry.remaining = 0.85f;
-	entry.max_time = 0.85f;
-	floating_damages.push_back(entry);
+	if (is_damage_numbers_enabled()) {
+		FloatingDamageEntry entry;
+		entry.world_pos = p_world_pos;
+		entry.amount = p_amount;
+		entry.is_crit = p_is_crit;
+		entry.remaining = 0.85f;
+		entry.max_time = 0.85f;
+		floating_damages.push_back(entry);
+	}
 
 	Dictionary d;
 	d["pos"] = p_world_pos;
@@ -356,8 +380,8 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 			}
 		}
 
-		// 5. Números de daño flotantes recientes (Tanda 3C-1)
-		if (show_damage_numbers && !floating_damages.is_empty() && font.is_valid()) {
+		// 5. Números de daño flotantes recientes (Tanda 3C-1 / 3C UI)
+		if (is_damage_numbers_enabled() && !floating_damages.is_empty() && font.is_valid()) {
 			for (int i = 0; i < floating_damages.size(); i++) {
 				const FloatingDamageEntry &fe = floating_damages[i];
 				float t = 1.0f - CLAMP(fe.remaining / MAX(0.01f, fe.max_time), 0.0f, 1.0f);
@@ -395,6 +419,14 @@ void ClockGearsDebugOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_camera"), &ClockGearsDebugOverlay::is_show_camera);
 	ClassDB::bind_method(D_METHOD("set_show_bodies_zones", "show"), &ClockGearsDebugOverlay::set_show_bodies_zones);
 	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugOverlay::is_show_bodies_zones);
+	ClassDB::bind_method(D_METHOD("set_show_player_hp", "show"), &ClockGearsDebugOverlay::set_show_player_hp);
+	ClassDB::bind_method(D_METHOD("is_show_player_hp"), &ClockGearsDebugOverlay::is_show_player_hp);
+	ClassDB::bind_method(D_METHOD("set_show_damage_numbers", "show"), &ClockGearsDebugOverlay::set_show_damage_numbers);
+	ClassDB::bind_method(D_METHOD("is_show_damage_numbers"), &ClockGearsDebugOverlay::is_show_damage_numbers);
+	ClassDB::bind_method(D_METHOD("get_visible_damage_numbers_count"), &ClockGearsDebugOverlay::get_visible_damage_numbers_count);
+	ClassDB::bind_method(D_METHOD("show_drop_toast", "item_name", "amount"), &ClockGearsDebugOverlay::show_drop_toast, DEFVAL(1));
+	ClassDB::bind_method(D_METHOD("get_active_drop_toasts"), &ClockGearsDebugOverlay::get_active_drop_toasts);
+	ClassDB::bind_method(D_METHOD("clear_drop_toasts"), &ClockGearsDebugOverlay::clear_drop_toasts);
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("set_show_battle_turns", "show"), &ClockGearsDebugOverlay::set_show_battle_turns);
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("is_show_battle_turns"), &ClockGearsDebugOverlay::is_show_battle_turns);
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("set_show_battle_formulas", "show"), &ClockGearsDebugOverlay::set_show_battle_formulas);
@@ -519,11 +551,26 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	lbl_player->add_theme_color_override("font_color", Color(0.40f, 0.85f, 1.0f));
 	hud_vb->add_child(lbl_player);
 
+	lbl_player_hp = memnew(Label("HP: --"));
+	lbl_player_hp->add_theme_color_override("font_color", Color(1.0f, 0.45f, 0.48f));
+	hud_vb->add_child(lbl_player_hp);
+
 	lbl_camera = memnew(Label("Cámara: Zoom 2.0x"));
 	lbl_camera->add_theme_color_override("font_color", Color(1.0f, 0.85f, 0.40f));
 	hud_vb->add_child(lbl_camera);
 
 	hud_card->hide();
+
+	// 1b. Avisos flotantes de drops obtenidos (esquina superior derecha)
+	drop_toast_box = memnew(VBoxContainer);
+	drop_toast_box->set_anchors_preset(Control::PRESET_TOP_RIGHT);
+	drop_toast_box->set_offset(SIDE_LEFT, -280);
+	drop_toast_box->set_offset(SIDE_TOP, 14);
+	drop_toast_box->set_offset(SIDE_RIGHT, -14);
+	drop_toast_box->set_offset(SIDE_BOTTOM, 240);
+	drop_toast_box->add_theme_constant_override("separation", 6);
+	drop_toast_box->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	add_child(drop_toast_box);
 
 	// 2. Ventana flotante de depuración (F3)
 	floating_window = memnew(PanelContainer);
@@ -583,6 +630,10 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	chk_bodies_zones->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
 	tab_vis->add_child(chk_bodies_zones);
 
+	chk_damage_numbers = memnew(CheckBox(CG_DBG_TR("Mostrar números de daño")));
+	chk_damage_numbers->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
+	tab_vis->add_child(chk_damage_numbers);
+
 	tab_vis->add_child(memnew(HSeparator));
 
 	chk_fps = memnew(CheckBox(CG_DBG_TR("FPS y tiempo de frame")));
@@ -592,6 +643,10 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	chk_player = memnew(CheckBox(CG_DBG_TR("Datos del jugador (Celda, Dirección, Mapa)")));
 	chk_player->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
 	tab_vis->add_child(chk_player);
+
+	chk_player_hp = memnew(CheckBox(CG_DBG_TR("Mostrar HP del jugador")));
+	chk_player_hp->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
+	tab_vis->add_child(chk_player_hp);
 
 	chk_camera = memnew(CheckBox(CG_DBG_TR("Cámara (Zoom y Rectángulo visible)")));
 	chk_camera->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
@@ -744,6 +799,7 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	_load_settings();
 	_populate_vars_tree();
 	_populate_arpg_equip_tab();
+	_ensure_drop_signal_connected();
 }
 
 ClockGearsDebugOverlay::~ClockGearsDebugOverlay() {
@@ -822,6 +878,7 @@ void ClockGearsDebugOverlay::setup_overlay(ClockGearsMap *p_map, ClockGearsPlaye
 	}
 	_on_chk_toggled(false);
 	_populate_arpg_equip_tab();
+	_ensure_drop_signal_connected();
 }
 
 void ClockGearsDebugOverlay::toggle_debug_panel() {
@@ -891,12 +948,29 @@ bool ClockGearsDebugOverlay::is_show_bodies_zones() const {
 	return chk_bodies_zones && chk_bodies_zones->is_pressed();
 }
 
+void ClockGearsDebugOverlay::set_show_player_hp(bool p_show) {
+	if (chk_player_hp) chk_player_hp->set_pressed(p_show);
+	_update_hud();
+}
+bool ClockGearsDebugOverlay::is_show_player_hp() const {
+	return chk_player_hp && chk_player_hp->is_pressed();
+}
+
+void ClockGearsDebugOverlay::set_show_damage_numbers(bool p_show) {
+	if (chk_damage_numbers) chk_damage_numbers->set_pressed(p_show);
+	if (world_canvas) world_canvas->set_show_damage_numbers(p_show);
+}
+bool ClockGearsDebugOverlay::is_show_damage_numbers() const {
+	return chk_damage_numbers && chk_damage_numbers->is_pressed();
+}
+
 void ClockGearsDebugOverlay::_on_chk_toggled(bool) {
 	if (world_canvas) {
 		world_canvas->set_show_events(chk_events && chk_events->is_pressed());
 		world_canvas->set_show_collisions(chk_collisions && chk_collisions->is_pressed());
 		world_canvas->set_show_grid(chk_grid && chk_grid->is_pressed());
 		world_canvas->set_show_bodies_zones(chk_bodies_zones && chk_bodies_zones->is_pressed());
+		world_canvas->set_show_damage_numbers(chk_damage_numbers && chk_damage_numbers->is_pressed());
 	}
 	_save_settings();
 	_update_hud();
@@ -943,8 +1017,10 @@ void ClockGearsDebugOverlay::_save_settings() {
 		d["show_collisions"] = chk_collisions ? chk_collisions->is_pressed() : false;
 		d["show_grid"] = chk_grid ? chk_grid->is_pressed() : false;
 		d["show_bodies_zones"] = chk_bodies_zones ? chk_bodies_zones->is_pressed() : false;
+		d["show_damage_numbers"] = chk_damage_numbers ? chk_damage_numbers->is_pressed() : false;
 		d["show_fps"] = chk_fps ? chk_fps->is_pressed() : false;
 		d["show_player"] = chk_player ? chk_player->is_pressed() : false;
+		d["show_player_hp"] = chk_player_hp ? chk_player_hp->is_pressed() : false;
 		d["show_camera"] = chk_camera ? chk_camera->is_pressed() : false;
 		if (chk_noclip) d["noclip"] = chk_noclip->is_pressed();
 		d["show_battle_turns"] = chk_battle_turns ? chk_battle_turns->is_pressed() : s_show_battle_turns;
@@ -974,8 +1050,10 @@ void ClockGearsDebugOverlay::_load_settings() {
 				if (chk_collisions) chk_collisions->set_pressed(bool(d.get("show_collisions", false)));
 				if (chk_grid) chk_grid->set_pressed(bool(d.get("show_grid", false)));
 				if (chk_bodies_zones) chk_bodies_zones->set_pressed(bool(d.get("show_bodies_zones", false)));
+				if (chk_damage_numbers) chk_damage_numbers->set_pressed(bool(d.get("show_damage_numbers", false)));
 				if (chk_fps) chk_fps->set_pressed(bool(d.get("show_fps", false)));
 				if (chk_player) chk_player->set_pressed(bool(d.get("show_player", false)));
+				if (chk_player_hp) chk_player_hp->set_pressed(bool(d.get("show_player_hp", false)));
 				if (chk_camera) chk_camera->set_pressed(bool(d.get("show_camera", false)));
 				if (chk_noclip) chk_noclip->set_pressed(bool(d.get("noclip", false)));
 				s_show_battle_turns = bool(d.get("show_battle_turns", false));
@@ -1182,9 +1260,10 @@ void ClockGearsDebugOverlay::set_arpg_equip_debug_slot(int p_actor_id, const Str
 void ClockGearsDebugOverlay::_update_hud() {
 	bool show_fps = chk_fps && chk_fps->is_pressed();
 	bool show_player = chk_player && chk_player->is_pressed();
+	bool show_player_hp = chk_player_hp && chk_player_hp->is_pressed();
 	bool show_camera = chk_camera && chk_camera->is_pressed();
 
-	bool any_hud = show_fps || show_player || show_camera;
+	bool any_hud = show_fps || show_player || show_player_hp || show_camera;
 	if (hud_card) {
 		hud_card->set_visible(any_hud);
 	}
@@ -1217,6 +1296,15 @@ void ClockGearsDebugOverlay::_update_hud() {
 		}
 	}
 
+	// HP del Jugador (casilla dedicada en F3)
+	if (lbl_player_hp) {
+		lbl_player_hp->set_visible(show_player_hp);
+		if (show_player_hp) {
+			String hp_str = get_player_hp_summary();
+			lbl_player_hp->set_text(hp_str.is_empty() ? String("HP: --") : hp_str);
+		}
+	}
+
 	// Cámara
 	if (lbl_camera) {
 		lbl_camera->set_visible(show_camera);
@@ -1241,9 +1329,155 @@ Array ClockGearsDebugOverlay::get_recent_damage_numbers() const {
 	return world_canvas ? world_canvas->get_recent_damage_numbers() : Array();
 }
 
+int ClockGearsDebugOverlay::get_visible_damage_numbers_count() const {
+	return world_canvas ? world_canvas->get_visible_damage_numbers_count() : 0;
+}
+
 void ClockGearsDebugOverlay::clear_damage_numbers() {
 	if (world_canvas) {
 		world_canvas->clear_damage_numbers();
+	}
+}
+
+void ClockGearsDebugOverlay::_ensure_drop_signal_connected() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm && !dm->is_connected("drop_obtained", callable_mp(this, &ClockGearsDebugOverlay::_on_drop_obtained))) {
+		dm->connect("drop_obtained", callable_mp(this, &ClockGearsDebugOverlay::_on_drop_obtained));
+	}
+}
+
+void ClockGearsDebugOverlay::_on_drop_obtained(const String &p_item_name, int p_amount) {
+	show_drop_toast(p_item_name, p_amount);
+}
+
+Ref<Texture2D> ClockGearsDebugOverlay::_resolve_item_icon(const String &p_item_name) const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm) {
+		Array items = dm->get_category_array(CAT_ITEMS);
+		for (int i = 0; i < items.size(); i++) {
+			if (items[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary d = items[i];
+			if (String(d.get("name", "")) != p_item_name) {
+				continue;
+			}
+			String gpath = String(d.get("graphic_path", ""));
+			if (!gpath.is_empty() && ResourceLoader::exists(gpath)) {
+				Ref<Texture2D> tex = ResourceLoader::load(gpath);
+				if (tex.is_valid()) {
+					if (d.has("tile_coords")) {
+						Vector2i tc = d["tile_coords"];
+						Ref<AtlasTexture> at;
+						at.instantiate();
+						at->set_atlas(tex);
+						at->set_region(Rect2(tc.x * 32, tc.y * 32, 32, 32));
+						return at;
+					}
+					return tex;
+				}
+			}
+		}
+	}
+	if (ClockGearsIcons::get_singleton()) {
+		Ref<Texture2D> cat_ic = ClockGearsIcons::get_singleton()->get_db_category_icon(CAT_ITEMS, 1.0f);
+		if (cat_ic.is_valid()) {
+			return cat_ic;
+		}
+	}
+	Ref<Image> img = Image::create_empty(16, 16, false, Image::FORMAT_RGBA8);
+	img->fill(Color(0.95f, 0.78f, 0.30f, 1.0f));
+	return ImageTexture::create_from_image(img);
+}
+
+void ClockGearsDebugOverlay::show_drop_toast(const String &p_item_name, int p_amount) {
+	if (!drop_toast_box || p_item_name.is_empty()) {
+		return;
+	}
+	int qty = MAX(1, p_amount);
+	String text = vformat("+%d %s", qty, p_item_name);
+
+	PanelContainer *panel = memnew(PanelContainer);
+	panel->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	Ref<StyleBoxFlat> sb = memnew(StyleBoxFlat);
+	sb->set_bg_color(Color(0.08f, 0.10f, 0.14f, 0.92f));
+	sb->set_border_width_all(1);
+	sb->set_border_color(Color(0.95f, 0.78f, 0.30f, 0.65f));
+	sb->set_corner_radius_all(8);
+	sb->set_content_margin_individual(10, 6, 12, 6);
+	panel->add_theme_style_override("panel", sb);
+
+	HBoxContainer *hb = memnew(HBoxContainer);
+	hb->add_theme_constant_override("separation", 8);
+	hb->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	panel->add_child(hb);
+
+	Ref<Texture2D> ic = _resolve_item_icon(p_item_name);
+	TextureRect *tr = memnew(TextureRect);
+	tr->set_custom_minimum_size(Size2(18, 18));
+	tr->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	tr->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	tr->set_texture(ic);
+	tr->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	hb->add_child(tr);
+
+	Label *lbl = memnew(Label(text));
+	lbl->add_theme_color_override("font_color", Color(1.0f, 0.94f, 0.72f, 1.0f));
+	lbl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	hb->add_child(lbl);
+
+	drop_toast_box->add_child(panel);
+	DropToastEntry entry;
+	entry.panel = panel;
+	entry.remaining = 2.4f;
+	entry.text = text;
+	entry.has_icon = ic.is_valid();
+	drop_toasts.push_back(entry);
+
+	while (drop_toasts.size() > 5) {
+		if (drop_toasts[0].panel) {
+			drop_toasts[0].panel->queue_free();
+		}
+		drop_toasts.remove_at(0);
+	}
+}
+
+Array ClockGearsDebugOverlay::get_active_drop_toasts() const {
+	Array out;
+	for (int i = 0; i < drop_toasts.size(); i++) {
+		Dictionary d;
+		d["text"] = drop_toasts[i].text;
+		d["has_icon"] = drop_toasts[i].has_icon;
+		d["remaining"] = drop_toasts[i].remaining;
+		out.push_back(d);
+	}
+	return out;
+}
+
+void ClockGearsDebugOverlay::clear_drop_toasts() {
+	for (int i = 0; i < drop_toasts.size(); i++) {
+		if (drop_toasts[i].panel) {
+			drop_toasts[i].panel->queue_free();
+		}
+	}
+	drop_toasts.clear();
+}
+
+void ClockGearsDebugOverlay::_tick_drop_toasts(float p_dt) {
+	if (drop_toasts.is_empty() || p_dt <= 0.0f) {
+		return;
+	}
+	for (int i = drop_toasts.size() - 1; i >= 0; i--) {
+		drop_toasts.write[i].remaining -= p_dt;
+		if (drop_toasts[i].remaining <= 0.0f) {
+			if (drop_toasts[i].panel) {
+				drop_toasts[i].panel->queue_free();
+			}
+			drop_toasts.remove_at(i);
+		} else if (drop_toasts[i].panel) {
+			float a = CLAMP(drop_toasts[i].remaining / 0.45f, 0.0f, 1.0f);
+			drop_toasts[i].panel->set_modulate(Color(1.0f, 1.0f, 1.0f, a));
+		}
 	}
 }
 
@@ -1272,6 +1506,8 @@ String ClockGearsDebugOverlay::get_player_hp_summary() const {
 
 void ClockGearsDebugOverlay::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
+		_ensure_drop_signal_connected();
+		_tick_drop_toasts(get_process_delta_time());
 		_update_hud();
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
 		if (s_overlay_singleton == this) {

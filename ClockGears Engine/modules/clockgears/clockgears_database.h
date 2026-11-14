@@ -23,6 +23,7 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/gui/slider.h"
 
 class ClockGearsBattleScene;
 class ClockGearsEventEditorDialog;
@@ -291,6 +292,19 @@ private:
 	CheckBox *sys_arpg_move_blk_chk = nullptr;
 	Label *lbl_sys_arpg_blk_spd = nullptr;
 	SpinBox *sys_arpg_blk_spd_spin = nullptr;
+	PanelContainer *sys_arpg_realtime_panel = nullptr;
+	HSlider *sys_arpg_invuln_slider = nullptr;
+	SpinBox *sys_arpg_invuln_spin = nullptr;
+	HSlider *sys_arpg_block_red_slider = nullptr;
+	SpinBox *sys_arpg_block_red_spin = nullptr;
+	OptionButton *sys_arpg_dodge_type_opt = nullptr;
+	HSlider *sys_arpg_dodge_dur_slider = nullptr;
+	SpinBox *sys_arpg_dodge_dur_spin = nullptr;
+	HSlider *sys_arpg_dodge_dist_slider = nullptr;
+	SpinBox *sys_arpg_dodge_dist_spin = nullptr;
+	HSlider *sys_arpg_dodge_cd_slider = nullptr;
+	SpinBox *sys_arpg_dodge_cd_spin = nullptr;
+	CheckBox *sys_arpg_show_dmg_chk = nullptr;
 	OptionButton *sys_movement_dirs_opt = nullptr;
 	OptionButton *sys_mannequin_size_opt = nullptr;
 	OptionButton *sys_start_map_option = nullptr;
@@ -889,6 +903,7 @@ private:
 	void _on_mov_patrol_remove_pressed();
 	void _on_mov_patrol_move_pressed(int p_delta);
 	void _on_movement_visual_changed();
+	void _add_realtime_slider_spin_row(GridContainer *p_grid, const String &p_label, double p_min, double p_max, double p_step, double p_default, const String &p_suffix, HSlider *&r_slider, SpinBox *&r_spin);
 
 	void _save_database_to_disk();
 	void _load_database_from_disk();
@@ -951,6 +966,11 @@ public:
 	TabContainer *get_main_editor_tabs() const { return main_editor_tabs; }
 	bool select_main_tab_by_name(const String &p_name);
 	Dictionary check_all_tabs_layout(const Vector2i &p_window_size);
+	void adapt_to_window_size(const Vector2i &p_window_size);
+	bool is_realtime_combat_section_visible() const;
+	void set_system_combat_mode(int p_mode);
+	Dictionary get_system_config_copy() const;
+	void set_system_realtime_value(const String &p_key, const Variant &p_val);
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

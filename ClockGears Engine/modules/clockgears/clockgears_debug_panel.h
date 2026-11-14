@@ -30,7 +30,7 @@ private:
 	bool show_collisions = false;
 	bool show_grid = false;
 	bool show_bodies_zones = false;
-	bool show_damage_numbers = true;
+	bool show_damage_numbers = false;
 
 	struct FloatingDamageEntry {
 		Vector2 world_pos;
@@ -63,8 +63,10 @@ public:
 
 	void set_show_damage_numbers(bool p_show);
 	bool is_show_damage_numbers() const { return show_damage_numbers; }
+	bool is_damage_numbers_enabled() const;
 	void push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit = false);
 	Array get_recent_damage_numbers() const { return recent_damage_log.duplicate(true); }
+	int get_visible_damage_numbers_count() const;
 	void clear_damage_numbers();
 
 	ClockGearsDebugWorldCanvas();
@@ -90,8 +92,10 @@ private:
 	CheckBox *chk_collisions = nullptr;
 	CheckBox *chk_grid = nullptr;
 	CheckBox *chk_bodies_zones = nullptr;
+	CheckBox *chk_damage_numbers = nullptr;
 	CheckBox *chk_fps = nullptr;
 	CheckBox *chk_player = nullptr;
+	CheckBox *chk_player_hp = nullptr;
 	CheckBox *chk_camera = nullptr;
 
 	// Espacio preparado: Herramientas (Punto 3)
@@ -103,7 +107,21 @@ private:
 	PanelContainer *hud_card = nullptr;
 	Label *lbl_fps = nullptr;
 	Label *lbl_player = nullptr;
+	Label *lbl_player_hp = nullptr;
 	Label *lbl_camera = nullptr;
+
+	struct DropToastEntry {
+		PanelContainer *panel = nullptr;
+		float remaining = 2.4f;
+		String text;
+		bool has_icon = false;
+	};
+	VBoxContainer *drop_toast_box = nullptr;
+	Vector<DropToastEntry> drop_toasts;
+	void _ensure_drop_signal_connected();
+	void _on_drop_obtained(const String &p_item_name, int p_amount);
+	void _tick_drop_toasts(float p_dt);
+	Ref<Texture2D> _resolve_item_icon(const String &p_item_name) const;
 
 	bool is_loading_settings = false;
 
@@ -175,9 +193,19 @@ public:
 	void set_show_bodies_zones(bool p_show);
 	bool is_show_bodies_zones() const;
 
+	void set_show_player_hp(bool p_show);
+	bool is_show_player_hp() const;
+
+	void set_show_damage_numbers(bool p_show);
+	bool is_show_damage_numbers() const;
+
 	void push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit = false);
 	Array get_recent_damage_numbers() const;
+	int get_visible_damage_numbers_count() const;
 	void clear_damage_numbers();
+	void show_drop_toast(const String &p_item_name, int p_amount = 1);
+	Array get_active_drop_toasts() const;
+	void clear_drop_toasts();
 	Dictionary get_player_hp_debug_info() const;
 	String get_player_hp_summary() const;
 

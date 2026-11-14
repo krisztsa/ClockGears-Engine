@@ -820,6 +820,7 @@ void ClockGearsMapPanel::_select_map_item(TreeItem *p_item) {
 
 void ClockGearsMapPanel::_on_add_map() {
 	if (map_properties_dialog) {
+		map_properties_dialog->set_arpg_map_options(COMBAT_MODE_INHERIT, RESPAWN_ON_REENTER, 5.0);
 		map_properties_dialog->popup_for_new_map(map_counter + 1, 0);
 	}
 }
@@ -842,13 +843,21 @@ void ClockGearsMapPanel::_on_edit_map_properties() {
 	int width = meta.get("width", 25);
 	int height = meta.get("height", 20);
 	int tileset_id = meta.get("tileset_id", 0);
+	int combat_mode = meta.get("combat_mode", COMBAT_MODE_INHERIT);
+	int respawn_mode = meta.get("respawn_mode", RESPAWN_ON_REENTER);
+	double respawn_minutes = double(meta.get("respawn_minutes", 5.0));
 
 	if (map_properties_dialog) {
+		map_properties_dialog->set_arpg_map_options(combat_mode, respawn_mode, respawn_minutes);
 		map_properties_dialog->popup_for_edit_map(id, name, display_name, bgm, width, height, tileset_id);
 	}
 }
 
 void ClockGearsMapPanel::_on_map_properties_saved(int p_id, const String &p_name, const String &p_display_name, const String &p_bgm, int p_width, int p_height, int p_tileset_id, bool p_is_new) {
+	int combat_mode = map_properties_dialog ? map_properties_dialog->get_selected_combat_mode() : COMBAT_MODE_INHERIT;
+	int respawn_mode = map_properties_dialog ? map_properties_dialog->get_selected_respawn_mode() : RESPAWN_ON_REENTER;
+	double respawn_minutes = map_properties_dialog ? map_properties_dialog->get_selected_respawn_minutes() : 5.0;
+
 	if (p_is_new) {
 		pending_save_id = p_id;
 		pending_save_name = p_name;
@@ -857,6 +866,9 @@ void ClockGearsMapPanel::_on_map_properties_saved(int p_id, const String &p_name
 		pending_save_width = p_width;
 		pending_save_height = p_height;
 		pending_save_tileset_id = p_tileset_id;
+		pending_save_combat_mode = combat_mode;
+		pending_save_respawn_mode = respawn_mode;
+		pending_save_respawn_minutes = respawn_minutes;
 		pending_save_is_new = true;
 		_apply_map_properties(false);
 		return;
@@ -876,6 +888,9 @@ void ClockGearsMapPanel::_on_map_properties_saved(int p_id, const String &p_name
 	pending_save_width = p_width;
 	pending_save_height = p_height;
 	pending_save_tileset_id = p_tileset_id;
+	pending_save_combat_mode = combat_mode;
+	pending_save_respawn_mode = respawn_mode;
+	pending_save_respawn_minutes = respawn_minutes;
 	pending_save_is_new = false;
 
 	if (p_tileset_id != old_ts_id) {
@@ -946,6 +961,9 @@ void ClockGearsMapPanel::_apply_map_properties(bool p_clear_tiles) {
 		map->set_map_size(Vector2i(pending_save_width, pending_save_height));
 		map->set_bgm_path(pending_save_bgm);
 		map->set_tileset_id(pending_save_tileset_id);
+		map->set_combat_mode(pending_save_combat_mode);
+		map->set_respawn_mode(pending_save_respawn_mode);
+		map->set_respawn_minutes(pending_save_respawn_minutes);
 		map->ensure_default_layers();
 		if (pending_save_tileset_id > 0) {
 			map->setup_tileset_from_database(pending_save_tileset_id);
@@ -994,6 +1012,9 @@ void ClockGearsMapPanel::_apply_map_properties(bool p_clear_tiles) {
 	meta["width"] = pending_save_width;
 	meta["height"] = pending_save_height;
 	meta["tileset_id"] = pending_save_tileset_id;
+	meta["combat_mode"] = pending_save_combat_mode;
+	meta["respawn_mode"] = pending_save_respawn_mode;
+	meta["respawn_minutes"] = pending_save_respawn_minutes;
 	meta["scene_path"] = map_path;
 	item->set_metadata(0, meta);
 
@@ -1012,6 +1033,9 @@ void ClockGearsMapPanel::_apply_map_properties(bool p_clear_tiles) {
 			map->set_map_size(Vector2i(pending_save_width, pending_save_height));
 			map->set_bgm_path(pending_save_bgm);
 			map->set_tileset_id(pending_save_tileset_id);
+			map->set_combat_mode(pending_save_combat_mode);
+			map->set_respawn_mode(pending_save_respawn_mode);
+			map->set_respawn_minutes(pending_save_respawn_minutes);
 			if (p_clear_tiles) {
 				for (int l = 0; l < 4; l++) {
 					TileMapLayer *layer = map->get_layer(l);
@@ -1033,6 +1057,9 @@ void ClockGearsMapPanel::_apply_map_properties(bool p_clear_tiles) {
 					disk_map->set_map_size(Vector2i(pending_save_width, pending_save_height));
 					disk_map->set_bgm_path(pending_save_bgm);
 					disk_map->set_tileset_id(pending_save_tileset_id);
+					disk_map->set_combat_mode(pending_save_combat_mode);
+					disk_map->set_respawn_mode(pending_save_respawn_mode);
+					disk_map->set_respawn_minutes(pending_save_respawn_minutes);
 					if (p_clear_tiles) {
 						for (int l = 0; l < 4; l++) {
 							TileMapLayer *layer = disk_map->get_layer(l);
@@ -1219,6 +1246,9 @@ void ClockGearsMapPanel::refresh_maps_from_disk() {
 		int h = 20;
 		int tileset_id = 0;
 		String bgm = "(Ninguna)";
+		int combat_mode = COMBAT_MODE_INHERIT;
+		int respawn_mode = RESPAWN_ON_REENTER;
+		double respawn_minutes = 5.0;
 
 		Ref<FileAccess> fa = FileAccess::open(mpath, FileAccess::READ);
 		if (fa.is_valid()) {
@@ -1237,6 +1267,12 @@ void ClockGearsMapPanel::refresh_maps_from_disk() {
 					bgm = line.substr(11).strip_edges().trim_prefix("\"").trim_suffix("\"");
 				} else if (line.begins_with("tileset_id = ")) {
 					tileset_id = line.substr(13).strip_edges().to_int();
+				} else if (line.begins_with("combat_mode = ")) {
+					combat_mode = line.substr(14).strip_edges().to_int();
+				} else if (line.begins_with("respawn_mode = ")) {
+					respawn_mode = line.substr(15).strip_edges().to_int();
+				} else if (line.begins_with("respawn_minutes = ")) {
+					respawn_minutes = line.substr(18).strip_edges().to_float();
 				}
 			}
 		}
@@ -1253,6 +1289,9 @@ void ClockGearsMapPanel::refresh_maps_from_disk() {
 		meta["width"] = w;
 		meta["height"] = h;
 		meta["tileset_id"] = tileset_id;
+		meta["combat_mode"] = combat_mode;
+		meta["respawn_mode"] = respawn_mode;
+		meta["respawn_minutes"] = respawn_minutes;
 		meta["scene_path"] = mpath;
 		item->set_metadata(0, meta);
 

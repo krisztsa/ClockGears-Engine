@@ -182,6 +182,7 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_arpg_effective_hurtbox"), &ClockGearsPlayer::get_arpg_effective_hurtbox);
 	ClassDB::bind_method(D_METHOD("is_arpg_invulnerable"), &ClockGearsPlayer::is_arpg_invulnerable);
 	ClassDB::bind_method(D_METHOD("get_arpg_invuln_remaining"), &ClockGearsPlayer::get_arpg_invuln_remaining);
+	ClassDB::bind_method(D_METHOD("get_arpg_invuln_blink_alpha"), &ClockGearsPlayer::get_arpg_invuln_blink_alpha);
 	ClassDB::bind_method(D_METHOD("is_arpg_blocking"), &ClockGearsPlayer::is_arpg_blocking);
 	ClassDB::bind_method(D_METHOD("is_arpg_dodging"), &ClockGearsPlayer::is_arpg_dodging);
 	ClassDB::bind_method(D_METHOD("is_arpg_dodge_invulnerable"), &ClockGearsPlayer::is_arpg_dodge_invulnerable);
@@ -925,11 +926,36 @@ void ClockGearsPlayer::_finish_arpg_player_death() {
 	}
 }
 
+void ClockGearsPlayer::_update_arpg_invuln_blink(float p_dt) {
+	if (is_arpg_invulnerable() && is_arpg_alive()) {
+		arpg_invuln_blink_timer += MAX(0.0f, p_dt);
+		int phase = int(Math::floor(arpg_invuln_blink_timer / 0.06f));
+		arpg_invuln_blink_alpha = ((phase % 2) == 0) ? 0.28f : 1.0f;
+	} else {
+		arpg_invuln_blink_timer = 0.0f;
+		arpg_invuln_blink_alpha = 1.0f;
+	}
+	if (sprite) {
+		Color m = sprite->get_modulate();
+		m.a = arpg_invuln_blink_alpha;
+		sprite->set_modulate(m);
+	}
+	for (KeyValue<String, Sprite2D *> &E : arpg_layer_sprites) {
+		if (E.value) {
+			Color lm = E.value->get_modulate();
+			lm.a = arpg_invuln_blink_alpha;
+			E.value->set_modulate(lm);
+		}
+	}
+}
+
 void ClockGearsPlayer::reset_after_arpg_death(const Vector2i &p_cell, int p_dir) {
 	arpg_dying = false;
 	arpg_dead = false;
 	arpg_death_fallback_timer = 0.0f;
 	arpg_invuln_timer = 0.0f;
+	arpg_invuln_blink_timer = 0.0f;
+	arpg_invuln_blink_alpha = 1.0f;
 	arpg_knockback_timer = 0.0f;
 	arpg_knockback_velocity = Vector2();
 	hitstop_timer = 0.0f;
@@ -942,6 +968,7 @@ void ClockGearsPlayer::reset_after_arpg_death(const Vector2i &p_cell, int p_dir)
 	action_state_id = "quieto";
 	slot_anim_frame_idx = 0;
 	slot_anim_timer = 0.0f;
+	_update_arpg_invuln_blink(0.0f);
 	set_grid_cell_immediate(p_cell, p_dir);
 }
 
@@ -1051,6 +1078,8 @@ bool ClockGearsPlayer::take_arpg_hit(int p_damage, float p_knockback_force, cons
 	float inv_sec = sys.has("arpg_invuln_seconds") ? MAX(0.0f, float(sys["arpg_invuln_seconds"])) : 0.5f;
 	if (inv_sec > 0.0f) {
 		arpg_invuln_timer = inv_sec;
+		arpg_invuln_blink_timer = 0.0f;
+		_update_arpg_invuln_blink(0.0f);
 	}
 
 	if (p_hitstop_ms > 0) {
@@ -1594,6 +1623,7 @@ void ClockGearsPlayer::_notification(int p_what) {
 			if (arpg_invuln_timer > 0.0f) {
 				arpg_invuln_timer = MAX(0.0f, arpg_invuln_timer - dt);
 			}
+			_update_arpg_invuln_blink(dt);
 			if (arpg_dodge_cooldown_timer > 0.0f) {
 				arpg_dodge_cooldown_timer = MAX(0.0f, arpg_dodge_cooldown_timer - dt);
 			}

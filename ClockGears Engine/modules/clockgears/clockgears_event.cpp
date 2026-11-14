@@ -134,6 +134,8 @@ void ClockGearsEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_arpg_dying"), &ClockGearsEvent::is_arpg_dying);
 	ClassDB::bind_method(D_METHOD("is_arpg_dead"), &ClockGearsEvent::is_arpg_dead);
 	ClassDB::bind_method(D_METHOD("is_arpg_alive"), &ClockGearsEvent::is_arpg_alive);
+	ClassDB::bind_method(D_METHOD("is_arpg_hp_bar_visible"), &ClockGearsEvent::is_arpg_hp_bar_visible);
+	ClassDB::bind_method(D_METHOD("get_arpg_hp_bar_remaining"), &ClockGearsEvent::get_arpg_hp_bar_remaining);
 	ClassDB::bind_method(D_METHOD("get_arpg_hitstop_remaining"), &ClockGearsEvent::get_arpg_hitstop_remaining);
 	ClassDB::bind_method(D_METHOD("get_arpg_knockback_remaining"), &ClockGearsEvent::get_arpg_knockback_remaining);
 	ClassDB::bind_method(D_METHOD("get_arpg_world_center"), &ClockGearsEvent::get_arpg_world_center);
@@ -295,6 +297,19 @@ void ClockGearsEvent::_notification(int p_what) {
 		case NOTIFICATION_DRAW: {
 			// Marcadores de evento (EV_0): No se dibujan en el juego por defecto (Punto 1).
 			// Solo se dibuja el sprite si lo tiene. La visualización de depuración se activa con F3.
+			if (!Engine::get_singleton()->is_editor_hint() && is_arpg_hp_bar_visible()) {
+				if (sprite) {
+					sprite->set_draw_behind_parent(true);
+				}
+				float frac = CLAMP(float(arpg_hp) / float(MAX(1, arpg_max_hp)), 0.0f, 1.0f);
+				float cx = (get_arpg_world_center() - get_position()).x;
+				float top_y = sprite ? MIN(-6.0f, sprite->get_position().y - 7.0f) : -8.0f;
+				float bw = 30.0f;
+				float bh = 4.0f;
+				draw_rect(Rect2(cx - bw * 0.5f - 1.0f, top_y - 1.0f, bw + 2.0f, bh + 2.0f), Color(0.05f, 0.05f, 0.08f, 0.88f), true);
+				Color hp_col = (frac > 0.5f) ? Color(0.28f, 0.88f, 0.36f, 0.96f) : ((frac > 0.25f) ? Color(0.95f, 0.72f, 0.20f, 0.96f) : Color(0.95f, 0.25f, 0.25f, 0.96f));
+				draw_rect(Rect2(cx - bw * 0.5f, top_y, bw * frac, bh), hp_col, true);
+			}
 		} break;
 	}
 }
@@ -1521,7 +1536,12 @@ bool ClockGearsEvent::take_arpg_hit(int p_damage, float p_knockback_force, const
 	}
 
 	if (arpg_hp <= 0) {
+		arpg_hp_bar_timer = 0.0f;
+		queue_redraw();
 		_begin_arpg_death();
+	} else {
+		arpg_hp_bar_timer = 3.0f;
+		queue_redraw();
 	}
 	return true;
 }
@@ -1540,9 +1560,11 @@ void ClockGearsEvent::sync_arpg_defeated_state() {
 		arpg_dying = false;
 		body_through = true;
 		arpg_hp = 0;
+		arpg_hp_bar_timer = 0.0f;
 		arpg_knockback_timer = 0.0f;
 		arpg_hitstop_timer = 0.0f;
 		set_visible(false);
+		queue_redraw();
 		_apply_entity_body_collision_state();
 	}
 }
@@ -1555,6 +1577,7 @@ void ClockGearsEvent::respawn_arpg_enemy() {
 	arpg_dying = false;
 	arpg_rewards_granted = false;
 	body_through = saved_body_through_before_death;
+	arpg_hp_bar_timer = 0.0f;
 	arpg_knockback_timer = 0.0f;
 	arpg_hitstop_timer = 0.0f;
 	arpg_hp = MAX(1, arpg_max_hp);
@@ -1566,6 +1589,7 @@ void ClockGearsEvent::respawn_arpg_enemy() {
 	ev_anim_frame = 0;
 	ev_anim_timer = 0.0f;
 	set_visible(true);
+	queue_redraw();
 	_apply_entity_body_collision_state();
 	_update_behavior_visual_frame();
 }
@@ -1573,6 +1597,10 @@ void ClockGearsEvent::respawn_arpg_enemy() {
 void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 	if (p_delta <= 0.0f || arpg_dead || !is_visible()) {
 		return;
+	}
+	if (arpg_hp_bar_timer > 0.0f) {
+		arpg_hp_bar_timer = MAX(0.0f, arpg_hp_bar_timer - p_delta);
+		queue_redraw();
 	}
 	if (!spawn_origin_set) {
 		reset_spawn_origin();
