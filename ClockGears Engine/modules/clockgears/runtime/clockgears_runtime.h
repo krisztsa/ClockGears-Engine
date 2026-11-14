@@ -81,9 +81,15 @@ private:
 
 	Sprite2D *sprite = nullptr;
 	HashMap<String, Sprite2D *> arpg_layer_sprites;
+	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
+	bool body_through = false;
+	uint32_t body_shape_owner = UINT32_MAX;
+
 	ClockGearsMap *current_map = nullptr;
 	ClockGearsFollowerManager *follower_manager = nullptr;
 	ClockGearsEventInterpreter *event_interpreter = nullptr;
+
+	void _sync_body_collision_shapes();
 
 	Ref<Texture2D> _create_fallback_actor_texture(const Color &p_primary, const Color &p_accent) const;
 	Ref<Texture2D> _get_cached_slot_texture(const String &p_path);
@@ -122,6 +128,13 @@ public:
 
 	void set_through_enabled(bool p_through) { through_enabled = p_through; }
 	bool is_through_enabled() const { return through_enabled; }
+
+	void set_body_shape(const Dictionary &p_shape);
+	Dictionary get_body_shape() const { return body_shape.to_dict(); }
+	const ClockGearsHitShape &get_body_shape_struct() const { return body_shape; }
+	void set_body_through(bool p_through) { body_through = p_through; }
+	bool is_body_through() const { return body_through; }
+	Vector2 move_with_collision(const Vector2 &p_delta);
 
 	void set_walk_speed(float p_speed) {
 		base_walk_speed = MAX(16.0f, p_speed);
@@ -352,6 +365,7 @@ public:
 
 	bool is_running() const { return state != STATE_IDLE; }
 	bool is_blocking_player() const { return state != STATE_IDLE; }
+	ClockGearsEvent *get_active_event() const { return active_event; }
 	int get_state() const { return int(state); }
 	int get_last_choice_index() const { return last_choice_index; }
 	ClockGearsPictureManager *get_picture_manager() const { return picture_manager; }

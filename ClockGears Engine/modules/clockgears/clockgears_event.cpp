@@ -1,9 +1,13 @@
 #include "clockgears_event.h"
 #include "clockgears_animation.h"
+#include "clockgears_map.h"
 #include "core/clockgears_data_manager.h"
 #include "core/config/engine.h"
 #include "core/io/image.h"
+#include "core/io/json.h"
 #include "core/io/resource_loader.h"
+#include "runtime/clockgears_entity_ai.h"
+#include "runtime/clockgears_runtime.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/texture.h"
@@ -97,6 +101,26 @@ void ClockGearsEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_behavior_type"), &ClockGearsEvent::get_behavior_type);
 	ClassDB::bind_method(D_METHOD("set_behavior_ref_id", "id"), &ClockGearsEvent::set_behavior_ref_id);
 	ClassDB::bind_method(D_METHOD("get_behavior_ref_id"), &ClockGearsEvent::get_behavior_ref_id);
+	ClassDB::bind_method(D_METHOD("set_body_shape", "shape"), &ClockGearsEvent::set_body_shape);
+	ClassDB::bind_method(D_METHOD("get_body_shape"), &ClockGearsEvent::get_body_shape);
+	ClassDB::bind_method(D_METHOD("set_body_through", "through"), &ClockGearsEvent::set_body_through);
+	ClassDB::bind_method(D_METHOD("is_body_through"), &ClockGearsEvent::is_body_through);
+	ClassDB::bind_method(D_METHOD("set_avoid_obstacles", "avoid"), &ClockGearsEvent::set_avoid_obstacles);
+	ClassDB::bind_method(D_METHOD("is_avoid_obstacles"), &ClockGearsEvent::is_avoid_obstacles);
+	ClassDB::bind_method(D_METHOD("get_detection_zones"), &ClockGearsEvent::get_detection_zones);
+	ClassDB::bind_method(D_METHOD("get_zone_count"), &ClockGearsEvent::get_zone_count);
+	ClassDB::bind_method(D_METHOD("get_zone_node", "index"), &ClockGearsEvent::get_zone_node);
+	ClassDB::bind_method(D_METHOD("get_entity_body"), &ClockGearsEvent::get_entity_body);
+	ClassDB::bind_method(D_METHOD("reset_spawn_origin"), &ClockGearsEvent::reset_spawn_origin);
+	ClassDB::bind_method(D_METHOD("get_spawn_origin"), &ClockGearsEvent::get_spawn_origin);
+	ClassDB::bind_method(D_METHOD("get_ai_state"), &ClockGearsEvent::get_ai_state);
+	ClassDB::bind_method(D_METHOD("get_ai_state_name"), &ClockGearsEvent::get_ai_state_name);
+	ClassDB::bind_method(D_METHOD("get_action_state"), &ClockGearsEvent::get_action_state);
+	ClassDB::bind_method(D_METHOD("get_active_visual_slot"), &ClockGearsEvent::get_active_visual_slot);
+	ClassDB::bind_method(D_METHOD("is_paused_by_event"), &ClockGearsEvent::is_paused_by_event);
+	ClassDB::bind_method(D_METHOD("get_current_astar_path"), &ClockGearsEvent::get_current_astar_path);
+	ClassDB::bind_method(D_METHOD("has_astar_no_path"), &ClockGearsEvent::has_astar_no_path);
+	ClassDB::bind_method(D_METHOD("execute_zone_actions", "actions", "target"), &ClockGearsEvent::execute_zone_actions, DEFVAL(Variant()));
 
 	ClassDB::bind_method(D_METHOD("set_pages", "pages"), &ClockGearsEvent::set_pages);
 	ClassDB::bind_method(D_METHOD("get_pages"), &ClockGearsEvent::get_pages);
@@ -228,7 +252,20 @@ void ClockGearsEvent::_notification(int p_what) {
 			} else if (!graphic_path.is_empty()) {
 				set_graphic_path(graphic_path);
 			}
+			if (p_what == NOTIFICATION_READY && !Engine::get_singleton()->is_editor_hint() && behavior_type != 0) {
+				if (!spawn_origin_set) {
+					reset_spawn_origin();
+				}
+				astar_timer = float((event_id * 37) % MAX(1, path_recalc_ms)) / 1000.0f;
+				wander_rng.seed(uint64_t(event_id) * 2654435761ULL ^ uint64_t(behavior_ref_id));
+				set_physics_process(true);
+			}
 			queue_redraw();
+		} break;
+		case NOTIFICATION_PHYSICS_PROCESS: {
+			if (!Engine::get_singleton()->is_editor_hint() && behavior_type != 0) {
+				_physics_tick_behavior(float(get_physics_process_delta_time()));
+			}
 		} break;
 		case NOTIFICATION_DRAW: {
 			// Marcadores de evento (EV_0): No se dibujan en el juego por defecto (Punto 1).
@@ -303,7 +340,11 @@ void ClockGearsEvent::set_direction(int p_dir) {
 	}
 	direction = p_dir;
 	if (behavior_type != 0) {
-		update_active_page();
+		if (db_record_loaded) {
+			_update_behavior_visual_frame();
+		} else {
+			update_active_page();
+		}
 		return;
 	}
 	if (sprite_vframes == 4 || sprite_vframes >= 8) {
@@ -461,7 +502,19 @@ void ClockGearsEvent::update_active_page() {
 				effective_pages = (vp.get_type() == Variant::ARRAY) ? Array(vp) : Array();
 			}
 		}
+		db_record_loaded = db_found;
+		cached_db_rec = db_found ? db_rec.duplicate(true) : Dictionary();
+		if (db_found) {
+			_apply_behavior_record_config(db_rec, 120.0f);
+		}
 		_update_behavior_sprite(db_rec, db_found);
+		_sync_runtime_entity_components();
+		if (!Engine::get_singleton()->is_editor_hint()) {
+			if (!spawn_origin_set) {
+				reset_spawn_origin();
+			}
+			set_physics_process(true);
+		}
 		if (!db_found || effective_pages.is_empty()) {
 			active_page_index = 0;
 			set_commands(Array());
@@ -469,6 +522,10 @@ void ClockGearsEvent::update_active_page() {
 			return;
 		}
 	} else {
+		db_record_loaded = false;
+		cached_db_rec.clear();
+		_clear_runtime_entity_components();
+		set_physics_process(false);
 		if (pages.is_empty()) {
 			return;
 		}
@@ -549,6 +606,9 @@ void ClockGearsEvent::update_active_page() {
 		float base_ev_speed = float(int(ap.get("speed", 3)) * 40.0f);
 		float walk_pct = MAX(1.0f, float(db_rec.get("walk_speed_pct", 100)));
 		set_move_speed(base_ev_speed * (walk_pct / 100.0f));
+		if (db_found) {
+			_apply_behavior_record_config(db_rec, base_ev_speed);
+		}
 	}
 	set_commands(ap.get("commands", Array()));
 	queue_redraw();
@@ -650,4 +710,768 @@ ClockGearsEvent::ClockGearsEvent() {
 	sprite->set_centered(false);
 	sprite->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	add_child(sprite);
+}
+
+void ClockGearsEvent::set_body_shape(const Dictionary &p_shape) {
+	body_shape.from_dict(p_shape);
+	_sync_runtime_entity_components();
+}
+
+void ClockGearsEvent::set_body_through(bool p_through) {
+	body_through = p_through;
+}
+
+ClockGearsDetectionZone2D *ClockGearsEvent::get_zone_node(int p_idx) const {
+	if (p_idx < 0 || p_idx >= zone_nodes.size()) {
+		return nullptr;
+	}
+	return zone_nodes[p_idx];
+}
+
+void ClockGearsEvent::reset_spawn_origin() {
+	spawn_origin_px = get_position();
+	spawn_direction = direction;
+	spawn_origin_set = true;
+}
+
+String ClockGearsEvent::get_ai_state_name() const {
+	switch (ai_state) {
+		case CG_AI_STATE_CHASE: return "perseguir";
+		case CG_AI_STATE_FLEE: return "huir";
+		case CG_AI_STATE_RETURN_HOME: return "volver_puesto";
+		case CG_AI_STATE_STOPPED: return "detenerse";
+		default: return (behavior_type == 3) ? ai_type_str : npc_move_type_str;
+	}
+}
+
+Array ClockGearsEvent::get_current_astar_path() const {
+	Array out;
+	for (int i = 0; i < astar_path.size(); i++) {
+		out.push_back(astar_path[i]);
+	}
+	return out;
+}
+
+void ClockGearsEvent::_apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed) {
+	Dictionary bsd = p_rec.get("body_shape", Dictionary());
+	if (!bsd.is_empty()) {
+		body_shape.from_dict(bsd);
+	} else {
+		body_shape = ClockGearsHitShape::make_circle(12.0f);
+	}
+	body_through = bool(p_rec.get("body_through", false));
+	avoid_obstacles = p_rec.has("avoid_obstacles") ? bool(p_rec["avoid_obstacles"]) : true;
+	path_recalc_ms = MAX(50, int(p_rec.get("path_recalc_ms", 250)));
+	path_max_nodes = MAX(16, int(p_rec.get("path_max_nodes", 256)));
+
+	float walk_pct = MAX(1.0f, float(p_rec.get("walk_speed_pct", 100)));
+	float run_pct = MAX(1.0f, float(p_rec.get("run_speed_pct", 100)));
+	attack_speed_pct = MAX(1.0f, float(p_rec.get("attack_speed_pct", 100)));
+	walk_move_speed = MAX(8.0f, p_base_ev_speed * (walk_pct / 100.0f));
+	run_move_speed = MAX(8.0f, p_base_ev_speed * 1.5f * (run_pct / 100.0f));
+
+	wander_radius = MAX(0.0f, float(p_rec.get("wander_radius", 3.0)));
+	patrol_loop = bool(p_rec.get("patrol_loop", false));
+	patrol_points.clear();
+	if (p_rec.has("patrol_points") && p_rec["patrol_points"].get_type() == Variant::ARRAY) {
+		Array pts = p_rec["patrol_points"];
+		for (int i = 0; i < pts.size(); i++) {
+			if (pts[i].get_type() == Variant::DICTIONARY) {
+				Dictionary pd = pts[i];
+				patrol_points.push_back(Vector2(float(pd.get("x", 0.0)), float(pd.get("y", 0.0))));
+			} else if (pts[i].get_type() == Variant::VECTOR2 || pts[i].get_type() == Variant::VECTOR2I) {
+				patrol_points.push_back(Vector2(pts[i]));
+			}
+		}
+	}
+
+	lose_sight_sec = MAX(0.0f, float(p_rec.get("lose_sight_sec", 4.0)));
+	min_distance = MAX(0.0f, float(p_rec.get("min_distance", 3.0)));
+	max_distance = MAX(min_distance, float(p_rec.get("max_distance", 5.0)));
+	ai_type_str = String(p_rec.get("ai_type", "persigue_y_ataca")).strip_edges().to_lower();
+	npc_move_type_str = String(p_rec.get("npc_move_type", "quieto")).strip_edges().to_lower();
+	follow_distance = MAX(0.5f, float(p_rec.get("follow_distance", 2.0)));
+	face_player_on_event = p_rec.has("face_player_on_event") ? bool(p_rec["face_player_on_event"]) : true;
+
+	Variant dz = p_rec.get("detection_zones", Array());
+	detection_zones_cfg = (dz.get_type() == Variant::ARRAY) ? Array(dz).duplicate(true) : Array();
+
+	Dictionary sp_dict = p_rec.get("sprite_data", Dictionary());
+	if (!sp_dict.is_empty()) {
+		cached_sprite_data.from_dict(sp_dict);
+	} else {
+		cached_sprite_data = ClockGearsSpriteSheetData();
+	}
+	cached_directional_idle = bool(p_rec.get("directional_idle", false));
+	cached_slot_textures.clear();
+}
+
+void ClockGearsEvent::_clear_runtime_entity_components() {
+	if (entity_body) {
+		entity_body->queue_free();
+		entity_body = nullptr;
+		entity_body_shape_owner = 0;
+	}
+	if (zones_root) {
+		zones_root->queue_free();
+		zones_root = nullptr;
+	}
+	zone_nodes.clear();
+	cached_body_sig = "";
+	cached_zones_sig = "";
+}
+
+void ClockGearsEvent::_sync_runtime_entity_components() {
+	if (Engine::get_singleton()->is_editor_hint() || behavior_type == 0) {
+		_clear_runtime_entity_components();
+		return;
+	}
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
+	Vector2 half_tile(ts * 0.5f, ts * 0.5f);
+
+	String body_sig = JSON::stringify(body_shape.to_dict()) + ":" + String::num_int64(behavior_type) + ":" + String::num_int64(ts);
+	if (!entity_body || body_sig != cached_body_sig) {
+		if (!entity_body) {
+			entity_body = memnew(CharacterBody2D);
+			entity_body->set_name("RuntimeEntityBody");
+			entity_body->set_collision_mask(0);
+			entity_body->set_meta("cg_event_owner", uint64_t(get_instance_id()));
+			entity_body_shape_owner = entity_body->create_shape_owner(entity_body);
+			add_child(entity_body);
+		}
+		entity_body->set_position(half_tile);
+		entity_body->set_collision_layer((behavior_type == 3) ? CG_PHYSICS_LAYER_ENEMY : CG_PHYSICS_LAYER_NPC);
+		ClockGearsShapeGeometry::populate_collision_object_shapes(entity_body, entity_body_shape_owner, body_shape, Vector2());
+		cached_body_sig = body_sig;
+	}
+
+	String zones_sig = JSON::stringify(detection_zones_cfg) + ":" + String::num_int64(ts);
+	if (!zones_root || zones_sig != cached_zones_sig) {
+		if (!zones_root) {
+			zones_root = memnew(Node2D);
+			zones_root->set_name("RuntimeDetectionZones");
+			add_child(zones_root);
+		}
+		zones_root->set_position(half_tile);
+		for (int i = 0; i < zone_nodes.size(); i++) {
+			if (zone_nodes[i]) {
+				zone_nodes[i]->queue_free();
+			}
+		}
+		zone_nodes.clear();
+		for (int i = 0; i < detection_zones_cfg.size(); i++) {
+			if (detection_zones_cfg[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			ClockGearsDetectionZone2D *z = memnew(ClockGearsDetectionZone2D);
+			zones_root->add_child(z);
+			z->configure(this, i, Dictionary(detection_zones_cfg[i]), ts);
+			zone_nodes.push_back(z);
+		}
+		cached_zones_sig = zones_sig;
+	}
+}
+
+void ClockGearsEvent::_update_behavior_visual_frame() {
+	if (!sprite || !db_record_loaded) {
+		return;
+	}
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return;
+	}
+	ClockGearsSpriteAnimation resolved_anim;
+	bool freeze_f0 = false;
+	String res_slot;
+	if (!reg->resolve_actor_animation(cached_sprite_data, cached_directional_idle, ev_action_state, direction, resolved_anim, freeze_f0, res_slot)) {
+		return;
+	}
+	ev_resolved_slot = res_slot;
+	int fcount = resolved_anim.get_frame_count();
+	if (fcount <= 0) {
+		return;
+	}
+	int fi = freeze_f0 ? 0 : (ev_anim_frame % fcount);
+	ClockGearsAnimationFrame raw_f = resolved_anim.get_frame(fi, 0, 0);
+	String spath = raw_f.sheet_path.is_empty() ? resolved_anim.spritesheet_path : raw_f.sheet_path;
+	if (spath.is_empty()) {
+		spath = String(cached_db_rec.get("graphic_path", ""));
+	}
+	if (spath.is_empty()) {
+		return;
+	}
+	Ref<Texture2D> tex;
+	if (cached_slot_textures.has(spath)) {
+		tex = cached_slot_textures[spath];
+	} else {
+		if (ResourceLoader::exists(spath)) {
+			tex = ResourceLoader::load(spath);
+		}
+		if (tex.is_null()) {
+			Ref<Image> img = Image::load_from_file(spath);
+			if (img.is_valid() && !img->is_empty()) {
+				tex = ImageTexture::create_from_image(img);
+			}
+		}
+		if (tex.is_valid()) {
+			cached_slot_textures[spath] = tex;
+		}
+	}
+	if (tex.is_valid()) {
+		int tw = tex->get_width();
+		int th = tex->get_height();
+		ClockGearsAnimationFrame f = resolved_anim.get_frame(fi, tw, th);
+		Rect2 reg_rect(f.region);
+		if (reg_rect.size.x <= 0 || reg_rect.size.y <= 0 || reg_rect.position.x + reg_rect.size.x > tw || reg_rect.position.y + reg_rect.size.y > th) {
+			reg_rect = Rect2(0, 0, tw, th);
+		}
+		sprite->set_texture(tex);
+		sprite->set_region_enabled(true);
+		sprite->set_region_rect(reg_rect);
+		sprite_hframes = 1;
+		sprite_vframes = 1;
+		sprite_frame = 0;
+		sprite->set_hframes(1);
+		sprite->set_vframes(1);
+		sprite->set_frame(0);
+		sprite->set_position(Vector2((32 - reg_rect.size.x) / 2, 32 - reg_rect.size.y));
+	}
+}
+
+void ClockGearsEvent::_advance_behavior_animation(float p_delta) {
+	if (!db_record_loaded) {
+		return;
+	}
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return;
+	}
+	ClockGearsSpriteAnimation resolved_anim;
+	bool freeze_f0 = false;
+	String res_slot;
+	if (!reg->resolve_actor_animation(cached_sprite_data, cached_directional_idle, ev_action_state, direction, resolved_anim, freeze_f0, res_slot)) {
+		return;
+	}
+	ev_resolved_slot = res_slot;
+	int fcount = resolved_anim.get_frame_count();
+	if (fcount <= 0) {
+		return;
+	}
+	if (freeze_f0) {
+		ev_anim_frame = 0;
+		ev_anim_timer = 0.0f;
+		_update_behavior_visual_frame();
+		return;
+	}
+	if (ev_anim_frame >= fcount) {
+		ev_anim_frame = 0;
+	}
+	float dur = MAX(0.01f, resolved_anim.get_frame_duration(ev_anim_frame));
+	float spd_mult = 1.0f;
+	if (ev_action_state == "atacar") {
+		spd_mult = MAX(0.1f, attack_speed_pct / 100.0f);
+	}
+	ev_anim_timer += p_delta * spd_mult;
+	if (ev_anim_timer >= dur) {
+		ev_anim_timer -= dur;
+		if (ev_anim_frame + 1 < fcount) {
+			ev_anim_frame++;
+		} else if (resolved_anim.loop && ev_action_state != "atacar") {
+			ev_anim_frame = 0;
+		} else if (ev_action_state == "atacar") {
+			ev_action_state = "quieto";
+			ev_anim_frame = 0;
+			ev_anim_timer = 0.0f;
+		}
+	}
+	_update_behavior_visual_frame();
+}
+
+Node *ClockGearsEvent::_resolve_target_node(ClockGearsMap *p_map) const {
+	if (target_object_id.is_valid()) {
+		Node *n = Object::cast_to<Node>(ObjectDB::get_instance(target_object_id));
+		if (n && n->is_inside_tree()) {
+			return n;
+		}
+	}
+	for (int i = 0; i < zone_nodes.size(); i++) {
+		if (zone_nodes[i] && zone_nodes[i]->has_any_inside()) {
+			Node *n = zone_nodes[i]->get_first_inside_entity();
+			if (n) {
+				return n;
+			}
+		}
+	}
+	return p_map ? static_cast<Node *>(p_map->get_runtime_player()) : nullptr;
+}
+
+bool ClockGearsEvent::_has_any_target_in_zones() const {
+	for (int i = 0; i < zone_nodes.size(); i++) {
+		if (zone_nodes[i] && zone_nodes[i]->has_any_inside()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void ClockGearsEvent::_face_toward_world_pos(const Vector2 &p_target_pos) {
+	if (direction_fix) {
+		return;
+	}
+	Vector2 diff = p_target_pos - get_position();
+	if (diff.length_squared() < 0.01f) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	bool diag = dm && int(dm->get_system_config().get("movement_directions", 4)) == 8;
+	int ix = (Math::abs(diff.x) > 4.0f) ? (diff.x > 0.0f ? 1 : -1) : 0;
+	int iy = (Math::abs(diff.y) > 4.0f) ? (diff.y > 0.0f ? 1 : -1) : 0;
+	if (!diag && ix != 0 && iy != 0) {
+		if (Math::abs(diff.x) >= Math::abs(diff.y)) {
+			iy = 0;
+		} else {
+			ix = 0;
+		}
+	}
+	if (ix != 0 || iy != 0) {
+		int d = ClockGearsCharacterStateRegistry::vector_to_direction(Vector2i(ix, iy));
+		if (d != direction) {
+			direction = d;
+			_update_behavior_visual_frame();
+		}
+	}
+}
+
+void ClockGearsEvent::notify_zone_sight(bool p_in, Node *p_target) {
+	if (p_in) {
+		time_without_sight = 0.0f;
+		if (p_target) {
+			target_object_id = p_target->get_instance_id();
+		}
+	}
+}
+
+void ClockGearsEvent::execute_zone_actions(const Array &p_actions, Node *p_target) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+
+	for (int i = 0; i < p_actions.size(); i++) {
+		String act_type;
+		Dictionary act_dict;
+		if (p_actions[i].get_type() == Variant::DICTIONARY) {
+			act_dict = p_actions[i];
+			act_type = String(act_dict.get("type", "")).strip_edges().to_lower();
+		} else {
+			act_type = String(p_actions[i]).strip_edges().to_lower();
+		}
+
+		if (act_type == "perseguir") {
+			ai_state = CG_AI_STATE_CHASE;
+			if (p_target) {
+				target_object_id = p_target->get_instance_id();
+			}
+			time_without_sight = 0.0f;
+			astar_timer = 0.0f;
+			astar_no_path = false;
+		} else if (act_type == "huir") {
+			ai_state = CG_AI_STATE_FLEE;
+			if (p_target) {
+				target_object_id = p_target->get_instance_id();
+			}
+			time_without_sight = 0.0f;
+			astar_timer = 0.0f;
+		} else if (act_type == "volver_puesto") {
+			ai_state = CG_AI_STATE_RETURN_HOME;
+			astar_timer = 0.0f;
+			astar_no_path = false;
+		} else if (act_type == "mirar_jugador") {
+			Node *look_t = p_target ? p_target : (map ? static_cast<Node *>(map->get_runtime_player()) : nullptr);
+			Node2D *n2 = Object::cast_to<Node2D>(look_t);
+			if (n2) {
+				_face_toward_world_pos(n2->get_position());
+			}
+		} else if (act_type == "detenerse") {
+			ai_state = CG_AI_STATE_STOPPED;
+			ev_action_state = "quieto";
+			astar_path.clear();
+		} else if (act_type == "ejecutar_evento") {
+			update_active_page();
+			ClockGearsEventInterpreter *interp = map ? map->get_runtime_interpreter() : nullptr;
+			if (interp && !interp->is_running()) {
+				if (!commands.is_empty()) {
+					interp->start_event(this);
+				} else {
+					execute();
+				}
+			} else if (!interp) {
+				execute();
+			}
+		} else if (act_type == "activar_interruptor") {
+			if (dm) {
+				String sname = String(act_dict.get("switch_name", ""));
+				bool sval = act_dict.has("value") ? bool(act_dict["value"]) : true;
+				if (!sname.is_empty()) {
+					dm->set_switch(sname, sval);
+				}
+			}
+		} else if (act_type == "poner_variable") {
+			if (dm) {
+				String vname = String(act_dict.get("var_name", ""));
+				int vval = int(act_dict.get("value", 0));
+				String vop = String(act_dict.get("op", "="));
+				if (!vname.is_empty()) {
+					int cur = dm->get_variable(vname);
+					if (vop == "+") cur += vval;
+					else if (vop == "-") cur -= vval;
+					else cur = vval;
+					dm->set_variable(vname, cur);
+				}
+			}
+		} else if (act_type == "atacar") {
+			Node2D *n2 = Object::cast_to<Node2D>(p_target);
+			if (n2) {
+				_face_toward_world_pos(n2->get_position());
+			}
+			// Solo dispara el estado/animación de ataque, sin daño
+			ev_action_state = "atacar";
+			ev_anim_frame = 0;
+			ev_anim_timer = 0.0f;
+			ev_attack_timer = 0.45f * (100.0f / MAX(1.0f, attack_speed_pct));
+			_update_behavior_visual_frame();
+		}
+	}
+}
+
+Vector2 ClockGearsEvent::_compute_move_toward(ClockGearsMap *p_map, const Vector2 &p_target_px, float p_delta, int p_tile_size) {
+	Vector2 cur_pos = get_position();
+	Vector2 direct = p_target_px - cur_pos;
+	if (direct.length_squared() < 4.0f) {
+		return Vector2();
+	}
+
+	if (!avoid_obstacles || !p_map) {
+		astar_no_path = false;
+		astar_path.clear();
+		return direct.normalized();
+	}
+
+	Vector2 half(p_tile_size * 0.5f, p_tile_size * 0.5f);
+	Vector2i start_cell(
+			int(Math::floor((cur_pos.x + half.x) / float(p_tile_size))),
+			int(Math::floor((cur_pos.y + half.y) / float(p_tile_size))));
+	Vector2i goal_cell(
+			int(Math::floor((p_target_px.x + half.x) / float(p_tile_size))),
+			int(Math::floor((p_target_px.y + half.y) / float(p_tile_size))));
+
+	if (start_cell == goal_cell) {
+		astar_no_path = false;
+		astar_path.clear();
+		return direct.normalized();
+	}
+
+	astar_timer -= p_delta;
+	if (astar_timer <= 0.0f || astar_path.is_empty() || astar_path_idx >= astar_path.size()) {
+		astar_timer = float(path_recalc_ms) / 1000.0f;
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		bool allow_diag = dm && int(dm->get_system_config().get("movement_directions", 4)) == 8;
+		bool ok = ClockGearsEntityNav::compute_grid_astar_path(p_map, start_cell, goal_cell, allow_diag, path_max_nodes, astar_path);
+		astar_path_idx = 0;
+		astar_no_path = !ok;
+	}
+
+	if (astar_no_path || astar_path.is_empty()) {
+		return Vector2();
+	}
+
+	while (astar_path_idx < astar_path.size()) {
+		Vector2 wp_px = Vector2(astar_path[astar_path_idx]) * float(p_tile_size);
+		Vector2 diff = wp_px - cur_pos;
+		if (diff.length() <= 5.0f && astar_path_idx + 1 < astar_path.size()) {
+			astar_path_idx++;
+			continue;
+		}
+		if (diff.length_squared() < 1.0f) {
+			astar_path_idx++;
+			continue;
+		}
+		return diff.normalized();
+	}
+	return direct.normalized();
+}
+
+void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
+	if (p_delta <= 0.0f || !is_visible()) {
+		return;
+	}
+	if (!spawn_origin_set) {
+		reset_spawn_origin();
+	}
+
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
+
+	// 1. Pausar si el intérprete de eventos está ejecutando este evento
+	ClockGearsEventInterpreter *interp = map ? map->get_runtime_interpreter() : nullptr;
+	bool running_me = (interp && interp->is_running() && interp->get_active_event() == this);
+	if (running_me && !was_interpreter_running_me) {
+		if (face_player_on_event && !direction_fix && map && map->get_runtime_player()) {
+			_face_toward_world_pos(map->get_runtime_player()->get_position());
+		}
+	}
+	was_interpreter_running_me = running_me;
+	paused_by_event = running_me;
+	if (running_me) {
+		if (ev_action_state != "quieto") {
+			ev_action_state = "quieto";
+			ev_anim_frame = 0;
+			ev_anim_timer = 0.0f;
+		}
+		_advance_behavior_animation(p_delta);
+		return;
+	}
+
+	// 2. Actualizar zonas mientras_dentro
+	for (int i = 0; i < zone_nodes.size(); i++) {
+		if (zone_nodes[i]) {
+			zone_nodes[i]->tick_zone(p_delta);
+		}
+	}
+
+	// 3. Animación temporal de ataque (sin daño)
+	if (ev_action_state == "atacar") {
+		ev_attack_timer -= p_delta;
+		_advance_behavior_animation(p_delta);
+		if (ev_attack_timer <= 0.0f && ev_action_state == "atacar") {
+			ev_action_state = "quieto";
+			ev_anim_frame = 0;
+			ev_anim_timer = 0.0f;
+			_update_behavior_visual_frame();
+		}
+		return;
+	}
+
+	// 4. Lógica de estado IA y velocidad deseada
+	Vector2 move_dir;
+	float desired_speed = walk_move_speed;
+	String target_loco_state = "quieto";
+
+	auto run_wander = [&]() {
+		if (wander_radius <= 0.01f) {
+			return;
+		}
+		if (wander_pause_timer > 0.0f) {
+			wander_pause_timer -= p_delta;
+			return;
+		}
+		if (!wander_has_target) {
+			float rad_px = wander_radius * float(ts);
+			if (get_position().distance_to(spawn_origin_px) > rad_px) {
+				wander_target_px = spawn_origin_px;
+			} else {
+				float ang = wander_rng.randf() * float(Math::TAU);
+				float min_r = MIN(0.3f * ts, rad_px * 0.5f);
+				float dist = min_r + MAX(0.0f, rad_px - min_r) * wander_rng.randf();
+				Vector2 cand = spawn_origin_px + Vector2(Math::cos(ang), Math::sin(ang)) * dist;
+				if (map) {
+					Vector2i msz = map->get_map_size();
+					cand.x = CLAMP(cand.x, 0.0f, float(MAX(0, msz.x - 1) * ts));
+					cand.y = CLAMP(cand.y, 0.0f, float(MAX(0, msz.y - 1) * ts));
+				}
+				wander_target_px = cand;
+			}
+			wander_has_target = true;
+		}
+		Vector2 diff = wander_target_px - get_position();
+		if (diff.length() <= 4.0f) {
+			wander_has_target = false;
+			wander_pause_timer = 0.5f + wander_rng.randf();
+			return;
+		}
+		move_dir = diff.normalized();
+		desired_speed = walk_move_speed;
+		target_loco_state = "mover";
+	};
+
+	if (ai_state == CG_AI_STATE_CHASE) {
+		if (_has_any_target_in_zones()) {
+			time_without_sight = 0.0f;
+		} else {
+			time_without_sight += p_delta;
+			if (lose_sight_sec > 0.0f && time_without_sight >= lose_sight_sec) {
+				ai_state = CG_AI_STATE_RETURN_HOME;
+				astar_timer = 0.0f;
+				astar_no_path = false;
+			}
+		}
+	} else if (ai_state == CG_AI_STATE_FLEE) {
+		if (_has_any_target_in_zones()) {
+			time_without_sight = 0.0f;
+		} else {
+			time_without_sight += p_delta;
+			if (lose_sight_sec > 0.0f && time_without_sight >= lose_sight_sec) {
+				ai_state = CG_AI_STATE_RETURN_HOME;
+				astar_timer = 0.0f;
+			}
+		}
+	}
+
+	if (ai_state == CG_AI_STATE_CHASE) {
+		Node2D *t2d = Object::cast_to<Node2D>(_resolve_target_node(map));
+		if (t2d) {
+			Vector2 tpos = t2d->get_position();
+			float dist = get_position().distance_to(tpos);
+			if (behavior_type == 3 && ai_type_str == "a_distancia") {
+				float min_px = min_distance * float(ts);
+				float max_px = max_distance * float(ts);
+				if (dist > max_px) {
+					move_dir = _compute_move_toward(map, tpos, p_delta, ts);
+					desired_speed = run_move_speed;
+					target_loco_state = "correr";
+				} else if (dist < min_px) {
+					move_dir = (get_position() - tpos).normalized();
+					desired_speed = run_move_speed;
+					target_loco_state = "correr";
+				} else {
+					_face_toward_world_pos(tpos);
+				}
+			} else {
+				float stop_dist = float(ts) * 0.7f;
+				if (dist > stop_dist) {
+					move_dir = _compute_move_toward(map, tpos, p_delta, ts);
+					if (astar_no_path) {
+						// Sin camino: fallback a quieto o vagar
+						if (ai_type_str == "vagar") {
+							run_wander();
+						}
+					} else if (move_dir.length_squared() > 0.001f) {
+						desired_speed = run_move_speed;
+						target_loco_state = "correr";
+					}
+				} else {
+					_face_toward_world_pos(tpos);
+				}
+			}
+		}
+	} else if (ai_state == CG_AI_STATE_FLEE) {
+		Node2D *t2d = Object::cast_to<Node2D>(_resolve_target_node(map));
+		if (t2d) {
+			Vector2 away = get_position() - t2d->get_position();
+			if (away.length_squared() < 0.01f) {
+				away = Vector2(1.0f, 0.0f);
+			}
+			move_dir = away.normalized();
+			desired_speed = run_move_speed;
+			target_loco_state = "correr";
+		}
+	} else if (ai_state == CG_AI_STATE_RETURN_HOME) {
+		Vector2 diff = spawn_origin_px - get_position();
+		if (diff.length() <= 4.0f) {
+			if (ClockGearsEntityNav::can_body_occupy_position(map, body_shape, direction, spawn_origin_px, get_position(), through || body_through, this, ts)) {
+				set_position(spawn_origin_px);
+			}
+			if (!direction_fix) {
+				direction = spawn_direction;
+			}
+			ai_state = CG_AI_STATE_BASE;
+			astar_path.clear();
+		} else {
+			move_dir = _compute_move_toward(map, spawn_origin_px, p_delta, ts);
+			if (move_dir.length_squared() < 0.001f && !astar_no_path) {
+				move_dir = diff.normalized();
+			}
+			desired_speed = walk_move_speed;
+			target_loco_state = "mover";
+		}
+	} else if (ai_state == CG_AI_STATE_STOPPED) {
+		move_dir = Vector2();
+	} else {
+		// Estado base
+		bool is_enemy = (behavior_type == 3);
+		String mode = is_enemy ? ai_type_str : npc_move_type_str;
+		if (mode == "vagar") {
+			run_wander();
+		} else if (mode == "patrulla" && !patrol_points.is_empty()) {
+			if (patrol_idx < 0 || patrol_idx >= patrol_points.size()) {
+				patrol_idx = 0;
+			}
+			Vector2 wp = spawn_origin_px + patrol_points[patrol_idx] * float(ts);
+			Vector2 diff = wp - get_position();
+			if (diff.length() <= 4.0f) {
+				int n = patrol_points.size();
+				if (n > 1) {
+					if (patrol_loop) {
+						patrol_idx = (patrol_idx + 1) % n;
+					} else {
+						int next_i = patrol_idx + patrol_dir;
+						if (next_i >= n || next_i < 0) {
+							patrol_dir = -patrol_dir;
+							next_i = CLAMP(patrol_idx + patrol_dir, 0, n - 1);
+						}
+						patrol_idx = next_i;
+					}
+				}
+			} else {
+				move_dir = _compute_move_toward(map, wp, p_delta, ts);
+				desired_speed = walk_move_speed;
+				target_loco_state = "mover";
+			}
+		} else if (!is_enemy && mode == "seguir") {
+			ClockGearsPlayer *pl = map ? map->get_runtime_player() : nullptr;
+			if (pl) {
+				Vector2 ppos = pl->get_position();
+				float dist = get_position().distance_to(ppos);
+				if (dist > follow_distance * float(ts)) {
+					move_dir = _compute_move_toward(map, ppos, p_delta, ts);
+					desired_speed = walk_move_speed;
+					target_loco_state = "mover";
+				} else {
+					_face_toward_world_pos(ppos);
+				}
+			}
+		} else if (is_enemy && mode == "a_distancia") {
+			ClockGearsPlayer *pl = map ? map->get_runtime_player() : nullptr;
+			if (pl && detection_zones_cfg.is_empty()) {
+				Vector2 ppos = pl->get_position();
+				float dist = get_position().distance_to(ppos);
+				if (dist > max_distance * float(ts)) {
+					move_dir = _compute_move_toward(map, ppos, p_delta, ts);
+					desired_speed = walk_move_speed;
+					target_loco_state = "mover";
+				} else if (dist < min_distance * float(ts)) {
+					move_dir = (get_position() - ppos).normalized();
+					desired_speed = walk_move_speed;
+					target_loco_state = "mover";
+				} else {
+					_face_toward_world_pos(ppos);
+				}
+			}
+		}
+	}
+
+	// 5. Aplicar desplazamiento con colisión y deslizamiento (sin empujar otros cuerpos)
+	bool actually_moved = false;
+	if (move_dir.length_squared() > 0.0001f) {
+		Vector2 prev_pos = get_position();
+		Vector2 delta = move_dir * desired_speed * p_delta;
+		Vector2 next_pos = ClockGearsEntityNav::move_entity_with_slide(map, body_shape, direction, prev_pos, delta, through || body_through, this, ts);
+		Vector2 moved_vec = next_pos - prev_pos;
+		if (moved_vec.length_squared() > 0.0001f) {
+			set_position(next_pos);
+			_face_toward_world_pos(prev_pos + moved_vec * 32.0f);
+			actually_moved = true;
+		} else if (ai_state == CG_AI_STATE_BASE && (ai_type_str == "vagar" || npc_move_type_str == "vagar")) {
+			// Si chocó en vagar contra un muro, elegir otro objetivo tras breve pausa
+			wander_has_target = false;
+			wander_pause_timer = 0.25f;
+		}
+	}
+
+	String new_state = actually_moved ? target_loco_state : String("quieto");
+	if (new_state != ev_action_state) {
+		ev_action_state = new_state;
+		ev_anim_frame = 0;
+		ev_anim_timer = 0.0f;
+	}
+	_advance_behavior_animation(p_delta);
 }

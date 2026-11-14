@@ -230,6 +230,7 @@ bool ClockGearsDataManager::_read_json_with_backup(const String &p_file_path, Va
 PackedStringArray ClockGearsDataManager::get_arpg_ai_types() {
 	PackedStringArray out;
 	out.push_back("quieto");
+	out.push_back("vagar");
 	out.push_back("patrulla");
 	out.push_back("persigue_y_ataca");
 	out.push_back("huye");
@@ -237,15 +238,190 @@ PackedStringArray ClockGearsDataManager::get_arpg_ai_types() {
 	return out;
 }
 
+PackedStringArray ClockGearsDataManager::get_npc_move_types() {
+	PackedStringArray out;
+	out.push_back("quieto");
+	out.push_back("vagar");
+	out.push_back("patrulla");
+	out.push_back("seguir");
+	return out;
+}
+
+PackedStringArray ClockGearsDataManager::get_detection_zone_triggers() {
+	PackedStringArray out;
+	out.push_back("enter");
+	out.push_back("exit");
+	out.push_back("while_inside");
+	return out;
+}
+
+PackedStringArray ClockGearsDataManager::get_detection_zone_actions() {
+	PackedStringArray out;
+	out.push_back("perseguir");
+	out.push_back("huir");
+	out.push_back("volver_puesto");
+	out.push_back("mirar_jugador");
+	out.push_back("detenerse");
+	out.push_back("ejecutar_evento");
+	out.push_back("activar_interruptor");
+	out.push_back("poner_variable");
+	out.push_back("atacar");
+	return out;
+}
+
 static String s_normalize_arpg_ai_type(const Variant &p_val) {
 	String raw = String(p_val).strip_edges().to_lower();
 	raw = raw.replace(" ", "_");
-	if (raw == "quieto") return "quieto";
-	if (raw == "patrulla") return "patrulla";
-	if (raw == "persigue_y_ataca" || raw == "persigue") return "persigue_y_ataca";
-	if (raw == "huye") return "huye";
-	if (raw == "a_distancia" || raw == "distancia") return "a_distancia";
+	if (raw == "quieto" || raw == "idle" || raw == "fijo") return "quieto";
+	if (raw == "vagar" || raw == "wander" || raw == "merodear") return "vagar";
+	if (raw == "patrulla" || raw == "patrol" || raw == "ruta") return "patrulla";
+	if (raw == "persigue_y_ataca" || raw == "persigue" || raw == "perseguir" || raw == "chase") return "persigue_y_ataca";
+	if (raw == "huye" || raw == "huir" || raw == "flee") return "huye";
+	if (raw == "a_distancia" || raw == "distancia" || raw == "ranged") return "a_distancia";
 	return "persigue_y_ataca";
+}
+
+static String s_normalize_npc_move_type(const Variant &p_val) {
+	String raw = String(p_val).strip_edges().to_lower();
+	raw = raw.replace(" ", "_");
+	if (raw == "vagar" || raw == "wander") return "vagar";
+	if (raw == "patrulla" || raw == "ruta" || raw == "route" || raw == "patrol") return "patrulla";
+	if (raw == "seguir" || raw == "follow") return "seguir";
+	return "quieto";
+}
+
+static Dictionary s_normalize_body_shape_dict(const Variant &p_val) {
+	if (p_val.get_type() == Variant::DICTIONARY) {
+		Dictionary raw = p_val;
+		if (!raw.is_empty()) {
+			ClockGearsHitShape s;
+			s.from_dict(raw);
+			return s.to_dict();
+		}
+	}
+	return ClockGearsHitShape::make_circle(12.0f).to_dict();
+}
+
+static Array s_normalize_patrol_points(const Variant &p_val) {
+	Array out;
+	if (p_val.get_type() != Variant::ARRAY) {
+		return out;
+	}
+	Array src = p_val;
+	for (int i = 0; i < src.size(); i++) {
+		Dictionary pt;
+		if (src[i].get_type() == Variant::DICTIONARY) {
+			Dictionary d = src[i];
+			pt["x"] = double(d.get("x", 0.0));
+			pt["y"] = double(d.get("y", 0.0));
+			out.push_back(pt);
+		} else if (src[i].get_type() == Variant::VECTOR2 || src[i].get_type() == Variant::VECTOR2I) {
+			Vector2 v = Vector2(src[i]);
+			pt["x"] = double(v.x);
+			pt["y"] = double(v.y);
+			out.push_back(pt);
+		}
+	}
+	return out;
+}
+
+static String s_normalize_zone_action_type(const String &p_raw) {
+	String a = p_raw.strip_edges().to_lower().replace(" ", "_");
+	if (a == "perseguir" || a == "chase") return "perseguir";
+	if (a == "huir" || a == "huye" || a == "flee") return "huir";
+	if (a == "volver_puesto" || a == "volver" || a == "volver_origen" || a == "return_home") return "volver_puesto";
+	if (a == "mirar_jugador" || a == "mirar" || a == "face_player") return "mirar_jugador";
+	if (a == "detenerse" || a == "parar" || a == "stop") return "detenerse";
+	if (a == "ejecutar_evento" || a == "evento" || a == "run_event") return "ejecutar_evento";
+	if (a == "activar_interruptor" || a == "interruptor" || a == "set_switch") return "activar_interruptor";
+	if (a == "poner_variable" || a == "variable" || a == "set_variable") return "poner_variable";
+	if (a == "atacar" || a == "attack") return "atacar";
+	return "detenerse";
+}
+
+static Dictionary s_normalize_zone_action(const Variant &p_act) {
+	Dictionary out;
+	if (p_act.get_type() == Variant::DICTIONARY) {
+		Dictionary src = p_act;
+		String t = s_normalize_zone_action_type(String(src.get("type", src.get("action", "detenerse"))));
+		out["type"] = t;
+		if (t == "activar_interruptor") {
+			out["switch_name"] = String(src.get("switch_name", src.get("name", "")));
+			out["value"] = src.has("value") ? bool(src["value"]) : bool(src.get("val", true));
+		} else if (t == "poner_variable") {
+			out["var_name"] = String(src.get("var_name", src.get("name", "")));
+			out["value"] = src.has("value") ? int(src["value"]) : int(src.get("val", 0));
+			String op = String(src.get("op", "=")).strip_edges();
+			if (op != "=" && op != "+" && op != "-") {
+				op = "=";
+			}
+			out["op"] = op;
+		}
+		return out;
+	}
+	String t = s_normalize_zone_action_type(String(p_act));
+	out["type"] = t;
+	return out;
+}
+
+static String s_normalize_zone_target_filter(const Variant &p_val) {
+	String f = String(p_val).strip_edges().to_lower().replace(" ", "_");
+	if (f == "enemigos" || f == "enemy" || f == "enemies") return "enemies";
+	if (f == "npc" || f == "npcs") return "npc";
+	if (f == "todos" || f == "all") return "all";
+	return "player";
+}
+
+static String s_normalize_zone_trigger(const Variant &p_val) {
+	String t = String(p_val).strip_edges().to_lower().replace(" ", "_");
+	if (t == "exit" || t == "salir" || t == "on_exit") return "exit";
+	if (t == "while_inside" || t == "mientras_dentro" || t == "dentro" || t == "stay") return "while_inside";
+	return "enter";
+}
+
+Dictionary ClockGearsDataManager::normalize_detection_zone(const Dictionary &p_zone, int p_idx) {
+	Dictionary out;
+	String zname = String(p_zone.get("name", "")).strip_edges();
+	if (zname.is_empty()) {
+		zname = vformat("Zona %d", p_idx + 1);
+	}
+	out["name"] = zname;
+
+	if (p_zone.has("shape") && p_zone["shape"].get_type() == Variant::DICTIONARY && !Dictionary(p_zone["shape"]).is_empty()) {
+		ClockGearsHitShape s;
+		s.from_dict(Dictionary(p_zone["shape"]));
+		out["shape"] = s.to_dict();
+	} else {
+		out["shape"] = ClockGearsHitShape::make_circle(96.0f).to_dict();
+	}
+
+	out["target_filter"] = s_normalize_zone_target_filter(p_zone.get("target_filter", p_zone.get("filter", "player")));
+	out["trigger"] = s_normalize_zone_trigger(p_zone.get("trigger", "enter"));
+	out["interval_sec"] = MAX(0.05, double(p_zone.get("interval_sec", p_zone.get("interval", 0.5))));
+
+	Array acts_out;
+	if (p_zone.has("actions") && p_zone["actions"].get_type() == Variant::ARRAY) {
+		Array raw_acts = p_zone["actions"];
+		for (int i = 0; i < raw_acts.size(); i++) {
+			acts_out.push_back(s_normalize_zone_action(raw_acts[i]));
+		}
+	}
+	out["actions"] = acts_out;
+	return out;
+}
+
+static Array s_normalize_detection_zones(const Variant &p_val) {
+	Array out;
+	if (p_val.get_type() != Variant::ARRAY) {
+		return out;
+	}
+	Array src = p_val;
+	for (int i = 0; i < src.size(); i++) {
+		if (src[i].get_type() == Variant::DICTIONARY) {
+			out.push_back(ClockGearsDataManager::normalize_detection_zone(src[i], i));
+		}
+	}
+	return out;
 }
 
 void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary &r_record) {
@@ -293,6 +469,22 @@ void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary
 		if (p_category != CAT_NPCS) {
 			int atk_pct = r_record.has("attack_speed_pct") ? int(r_record["attack_speed_pct"]) : 100;
 			r_record["attack_speed_pct"] = MAX(1, atk_pct);
+		}
+		r_record["body_shape"] = s_normalize_body_shape_dict(r_record.get("body_shape", Dictionary()));
+		r_record["body_through"] = r_record.has("body_through") ? bool(r_record["body_through"]) : false;
+		if (p_category != CAT_ACTORS) {
+			r_record["avoid_obstacles"] = r_record.has("avoid_obstacles") ? bool(r_record["avoid_obstacles"]) : true;
+			r_record["path_recalc_ms"] = r_record.has("path_recalc_ms") ? MAX(50, int(r_record["path_recalc_ms"])) : 250;
+			r_record["path_max_nodes"] = r_record.has("path_max_nodes") ? MAX(16, int(r_record["path_max_nodes"])) : 256;
+			r_record["wander_radius"] = r_record.has("wander_radius") ? MAX(0.0, double(r_record["wander_radius"])) : 3.0;
+			r_record["patrol_points"] = s_normalize_patrol_points(r_record.get("patrol_points", Array()));
+			r_record["patrol_loop"] = r_record.has("patrol_loop") ? bool(r_record["patrol_loop"]) : false;
+		}
+		if (p_category == CAT_NPCS || p_category == CAT_ARPG_NPCS) {
+			r_record["npc_move_type"] = r_record.has("npc_move_type") ? s_normalize_npc_move_type(r_record["npc_move_type"]) : String("quieto");
+			r_record["follow_distance"] = r_record.has("follow_distance") ? MAX(0.5, double(r_record["follow_distance"])) : 2.0;
+			r_record["face_player_on_event"] = r_record.has("face_player_on_event") ? bool(r_record["face_player_on_event"]) : true;
+			r_record["detection_zones"] = s_normalize_detection_zones(r_record.get("detection_zones", Array()));
 		}
 	}
 
@@ -493,11 +685,55 @@ void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary
 	r_record["traits"] = norm_traits;
 
 	// IA de enemigo ARPG
-	r_record["ai_type"] = r_record.has("ai_type") ? s_normalize_arpg_ai_type(r_record["ai_type"]) : String("persigue_y_ataca");
-	r_record["vision_radius"] = r_record.has("vision_radius") ? MAX(0.0, double(r_record["vision_radius"])) : 6.0;
-	r_record["attack_range"] = r_record.has("attack_range") ? MAX(0.0, double(r_record["attack_range"])) : 1.0;
-	r_record["attack_interval"] = r_record.has("attack_interval") ? MAX(0.0, double(r_record["attack_interval"])) : 1.5;
+	String norm_ai = r_record.has("ai_type") ? s_normalize_arpg_ai_type(r_record["ai_type"]) : String("persigue_y_ataca");
+	r_record["ai_type"] = norm_ai;
+	double vis_r = r_record.has("vision_radius") ? MAX(0.0, double(r_record["vision_radius"])) : 6.0;
+	double atk_r = r_record.has("attack_range") ? MAX(0.0, double(r_record["attack_range"])) : 1.0;
+	double atk_iv = r_record.has("attack_interval") ? MAX(0.0, double(r_record["attack_interval"])) : 1.5;
+	r_record["vision_radius"] = vis_r;
+	r_record["attack_range"] = atk_r;
+	r_record["attack_interval"] = atk_iv;
 	r_record["knockback_resist"] = r_record.has("knockback_resist") ? CLAMP(int(r_record["knockback_resist"]), 0, 100) : 0;
+	r_record["lose_sight_sec"] = r_record.has("lose_sight_sec") ? MAX(0.0, double(r_record["lose_sight_sec"])) : 4.0;
+	double min_d = r_record.has("min_distance") ? MAX(0.0, double(r_record["min_distance"])) : 3.0;
+	double max_d = r_record.has("max_distance") ? MAX(min_d, double(r_record["max_distance"])) : MAX(min_d, 5.0);
+	r_record["min_distance"] = min_d;
+	r_record["max_distance"] = max_d;
+
+	// Migración: si el registro aún no tiene detection_zones, convierte radio de visión y alcance en zonas circulares iniciales.
+	if (!r_record.has("detection_zones") || r_record["detection_zones"].get_type() != Variant::ARRAY) {
+		Array migrated_zones;
+		if (vis_r > 0.0) {
+			Dictionary vz;
+			vz["name"] = String::utf8("Visión");
+			vz["shape"] = ClockGearsHitShape::make_circle(float(vis_r * 32.0)).to_dict();
+			vz["target_filter"] = "player";
+			vz["trigger"] = "enter";
+			Array vacts;
+			Dictionary vact;
+			vact["type"] = (norm_ai == "huye") ? String("huir") : String("perseguir");
+			vacts.push_back(vact);
+			vz["actions"] = vacts;
+			migrated_zones.push_back(normalize_detection_zone(vz, 0));
+		}
+		if (atk_r > 0.0) {
+			Dictionary az;
+			az["name"] = String::utf8("Ataque");
+			az["shape"] = ClockGearsHitShape::make_circle(float(atk_r * 32.0)).to_dict();
+			az["target_filter"] = "player";
+			az["trigger"] = "while_inside";
+			az["interval_sec"] = MAX(0.1, atk_iv);
+			Array aacts;
+			Dictionary aact;
+			aact["type"] = "atacar";
+			aacts.push_back(aact);
+			az["actions"] = aacts;
+			migrated_zones.push_back(normalize_detection_zone(az, migrated_zones.size()));
+		}
+		r_record["detection_zones"] = migrated_zones;
+	} else {
+		r_record["detection_zones"] = s_normalize_detection_zones(r_record["detection_zones"]);
+	}
 
 	// Aislar contenedores anidados existentes
 	if (r_record.has("sprite_data") && r_record["sprite_data"].get_type() == Variant::DICTIONARY) {
@@ -1407,6 +1643,10 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("delete_record_by_id", "category", "id"), &ClockGearsDataManager::delete_record_by_id);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_normalized_record", "category", "record"), &ClockGearsDataManager::get_normalized_record);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_arpg_ai_types"), &ClockGearsDataManager::get_arpg_ai_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_npc_move_types"), &ClockGearsDataManager::get_npc_move_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_detection_zone_triggers"), &ClockGearsDataManager::get_detection_zone_triggers);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_detection_zone_actions"), &ClockGearsDataManager::get_detection_zone_actions);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_detection_zone", "zone", "idx"), &ClockGearsDataManager::normalize_detection_zone, DEFVAL(0));
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_mannequin_size", "size"), &ClockGearsDataManager::normalize_mannequin_size);
 	ClassDB::bind_method(D_METHOD("get_system_config"), &ClockGearsDataManager::get_system_config);
 	ClassDB::bind_method(D_METHOD("set_system_config", "config"), &ClockGearsDataManager::set_system_config);

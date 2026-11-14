@@ -36,6 +36,7 @@
 #include "runtime/clockgears_audio_manager.h"
 #include "runtime/clockgears_picture_manager.h"
 #include "runtime/clockgears_cutscene.h"
+#include "runtime/clockgears_entity_ai.h"
 #include "clockgears_debug_panel.h"
 
 #ifdef TOOLS_ENABLED
@@ -148,6 +149,8 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsMap);
 		GDREGISTER_CLASS(ClockGearsEvent);
 		GDREGISTER_CLASS(ClockGearsPlayer);
+		GDREGISTER_CLASS(ClockGearsEntityNav);
+		GDREGISTER_CLASS(ClockGearsDetectionZone2D);
 		GDREGISTER_CLASS(ClockGearsFollower);
 		GDREGISTER_CLASS(ClockGearsFollowerManager);
 		GDREGISTER_CLASS(ClockGearsEventInterpreter);

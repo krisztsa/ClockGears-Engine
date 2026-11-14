@@ -45,6 +45,10 @@ public:
 	static void normalize_record_defaults(int p_category, Dictionary &r_record);
 	static Dictionary get_normalized_record(int p_category, const Dictionary &p_record);
 	static PackedStringArray get_arpg_ai_types();
+	static PackedStringArray get_npc_move_types();
+	static PackedStringArray get_detection_zone_triggers();
+	static PackedStringArray get_detection_zone_actions();
+	static Dictionary normalize_detection_zone(const Dictionary &p_zone, int p_idx = 0);
 
 private:
 	static ClockGearsDataManager *singleton;

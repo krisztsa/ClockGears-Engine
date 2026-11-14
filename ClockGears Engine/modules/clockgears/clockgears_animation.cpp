@@ -3,6 +3,7 @@
 #include "core/io/image.h"
 #include "core/math/geometry_2d.h"
 #include "core/object/message_queue.h"
+#include "scene/2d/physics/collision_object_2d.h"
 #include "scene/resources/2d/capsule_shape_2d.h"
 #include "scene/resources/2d/circle_shape_2d.h"
 #include "scene/resources/2d/convex_polygon_shape_2d.h"
@@ -1355,6 +1356,67 @@ static void s_build_godot_shapes(const ClockGearsHitShape &p_shape, Vector<Ref<S
 			rect->set_size(Vector2(MAX(0.5f, p_shape.size.x), MAX(0.5f, p_shape.size.y)));
 			r_shapes.push_back(rect);
 		} break;
+	}
+}
+
+void ClockGearsShapeGeometry::build_godot_shapes(const ClockGearsHitShape &p_shape, Vector<Ref<Shape2D>> &r_shapes) {
+	s_build_godot_shapes(p_shape, r_shapes);
+}
+
+Rect2 ClockGearsShapeGeometry::compute_shape_local_bounds(const ClockGearsHitShape &p_shape) {
+	Vector2 half(16.0f, 16.0f);
+	if (p_shape.type == CG_SHAPE_CIRCLE) {
+		float r = p_shape.get_radius();
+		half = Vector2(r, r);
+	} else if (p_shape.type == CG_SHAPE_CAPSULE) {
+		float r = p_shape.get_radius();
+		float h = p_shape.get_capsule_height();
+		half = Vector2(r, h * 0.5f);
+	} else if (p_shape.type == CG_SHAPE_POLYGON && !p_shape.vertices.is_empty()) {
+		Vector2 mn = p_shape.vertices[0];
+		Vector2 mx = p_shape.vertices[0];
+		for (int i = 1; i < p_shape.vertices.size(); i++) {
+			mn = mn.min(p_shape.vertices[i]);
+			mx = mx.max(p_shape.vertices[i]);
+		}
+		Transform2D rot_xf(Math::deg_to_rad(p_shape.rotation), Vector2());
+		Vector2 corners[4] = {
+			rot_xf.xform(Vector2(mn.x, mn.y)),
+			rot_xf.xform(Vector2(mx.x, mn.y)),
+			rot_xf.xform(Vector2(mn.x, mx.y)),
+			rot_xf.xform(Vector2(mx.x, mx.y))
+		};
+		Vector2 rmn = corners[0];
+		Vector2 rmx = corners[0];
+		for (int i = 1; i < 4; i++) {
+			rmn = rmn.min(corners[i]);
+			rmx = rmx.max(corners[i]);
+		}
+		return Rect2(p_shape.offset + rmn, rmx - rmn);
+	} else {
+		half = Vector2(MAX(0.5f, p_shape.size.x) * 0.5f, MAX(0.5f, p_shape.size.y) * 0.5f);
+	}
+	if (!Math::is_zero_approx(p_shape.rotation)) {
+		float c = Math::abs(Math::cos(Math::deg_to_rad(p_shape.rotation)));
+		float s = Math::abs(Math::sin(Math::deg_to_rad(p_shape.rotation)));
+		half = Vector2(half.x * c + half.y * s, half.x * s + half.y * c);
+	}
+	return Rect2(p_shape.offset - half, half * 2.0f);
+}
+
+void ClockGearsShapeGeometry::populate_collision_object_shapes(CollisionObject2D *p_obj, uint32_t p_owner_id, const ClockGearsHitShape &p_shape, const Vector2 &p_local_origin) {
+	if (!p_obj) {
+		return;
+	}
+	p_obj->shape_owner_clear_shapes(p_owner_id);
+	Transform2D xf(Math::deg_to_rad(p_shape.rotation), p_local_origin + p_shape.offset);
+	p_obj->shape_owner_set_transform(p_owner_id, xf);
+	Vector<Ref<Shape2D>> shapes;
+	s_build_godot_shapes(p_shape, shapes);
+	for (int i = 0; i < shapes.size(); i++) {
+		if (shapes[i].is_valid()) {
+			p_obj->shape_owner_add_shape(p_owner_id, shapes[i]);
+		}
 	}
 }
 

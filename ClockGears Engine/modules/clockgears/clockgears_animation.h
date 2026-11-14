@@ -9,6 +9,7 @@
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
 #include "scene/2d/node_2d.h"
+#include "scene/resources/2d/shape_2d.h"
 
 // ============================================================================
 // Triggers estándar de animación (Fase 8A - Sección 9)
@@ -1311,6 +1312,8 @@ public:
 // ============================================================================
 // Geometría de Formas (reutilizando Shape2D de Godot) y Copia Direccional
 // ============================================================================
+class CollisionObject2D;
+
 class ClockGearsShapeGeometry : public Object {
 	GDCLASS(ClockGearsShapeGeometry, Object);
 
@@ -1327,6 +1330,9 @@ public:
 	static Dictionary make_polygon_shape(const PackedVector2Array &p_vertices, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
 
 	static ClockGearsHitShape shape_from_variant(const Variant &p_var);
+	static void build_godot_shapes(const ClockGearsHitShape &p_shape, Vector<Ref<Shape2D>> &r_shapes);
+	static Rect2 compute_shape_local_bounds(const ClockGearsHitShape &p_shape);
+	static void populate_collision_object_shapes(CollisionObject2D *p_obj, uint32_t p_owner_id, const ClockGearsHitShape &p_shape, const Vector2 &p_local_origin = Vector2());
 	static Transform2D compute_shape_world_transform(const ClockGearsHitShape &p_shape, const Vector2 &p_world_pos, int p_entity_dir = 0, int p_authored_dir = 0);
 	static Dictionary get_shape_world_pose(const Dictionary &p_shape, const Vector2 &p_world_pos, int p_entity_dir = 0, int p_authored_dir = 0);
 

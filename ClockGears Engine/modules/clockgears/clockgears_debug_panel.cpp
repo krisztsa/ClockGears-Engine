@@ -3,6 +3,7 @@
 #include "clockgears_map.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_pixel_art.h"
+#include "runtime/clockgears_entity_ai.h"
 #include "runtime/clockgears_runtime.h"
 #include "core/config/engine.h"
 #include "core/io/file_access.h"
@@ -59,6 +60,8 @@ void ClockGearsDebugWorldCanvas::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_collisions"), &ClockGearsDebugWorldCanvas::is_show_collisions);
 	ClassDB::bind_method(D_METHOD("set_show_grid", "show"), &ClockGearsDebugWorldCanvas::set_show_grid);
 	ClassDB::bind_method(D_METHOD("is_show_grid"), &ClockGearsDebugWorldCanvas::is_show_grid);
+	ClassDB::bind_method(D_METHOD("set_show_bodies_zones", "show"), &ClockGearsDebugWorldCanvas::set_show_bodies_zones);
+	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugWorldCanvas::is_show_bodies_zones);
 }
 
 ClockGearsDebugWorldCanvas::ClockGearsDebugWorldCanvas() {
@@ -86,9 +89,71 @@ void ClockGearsDebugWorldCanvas::set_show_grid(bool p_show) {
 	queue_redraw();
 }
 
+void ClockGearsDebugWorldCanvas::set_show_bodies_zones(bool p_show) {
+	show_bodies_zones = p_show;
+	queue_redraw();
+}
+
+static void s_draw_hit_shape(CanvasItem *p_ci, const ClockGearsHitShape &p_shape, const Vector2 &p_origin, const Color &p_fill, const Color &p_border) {
+	if (!p_ci) {
+		return;
+	}
+	Vector2 c = p_origin + p_shape.offset;
+	float ang = Math::deg_to_rad(p_shape.rotation);
+
+	if (p_shape.type == CG_SHAPE_CIRCLE) {
+		float r = p_shape.get_radius();
+		p_ci->draw_circle(c, r, p_fill);
+		p_ci->draw_arc(c, r, 0.0f, float(Math::TAU), 28, p_border, 1.5f);
+	} else if (p_shape.type == CG_SHAPE_CAPSULE) {
+		float r = p_shape.get_radius();
+		float h = p_shape.get_capsule_height();
+		float half_seg = MAX(0.0f, h * 0.5f - r);
+		Transform2D xf(ang, c);
+		Vector2 a = xf.xform(Vector2(0, -half_seg));
+		Vector2 b = xf.xform(Vector2(0, half_seg));
+		Vector2 side = xf.basis_xform(Vector2(r, 0));
+		PackedVector2Array pts;
+		pts.push_back(a - side);
+		pts.push_back(a + side);
+		pts.push_back(b + side);
+		pts.push_back(b - side);
+		p_ci->draw_circle(a, r, p_fill);
+		p_ci->draw_circle(b, r, p_fill);
+		p_ci->draw_colored_polygon(pts, p_fill);
+		p_ci->draw_arc(a, r, ang + float(Math::PI), ang + float(Math::TAU), 16, p_border, 1.5f);
+		p_ci->draw_arc(b, r, ang, ang + float(Math::PI), 16, p_border, 1.5f);
+		p_ci->draw_line(a - side, b - side, p_border, 1.5f);
+		p_ci->draw_line(a + side, b + side, p_border, 1.5f);
+	} else if (p_shape.type == CG_SHAPE_POLYGON && p_shape.vertices.size() >= 3) {
+		Transform2D xf(ang, c);
+		PackedVector2Array pts;
+		pts.resize(p_shape.vertices.size());
+		for (int i = 0; i < p_shape.vertices.size(); i++) {
+			pts.write[i] = xf.xform(p_shape.vertices[i]);
+		}
+		p_ci->draw_colored_polygon(pts, p_fill);
+		PackedVector2Array outline = pts;
+		outline.push_back(pts[0]);
+		p_ci->draw_polyline(outline, p_border, 1.5f);
+	} else {
+		Vector2 half = Vector2(MAX(0.5f, p_shape.size.x), MAX(0.5f, p_shape.size.y)) * 0.5f;
+		Transform2D xf(ang, c);
+		PackedVector2Array pts;
+		pts.push_back(xf.xform(Vector2(-half.x, -half.y)));
+		pts.push_back(xf.xform(Vector2(half.x, -half.y)));
+		pts.push_back(xf.xform(Vector2(half.x, half.y)));
+		pts.push_back(xf.xform(Vector2(-half.x, half.y)));
+		p_ci->draw_colored_polygon(pts, p_fill);
+		PackedVector2Array outline = pts;
+		outline.push_back(pts[0]);
+		p_ci->draw_polyline(outline, p_border, 1.5f);
+	}
+}
+
 void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
-		if (show_events || show_collisions || show_grid) {
+		if (show_events || show_collisions || show_grid || show_bodies_zones) {
 			queue_redraw();
 		}
 	} else if (p_what == NOTIFICATION_DRAW) {
@@ -190,6 +255,59 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				}
 			}
 		}
+
+		// 4. Cuerpos y Zonas de Detección (Tanda 3B)
+		if (show_bodies_zones) {
+			int ts = MAX(16, map->get_grid_resolution());
+			Vector2 half_tile(ts * 0.5f, ts * 0.5f);
+
+			ClockGearsPlayer *pl = map->get_runtime_player();
+			if (pl) {
+				Color pfill(0.15f, 0.90f, 0.45f, 0.28f);
+				Color pborder(0.20f, 1.0f, 0.55f, 0.95f);
+				if (pl->is_through_enabled() || pl->is_body_through()) {
+					pfill.a = 0.12f;
+				}
+				s_draw_hit_shape(this, pl->get_body_shape_struct(), pl->get_position() + half_tile, pfill, pborder);
+			}
+
+			if (map->get_events_container()) {
+				Node2D *ev_cont = map->get_events_container();
+				for (int i = 0; i < ev_cont->get_child_count(); i++) {
+					ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(ev_cont->get_child(i));
+					if (!ev || !ev->is_visible() || ev->get_behavior_type() == 0) {
+						continue;
+					}
+					Vector2 origin = ev->get_position() + half_tile;
+
+					Array zones = ev->get_detection_zones();
+					for (int zi = 0; zi < zones.size(); zi++) {
+						if (zones[zi].get_type() != Variant::DICTIONARY) {
+							continue;
+						}
+						Dictionary zd = zones[zi];
+						ClockGearsHitShape zs = ClockGearsShapeGeometry::shape_from_variant(zd.get("shape", Dictionary()));
+						Color zfill(1.0f, 0.80f, 0.15f, 0.12f);
+						Color zborder(1.0f, 0.85f, 0.25f, 0.78f);
+						s_draw_hit_shape(this, zs, origin, zfill, zborder);
+						if (font.is_valid()) {
+							String zname = String(zd.get("name", ""));
+							if (!zname.is_empty()) {
+								draw_string(font, origin + zs.offset + Vector2(-24.0f, -6.0f), zname, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, zborder);
+							}
+						}
+					}
+
+					bool is_enemy = (ev->get_behavior_type() == 3);
+					Color bfill = is_enemy ? Color(0.95f, 0.25f, 0.25f, 0.30f) : Color(0.25f, 0.65f, 1.0f, 0.30f);
+					Color bborder = is_enemy ? Color(1.0f, 0.35f, 0.35f, 0.95f) : Color(0.35f, 0.75f, 1.0f, 0.95f);
+					if (ev->is_through() || ev->is_body_through()) {
+						bfill.a = 0.10f;
+					}
+					s_draw_hit_shape(this, ev->get_body_shape_struct(), origin, bfill, bborder);
+				}
+			}
+		}
 	}
 }
 
@@ -214,6 +332,8 @@ void ClockGearsDebugOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_player"), &ClockGearsDebugOverlay::is_show_player);
 	ClassDB::bind_method(D_METHOD("set_show_camera", "show"), &ClockGearsDebugOverlay::set_show_camera);
 	ClassDB::bind_method(D_METHOD("is_show_camera"), &ClockGearsDebugOverlay::is_show_camera);
+	ClassDB::bind_method(D_METHOD("set_show_bodies_zones", "show"), &ClockGearsDebugOverlay::set_show_bodies_zones);
+	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugOverlay::is_show_bodies_zones);
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("set_show_battle_turns", "show"), &ClockGearsDebugOverlay::set_show_battle_turns);
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("is_show_battle_turns"), &ClockGearsDebugOverlay::is_show_battle_turns);
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("set_show_battle_formulas", "show"), &ClockGearsDebugOverlay::set_show_battle_formulas);
@@ -392,6 +512,10 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	chk_grid = memnew(CheckBox(CG_DBG_TR("Rejilla de 32x32")));
 	chk_grid->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
 	tab_vis->add_child(chk_grid);
+
+	chk_bodies_zones = memnew(CheckBox(CG_DBG_TR("Cuerpos y zonas de detección")));
+	chk_bodies_zones->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
+	tab_vis->add_child(chk_bodies_zones);
 
 	tab_vis->add_child(memnew(HSeparator));
 
@@ -694,11 +818,19 @@ bool ClockGearsDebugOverlay::is_show_camera() const {
 	return chk_camera && chk_camera->is_pressed();
 }
 
+void ClockGearsDebugOverlay::set_show_bodies_zones(bool p_show) {
+	if (chk_bodies_zones) chk_bodies_zones->set_pressed(p_show);
+}
+bool ClockGearsDebugOverlay::is_show_bodies_zones() const {
+	return chk_bodies_zones && chk_bodies_zones->is_pressed();
+}
+
 void ClockGearsDebugOverlay::_on_chk_toggled(bool) {
 	if (world_canvas) {
 		world_canvas->set_show_events(chk_events && chk_events->is_pressed());
 		world_canvas->set_show_collisions(chk_collisions && chk_collisions->is_pressed());
 		world_canvas->set_show_grid(chk_grid && chk_grid->is_pressed());
+		world_canvas->set_show_bodies_zones(chk_bodies_zones && chk_bodies_zones->is_pressed());
 	}
 	_save_settings();
 	_update_hud();
@@ -744,6 +876,7 @@ void ClockGearsDebugOverlay::_save_settings() {
 		d["show_events"] = chk_events ? chk_events->is_pressed() : false;
 		d["show_collisions"] = chk_collisions ? chk_collisions->is_pressed() : false;
 		d["show_grid"] = chk_grid ? chk_grid->is_pressed() : false;
+		d["show_bodies_zones"] = chk_bodies_zones ? chk_bodies_zones->is_pressed() : false;
 		d["show_fps"] = chk_fps ? chk_fps->is_pressed() : false;
 		d["show_player"] = chk_player ? chk_player->is_pressed() : false;
 		d["show_camera"] = chk_camera ? chk_camera->is_pressed() : false;
@@ -774,6 +907,7 @@ void ClockGearsDebugOverlay::_load_settings() {
 				if (chk_events) chk_events->set_pressed(bool(d.get("show_events", false)));
 				if (chk_collisions) chk_collisions->set_pressed(bool(d.get("show_collisions", false)));
 				if (chk_grid) chk_grid->set_pressed(bool(d.get("show_grid", false)));
+				if (chk_bodies_zones) chk_bodies_zones->set_pressed(bool(d.get("show_bodies_zones", false)));
 				if (chk_fps) chk_fps->set_pressed(bool(d.get("show_fps", false)));
 				if (chk_player) chk_player->set_pressed(bool(d.get("show_player", false)));
 				if (chk_camera) chk_camera->set_pressed(bool(d.get("show_camera", false)));

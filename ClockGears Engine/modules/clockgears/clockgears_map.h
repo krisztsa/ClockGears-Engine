@@ -42,7 +42,22 @@ private:
 	Dictionary region_map;
 	Dictionary shadow_map;
 
+	struct TilePassCacheEntry {
+		uint8_t collision_type = 0; // 0=pasable, 1=bloqueado(X), 2=techo(★) (para debug/display)
+		uint8_t passage_mode = 0;   // 0=pasable, 1=bloqueado(X) (para movimiento real)
+		uint8_t dir4_mask = 15;     // 1=Abajo, 2=Izq, 4=Der, 8=Arriba
+		bool counter = false;
+	};
+	mutable Vector<TilePassCacheEntry> passability_cache;
+	mutable int cached_pass_w = 0;
+	mutable int cached_pass_h = 0;
+	mutable bool passability_cache_dirty = true;
+	bool layer_signals_connected = false;
+
 	void _bind_layer_pointers();
+	void _ensure_passability_signals();
+	void _on_dm_data_changed(const String &p_category, int p_id);
+	void _rebuild_passability_cache() const;
 
 protected:
 	void _notification(int p_what);
@@ -80,11 +95,18 @@ public:
 	void set_bgm_path(const String &p_bgm) { bgm_path = p_bgm; }
 	String get_bgm_path() const { return bgm_path; }
 
-	void set_tileset_id(int p_id) { tileset_id = p_id; }
+	void set_tileset_id(int p_id) {
+		tileset_id = p_id;
+		invalidate_passability_cache();
+	}
 	int get_tileset_id() const { return tileset_id; }
 
+	void invalidate_passability_cache() const;
 	bool is_tile_passable(const Vector2i &p_cell, int p_dir = 0) const;
 	int get_cell_collision_type(const Vector2i &p_cell) const;
+	int get_tile_passage_mode(const Vector2i &p_cell, int &r_dir4_mask) const;
+	bool is_tile_counter(const Vector2i &p_cell) const;
+	bool can_pass_tile_step(const Vector2i &p_from, const Vector2i &p_to, int p_dir = 0) const;
 
 	TileMapLayer *get_layer(int p_layer_idx);
 	Node2D *get_events_container();

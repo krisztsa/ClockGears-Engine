@@ -1,9 +1,15 @@
 #pragma once
 
+#include "clockgears_animation.h"
 #include "clockgears_types.h"
+#include "core/math/random_pcg.h"
 #include "core/variant/array.h"
 #include "scene/2d/node_2d.h"
 #include "scene/2d/sprite_2d.h"
+
+class CharacterBody2D;
+class ClockGearsDetectionZone2D;
+class ClockGearsMap;
 
 class ClockGearsEvent : public Node2D {
 	GDCLASS(ClockGearsEvent, Node2D);
@@ -46,6 +52,77 @@ private:
 
 	Sprite2D *sprite = nullptr;
 	void _update_sprite_region();
+
+	// Runtime Cuerpo, Movimiento IA, A* y Zonas de Detección (behavior_type != 0)
+	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
+	bool body_through = false;
+	bool avoid_obstacles = true;
+	int path_recalc_ms = 250;
+	int path_max_nodes = 256;
+	float walk_move_speed = 120.0f;
+	float run_move_speed = 180.0f;
+	float attack_speed_pct = 100.0f;
+	float wander_radius = 3.0f;
+	Vector<Vector2> patrol_points;
+	bool patrol_loop = false;
+	float lose_sight_sec = 4.0f;
+	float min_distance = 3.0f;
+	float max_distance = 5.0f;
+	String ai_type_str = "quieto";
+	String npc_move_type_str = "quieto";
+	float follow_distance = 2.0f;
+	bool face_player_on_event = true;
+	Array detection_zones_cfg;
+
+	bool db_record_loaded = false;
+	Dictionary cached_db_rec;
+	ClockGearsSpriteSheetData cached_sprite_data;
+	bool cached_directional_idle = false;
+	HashMap<String, Ref<Texture2D>> cached_slot_textures;
+
+	CharacterBody2D *entity_body = nullptr;
+	uint32_t entity_body_shape_owner = 0;
+	Node2D *zones_root = nullptr;
+	Vector<ClockGearsDetectionZone2D *> zone_nodes;
+	String cached_zones_sig;
+	String cached_body_sig;
+
+	Vector2 spawn_origin_px;
+	int spawn_direction = 2;
+	bool spawn_origin_set = false;
+	int ai_state = 0; // ClockGearsEntityAIState
+	ObjectID target_object_id;
+	float time_without_sight = 0.0f;
+	bool astar_no_path = false;
+	Vector<Vector2i> astar_path;
+	int astar_path_idx = 0;
+	float astar_timer = 0.0f;
+
+	RandomPCG wander_rng;
+	Vector2 wander_target_px;
+	bool wander_has_target = false;
+	float wander_pause_timer = 0.0f;
+	int patrol_idx = 0;
+	int patrol_dir = 1;
+
+	String ev_action_state = "quieto";
+	String ev_resolved_slot;
+	float ev_anim_timer = 0.0f;
+	int ev_anim_frame = 0;
+	float ev_attack_timer = 0.0f;
+	bool was_interpreter_running_me = false;
+	bool paused_by_event = false;
+
+	void _apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed);
+	void _sync_runtime_entity_components();
+	void _clear_runtime_entity_components();
+	void _update_behavior_visual_frame();
+	void _advance_behavior_animation(float p_delta);
+	void _physics_tick_behavior(float p_delta);
+	Node *_resolve_target_node(ClockGearsMap *p_map) const;
+	bool _has_any_target_in_zones() const;
+	Vector2 _compute_move_toward(ClockGearsMap *p_map, const Vector2 &p_target_px, float p_delta, int p_tile_size);
+	void _face_toward_world_pos(const Vector2 &p_target_pos);
 
 protected:
 	static void _bind_methods();
@@ -117,6 +194,32 @@ public:
 	int get_behavior_ref_id() const { return behavior_ref_id; }
 	static int behavior_type_to_category(int p_type);
 	void _update_behavior_sprite(const Dictionary &p_rec, bool p_found);
+
+	void set_body_shape(const Dictionary &p_shape);
+	Dictionary get_body_shape() const { return body_shape.to_dict(); }
+	const ClockGearsHitShape &get_body_shape_struct() const { return body_shape; }
+	void set_body_through(bool p_through);
+	bool is_body_through() const { return body_through; }
+	void set_avoid_obstacles(bool p_avoid) { avoid_obstacles = p_avoid; }
+	bool is_avoid_obstacles() const { return avoid_obstacles; }
+
+	Array get_detection_zones() const { return detection_zones_cfg; }
+	int get_zone_count() const { return zone_nodes.size(); }
+	ClockGearsDetectionZone2D *get_zone_node(int p_idx) const;
+	CharacterBody2D *get_entity_body() const { return entity_body; }
+
+	void reset_spawn_origin();
+	Vector2 get_spawn_origin() const { return spawn_origin_px; }
+	int get_ai_state() const { return ai_state; }
+	String get_ai_state_name() const;
+	String get_action_state() const { return ev_action_state; }
+	String get_active_visual_slot() const { return ev_resolved_slot; }
+	bool is_paused_by_event() const { return paused_by_event; }
+	Array get_current_astar_path() const;
+	bool has_astar_no_path() const { return astar_no_path; }
+
+	void notify_zone_sight(bool p_in, Node *p_target);
+	void execute_zone_actions(const Array &p_actions, Node *p_target);
 
 	int get_active_page_index() const { return active_page_index; }
 	void update_active_page();

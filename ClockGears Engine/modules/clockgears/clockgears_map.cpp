@@ -71,6 +71,8 @@ void ClockGearsMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_layer", "layer_idx"), &ClockGearsMap::get_layer);
 	ClassDB::bind_method(D_METHOD("is_tile_passable", "cell", "dir"), &ClockGearsMap::is_tile_passable, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("get_cell_collision_type", "cell"), &ClockGearsMap::get_cell_collision_type);
+	ClassDB::bind_method(D_METHOD("can_pass_tile_step", "from", "to", "dir"), &ClockGearsMap::can_pass_tile_step, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("invalidate_passability_cache"), &ClockGearsMap::invalidate_passability_cache);
 	ClassDB::bind_method(D_METHOD("get_runtime_debug_overlay"), &ClockGearsMap::get_runtime_debug_overlay);
 	ClassDB::bind_method(D_METHOD("set_runtime_debug_overlay", "overlay"), &ClockGearsMap::set_runtime_debug_overlay);
 
@@ -95,6 +97,37 @@ void ClockGearsMap::set_grid_resolution(int p_res) {
 void ClockGearsMap::set_map_size(Vector2i p_size) {
 	map_width = MAX(1, p_size.x);
 	map_height = MAX(1, p_size.y);
+	invalidate_passability_cache();
+}
+
+void ClockGearsMap::invalidate_passability_cache() const {
+	passability_cache_dirty = true;
+}
+
+void ClockGearsMap::_on_dm_data_changed(const String &p_category, int p_id) {
+	if (p_category == "tilesets" || p_category.is_empty()) {
+		invalidate_passability_cache();
+	}
+}
+
+void ClockGearsMap::_ensure_passability_signals() {
+	TileMapLayer *layers[4] = { layer_ground, layer_decoration, layer_objects, layer_overhead };
+	Callable inv_cb = callable_mp(const_cast<ClockGearsMap *>(this), &ClockGearsMap::invalidate_passability_cache);
+	for (int i = 0; i < 4; i++) {
+		if (layers[i] && !layers[i]->is_connected("changed", inv_cb)) {
+			layers[i]->connect("changed", inv_cb);
+		}
+	}
+	if (!layer_signals_connected) {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		if (dm) {
+			Callable dm_cb = callable_mp(this, &ClockGearsMap::_on_dm_data_changed);
+			if (!dm->is_connected("data_changed", dm_cb)) {
+				dm->connect("data_changed", dm_cb);
+			}
+			layer_signals_connected = true;
+		}
+	}
 }
 
 void ClockGearsMap::_bind_layer_pointers() {
@@ -153,6 +186,8 @@ void ClockGearsMap::_notification(int p_what) {
 			set_meta("_edit_group_", true);
 			ensure_default_layers();
 			_bind_layer_pointers();
+			_ensure_passability_signals();
+			invalidate_passability_cache();
 			if (tileset_id > 0) {
 				setup_tileset_from_database(tileset_id);
 			}
@@ -282,16 +317,15 @@ void ClockGearsMap::ensure_default_layers() {
 		layer_overhead->set_meta("_edit_lock_", true);
 		layer_overhead->set_meta("_edit_group_", true);
 	}
+	_ensure_passability_signals();
 }
 
-bool ClockGearsMap::is_tile_passable(const Vector2i &p_cell, int p_dir) const {
-	return get_cell_collision_type(p_cell) != 1;
-}
-
-int ClockGearsMap::get_cell_collision_type(const Vector2i &p_cell) const {
-	if (p_cell.x < 0 || p_cell.y < 0 || p_cell.x >= map_width || p_cell.y >= map_height) {
-		return 1; // 1 = Bloqueado (fuera de límites)
-	}
+void ClockGearsMap::_rebuild_passability_cache() const {
+	int total = map_width * map_height;
+	passability_cache.resize(total);
+	cached_pass_w = map_width;
+	cached_pass_h = map_height;
+	passability_cache_dirty = false;
 
 	Dictionary slot_cols;
 	Dictionary legacy_cols;
@@ -312,54 +346,249 @@ int ClockGearsMap::get_cell_collision_type(const Vector2i &p_cell) const {
 	}
 
 	const TileMapLayer *layers[4] = { layer_overhead, layer_objects, layer_decoration, layer_ground };
-	for (int i = 0; i < 4; i++) {
-		const TileMapLayer *tlayer = layers[i];
-		if (!tlayer || tlayer->get_cell_source_id(p_cell) == -1) {
-			continue;
-		}
-		const TileData *td = tlayer->get_cell_tile_data(p_cell);
-		if (td && td->get_z_index() > 3) {
-			return 2; // Tile elevado sobre el jugador (★)
-		}
-		Vector2i atlas_coords = tlayer->get_cell_atlas_coords(p_cell);
-		String key = vformat("%d,%d", atlas_coords.x, atlas_coords.y);
+	static const char *skeys[9] = { "A5", "B", "C", "D", "E", "A1", "A2", "A3", "A4" };
 
-		Dictionary md;
-		bool found_meta = false;
-		static const char *skeys[9] = { "A5", "B", "C", "D", "E", "A1", "A2", "A3", "A4" };
-		for (int s = 0; s < 9; s++) {
-			if (slot_cols.has(skeys[s])) {
-				Dictionary smap = slot_cols[skeys[s]];
-				if (smap.has(key)) {
-					md = smap[key];
-					found_meta = true;
-					break;
-				}
-			}
-		}
-		if (!found_meta && legacy_cols.has(key)) {
-			Variant lm = legacy_cols[key];
-			if (lm.get_type() == Variant::DICTIONARY) {
-				md = lm;
-				found_meta = true;
-			} else if (int(lm) == 2) {
-				return 2; // Modo legacy 2 = ★
-			}
-		}
-
-		if (found_meta) {
-			int passage = int(md.get("passage", 15));
-			int layer = int(md.get("layer", 0));
-			if (layer == 1 || int(md.get("mode", 0)) == 2) {
-				return 2; // Estrella (★): pasable por detrás
-			}
-			if (passage == 0 || int(md.get("mode", 0)) == 1) {
-				return 1; // Bloqueado (X)
+	// Pre-indexar metadatos por Vector2i en hash local O(1) para evitar String/vformat por celda y capa
+	HashMap<Vector2i, Dictionary> meta_by_coords;
+	HashMap<Vector2i, int> legacy_int_by_coords;
+	auto parse_coord_key = [](const String &p_key, Vector2i &r_out) -> bool {
+		int comma = p_key.find(",");
+		if (comma <= 0) return false;
+		r_out = Vector2i(p_key.substr(0, comma).to_int(), p_key.substr(comma + 1).to_int());
+		return true;
+	};
+	for (int s = 8; s >= 0; s--) {
+		if (!slot_cols.has(skeys[s])) continue;
+		Dictionary smap = slot_cols[skeys[s]];
+		Array keys = smap.keys();
+		for (int k = 0; k < keys.size(); k++) {
+			Vector2i ac;
+			if (parse_coord_key(String(keys[k]), ac) && smap[keys[k]].get_type() == Variant::DICTIONARY) {
+				meta_by_coords[ac] = Dictionary(smap[keys[k]]);
 			}
 		}
 	}
+	Array lkeys = legacy_cols.keys();
+	for (int k = 0; k < lkeys.size(); k++) {
+		Vector2i ac;
+		if (!parse_coord_key(String(lkeys[k]), ac)) continue;
+		Variant lv = legacy_cols[lkeys[k]];
+		if (lv.get_type() == Variant::DICTIONARY && !meta_by_coords.has(ac)) {
+			meta_by_coords[ac] = Dictionary(lv);
+		} else if (lv.get_type() != Variant::DICTIONARY) {
+			legacy_int_by_coords[ac] = int(lv);
+		}
+	}
 
-	return 0; // 0 = Pasable (sin marca)
+	TilePassCacheEntry *wptr = passability_cache.ptrw();
+	for (int cy = 0; cy < map_height; cy++) {
+		for (int cx = 0; cx < map_width; cx++) {
+			Vector2i cell(cx, cy);
+			TilePassCacheEntry entry;
+			bool display_decided = false;
+			bool passage_decided = false;
+
+			for (int i = 0; i < 4; i++) {
+				const TileMapLayer *tlayer = layers[i];
+				if (!tlayer || tlayer->get_cell_source_id(cell) == -1) {
+					continue;
+				}
+				const TileData *td = tlayer->get_cell_tile_data(cell);
+				Ref<TileSet> ts = tlayer->get_tile_set();
+				Vector2i ac = tlayer->get_cell_atlas_coords(cell);
+
+				const Dictionary *md_ptr = meta_by_coords.getptr(ac);
+				if (md_ptr && bool(md_ptr->get("counter", false))) {
+					entry.counter = true;
+				} else if (td && ts.is_valid() && ts->has_custom_data_layer_by_name("cg_counter") && bool(td->get_custom_data("cg_counter"))) {
+					entry.counter = true;
+				}
+
+				if (!display_decided) {
+					if (td && td->get_z_index() > 3) {
+						entry.collision_type = 2;
+						display_decided = true;
+					} else if (md_ptr) {
+						int passage = int(md_ptr->get("passage", 15));
+						int layer = int(md_ptr->get("layer", 0));
+						int mode = int(md_ptr->get("mode", 0));
+						if (layer == 1 || mode == 2) {
+							entry.collision_type = 2;
+							display_decided = true;
+						} else if (passage == 0 || mode == 1) {
+							entry.collision_type = 1;
+							display_decided = true;
+						}
+					} else if (const int *li = legacy_int_by_coords.getptr(ac)) {
+						if (*li == 2) {
+							entry.collision_type = 2;
+							display_decided = true;
+						}
+					}
+				}
+
+				if (!passage_decided) {
+					if (td && td->get_z_index() > 3) {
+						continue;
+					}
+					if (md_ptr) {
+						int passage = int(md_ptr->get("passage", 15));
+						int layer = int(md_ptr->get("layer", 0));
+						int mode = int(md_ptr->get("mode", 0));
+						entry.dir4_mask = uint8_t(passage & 15);
+						if (layer == 1 || mode == 2) {
+							continue; // Estrella (★) no bloquea la capa debajo
+						}
+						if (passage == 0 || mode == 1) {
+							entry.passage_mode = 1;
+							passage_decided = true;
+							continue;
+						}
+					} else if (const int *li = legacy_int_by_coords.getptr(ac)) {
+						if (*li == 1) {
+							entry.passage_mode = 1;
+							passage_decided = true;
+							continue;
+						}
+					}
+					if (td && ts.is_valid()) {
+						if (ts->has_custom_data_layer_by_name("cg_layer") && int(td->get_custom_data("cg_layer")) == 1) {
+							passage_decided = true;
+							continue;
+						}
+						if (ts->has_custom_data_layer_by_name("cg_passage_4dir")) {
+							Variant d4 = td->get_custom_data("cg_passage_4dir");
+							if (d4.get_type() == Variant::INT) {
+								entry.dir4_mask = uint8_t(int(d4) & 15);
+							}
+						}
+						if (ts->has_custom_data_layer_by_name("cg_passage")) {
+							Variant pm = td->get_custom_data("cg_passage");
+							if (pm.get_type() == Variant::INT && int(pm) == 0) {
+								entry.passage_mode = 1;
+								entry.dir4_mask = 0;
+								passage_decided = true;
+								continue;
+							}
+						}
+					}
+				}
+			}
+
+			wptr[cy * map_width + cx] = entry;
+		}
+	}
+}
+
+bool ClockGearsMap::is_tile_passable(const Vector2i &p_cell, int p_dir) const {
+	int dir4 = 15;
+	if (get_tile_passage_mode(p_cell, dir4) == 1) {
+		return false;
+	}
+	return get_cell_collision_type(p_cell) != 1;
+}
+
+int ClockGearsMap::get_cell_collision_type(const Vector2i &p_cell) const {
+	if (p_cell.x < 0 || p_cell.y < 0 || p_cell.x >= map_width || p_cell.y >= map_height) {
+		return 1; // 1 = Bloqueado (fuera de límites)
+	}
+	if (passability_cache_dirty || cached_pass_w != map_width || cached_pass_h != map_height || passability_cache.size() != map_width * map_height) {
+		_rebuild_passability_cache();
+	}
+	return int(passability_cache[p_cell.y * map_width + p_cell.x].collision_type);
+}
+
+int ClockGearsMap::get_tile_passage_mode(const Vector2i &p_cell, int &r_dir4_mask) const {
+	r_dir4_mask = 15;
+	if (p_cell.x < 0 || p_cell.y < 0 || p_cell.x >= map_width || p_cell.y >= map_height) {
+		r_dir4_mask = 0;
+		return 1;
+	}
+	if (passability_cache_dirty || cached_pass_w != map_width || cached_pass_h != map_height || passability_cache.size() != map_width * map_height) {
+		_rebuild_passability_cache();
+	}
+	const TilePassCacheEntry &e = passability_cache[p_cell.y * map_width + p_cell.x];
+	r_dir4_mask = int(e.dir4_mask);
+	return int(e.passage_mode);
+}
+
+bool ClockGearsMap::is_tile_counter(const Vector2i &p_cell) const {
+	if (p_cell.x < 0 || p_cell.y < 0 || p_cell.x >= map_width || p_cell.y >= map_height) {
+		return false;
+	}
+	if (passability_cache_dirty || cached_pass_w != map_width || cached_pass_h != map_height || passability_cache.size() != map_width * map_height) {
+		_rebuild_passability_cache();
+	}
+	return passability_cache[p_cell.y * map_width + p_cell.x].counter;
+}
+
+bool ClockGearsMap::can_pass_tile_step(const Vector2i &p_from, const Vector2i &p_to, int p_dir) const {
+	if (p_to.x < 0 || p_to.y < 0 || p_to.x >= map_width || p_to.y >= map_height) {
+		return false;
+	}
+	auto dir_to_bit = [](int d) -> int {
+		switch (d) {
+			case 2: return 1;
+			case 4: return 2;
+			case 6: return 4;
+			case 8: return 8;
+			default: return 0;
+		}
+	};
+	auto opp_dir = [](int d) -> int {
+		switch (d) {
+			case 1: return 9;
+			case 2: return 8;
+			case 3: return 7;
+			case 4: return 6;
+			case 6: return 4;
+			case 7: return 3;
+			case 8: return 2;
+			case 9: return 1;
+			default: return 0;
+		}
+	};
+	auto can_cardinal = [&](const Vector2i &a, const Vector2i &b, int d) -> bool {
+		if (b.x < 0 || b.y < 0 || b.x >= map_width || b.y >= map_height) {
+			return false;
+		}
+		int from_dir4 = 15;
+		get_tile_passage_mode(a, from_dir4);
+		int to_dir4 = 15;
+		if (get_tile_passage_mode(b, to_dir4) == 1) {
+			return false;
+		}
+		int exit_bit = dir_to_bit(d);
+		int enter_bit = dir_to_bit(opp_dir(d));
+		if (exit_bit != 0 && (from_dir4 & exit_bit) == 0) {
+			return false;
+		}
+		if (enter_bit != 0 && (to_dir4 & enter_bit) == 0) {
+			return false;
+		}
+		return true;
+	};
+
+	Vector2i delta = p_to - p_from;
+	if (delta == Vector2i(0, 0)) {
+		int dummy = 15;
+		return get_tile_passage_mode(p_to, dummy) != 1;
+	}
+	if (Math::abs(delta.x) == 1 && Math::abs(delta.y) == 1) {
+		int horiz_dir = (delta.x < 0) ? 4 : 6;
+		int vert_dir = (delta.y < 0) ? 8 : 2;
+		Vector2i horiz_cell(p_from.x + delta.x, p_from.y);
+		Vector2i vert_cell(p_from.x, p_from.y + delta.y);
+		return can_cardinal(p_from, horiz_cell, horiz_dir) &&
+				can_cardinal(p_from, vert_cell, vert_dir) &&
+				can_cardinal(horiz_cell, p_to, vert_dir) &&
+				can_cardinal(vert_cell, p_to, horiz_dir);
+	}
+	int eff_dir = p_dir;
+	if (eff_dir == 0) {
+		eff_dir = ClockGearsCharacterStateRegistry::vector_to_direction(delta);
+	}
+	return can_cardinal(p_from, p_to, eff_dir);
 }
 
 TileMapLayer *ClockGearsMap::get_layer(int p_layer_idx) {
@@ -786,6 +1015,7 @@ void ClockGearsMap::set_tile_at(int p_layer_idx, const Vector2i &p_cell, const V
 		if (layer_overhead && layer_overhead != layer) {
 			layer_overhead->erase_cell(p_cell);
 		}
+		invalidate_passability_cache();
 		return;
 	}
 	Ref<TileSet> ts = layer->get_tile_set();
@@ -800,6 +1030,7 @@ void ClockGearsMap::set_tile_at(int p_layer_idx, const Vector2i &p_cell, const V
 		}
 	}
 	layer->set_cell(p_cell, 0, p_atlas_coords, 0);
+	invalidate_passability_cache();
 }
 
 Vector2i ClockGearsMap::get_tile_at(int p_layer_idx, const Vector2i &p_cell) {

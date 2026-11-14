@@ -1,4 +1,5 @@
 #include "clockgears_runtime.h"
+#include "clockgears_entity_ai.h"
 #include "../clockgears_battle_window.h"
 #include "../clockgears_debug_panel.h"
 #include "../core/clockgears_data_manager.h"
@@ -169,6 +170,11 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("debug_advance_animation", "delta"), &ClockGearsPlayer::debug_advance_animation);
 	ClassDB::bind_method(D_METHOD("load_actor_data", "actor_id"), &ClockGearsPlayer::load_actor_data);
 	ClassDB::bind_method(D_METHOD("setup_on_map", "map", "followers", "interpreter"), &ClockGearsPlayer::setup_on_map, DEFVAL(Variant()), DEFVAL(Variant()));
+	ClassDB::bind_method(D_METHOD("set_body_shape", "shape"), &ClockGearsPlayer::set_body_shape);
+	ClassDB::bind_method(D_METHOD("get_body_shape"), &ClockGearsPlayer::get_body_shape);
+	ClassDB::bind_method(D_METHOD("set_body_through", "through"), &ClockGearsPlayer::set_body_through);
+	ClassDB::bind_method(D_METHOD("is_body_through"), &ClockGearsPlayer::is_body_through);
+	ClassDB::bind_method(D_METHOD("move_with_collision", "delta"), &ClockGearsPlayer::move_with_collision);
 	ClassDB::bind_method(D_METHOD("can_pass", "from", "to", "dir"), &ClockGearsPlayer::can_pass);
 	ClassDB::bind_static_method("ClockGearsPlayer", D_METHOD("ensure_default_arpg_input_actions"), &ClockGearsPlayer::ensure_default_arpg_input_actions);
 	ClassDB::bind_static_method("ClockGearsPlayer", D_METHOD("is_arpg_combat_mode"), &ClockGearsPlayer::is_arpg_combat_mode);
@@ -432,6 +438,13 @@ void ClockGearsPlayer::load_actor_data(int p_actor_id) {
 			actor_name = rec.get("name", "");
 			graphic_path = rec.get("graphic_path", "");
 			directional_idle = bool(rec.get("directional_idle", false));
+			Dictionary bsd = rec.get("body_shape", Dictionary());
+			if (!bsd.is_empty()) {
+				body_shape.from_dict(bsd);
+			} else {
+				body_shape = ClockGearsHitShape::make_circle(12.0f);
+			}
+			body_through = bool(rec.get("body_through", false));
 			Dictionary sp_dict = rec.get("sprite_data", Dictionary());
 			if (!sp_dict.is_empty()) {
 				actor_sprite_data.from_dict(sp_dict);
@@ -482,6 +495,7 @@ void ClockGearsPlayer::load_actor_data(int p_actor_id) {
 	}
 	_sync_locomotion_state();
 	_refresh_actor_speeds_from_dm();
+	_sync_body_collision_shapes();
 	_update_sprite_frame();
 }
 
@@ -492,7 +506,31 @@ void ClockGearsPlayer::setup_on_map(ClockGearsMap *p_map, ClockGearsFollowerMana
 	if (current_map) {
 		tile_size = MAX(16, current_map->get_grid_resolution());
 	}
+	_sync_body_collision_shapes();
 	_update_sprite_frame();
+}
+
+void ClockGearsPlayer::_sync_body_collision_shapes() {
+	if (body_shape_owner == UINT32_MAX) {
+		return;
+	}
+	Vector2 half_tile(tile_size * 0.5f, tile_size * 0.5f);
+	ClockGearsShapeGeometry::populate_collision_object_shapes(this, body_shape_owner, body_shape, half_tile);
+}
+
+void ClockGearsPlayer::set_body_shape(const Dictionary &p_shape) {
+	body_shape.from_dict(p_shape);
+	_sync_body_collision_shapes();
+}
+
+Vector2 ClockGearsPlayer::move_with_collision(const Vector2 &p_delta) {
+	Vector2 prev_pos = get_position();
+	Vector2 next_pos = ClockGearsEntityNav::move_entity_with_slide(current_map, body_shape, direction, prev_pos, p_delta, through_enabled || body_through, this, tile_size);
+	set_position(next_pos);
+	step_exact_px = next_pos;
+	Vector2 center = next_pos + Vector2(tile_size * 0.5f, tile_size * 0.5f);
+	grid_cell = Vector2i(int(Math::floor(center.x / float(tile_size))), int(Math::floor(center.y / float(tile_size))));
+	return next_pos;
 }
 
 void ClockGearsPlayer::debug_advance_animation(float p_delta) {
@@ -681,162 +719,18 @@ void ClockGearsPlayer::set_direction(int p_dir) {
 }
 
 int ClockGearsPlayer::_get_tile_passage_mode(const Vector2i &p_cell, int &r_dir4_mask) const {
-	r_dir4_mask = 15; // 1|2|4|8 = todas las direcciones permitidas por defecto
+	r_dir4_mask = 15;
 	if (!current_map) {
 		return 0;
 	}
-
-	// Revisar metadatos de colisión del Tileset activo en el mapa actual
-	Dictionary slot_cols;
-	Dictionary legacy_cols;
-	int ts_id = current_map->get_tileset_id();
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (dm) {
-		Array ts_arr = dm->get_category_array(CAT_TILESETS);
-		for (int i = 0; i < ts_arr.size(); i++) {
-			if (ts_arr[i].get_type() == Variant::DICTIONARY) {
-				Dictionary d = ts_arr[i];
-				int id = int(d.get("id", i + 1));
-				if (ts_id == 0 || id == ts_id) {
-					slot_cols = d.get("slot_collisions", Dictionary());
-					legacy_cols = d.get("collisions", Dictionary());
-					break;
-				}
-			}
-		}
-	}
-
-	const int check_layers[4] = { LAYER_OVERHEAD, LAYER_OBJECTS, LAYER_DECORATION, LAYER_GROUND };
-	for (int i = 0; i < 4; i++) {
-		TileMapLayer *tlayer = current_map->get_layer(check_layers[i]);
-		if (!tlayer || tlayer->get_cell_source_id(p_cell) == -1) {
-			continue;
-		}
-		Vector2i atlas_coords = tlayer->get_cell_atlas_coords(p_cell);
-		String key = vformat("%d,%d", atlas_coords.x, atlas_coords.y);
-
-		Dictionary md;
-		bool found_meta = false;
-		static const char *skeys[9] = { "A5", "B", "C", "D", "E", "A1", "A2", "A3", "A4" };
-		for (int s = 0; s < 9; s++) {
-			if (slot_cols.has(skeys[s])) {
-				Dictionary smap = slot_cols[skeys[s]];
-				if (smap.has(key)) {
-					md = smap[key];
-					found_meta = true;
-					break;
-				}
-			}
-		}
-		if (!found_meta && legacy_cols.has(key)) {
-			Variant lmeta = legacy_cols[key];
-			if (lmeta.get_type() == Variant::DICTIONARY) {
-				md = lmeta;
-				found_meta = true;
-			} else if (int(lmeta) == 1) {
-				return 1; // Bloqueado legacy
-			}
-		}
-
-		TileData *td = tlayer->get_cell_tile_data(p_cell);
-		if (td && td->get_z_index() > 3) {
-			continue; // Tile elevado sobre jugador (★), no bloquea
-		}
-
-		if (found_meta) {
-			int passage = int(md.get("passage", 15));
-			int layer = int(md.get("layer", 0));
-			r_dir4_mask = passage & 15;
-			if (layer == 1 || int(md.get("mode", 0)) == 2) {
-				continue; // Estrella (★): no bloquea, el personaje pasa por detrás
-			}
-			if (passage == 0 || int(md.get("mode", 0)) == 1) {
-				return 1; // Bloqueado (X)
-			}
-		}
-		Ref<TileSet> ts = tlayer->get_tile_set();
-		if (td && ts.is_valid()) {
-			if (ts->has_custom_data_layer_by_name("cg_layer")) {
-				int ly = int(td->get_custom_data("cg_layer"));
-				if (ly == 1) {
-					return 0; // Estrella (★)
-				}
-			}
-			if (ts->has_custom_data_layer_by_name("cg_passage_4dir")) {
-				Variant d4 = td->get_custom_data("cg_passage_4dir");
-				if (d4.get_type() == Variant::INT) {
-					r_dir4_mask = int(d4);
-				}
-			}
-			if (ts->has_custom_data_layer_by_name("cg_passage")) {
-				Variant pm = td->get_custom_data("cg_passage");
-				if (pm.get_type() == Variant::INT) {
-					int pval = int(pm);
-					if (pval == 0) {
-						return 1; // Bloqueado (X)
-					}
-					r_dir4_mask = pval & 15;
-				}
-			}
-		}
-	}
-	return 0;
+	return current_map->get_tile_passage_mode(p_cell, r_dir4_mask);
 }
 
 bool ClockGearsPlayer::_is_tile_counter(const Vector2i &p_cell) const {
 	if (!current_map) {
 		return false;
 	}
-	Dictionary slot_cols;
-	Dictionary db_collisions;
-	int ts_id = current_map->get_tileset_id();
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (dm) {
-		Array ts_arr = dm->get_category_array(CAT_TILESETS);
-		for (int i = 0; i < ts_arr.size(); i++) {
-			if (ts_arr[i].get_type() == Variant::DICTIONARY) {
-				Dictionary d = ts_arr[i];
-				int id = int(d.get("id", i + 1));
-				if (ts_id == 0 || id == ts_id) {
-					slot_cols = d.get("slot_collisions", Dictionary());
-					db_collisions = d.get("collisions", Dictionary());
-					break;
-				}
-			}
-		}
-	}
-	const int check_layers[4] = { LAYER_OVERHEAD, LAYER_OBJECTS, LAYER_DECORATION, LAYER_GROUND };
-	for (int i = 0; i < 4; i++) {
-		TileMapLayer *tlayer = current_map->get_layer(check_layers[i]);
-		if (!tlayer || tlayer->get_cell_source_id(p_cell) == -1) {
-			continue;
-		}
-		Vector2i ac = tlayer->get_cell_atlas_coords(p_cell);
-		String key = vformat("%d,%d", ac.x, ac.y);
-		static const char *skeys[9] = { "A5", "B", "C", "D", "E", "A1", "A2", "A3", "A4" };
-		for (int s = 0; s < 9; s++) {
-			if (slot_cols.has(skeys[s])) {
-				Dictionary smap = slot_cols[skeys[s]];
-				if (smap.has(key) && bool(Dictionary(smap[key]).get("counter", false))) {
-					return true;
-				}
-			}
-		}
-		if (db_collisions.has(key) && db_collisions[key].get_type() == Variant::DICTIONARY) {
-			Dictionary md = db_collisions[key];
-			if (bool(md.get("counter", false))) {
-				return true;
-			}
-		}
-		TileData *td = tlayer->get_cell_tile_data(p_cell);
-		Ref<TileSet> ts = tlayer->get_tile_set();
-		if (td && ts.is_valid() && ts->has_custom_data_layer_by_name("cg_counter")) {
-			if (bool(td->get_custom_data("cg_counter"))) {
-				return true;
-			}
-		}
-	}
-	return false;
+	return current_map->is_tile_counter(p_cell);
 }
 
 bool ClockGearsPlayer::_can_pass_cardinal_step(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event) const {
@@ -850,51 +744,42 @@ bool ClockGearsPlayer::_can_pass_cardinal_step(const Vector2i &p_from, const Vec
 	if (p_to.x < 0 || p_to.y < 0 || p_to.x >= msize.x || p_to.y >= msize.y) {
 		return false;
 	}
-	if (through_enabled) {
+	if (through_enabled || body_through) {
 		return true;
 	}
 
-	int from_dir4 = 15;
-	_get_tile_passage_mode(p_from, from_dir4);
-	int to_dir4 = 15;
-	int to_mode = _get_tile_passage_mode(p_to, to_dir4);
-	if (to_mode == 1) {
-		return false; // Tile bloqueado (X)
-	}
-
-	// Comprobar pasabilidad direccional de 4 direcciones (bitmask: 1=Abajo, 2=Izq, 4=Der, 8=Arriba)
-	auto dir_to_bit = [](int d) -> int {
-		switch (d) {
-			case 2: return 1;
-			case 4: return 2;
-			case 6: return 4;
-			case 8: return 8;
-			default: return 0;
-		}
-	};
-	int exit_bit = dir_to_bit(p_dir);
-	int enter_bit = dir_to_bit(opposite_direction(p_dir));
-	if (exit_bit != 0 && (from_dir4 & exit_bit) == 0) {
-		return false;
-	}
-	if (enter_bit != 0 && (to_dir4 & enter_bit) == 0) {
+	if (!current_map->can_pass_tile_step(p_from, p_to, p_dir)) {
 		return false;
 	}
 
-	// Comprobar colisión con Eventos en la celda destino (Prioridad 1 = Mismo nivel que el jugador, sin Through)
+	// Comprobar colisión con Eventos en la celda destino (Prioridad 1 = Mismo nivel que el jugador, sin Through/atravesable)
 	Vector<ClockGearsEvent *> ev_nodes = _cg_get_map_events(current_map);
+	Vector2 to_center = Vector2(p_to) * float(tile_size) + Vector2(tile_size * 0.5f, tile_size * 0.5f);
 	for (int i = 0; i < ev_nodes.size(); i++) {
 		ClockGearsEvent *ev = ev_nodes[i];
 		if (!ev || !ev->is_visible() || ev->is_through()) {
 			continue;
 		}
-		int ecx = int(Math::floor(ev->get_position().x / float(tile_size)));
-		int ecy = int(Math::floor(ev->get_position().y / float(tile_size)));
-		if (ecx == p_to.x && ecy == p_to.y && ev->get_priority_type() == 1) {
-			if (r_blocking_event) {
-				*r_blocking_event = ev;
+		if (ev->get_behavior_type() != 0) {
+			if (ev->is_body_through()) {
+				continue;
 			}
-			return false;
+			Vector2 ev_center = ev->get_position() + Vector2(tile_size * 0.5f, tile_size * 0.5f);
+			if (ClockGearsShapeGeometry::shapes_overlap_native(body_shape, to_center, direction, ev->get_body_shape_struct(), ev_center, ev->get_direction())) {
+				if (r_blocking_event) {
+					*r_blocking_event = ev;
+				}
+				return false;
+			}
+		} else {
+			int ecx = int(Math::floor(ev->get_position().x / float(tile_size)));
+			int ecy = int(Math::floor(ev->get_position().y / float(tile_size)));
+			if (ecx == p_to.x && ecy == p_to.y && ev->get_priority_type() == 1) {
+				if (r_blocking_event) {
+					*r_blocking_event = ev;
+				}
+				return false;
+			}
 		}
 	}
 	return true;
@@ -911,7 +796,7 @@ bool ClockGearsPlayer::can_pass_cell(const Vector2i &p_from, const Vector2i &p_t
 	if (p_to.x < 0 || p_to.y < 0 || p_to.x >= msize.x || p_to.y >= msize.y) {
 		return false;
 	}
-	if (through_enabled) {
+	if (through_enabled || body_through) {
 		return true;
 	}
 
@@ -1483,12 +1368,16 @@ ClockGearsPlayer::ClockGearsPlayer() {
 	set_process_unhandled_input(true);
 	set_z_index(3);
 	set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	set_collision_layer(CG_PHYSICS_LAYER_PLAYER);
+	set_collision_mask(0);
+	body_shape_owner = create_shape_owner(this);
 	sprite = memnew(Sprite2D);
 	sprite->set_name("Sprite");
 	sprite->set_z_index(0);
 	sprite->set_centered(false);
 	sprite->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	add_child(sprite);
+	_sync_body_collision_shapes();
 }
 
 // ============================================================================
@@ -1781,6 +1670,7 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_running"), &ClockGearsEventInterpreter::is_running);
 	ClassDB::bind_method(D_METHOD("setup_interpreter", "map", "player", "followers"), &ClockGearsEventInterpreter::setup_interpreter, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("is_blocking_player"), &ClockGearsEventInterpreter::is_blocking_player);
+	ClassDB::bind_method(D_METHOD("get_active_event"), &ClockGearsEventInterpreter::get_active_event);
 	ClassDB::bind_method(D_METHOD("get_state"), &ClockGearsEventInterpreter::get_state);
 	ClassDB::bind_method(D_METHOD("get_last_choice_index"), &ClockGearsEventInterpreter::get_last_choice_index);
 	ClassDB::bind_method(D_METHOD("start_event", "event"), &ClockGearsEventInterpreter::start_event);

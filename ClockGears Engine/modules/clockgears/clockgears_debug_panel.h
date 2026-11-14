@@ -29,6 +29,7 @@ private:
 	bool show_events = false;
 	bool show_collisions = false;
 	bool show_grid = false;
+	bool show_bodies_zones = false;
 
 protected:
 	static void _bind_methods();
@@ -45,6 +46,9 @@ public:
 
 	void set_show_grid(bool p_show);
 	bool is_show_grid() const { return show_grid; }
+
+	void set_show_bodies_zones(bool p_show);
+	bool is_show_bodies_zones() const { return show_bodies_zones; }
 
 	ClockGearsDebugWorldCanvas();
 };
@@ -68,6 +72,7 @@ private:
 	CheckBox *chk_events = nullptr;
 	CheckBox *chk_collisions = nullptr;
 	CheckBox *chk_grid = nullptr;
+	CheckBox *chk_bodies_zones = nullptr;
 	CheckBox *chk_fps = nullptr;
 	CheckBox *chk_player = nullptr;
 	CheckBox *chk_camera = nullptr;
@@ -149,6 +154,9 @@ public:
 
 	void set_show_camera(bool p_show);
 	bool is_show_camera() const;
+
+	void set_show_bodies_zones(bool p_show);
+	bool is_show_bodies_zones() const;
 
 	ClockGearsDebugWorldCanvas *get_world_canvas() const { return world_canvas; }
 
