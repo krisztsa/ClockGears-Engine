@@ -27,17 +27,47 @@
 
 class ClockGearsBattleScene;
 class ClockGearsEventEditorDialog;
+class ClockGearsNineSlicePreview;
 class ClockGearsShapeEditor;
 class ClockGearsTitleScreen;
+class ClockGearsWindowStyleBox;
 class ColorPickerButton;
 class SubViewport;
 class AspectRatioContainer;
+class TabBar;
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
+
+// ============================================================================
+// 9-Slice Image Preview with Cut Lines (9B Tanda 2 UI)
+// ============================================================================
+class ClockGearsNineSlicePreview : public Control {
+	GDCLASS(ClockGearsNineSlicePreview, Control);
+
+private:
+	Ref<Texture2D> texture;
+	int margin_left = 8;
+	int margin_top = 8;
+	int margin_right = 8;
+	int margin_bottom = 8;
+	bool pixel_art = true;
+
+	Rect2 _compute_draw_rect() const;
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+
+public:
+	void set_preview_data(const Ref<Texture2D> &p_tex, int p_left, int p_top, int p_right, int p_bottom, bool p_pixel_art);
+	Dictionary get_cut_lines_info() const;
+
+	ClockGearsNineSlicePreview();
+};
 
 // ============================================================================
 // Tileset Collision Editor (O = Pasa, X = Bloqueado, ★ = Pasa por detrás)
@@ -621,6 +651,71 @@ private:
 	FileDialog *menu_asset_file_dialog = nullptr;
 	int menu_asset_pick_target = 0;
 
+	// Menús -> Estilos de ventana (9B Tanda 2 UI)
+	Dictionary window_styles_config_draft;
+	Dictionary ws_clipboard_style;
+	int ws_selected_index = 0;
+	int ws_active_btn_tab = 0; // 0=normal, 1=hover, 2=pressed, 3=disabled
+	bool ws_rebuilding_assignments = false;
+
+	VBoxContainer *window_styles_editor_panel = nullptr;
+	BoxContainer *ws_main_split = nullptr;
+	LineEdit *ws_name_edit = nullptr;
+	Label *ws_builtin_badge = nullptr;
+	TabBar *ws_btn_state_tabs = nullptr;
+	VBoxContainer *ws_surface_host[2] = { nullptr, nullptr };
+
+	struct StyleSurfaceUI {
+		int slot_idx = 0;
+		VBoxContainer *root = nullptr;
+		CheckBox *inherit_normal_chk = nullptr;
+		VBoxContainer *editable_body = nullptr;
+		OptionButton *border_type_opt = nullptr;
+		HSlider *border_width_slider = nullptr;
+		SpinBox *border_width_spin = nullptr;
+		HSlider *corner_radius_slider = nullptr;
+		SpinBox *corner_radius_spin = nullptr;
+		ColorPickerButton *border_color_btn = nullptr;
+		OptionButton *fill_type_opt = nullptr;
+		HSlider *opacity_slider = nullptr;
+		SpinBox *opacity_spin = nullptr;
+		ColorPickerButton *fill_color_btn = nullptr;
+		ColorPickerButton *font_color_btn = nullptr;
+		Control *fill_image_row = nullptr;
+		LineEdit *fill_image_edit = nullptr;
+		Button *fill_image_import_btn = nullptr;
+		Button *fill_image_clear_btn = nullptr;
+		HSlider *padding_slider = nullptr;
+		SpinBox *padding_spin = nullptr;
+		SpinBox *padding_side_spins[4] = {};
+		VBoxContainer *image_section = nullptr;
+		LineEdit *image_path_edit = nullptr;
+		Button *image_import_btn = nullptr;
+		Button *image_clear_btn = nullptr;
+		OptionButton *center_mode_opt = nullptr;
+		CheckBox *pixel_art_chk = nullptr;
+		HSlider *slice_sliders[4] = {};
+		SpinBox *slice_spins[4] = {};
+		ClockGearsNineSlicePreview *slice_preview = nullptr;
+	};
+	StyleSurfaceUI ws_surface_ui[2];
+
+	OptionButton *ws_preview_size_opt = nullptr;
+	PanelContainer *ws_preview_backdrop = nullptr;
+	PanelContainer *ws_preview_window = nullptr;
+	Label *ws_preview_window_title = nullptr;
+	Label *ws_preview_window_body = nullptr;
+	Button *ws_preview_btns[4] = {};
+
+	OptionButton *ws_default_style_opt = nullptr;
+	GridContainer *ws_assignments_grid = nullptr;
+	Vector<OptionButton *> ws_assignment_opts;
+	PackedStringArray ws_assignment_type_ids;
+
+	FileDialog *ws_image_file_dialog = nullptr;
+	int ws_image_pick_slot = 0;
+	int ws_image_pick_kind = 0; // 0 = frame image, 1 = fill image
+
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
 	bool updating_ui = false;
 
@@ -958,6 +1053,31 @@ private:
 	void _on_menu_test_popup_close_requested();
 	String _import_menu_asset_file(const String &p_src_path, const String &p_subfolder, bool p_pixel_preset);
 
+	// Menús -> Estilos de ventana helpers (9B Tanda 2 UI)
+	static const char *_ws_btn_state_key(int p_tab_idx);
+	void _setup_window_styles_editor_ui();
+	void _build_ws_surface_ui(int p_slot_idx, VBoxContainer *p_parent);
+	void _populate_ws_surface_ui(int p_slot_idx, const Dictionary &p_surface, bool p_allow_inherit_toggle);
+	Dictionary _read_ws_surface_ui(int p_slot_idx, const Dictionary &p_base) const;
+	void _refresh_window_styles_editor_ui();
+	void _refresh_ws_assignments_ui();
+	void _update_ws_slice_preview(int p_slot_idx);
+	void _update_window_style_live_preview();
+	void _sync_style_editor_to_draft();
+	void _on_ws_name_changed(const String &p_text);
+	void _on_ws_btn_tab_changed(int p_tab_idx);
+	void _on_ws_surface_changed(int p_slot_idx);
+	void _on_ws_surface_changed_v(const Variant &p_unused, int p_slot_idx);
+	void _on_ws_opacity_changed(double p_val, int p_slot_idx);
+	void _on_ws_uniform_padding_changed(double p_val, int p_slot_idx);
+	void _on_ws_fill_color_changed(const Color &p_col, int p_slot_idx);
+	void _on_ws_import_image_pressed(int p_slot_idx, int p_kind);
+	void _on_ws_clear_image_pressed(int p_slot_idx, int p_kind);
+	void _on_ws_image_file_selected(const String &p_path);
+	void _on_ws_preview_size_selected(int p_idx);
+	void _on_ws_default_style_selected(int p_idx);
+	void _on_ws_assignment_selected(int p_idx, int p_row_idx);
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -965,7 +1085,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX };
+	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1 };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -1032,6 +1152,11 @@ public:
 	ClockGearsTitleScreen *get_title_menu_live_preview() const { return menu_live_preview; }
 	Window *open_title_menu_test_popup();
 	Window *get_title_menu_test_popup() const { return menu_test_window; }
+
+	Dictionary get_window_styles_draft_copy() const;
+	void select_window_style(int p_index);
+	Dictionary get_window_styles_ui_handles() const;
+	Dictionary get_window_style_preview_info() const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

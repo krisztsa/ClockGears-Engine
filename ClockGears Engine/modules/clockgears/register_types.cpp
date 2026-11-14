@@ -96,6 +96,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsDebugOverlay);
 #ifdef TOOLS_ENABLED
 		GDREGISTER_CLASS(ClockGearsTilesetCollisionEditor);
+		GDREGISTER_CLASS(ClockGearsNineSlicePreview);
 		GDREGISTER_CLASS(ClockGearsDatabaseDialog);
 		GDREGISTER_CLASS(ClockGearsTilePalette);
 		GDREGISTER_CLASS(ClockGearsMapPropertiesDialog);
