@@ -201,6 +201,22 @@ private:
 	Label *stat_labels[8] = { nullptr };
 	SpinBox *stat_spins[8] = { nullptr };
 
+	// Sección Velocidades (Actores, NPC, NPC ARPG, Enemigos ARPG)
+	VBoxContainer *speeds_section_box = nullptr;
+	SpinBox *speed_walk_spin = nullptr;
+	SpinBox *speed_run_spin = nullptr;
+	Label *speed_attack_label = nullptr;
+	SpinBox *speed_attack_spin = nullptr;
+	Label *speeds_help_label = nullptr;
+
+	// Sección IA de Enemigos ARPG (Pestaña Combate)
+	VBoxContainer *arpg_ai_box = nullptr;
+	OptionButton *arpg_ai_type_opt = nullptr;
+	SpinBox *arpg_ai_vision_spin = nullptr;
+	SpinBox *arpg_ai_range_spin = nullptr;
+	SpinBox *arpg_ai_interval_spin = nullptr;
+	SpinBox *arpg_ai_kb_resist_spin = nullptr;
+
 	// System category panel
 	VBoxContainer *system_panel = nullptr;
 	LineEdit *sys_game_title_edit = nullptr;
@@ -533,6 +549,7 @@ private:
 	void _populate_drop_item_option(int p_slot, int p_kind);
 	void _on_drop_kind_changed(int p_idx, int p_slot);
 	void _on_drop_field_changed(int p_slot);
+	void _on_arpg_ai_field_changed();
 	void _refresh_action_patterns_tree(const Array &p_actions);
 	void _on_add_action_pattern_pressed();
 	void _on_remove_action_pattern_pressed();

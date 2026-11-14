@@ -1074,7 +1074,7 @@ void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 		return;
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (dm) {
+	if (dm && !has_pending_changes) {
 		for (int i = 0; i < CAT_MAX; i++) {
 			Array dm_arr = dm->get_category_array(i);
 			if (!dm_arr.is_empty() || category_data[i].is_empty()) {
@@ -1082,6 +1082,7 @@ void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 			}
 		}
 	}
+	int prev_category = current_category;
 	current_category = p_category;
 	int mode = ClockGearsDataManager::get_singleton()
 			? int(ClockGearsDataManager::get_singleton()->get_system_config().get("combat_mode", current_combat_mode))
@@ -1093,6 +1094,9 @@ void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 	_update_chapter_and_category_visibility();
 	_save_editor_ui_state();
 	_refresh_category_view();
+	if (main_editor_tabs && current_category != prev_category) {
+		main_editor_tabs->set_current_tab(0);
+	}
 }
 
 void ClockGearsDatabaseDialog::_refresh_category_view() {
@@ -1110,6 +1114,8 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_tileset = (current_category == CAT_TILESETS);
 	bool is_troops = (current_category == CAT_TROOPS);
 	bool is_enemy = (current_category == CAT_ENEMIES);
+	bool is_arpg_enemy = (current_category == CAT_ARPG_ENEMIES);
+	bool is_any_enemy = (is_enemy || is_arpg_enemy);
 	bool is_actor = (current_category == CAT_ACTORS);
 	bool is_classes = (current_category == CAT_CLASSES);
 	bool is_anim_slot_cat = s_is_anim_slot_category(current_category);
@@ -1150,7 +1156,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		main_editor_tabs->set_tabs_visible(is_actor_or_enemy);
 		main_editor_tabs->set_tab_hidden(0, false);
 		main_editor_tabs->set_tab_title(1, is_arpg_equip ? CG_DB_TR("Rasgos") : CG_DB_TR("Combate"));
-		main_editor_tabs->set_tab_hidden(1, !(is_enemy || is_arpg_equip));
+		main_editor_tabs->set_tab_hidden(1, !(is_any_enemy || is_arpg_equip));
 		main_editor_tabs->set_tab_hidden(2, !is_actor_or_enemy);
 		if (main_editor_tabs->get_tab_count() > 3) {
 			main_editor_tabs->set_tab_hidden(3, !has_event_tab);
@@ -1160,9 +1166,6 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 			main_editor_tabs->set_current_tab(0);
 		}
 	}
-	if (event_tab_scroll) {
-		event_tab_scroll->set_visible(has_event_tab);
-	}
 	if (stats_section_box && combat_tab_vbox && col2_box) {
 		s_reparent_control(stats_section_box, is_arpg_equip ? (Control *)combat_tab_vbox : (Control *)col2_box);
 		if (is_arpg_equip) {
@@ -1170,6 +1173,23 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		} else {
 			int g_idx = general_section_box && general_section_box->get_parent() == col2_box ? general_section_box->get_index() : -1;
 			col2_box->move_child(stats_section_box, g_idx >= 0 ? g_idx + 1 : 0);
+		}
+	}
+	if (enemy_drops_box && col2_box) {
+		if (enemy_drops_box->get_parent() == col2_box) {
+			int st_idx = (stats_section_box && stats_section_box->get_parent() == col2_box) ? stats_section_box->get_index() : 0;
+			col2_box->move_child(enemy_drops_box, st_idx + 1);
+		}
+	}
+	if (speeds_section_box && col2_box) {
+		if (speeds_section_box->get_parent() == col2_box) {
+			int after_idx = general_section_box && general_section_box->get_parent() == col2_box ? general_section_box->get_index() : 0;
+			if (is_any_enemy && enemy_drops_box && enemy_drops_box->get_parent() == col2_box) {
+				after_idx = enemy_drops_box->get_index();
+			} else if (is_actor && stats_section_box && stats_section_box->get_parent() == col2_box) {
+				after_idx = stats_section_box->get_index();
+			}
+			col2_box->move_child(speeds_section_box, after_idx + 1);
 		}
 	}
 	if (traits_box && combat_tab_vbox && col2_box) {
@@ -1181,9 +1201,6 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	}
 	if (anim_empty_state_label) {
 		anim_empty_state_label->set_visible(is_actor_or_enemy && !has_anim_records);
-	}
-	if (anim_editor_scroll) {
-		anim_editor_scroll->set_visible(is_actor_or_enemy);
 	}
 	if (troop_members_box) {
 		troop_members_box->set_visible(is_troops);
@@ -1247,13 +1264,16 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		callable_mp(this, &ClockGearsDatabaseDialog::_update_tileset_split_layout).call_deferred();
 	}
 	if (enemy_element_rates_box) {
-		enemy_element_rates_box->set_visible(is_enemy);
+		enemy_element_rates_box->set_visible(is_any_enemy);
 	}
 	if (enemy_drops_box) {
-		enemy_drops_box->set_visible(is_enemy);
+		enemy_drops_box->set_visible(is_any_enemy);
 	}
 	if (enemy_actions_box) {
 		enemy_actions_box->set_visible(is_enemy);
+	}
+	if (arpg_ai_box) {
+		arpg_ai_box->set_visible(is_arpg_enemy);
 	}
 	if (enemy_casts_box) {
 		enemy_casts_box->set_visible(is_enemy);
@@ -1659,24 +1679,24 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		critical_check->set_visible(show_invocation);
 	}
 
-	// Sección 5.3: Enemigos (Nivel, EXP, Oro, Debilidades y Resistencias, 3 Drops, Patrones de Acción)
+	// Sección 5.3 / ARPG 3A: Enemigos (Nivel, EXP, Oro, Debilidades y Resistencias, 3 Drops, Patrones de Acción / IA ARPG)
 	if (enemy_level_label) {
-		enemy_level_label->set_visible(is_enemy);
+		enemy_level_label->set_visible(is_any_enemy);
 	}
 	if (enemy_level_spin) {
-		enemy_level_spin->set_visible(is_enemy);
+		enemy_level_spin->set_visible(is_any_enemy);
 	}
 	if (enemy_exp_label) {
-		enemy_exp_label->set_visible(is_enemy);
+		enemy_exp_label->set_visible(is_any_enemy);
 	}
 	if (enemy_exp_spin) {
-		enemy_exp_spin->set_visible(is_enemy);
+		enemy_exp_spin->set_visible(is_any_enemy);
 	}
 	if (enemy_gold_label) {
-		enemy_gold_label->set_visible(is_enemy);
+		enemy_gold_label->set_visible(is_any_enemy);
 	}
 	if (enemy_gold_spin) {
-		enemy_gold_spin->set_visible(is_enemy);
+		enemy_gold_spin->set_visible(is_any_enemy);
 	}
 	if (battler_frames_label) {
 		battler_frames_label->set_visible(false);
@@ -1691,28 +1711,53 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		battler_fps_spin->set_visible(false);
 	}
 	if (enemy_element_rates_box) {
-		enemy_element_rates_box->set_visible(is_enemy);
+		enemy_element_rates_box->set_visible(is_any_enemy);
 	}
 	if (enemy_drops_box) {
-		enemy_drops_box->set_visible(is_enemy);
+		enemy_drops_box->set_visible(is_any_enemy);
 	}
 	if (enemy_actions_box) {
 		enemy_actions_box->set_visible(is_enemy);
 	}
+	if (arpg_ai_box) {
+		arpg_ai_box->set_visible(is_arpg_enemy);
+	}
 
 	bool is_arpg_equip_cur = s_is_arpg_equip_category(current_category);
 	bool show_stats = (current_category == CAT_ACTORS || current_category == CAT_CLASSES ||
-			is_equip || is_arpg_equip_cur || is_enemy);
+			is_equip || is_arpg_equip_cur || is_any_enemy);
 	if (stats_section_box) {
 		stats_section_box->set_visible(show_stats);
 	}
 	bool allow_neg_stats = (is_equip || is_arpg_equip_cur);
 	for (int i = 0; i < 8; i++) {
-		stat_labels[i]->set_visible(show_stats);
-		stat_spins[i]->set_visible(show_stats);
+		bool show_stat_i = show_stats && !(is_arpg_enemy && (i == 1 || i == 6));
+		stat_labels[i]->set_visible(show_stat_i);
+		stat_spins[i]->set_visible(show_stat_i);
 		// Sección 5.1: Equipamiento permite modificadores negativos (-999..9999)
-		stat_spins[i]->set_min(allow_neg_stats ? -999 : 0);
+		if (is_arpg_enemy && i == 0) {
+			stat_spins[i]->set_min(1);
+		} else {
+			stat_spins[i]->set_min(allow_neg_stats ? -999 : 0);
+		}
 		stat_spins[i]->set_max(allow_neg_stats ? 9999 : 999999);
+	}
+
+	bool show_speeds = (current_category == CAT_ACTORS || current_category == CAT_NPCS ||
+			current_category == CAT_ARPG_NPCS || is_arpg_enemy);
+	bool show_attack_speed = (current_category == CAT_ARPG_NPCS || is_arpg_enemy ||
+			(current_category == CAT_ACTORS && current_combat_mode == COMBAT_MODE_ACTION_RPG));
+	if (speeds_section_box) {
+		speeds_section_box->set_visible(show_speeds);
+	}
+	if (speed_attack_label) {
+		speed_attack_label->set_visible(show_attack_speed);
+	}
+	if (speed_attack_spin) {
+		speed_attack_spin->set_visible(show_attack_speed);
+	}
+	if (speeds_help_label) {
+		speeds_help_label->set_visible(show_speeds);
 	}
 
 	bool show_formula = (is_skill || is_item || current_category == CAT_COMMON_EVENTS);
@@ -1897,10 +1942,41 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 			enemy_level_spin->set_value(1);
 		}
 		if (enemy_exp_spin) {
-			enemy_exp_spin->set_value(0);
+			enemy_exp_spin->set_value(current_category == CAT_ARPG_ENEMIES ? 10 : 0);
 		}
 		if (enemy_gold_spin) {
-			enemy_gold_spin->set_value(0);
+			enemy_gold_spin->set_value(current_category == CAT_ARPG_ENEMIES ? 5 : 0);
+		}
+		if (speed_walk_spin) {
+			speed_walk_spin->set_value(100);
+			speed_walk_spin->set_meta("cg_last_valid_val", 100.0);
+		}
+		if (speed_run_spin) {
+			speed_run_spin->set_value(100);
+			speed_run_spin->set_meta("cg_last_valid_val", 100.0);
+		}
+		if (speed_attack_spin) {
+			speed_attack_spin->set_value(100);
+			speed_attack_spin->set_meta("cg_last_valid_val", 100.0);
+		}
+		if (arpg_ai_type_opt) {
+			arpg_ai_type_opt->select(2);
+		}
+		if (arpg_ai_vision_spin) {
+			arpg_ai_vision_spin->set_value(6.0);
+			arpg_ai_vision_spin->set_meta("cg_last_valid_val", 6.0);
+		}
+		if (arpg_ai_range_spin) {
+			arpg_ai_range_spin->set_value(1.0);
+			arpg_ai_range_spin->set_meta("cg_last_valid_val", 1.0);
+		}
+		if (arpg_ai_interval_spin) {
+			arpg_ai_interval_spin->set_value(1.5);
+			arpg_ai_interval_spin->set_meta("cg_last_valid_val", 1.5);
+		}
+		if (arpg_ai_kb_resist_spin) {
+			arpg_ai_kb_resist_spin->set_value(0);
+			arpg_ai_kb_resist_spin->set_meta("cg_last_valid_val", 0.0);
 		}
 		if (battler_frames_spin) {
 			battler_frames_spin->set_value(1);
@@ -2018,7 +2094,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 	if (battler_fps_spin) {
 		battler_fps_spin->set_value(double(d.get("battler_fps", 8)));
 	}
-	if (current_category == CAT_ENEMIES) {
+	if (current_category == CAT_ENEMIES || current_category == CAT_ARPG_ENEMIES) {
 		_refresh_enemy_element_rates_ui();
 		Array drops = d.get("drops", Array());
 		for (int s = 0; s < 3; s++) {
@@ -2037,8 +2113,43 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 				drop_prob_spin[s]->set_value(prob);
 			}
 		}
-		Array actions = d.get("actions", d.get("action_patterns", Array()));
-		_refresh_action_patterns_tree(actions);
+		if (current_category == CAT_ENEMIES) {
+			Array actions = d.get("actions", d.get("action_patterns", Array()));
+			_refresh_action_patterns_tree(actions);
+		}
+		if (current_category == CAT_ARPG_ENEMIES) {
+			if (arpg_ai_type_opt) {
+				String ai_type = String(d.get("ai_type", "persigue_y_ataca")).strip_edges().to_lower();
+				int sel_ai = 2;
+				for (int ai_i = 0; ai_i < arpg_ai_type_opt->get_item_count(); ai_i++) {
+					if (String(arpg_ai_type_opt->get_item_metadata(ai_i)) == ai_type) {
+						sel_ai = ai_i;
+						break;
+					}
+				}
+				arpg_ai_type_opt->select(sel_ai);
+			}
+			if (arpg_ai_vision_spin) {
+				double v = MAX(0.0, double(d.get("vision_radius", 6.0)));
+				arpg_ai_vision_spin->set_value(v);
+				arpg_ai_vision_spin->set_meta("cg_last_valid_val", v);
+			}
+			if (arpg_ai_range_spin) {
+				double r = MAX(0.0, double(d.get("attack_range", 1.0)));
+				arpg_ai_range_spin->set_value(r);
+				arpg_ai_range_spin->set_meta("cg_last_valid_val", r);
+			}
+			if (arpg_ai_interval_spin) {
+				double iv = MAX(0.0, double(d.get("attack_interval", 1.5)));
+				arpg_ai_interval_spin->set_value(iv);
+				arpg_ai_interval_spin->set_meta("cg_last_valid_val", iv);
+			}
+			if (arpg_ai_kb_resist_spin) {
+				double kb = CLAMP(double(d.get("knockback_resist", 0)), 0.0, 100.0);
+				arpg_ai_kb_resist_spin->set_value(kb);
+				arpg_ai_kb_resist_spin->set_meta("cg_last_valid_val", kb);
+			}
+		}
 	}
 	_refresh_traits_tree(d.get("traits", Array()));
 	_refresh_effects_tree(d.get("effects", Array()));
@@ -2060,6 +2171,25 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		double val = (double)d.get(stat_keys[i], 0);
 		stat_spins[i]->set_value(val);
 		stat_spins[i]->set_meta("cg_last_valid_val", val);
+	}
+
+	if (current_category == CAT_ACTORS || current_category == CAT_NPCS ||
+			current_category == CAT_ARPG_NPCS || current_category == CAT_ARPG_ENEMIES) {
+		if (speed_walk_spin) {
+			double w = MAX(1.0, double(d.get("walk_speed_pct", 100)));
+			speed_walk_spin->set_value(w);
+			speed_walk_spin->set_meta("cg_last_valid_val", w);
+		}
+		if (speed_run_spin) {
+			double rn = MAX(1.0, double(d.get("run_speed_pct", 100)));
+			speed_run_spin->set_value(rn);
+			speed_run_spin->set_meta("cg_last_valid_val", rn);
+		}
+		if (speed_attack_spin) {
+			double atk_sp = MAX(1.0, double(d.get("attack_speed_pct", 100)));
+			speed_attack_spin->set_value(atk_sp);
+			speed_attack_spin->set_meta("cg_last_valid_val", atk_sp);
+		}
 	}
 
 	if (current_category == CAT_TILESETS) {
@@ -2468,15 +2598,15 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 			d["critical"] = critical_check->is_pressed();
 		}
 	}
-	if (current_category == CAT_ENEMIES) {
+	if (current_category == CAT_ENEMIES || (current_category == CAT_ARPG_ENEMIES && !auto_created_new)) {
 		if (enemy_level_spin) {
 			d["level"] = MAX(1, int(enemy_level_spin->get_value()));
 		}
 		if (enemy_exp_spin) {
-			d["exp"] = int(enemy_exp_spin->get_value());
+			d["exp"] = MAX(0, int(enemy_exp_spin->get_value()));
 		}
 		if (enemy_gold_spin) {
-			d["gold"] = int(enemy_gold_spin->get_value());
+			d["gold"] = MAX(0, int(enemy_gold_spin->get_value()));
 		}
 	}
 	if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
@@ -2537,6 +2667,23 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 		}
 	}
 
+	if (current_category == CAT_ACTORS || current_category == CAT_NPCS ||
+			current_category == CAT_ARPG_NPCS || current_category == CAT_ARPG_ENEMIES) {
+		if (!auto_created_new) {
+			if (speed_walk_spin) {
+				d["walk_speed_pct"] = MAX(1, int(speed_walk_spin->get_value()));
+			}
+			if (speed_run_spin) {
+				d["run_speed_pct"] = MAX(1, int(speed_run_spin->get_value()));
+			}
+			bool save_atk_spd = (current_category == CAT_ARPG_NPCS || current_category == CAT_ARPG_ENEMIES ||
+					(current_category == CAT_ACTORS && current_combat_mode == COMBAT_MODE_ACTION_RPG));
+			if (save_atk_spd && speed_attack_spin) {
+				d["attack_speed_pct"] = MAX(1, int(speed_attack_spin->get_value()));
+			}
+		}
+	}
+
 	if (current_category == CAT_ARPG_ENEMIES) {
 		if (!auto_created_new) {
 			const int arpg_indices[6] = { 0, 2, 3, 4, 5, 7 }; // hp, atk, def, mat, mdf, luk (sin MP ni AGI)
@@ -2558,6 +2705,47 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 	}
 
 	arr[idx] = d;
+	if (auto_created_new && current_category == CAT_ARPG_ENEMIES) {
+		updating_ui = true;
+		if (enemy_level_spin) {
+			enemy_level_spin->set_value(double(d.get("level", 1)));
+		}
+		if (enemy_exp_spin) {
+			enemy_exp_spin->set_value(double(d.get("exp", 10)));
+		}
+		if (enemy_gold_spin) {
+			enemy_gold_spin->set_value(double(d.get("gold", 5)));
+		}
+		const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+		for (int i = 0; i < 8; i++) {
+			double val = double(d.get(stat_keys[i], 0));
+			stat_spins[i]->set_value(val);
+			stat_spins[i]->set_meta("cg_last_valid_val", val);
+		}
+		if (speed_walk_spin) {
+			speed_walk_spin->set_value(double(d.get("walk_speed_pct", 100)));
+		}
+		if (speed_run_spin) {
+			speed_run_spin->set_value(double(d.get("run_speed_pct", 100)));
+		}
+		if (speed_attack_spin) {
+			speed_attack_spin->set_value(double(d.get("attack_speed_pct", 100)));
+		}
+		if (arpg_ai_vision_spin) {
+			arpg_ai_vision_spin->set_value(double(d.get("vision_radius", 6.0)));
+		}
+		if (arpg_ai_range_spin) {
+			arpg_ai_range_spin->set_value(double(d.get("attack_range", 1.0)));
+		}
+		if (arpg_ai_interval_spin) {
+			arpg_ai_interval_spin->set_value(double(d.get("attack_interval", 1.5)));
+		}
+		if (arpg_ai_kb_resist_spin) {
+			arpg_ai_kb_resist_spin->set_value(double(d.get("knockback_resist", 0)));
+		}
+		_refresh_enemy_element_rates_ui();
+		updating_ui = false;
+	}
 	int id = d.get("id", idx + 1);
 	record_list->set_item_text(idx, vformat("%03d: %s", id, String(d["name"])));
 	if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
@@ -2619,10 +2807,10 @@ void ClockGearsDatabaseDialog::_on_drop_kind_changed(int p_idx, int p_slot) {
 }
 
 void ClockGearsDatabaseDialog::_on_drop_field_changed(int p_slot) {
-	if (updating_ui || current_category != CAT_ENEMIES) {
+	if (updating_ui || (current_category != CAT_ENEMIES && current_category != CAT_ARPG_ENEMIES)) {
 		return;
 	}
-	Array &arr = category_data[CAT_ENEMIES];
+	Array &arr = category_data[current_category];
 	Vector<int> sel = record_list->get_selected_items();
 	if (sel.is_empty() || sel[0] < 0 || sel[0] >= arr.size()) {
 		return;
@@ -5667,6 +5855,78 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	}
 
 	// ========================================================================
+	// SECCIÓN VELOCIDADES (Actores, NPC, NPC ARPG, Enemigos ARPG)
+	// ========================================================================
+	speeds_section_box = memnew(VBoxContainer);
+	speeds_section_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	speeds_section_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	speeds_section_box->hide();
+	col2_box->add_child(speeds_section_box);
+
+	Label *lbl_speeds_sec = memnew(Label(CG_DB_TR("Velocidades")));
+	lbl_speeds_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	speeds_section_box->add_child(lbl_speeds_sec);
+	speeds_section_box->add_child(memnew(HSeparator));
+
+	GridContainer *speeds_grid = memnew(GridContainer);
+	speeds_grid->set_columns(4);
+	speeds_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	speeds_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	speeds_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	speeds_section_box->add_child(speeds_grid);
+
+	Label *lbl_walk_spd = memnew(Label(CG_DB_TR("Caminar:")));
+	speeds_grid->add_child(lbl_walk_spd);
+	speed_walk_spin = memnew(SpinBox);
+	speed_walk_spin->set_min(1);
+	speed_walk_spin->set_max(500);
+	speed_walk_spin->set_step(1);
+	speed_walk_spin->set_value(100);
+	speed_walk_spin->set_suffix("%");
+	speed_walk_spin->set_editable(true);
+	speed_walk_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	speed_walk_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(speed_walk_spin);
+	speed_walk_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	speeds_grid->add_child(speed_walk_spin);
+
+	Label *lbl_run_spd = memnew(Label(CG_DB_TR("Correr:")));
+	speeds_grid->add_child(lbl_run_spd);
+	speed_run_spin = memnew(SpinBox);
+	speed_run_spin->set_min(1);
+	speed_run_spin->set_max(500);
+	speed_run_spin->set_step(1);
+	speed_run_spin->set_value(100);
+	speed_run_spin->set_suffix("%");
+	speed_run_spin->set_editable(true);
+	speed_run_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	speed_run_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(speed_run_spin);
+	speed_run_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	speeds_grid->add_child(speed_run_spin);
+
+	speed_attack_label = memnew(Label(CG_DB_TR("Velocidad al atacar:")));
+	speeds_grid->add_child(speed_attack_label);
+	speed_attack_spin = memnew(SpinBox);
+	speed_attack_spin->set_min(1);
+	speed_attack_spin->set_max(500);
+	speed_attack_spin->set_step(1);
+	speed_attack_spin->set_value(100);
+	speed_attack_spin->set_suffix("%");
+	speed_attack_spin->set_editable(true);
+	speed_attack_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	speed_attack_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(speed_attack_spin);
+	speed_attack_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	speeds_grid->add_child(speed_attack_spin);
+
+	speeds_help_label = memnew(Label(CG_DB_TR("100% es la velocidad base del proyecto; valores menores frenan y mayores aceleran.")));
+	speeds_help_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	speeds_help_label->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
+	speeds_help_label->add_theme_font_size_override("font_size", int(12 * EDSCALE));
+	speeds_section_box->add_child(speeds_help_label);
+
+	// ========================================================================
 	// SECCIÓN TROPAS (Apilado en vertical: Botones HFlowContainer + Tabla Miembros + Vista Previa 16:9)
 	// ========================================================================
 	troop_members_box = memnew(VBoxContainer);
@@ -6038,6 +6298,102 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	action_pattern_dialog->add_child(ap_grid);
 	action_pattern_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_action_pattern_confirmed));
 	add_child(action_pattern_dialog);
+
+	// ========================================================================
+	// SECCIÓN IA DE ENEMIGOS ARPG (En Pestaña Combate, bajo Debilidades)
+	// ========================================================================
+	arpg_ai_box = memnew(VBoxContainer);
+	arpg_ai_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	arpg_ai_box->hide();
+	combat_tab_vbox->add_child(arpg_ai_box);
+
+	Label *lbl_arpg_ai = memnew(Label(CG_DB_TR("IA")));
+	lbl_arpg_ai->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	arpg_ai_box->add_child(lbl_arpg_ai);
+	arpg_ai_box->add_child(memnew(HSeparator));
+
+	GridContainer *arpg_ai_grid = memnew(GridContainer);
+	arpg_ai_grid->set_columns(4);
+	arpg_ai_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	arpg_ai_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	arpg_ai_box->add_child(arpg_ai_grid);
+
+	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Tipo de IA:"))));
+	arpg_ai_type_opt = memnew(OptionButton);
+	arpg_ai_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_type_opt->set_custom_minimum_size(Size2(0, row_h));
+	arpg_ai_type_opt->set_clip_text(true);
+	arpg_ai_type_opt->add_item(CG_DB_TR("Quieto"), 0);
+	arpg_ai_type_opt->set_item_metadata(0, "quieto");
+	arpg_ai_type_opt->add_item(CG_DB_TR("Patrulla"), 1);
+	arpg_ai_type_opt->set_item_metadata(1, "patrulla");
+	arpg_ai_type_opt->add_item(CG_DB_TR("Persigue y ataca"), 2);
+	arpg_ai_type_opt->set_item_metadata(2, "persigue_y_ataca");
+	arpg_ai_type_opt->add_item(CG_DB_TR("Huye"), 3);
+	arpg_ai_type_opt->set_item_metadata(3, "huye");
+	arpg_ai_type_opt->add_item(CG_DB_TR("A distancia"), 4);
+	arpg_ai_type_opt->set_item_metadata(4, "a_distancia");
+	arpg_ai_type_opt->select(2);
+	arpg_ai_type_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
+	arpg_ai_grid->add_child(arpg_ai_type_opt);
+
+	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Radio de visión:"))));
+	arpg_ai_vision_spin = memnew(SpinBox);
+	arpg_ai_vision_spin->set_min(0.0);
+	arpg_ai_vision_spin->set_max(100.0);
+	arpg_ai_vision_spin->set_step(0.5);
+	arpg_ai_vision_spin->set_value(6.0);
+	arpg_ai_vision_spin->set_suffix(" tiles");
+	arpg_ai_vision_spin->set_editable(true);
+	arpg_ai_vision_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_vision_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_ai_vision_spin);
+	arpg_ai_vision_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
+	arpg_ai_grid->add_child(arpg_ai_vision_spin);
+
+	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Alcance:"))));
+	arpg_ai_range_spin = memnew(SpinBox);
+	arpg_ai_range_spin->set_min(0.0);
+	arpg_ai_range_spin->set_max(100.0);
+	arpg_ai_range_spin->set_step(0.5);
+	arpg_ai_range_spin->set_value(1.0);
+	arpg_ai_range_spin->set_suffix(" tiles");
+	arpg_ai_range_spin->set_editable(true);
+	arpg_ai_range_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_range_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_ai_range_spin);
+	arpg_ai_range_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
+	arpg_ai_grid->add_child(arpg_ai_range_spin);
+
+	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Tiempo entre ataques:"))));
+	arpg_ai_interval_spin = memnew(SpinBox);
+	arpg_ai_interval_spin->set_min(0.0);
+	arpg_ai_interval_spin->set_max(60.0);
+	arpg_ai_interval_spin->set_step(0.1);
+	arpg_ai_interval_spin->set_value(1.5);
+	arpg_ai_interval_spin->set_suffix(" s");
+	arpg_ai_interval_spin->set_editable(true);
+	arpg_ai_interval_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_interval_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_ai_interval_spin);
+	arpg_ai_interval_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
+	arpg_ai_grid->add_child(arpg_ai_interval_spin);
+
+	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Resistencia al retroceso:"))));
+	arpg_ai_kb_resist_spin = memnew(SpinBox);
+	arpg_ai_kb_resist_spin->set_min(0);
+	arpg_ai_kb_resist_spin->set_max(100);
+	arpg_ai_kb_resist_spin->set_step(1);
+	arpg_ai_kb_resist_spin->set_value(0);
+	arpg_ai_kb_resist_spin->set_suffix("%");
+	arpg_ai_kb_resist_spin->set_editable(true);
+	arpg_ai_kb_resist_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_ai_kb_resist_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_ai_kb_resist_spin);
+	arpg_ai_kb_resist_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
+	arpg_ai_grid->add_child(arpg_ai_kb_resist_spin);
 
 	// ========================================================================
 	// SYSTEM CONFIG PANEL (CAT_SYSTEM)
@@ -8966,16 +9322,34 @@ void ClockGearsDatabaseDialog::_refresh_enemy_element_rates_ui() {
 	PackedStringArray elems = cat ? cat->get_elements() : PackedStringArray();
 
 	Dictionary d;
+	int enemy_cat = (current_category == CAT_ARPG_ENEMIES) ? CAT_ARPG_ENEMIES : CAT_ENEMIES;
 	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
-	if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ENEMIES].size()) {
-		d = category_data[CAT_ENEMIES][sel[0]];
+	if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[enemy_cat].size()) {
+		d = category_data[enemy_cat][sel[0]];
 	}
 	Array traits = d.get("traits", Array());
 
-	for (int i = 0; i < elems.size(); i++) {
-		int elem_id = i + 1;
-		String elem_name = elems[i];
-		String elem_key = cat ? cat->get_element_key(elem_id) : elem_name.to_lower();
+	int total_rows = elems.size() + ((current_category == CAT_ARPG_ENEMIES) ? 1 : 0);
+	for (int row_n = 0; row_n < total_rows; row_n++) {
+		int elem_id = 0;
+		String elem_name;
+		String elem_key;
+		if (current_category == CAT_ARPG_ENEMIES) {
+			if (row_n == 0) {
+				elem_id = 0;
+				elem_name = CG_DB_TR("Físico");
+				elem_key = "fisico";
+			} else {
+				elem_id = row_n;
+				elem_name = elems[row_n - 1];
+				elem_key = cat ? cat->get_element_key(elem_id) : elem_name.to_lower();
+			}
+		} else {
+			elem_id = row_n + 1;
+			elem_name = elems[row_n];
+			elem_key = cat ? cat->get_element_key(elem_id) : elem_name.to_lower();
+		}
+
 		double rate_pct = 100.0;
 		for (int t = 0; t < traits.size(); t++) {
 			if (traits[t].get_type() != Variant::DICTIONARY) continue;
@@ -8994,12 +9368,14 @@ void ClockGearsDatabaseDialog::_refresh_enemy_element_rates_ui() {
 		row->add_theme_constant_override("separation", 4);
 
 		Label *lbl = memnew(Label(elem_name + ":"));
-		lbl->set_custom_minimum_size(Size2(86 * EDSCALE, 0));
+		lbl->set_custom_minimum_size(Size2(82 * EDSCALE, 0));
 		lbl->set_clip_text(true);
 		row->add_child(lbl);
 
 		OptionButton *opt = memnew(OptionButton);
 		opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		opt->set_custom_minimum_size(Size2(115 * EDSCALE, 0));
+		opt->set_clip_text(true);
 		opt->add_item(CG_DB_TR("Normal x1 (100%)"), 100);
 		opt->add_item(CG_DB_TR("Débil x2 (200%)"), 200);
 		opt->add_item(CG_DB_TR("Resiste x0.5 (50%)"), 50);
@@ -9023,7 +9399,7 @@ void ClockGearsDatabaseDialog::_refresh_enemy_element_rates_ui() {
 		sp->set_step(1);
 		sp->set_suffix("%");
 		sp->set_value(rate_pct);
-		sp->set_custom_minimum_size(Size2(68 * EDSCALE, 0));
+		sp->set_custom_minimum_size(Size2(72 * EDSCALE, 0));
 		_bind_numeric_spinbox(sp);
 		sp->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_enemy_elem_rate_spin_changed).bind(row_idx));
 		row->add_child(sp);
@@ -9067,15 +9443,16 @@ void ClockGearsDatabaseDialog::_on_enemy_elem_rate_spin_changed(double p_val, in
 }
 
 void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, double p_rate_pct) {
-	if (current_category != CAT_ENEMIES) return;
+	if (current_category != CAT_ENEMIES && current_category != CAT_ARPG_ENEMIES) return;
+	Array &arr = category_data[current_category];
 	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
-	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_ENEMIES].size()) return;
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= arr.size()) return;
 	int rec_idx = sel[0];
 
-	Dictionary d = category_data[CAT_ENEMIES][rec_idx];
+	Dictionary d = arr[rec_idx];
 	Array traits = d.get("traits", Array());
 	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
-	String elem_key = cat ? cat->get_element_key(p_elem_id) : "";
+	String elem_key = (p_elem_id == 0) ? String("fisico") : (cat ? cat->get_element_key(p_elem_id) : String(""));
 	int found_idx = -1;
 	for (int i = 0; i < traits.size(); i++) {
 		if (traits[i].get_type() != Variant::DICTIONARY) continue;
@@ -9088,7 +9465,7 @@ void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, d
 		}
 	}
 
-	if (Math::is_equal_approx(p_rate_pct, 100.0)) {
+	if (current_category == CAT_ENEMIES && Math::is_equal_approx(p_rate_pct, 100.0)) {
 		if (found_idx >= 0) {
 			traits.remove_at(found_idx);
 		}
@@ -9107,8 +9484,45 @@ void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, d
 	}
 
 	d["traits"] = traits;
-	category_data[CAT_ENEMIES][rec_idx] = d;
-	_refresh_traits_tree(traits);
+	if (current_category == CAT_ARPG_ENEMIES) {
+		ClockGearsDataManager::normalize_record_defaults(CAT_ARPG_ENEMIES, d);
+	}
+	arr[rec_idx] = d;
+	_refresh_traits_tree(d.get("traits", traits));
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_ai_field_changed() {
+	if (updating_ui || current_category != CAT_ARPG_ENEMIES) {
+		return;
+	}
+	Array &arr = category_data[CAT_ARPG_ENEMIES];
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= arr.size()) {
+		return;
+	}
+	int rec_idx = sel[0];
+	Dictionary d = arr[rec_idx];
+	if (arpg_ai_type_opt) {
+		int ai_sel = arpg_ai_type_opt->get_selected();
+		if (ai_sel >= 0 && ai_sel < arpg_ai_type_opt->get_item_count()) {
+			d["ai_type"] = String(arpg_ai_type_opt->get_item_metadata(ai_sel));
+		}
+	}
+	if (arpg_ai_vision_spin) {
+		d["vision_radius"] = MAX(0.0, double(arpg_ai_vision_spin->get_value()));
+	}
+	if (arpg_ai_range_spin) {
+		d["attack_range"] = MAX(0.0, double(arpg_ai_range_spin->get_value()));
+	}
+	if (arpg_ai_interval_spin) {
+		d["attack_interval"] = MAX(0.0, double(arpg_ai_interval_spin->get_value()));
+	}
+	if (arpg_ai_kb_resist_spin) {
+		d["knockback_resist"] = CLAMP(int(arpg_ai_kb_resist_spin->get_value()), 0, 100);
+	}
+	ClockGearsDataManager::normalize_record_defaults(CAT_ARPG_ENEMIES, d);
+	arr[rec_idx] = d;
 	_mark_database_dirty();
 }
 
