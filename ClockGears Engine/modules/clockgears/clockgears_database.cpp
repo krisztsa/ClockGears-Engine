@@ -218,6 +218,14 @@ static bool s_has_event_tab_category(int p_category) {
 	return p_category == CAT_NPCS || p_category == CAT_ARPG_NPCS || p_category == CAT_ARPG_ENEMIES;
 }
 
+static bool s_has_body_zones_tab_category(int p_category) {
+	return p_category == CAT_ACTORS || p_category == CAT_NPCS || p_category == CAT_ARPG_NPCS || p_category == CAT_ARPG_ENEMIES;
+}
+
+static bool s_has_movement_tab_category(int p_category) {
+	return p_category == CAT_NPCS || p_category == CAT_ARPG_NPCS || p_category == CAT_ARPG_ENEMIES;
+}
+
 static bool s_category_has_record_graphic(int p_category) {
 	if (s_is_anim_slot_category(p_category)) {
 		return true;
@@ -445,6 +453,11 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("select_category_by_key", "key"), &ClockGearsDatabaseDialog::select_category_by_key);
 	ClassDB::bind_method(D_METHOD("get_record_list_icon", "row_idx"), &ClockGearsDatabaseDialog::get_record_list_icon);
 	ClassDB::bind_method(D_METHOD("open_record_event_editor"), &ClockGearsDatabaseDialog::open_record_event_editor);
+	ClassDB::bind_method(D_METHOD("get_body_zones_editor"), &ClockGearsDatabaseDialog::get_body_zones_editor);
+	ClassDB::bind_method(D_METHOD("get_movement_shape_editor"), &ClockGearsDatabaseDialog::get_movement_shape_editor);
+	ClassDB::bind_method(D_METHOD("get_main_editor_tabs"), &ClockGearsDatabaseDialog::get_main_editor_tabs);
+	ClassDB::bind_method(D_METHOD("select_main_tab_by_name", "name"), &ClockGearsDatabaseDialog::select_main_tab_by_name);
+	ClassDB::bind_method(D_METHOD("check_all_tabs_layout", "window_size"), &ClockGearsDatabaseDialog::check_all_tabs_layout);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -1184,6 +1197,12 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		main_editor_tabs->set_tab_hidden(2, !is_actor_or_enemy);
 		if (main_editor_tabs->get_tab_count() > 3) {
 			main_editor_tabs->set_tab_hidden(3, !has_event_tab);
+		}
+		if (main_editor_tabs->get_tab_count() > 4) {
+			main_editor_tabs->set_tab_hidden(4, !s_has_body_zones_tab_category(current_category));
+		}
+		if (main_editor_tabs->get_tab_count() > 5) {
+			main_editor_tabs->set_tab_hidden(5, !s_has_movement_tab_category(current_category));
 		}
 		int cur_tab = main_editor_tabs->get_current_tab();
 		if (!is_actor_or_enemy || (cur_tab >= 0 && cur_tab < main_editor_tabs->get_tab_count() && main_editor_tabs->is_tab_hidden(cur_tab))) {
@@ -2050,6 +2069,18 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
 			_clear_and_disable_anim_editor();
 		}
+		if (body_zones_editor) {
+			body_zones_editor->set_visible(false);
+		}
+		if (bz_empty_label) {
+			bz_empty_label->set_visible(true);
+		}
+		if (movement_tab_hbox) {
+			movement_tab_hbox->set_visible(false);
+		}
+		if (mov_empty_label) {
+			mov_empty_label->set_visible(true);
+		}
 		if (s_has_event_tab_category(current_category)) {
 			_refresh_event_tab_summary();
 		}
@@ -2312,6 +2343,12 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		}
 		if (s_has_event_tab_category(current_category)) {
 			_refresh_event_tab_summary();
+		}
+		if (s_has_body_zones_tab_category(current_category)) {
+			_load_body_zones_tab_from_record(d);
+		}
+		if (s_has_movement_tab_category(current_category)) {
+			_load_movement_tab_from_record(d);
 		}
 	} else {
 		_update_graphic_preview_ui(d);
@@ -2782,6 +2819,9 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 	if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
 		_invalidate_record_list_icon(current_category, idx);
 		_update_record_list_item_icon(idx);
+	}
+	if (s_has_body_zones_tab_category(current_category) || s_has_movement_tab_category(current_category)) {
+		_sync_entity_preview_textures();
 	}
 	_mark_database_dirty();
 }
@@ -5351,6 +5391,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	record_event_editor = memnew(ClockGearsEventEditorDialog);
 	add_child(record_event_editor);
+
+	_setup_body_zones_tab_ui();
+	_setup_movement_tab_ui();
 
 	// ========================================================================
 	// SECCIÓN 1 EN TAB GENERAL: DATOS GENERALES + RECUADRO FIJO 96x96 A LA DERECHA
@@ -9589,6 +9632,7 @@ void ClockGearsDatabaseDialog::_on_arpg_ai_field_changed() {
 	}
 	ClockGearsDataManager::normalize_record_defaults(CAT_ARPG_ENEMIES, d);
 	arr[rec_idx] = d;
+	_load_movement_tab_from_record(d);
 	_mark_database_dirty();
 }
 
@@ -11814,6 +11858,7 @@ void ClockGearsDatabaseDialog::_on_record_event_saved(const Array &p_pages) {
 	category_data[target_cat][target_idx] = d;
 	if (target_cat == current_category) {
 		_refresh_event_tab_summary();
+		_refresh_zone_action_detail_ui();
 	}
 	_mark_database_dirty();
 }
@@ -13147,5 +13192,1527 @@ bool ClockGearsDatabaseDialog::copy_shapes_from_direction(const String &p_from_d
 	_refresh_shape_editor_context();
 	return true;
 }
+
+// ============================================================================
+// Pestaña "Cuerpo y zonas" y Pestaña "Movimiento" (9A Tanda 3B - Interfaz)
+// ============================================================================
+
+static void s_style_db_action_button(Button *p_btn, const Color &p_accent = Color(0.28f, 0.56f, 0.92f)) {
+	if (!p_btn) {
+		return;
+	}
+	auto make_sb = [&](const Color &p_bg, const Color &p_bd) {
+		Ref<StyleBoxFlat> sb;
+		sb.instantiate();
+		sb->set_anti_aliased(true);
+		sb->set_bg_color(p_bg);
+		sb->set_border_width_all(1);
+		sb->set_border_color(p_bd);
+		sb->set_corner_radius_all(8);
+		sb->set_content_margin(SIDE_LEFT, 8.0f * EDSCALE);
+		sb->set_content_margin(SIDE_RIGHT, 8.0f * EDSCALE);
+		sb->set_content_margin(SIDE_TOP, 4.0f * EDSCALE);
+		sb->set_content_margin(SIDE_BOTTOM, 4.0f * EDSCALE);
+		return sb;
+	};
+	p_btn->add_theme_style_override("normal", make_sb(Color(0.18f, 0.21f, 0.28f, 0.94f), Color(0.32f, 0.37f, 0.48f, 0.85f)));
+	p_btn->add_theme_style_override("hover", make_sb(Color(0.24f, 0.28f, 0.36f, 0.96f), p_accent));
+	p_btn->add_theme_style_override("pressed", make_sb(Color(p_accent.r, p_accent.g, p_accent.b, 0.45f), p_accent));
+	p_btn->add_theme_style_override("focus", make_sb(Color(0.18f, 0.21f, 0.28f, 0.94f), p_accent));
+}
+
+static String s_format_zone_action_summary(const Dictionary &p_act) {
+	String t = String(p_act.get("type", "detenerse"));
+	if (t == "perseguir") return CG_DB_TR("Perseguir");
+	if (t == "huir") return CG_DB_TR("Huir");
+	if (t == "volver_puesto") return CG_DB_TR("Volver al puesto");
+	if (t == "mirar_jugador") return CG_DB_TR("Mirar al jugador");
+	if (t == "detenerse") return CG_DB_TR("Detenerse");
+	if (t == "atacar") return CG_DB_TR("Atacar");
+	if (t == "ejecutar_evento") {
+		if (p_act.has("event_page") && int(p_act["event_page"]) >= 1) {
+			return vformat(CG_DB_TR("Ejecutar evento (Pág. %d)"), int(p_act["event_page"]));
+		}
+		return CG_DB_TR("Ejecutar evento");
+	}
+	if (t == "activar_interruptor") {
+		String sw = String(p_act.get("switch_name", "")).strip_edges();
+		bool v = p_act.has("value") ? bool(p_act["value"]) : true;
+		return vformat(CG_DB_TR("Interruptor [%s] = %s"), sw.is_empty() ? CG_DB_TR("?") : sw, v ? "ON" : "OFF");
+	}
+	if (t == "poner_variable") {
+		String vn = String(p_act.get("var_name", "")).strip_edges();
+		String op = String(p_act.get("op", "="));
+		int vv = int(p_act.get("value", 0));
+		return vformat(CG_DB_TR("Variable [%s] %s %d"), vn.is_empty() ? CG_DB_TR("?") : vn, op, vv);
+	}
+	return t;
+}
+
+static String s_format_move_type_label(const String &p_code) {
+	if (p_code == "quieto") return CG_DB_TR("Quieto");
+	if (p_code == "vagar") return CG_DB_TR("Vagar");
+	if (p_code == "patrulla") return CG_DB_TR("Patrulla");
+	if (p_code == "seguir") return CG_DB_TR("Seguir al jugador");
+	if (p_code == "persigue_y_ataca") return CG_DB_TR("Persigue y ataca");
+	if (p_code == "huye") return CG_DB_TR("Huye");
+	if (p_code == "a_distancia") return CG_DB_TR("A distancia");
+	return p_code;
+}
+
+void ClockGearsDatabaseDialog::_setup_body_zones_tab_ui() {
+	if (!main_editor_tabs) {
+		return;
+	}
+	const float row_h = 30.0f * EDSCALE;
+
+	// Pestaña 4: "Cuerpo y zonas"
+	body_zones_tab_margin = memnew(MarginContainer);
+	body_zones_tab_margin->set_name(CG_DB_TR("Cuerpo y zonas"));
+	body_zones_tab_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	body_zones_tab_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	body_zones_tab_margin->add_theme_constant_override("margin_left", int(10 * EDSCALE));
+	body_zones_tab_margin->add_theme_constant_override("margin_top", int(10 * EDSCALE));
+	body_zones_tab_margin->add_theme_constant_override("margin_right", int(10 * EDSCALE));
+	body_zones_tab_margin->add_theme_constant_override("margin_bottom", int(10 * EDSCALE));
+	main_editor_tabs->add_child(body_zones_tab_margin);
+
+	bz_empty_label = memnew(Label(CG_DB_TR("Crea o selecciona una entrada para configurar su cuerpo y zonas.")));
+	bz_empty_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_empty_label->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_empty_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	bz_empty_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	bz_empty_label->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
+	bz_empty_label->set_visible(false);
+	body_zones_tab_margin->add_child(bz_empty_label);
+
+	body_zones_editor = memnew(ClockGearsShapeEditor);
+	body_zones_editor->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	body_zones_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	body_zones_editor->set_editor_mode(ClockGearsShapeEditor::MODE_BODY_ZONES);
+	body_zones_editor->set_zoom(2);
+	body_zones_editor->connect("body_zones_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_bz_editor_data_changed));
+	body_zones_editor->connect("body_zone_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_bz_editor_zone_selected));
+	body_zones_tab_margin->add_child(body_zones_editor);
+
+	// Controles específicos de Zona montados dentro del inspector derecho reutilizado de ShapeEditor
+	VBoxContainer *host = body_zones_editor->get_zone_props_host();
+	zone_props_box = memnew(VBoxContainer);
+	zone_props_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_props_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	if (host) {
+		host->add_child(zone_props_box);
+	}
+	zone_props_box->add_child(memnew(HSeparator));
+
+	Label *lbl_zp_hdr = memnew(Label(CG_DB_TR("Propiedades de la zona")));
+	lbl_zp_hdr->add_theme_color_override("font_color", Color(0.95f, 0.80f, 0.42f));
+	zone_props_box->add_child(lbl_zp_hdr);
+
+	GridContainer *zp_grid = memnew(GridContainer);
+	zp_grid->set_columns(2);
+	zp_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zp_grid->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	zp_grid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	zone_props_box->add_child(zp_grid);
+
+	Label *lbl_zf = memnew(Label(CG_DB_TR("Quién la activa:")));
+	zp_grid->add_child(lbl_zf);
+
+	zone_filter_opt = memnew(OptionButton);
+	zone_filter_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_filter_opt->set_custom_minimum_size(Size2(0, row_h));
+	zone_filter_opt->set_clip_text(true);
+	zone_filter_opt->add_item(CG_DB_TR("Jugador"), 0);
+	zone_filter_opt->set_item_metadata(0, "player");
+	zone_filter_opt->add_item(CG_DB_TR("Enemigos"), 1);
+	zone_filter_opt->set_item_metadata(1, "enemies");
+	zone_filter_opt->add_item(CG_DB_TR("NPC"), 2);
+	zone_filter_opt->set_item_metadata(2, "npc");
+	zone_filter_opt->add_item(CG_DB_TR("Todos"), 3);
+	zone_filter_opt->set_item_metadata(3, "all");
+	zone_filter_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_prop_changed));
+	zp_grid->add_child(zone_filter_opt);
+
+	Label *lbl_zt = memnew(Label(CG_DB_TR("Disparador:")));
+	zp_grid->add_child(lbl_zt);
+
+	zone_trigger_opt = memnew(OptionButton);
+	zone_trigger_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_trigger_opt->set_custom_minimum_size(Size2(0, row_h));
+	zone_trigger_opt->set_clip_text(true);
+	zone_trigger_opt->add_item(CG_DB_TR("Al entrar"), 0);
+	zone_trigger_opt->set_item_metadata(0, "enter");
+	zone_trigger_opt->add_item(CG_DB_TR("Al salir"), 1);
+	zone_trigger_opt->set_item_metadata(1, "exit");
+	zone_trigger_opt->add_item(CG_DB_TR("Mientras está dentro"), 2);
+	zone_trigger_opt->set_item_metadata(2, "while_inside");
+	zone_trigger_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_prop_changed));
+	zp_grid->add_child(zone_trigger_opt);
+
+	zone_interval_row = memnew(HBoxContainer);
+	zone_interval_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_interval_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	zone_interval_row->hide();
+	zone_props_box->add_child(zone_interval_row);
+
+	Label *lbl_ziv = memnew(Label(CG_DB_TR("Repetir cada (s):")));
+	lbl_ziv->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_interval_row->add_child(lbl_ziv);
+
+	zone_interval_spin = memnew(SpinBox);
+	zone_interval_spin->set_min(0.1);
+	zone_interval_spin->set_max(60.0);
+	zone_interval_spin->set_step(0.1);
+	zone_interval_spin->set_value(0.5);
+	zone_interval_spin->set_custom_minimum_size(Size2(86 * EDSCALE, row_h));
+	_bind_numeric_spinbox(zone_interval_spin);
+	zone_interval_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_interval_changed));
+	zone_interval_row->add_child(zone_interval_spin);
+
+	zone_props_box->add_child(memnew(HSeparator));
+	Label *lbl_zact = memnew(Label(CG_DB_TR("Acciones de la zona")));
+	lbl_zact->add_theme_color_override("font_color", Color(0.60f, 0.88f, 0.72f));
+	zone_props_box->add_child(lbl_zact);
+
+	zone_actions_list = memnew(ItemList);
+	zone_actions_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_actions_list->set_custom_minimum_size(Size2(0, 96 * EDSCALE));
+	zone_actions_list->set_allow_reselect(true);
+	zone_actions_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_action_list_selected));
+	zone_props_box->add_child(zone_actions_list);
+
+	HBoxContainer *act_btns = memnew(HBoxContainer);
+	act_btns->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	act_btns->add_theme_constant_override("separation", int(4 * EDSCALE));
+	zone_props_box->add_child(act_btns);
+
+	btn_zone_act_add = memnew(Button("+"));
+	btn_zone_act_add->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_zone_act_add->set_custom_minimum_size(Size2(0, row_h));
+	s_style_db_action_button(btn_zone_act_add, Color(0.26f, 0.72f, 0.42f));
+	btn_zone_act_add->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_add_pressed));
+	act_btns->add_child(btn_zone_act_add);
+
+	btn_zone_act_remove = memnew(Button("-"));
+	btn_zone_act_remove->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_zone_act_remove->set_custom_minimum_size(Size2(0, row_h));
+	s_style_db_action_button(btn_zone_act_remove, Color(0.88f, 0.32f, 0.32f));
+	btn_zone_act_remove->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_remove_pressed));
+	act_btns->add_child(btn_zone_act_remove);
+
+	btn_zone_act_up = memnew(Button(CG_DB_TR("↑")));
+	btn_zone_act_up->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_zone_act_up->set_custom_minimum_size(Size2(0, row_h));
+	s_style_db_action_button(btn_zone_act_up);
+	btn_zone_act_up->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_move_pressed).bind(-1));
+	act_btns->add_child(btn_zone_act_up);
+
+	btn_zone_act_down = memnew(Button(CG_DB_TR("↓")));
+	btn_zone_act_down->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_zone_act_down->set_custom_minimum_size(Size2(0, row_h));
+	s_style_db_action_button(btn_zone_act_down);
+	btn_zone_act_down->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_move_pressed).bind(1));
+	act_btns->add_child(btn_zone_act_down);
+
+	// Sub-editor de la acción seleccionada
+	zone_act_edit_box = memnew(VBoxContainer);
+	zone_act_edit_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_edit_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	zone_act_edit_box->hide();
+	zone_props_box->add_child(zone_act_edit_box);
+
+	HBoxContainer *act_type_row = memnew(HBoxContainer);
+	act_type_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	act_type_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	zone_act_edit_box->add_child(act_type_row);
+
+	act_type_row->add_child(memnew(Label(CG_DB_TR("Acción:"))));
+	zone_act_type_opt = memnew(OptionButton);
+	zone_act_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_type_opt->set_custom_minimum_size(Size2(0, row_h));
+	zone_act_type_opt->set_clip_text(true);
+	PackedStringArray z_acts = ClockGearsDataManager::get_detection_zone_actions();
+	for (int i = 0; i < z_acts.size(); i++) {
+		Dictionary tmp;
+		tmp["type"] = z_acts[i];
+		zone_act_type_opt->add_item(s_format_zone_action_summary(tmp), i);
+		zone_act_type_opt->set_item_metadata(i, z_acts[i]);
+	}
+	zone_act_type_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	act_type_row->add_child(zone_act_type_opt);
+
+	// Selector de página de evento (para "ejecutar_evento")
+	zone_act_event_row = memnew(HBoxContainer);
+	zone_act_event_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_event_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	zone_act_event_row->hide();
+	zone_act_edit_box->add_child(zone_act_event_row);
+
+	zone_act_event_row->add_child(memnew(Label(CG_DB_TR("Página:"))));
+	zone_act_event_page_opt = memnew(OptionButton);
+	zone_act_event_page_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_event_page_opt->set_custom_minimum_size(Size2(0, row_h));
+	zone_act_event_page_opt->set_clip_text(true);
+	zone_act_event_page_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	zone_act_event_row->add_child(zone_act_event_page_opt);
+
+	// Selector de interruptor (para "activar_interruptor")
+	zone_act_switch_box = memnew(VBoxContainer);
+	zone_act_switch_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_switch_box->add_theme_constant_override("separation", int(4 * EDSCALE));
+	zone_act_switch_box->hide();
+	zone_act_edit_box->add_child(zone_act_switch_box);
+
+	zone_act_switch_picker = memnew(ClockGearsSwitchVarPickerButton(false));
+	zone_act_switch_picker->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_switch_picker->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_switch_picked));
+	zone_act_switch_box->add_child(zone_act_switch_picker);
+
+	HBoxContainer *sw_row2 = memnew(HBoxContainer);
+	sw_row2->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sw_row2->add_theme_constant_override("separation", int(6 * EDSCALE));
+	zone_act_switch_box->add_child(sw_row2);
+
+	zone_act_switch_name_edit = memnew(LineEdit);
+	zone_act_switch_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_switch_name_edit->set_placeholder(CG_DB_TR("Nombre interruptor"));
+	zone_act_switch_name_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	sw_row2->add_child(zone_act_switch_name_edit);
+
+	zone_act_switch_val_opt = memnew(OptionButton);
+	zone_act_switch_val_opt->set_custom_minimum_size(Size2(74 * EDSCALE, row_h));
+	zone_act_switch_val_opt->add_item("ON", 1);
+	zone_act_switch_val_opt->add_item("OFF", 0);
+	zone_act_switch_val_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	sw_row2->add_child(zone_act_switch_val_opt);
+
+	// Selector de variable (para "poner_variable")
+	zone_act_var_box = memnew(VBoxContainer);
+	zone_act_var_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_var_box->add_theme_constant_override("separation", int(4 * EDSCALE));
+	zone_act_var_box->hide();
+	zone_act_edit_box->add_child(zone_act_var_box);
+
+	zone_act_var_picker = memnew(ClockGearsSwitchVarPickerButton(true));
+	zone_act_var_picker->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_var_picker->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_var_picked));
+	zone_act_var_box->add_child(zone_act_var_picker);
+
+	zone_act_var_name_edit = memnew(LineEdit);
+	zone_act_var_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_var_name_edit->set_placeholder(CG_DB_TR("Nombre variable"));
+	zone_act_var_name_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	zone_act_var_box->add_child(zone_act_var_name_edit);
+
+	HBoxContainer *var_row2 = memnew(HBoxContainer);
+	var_row2->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	var_row2->add_theme_constant_override("separation", int(6 * EDSCALE));
+	zone_act_var_box->add_child(var_row2);
+
+	zone_act_var_op_opt = memnew(OptionButton);
+	zone_act_var_op_opt->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
+	zone_act_var_op_opt->add_item("=", 0);
+	zone_act_var_op_opt->set_item_metadata(0, "=");
+	zone_act_var_op_opt->add_item("+", 1);
+	zone_act_var_op_opt->set_item_metadata(1, "+");
+	zone_act_var_op_opt->add_item("-", 2);
+	zone_act_var_op_opt->set_item_metadata(2, "-");
+	zone_act_var_op_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	var_row2->add_child(zone_act_var_op_opt);
+
+	zone_act_var_val_spin = memnew(SpinBox);
+	zone_act_var_val_spin->set_min(-99999);
+	zone_act_var_val_spin->set_max(99999);
+	zone_act_var_val_spin->set_step(1);
+	zone_act_var_val_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	zone_act_var_val_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(zone_act_var_val_spin);
+	zone_act_var_val_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_zone_act_detail_changed).unbind(1));
+	var_row2->add_child(zone_act_var_val_spin);
+}
+
+void ClockGearsDatabaseDialog::_setup_movement_tab_ui() {
+	if (!main_editor_tabs) {
+		return;
+	}
+	const float row_h = 30.0f * EDSCALE;
+
+	// Pestaña 5: "Movimiento" (NPC, NPC ARPG, Enemigos ARPG)
+	movement_tab_margin = memnew(MarginContainer);
+	movement_tab_margin->set_name(CG_DB_TR("Movimiento"));
+	movement_tab_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	movement_tab_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	movement_tab_margin->add_theme_constant_override("margin_left", int(10 * EDSCALE));
+	movement_tab_margin->add_theme_constant_override("margin_top", int(10 * EDSCALE));
+	movement_tab_margin->add_theme_constant_override("margin_right", int(10 * EDSCALE));
+	movement_tab_margin->add_theme_constant_override("margin_bottom", int(10 * EDSCALE));
+	main_editor_tabs->add_child(movement_tab_margin);
+
+	mov_empty_label = memnew(Label(CG_DB_TR("Crea o selecciona una entrada para configurar su movimiento.")));
+	mov_empty_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_empty_label->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_empty_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	mov_empty_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	mov_empty_label->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
+	mov_empty_label->set_visible(false);
+	movement_tab_margin->add_child(mov_empty_label);
+
+	movement_tab_hbox = memnew(HBoxContainer);
+	movement_tab_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	movement_tab_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	movement_tab_hbox->add_theme_constant_override("separation", int(12 * EDSCALE));
+	movement_tab_margin->add_child(movement_tab_hbox);
+
+	// Columna izquierda: Parámetros de movimiento con scroll vertical y cero scroll horizontal
+	mov_left_scroll = memnew(ScrollContainer);
+	mov_left_scroll->set_custom_minimum_size(Size2(304 * EDSCALE, 0));
+	mov_left_scroll->set_h_size_flags(Control::SIZE_FILL);
+	mov_left_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_left_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	mov_left_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	movement_tab_hbox->add_child(mov_left_scroll);
+
+	mov_left_vbox = memnew(VBoxContainer);
+	mov_left_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_left_vbox->add_theme_constant_override("separation", int(10 * EDSCALE));
+	mov_left_scroll->add_child(mov_left_vbox);
+
+	Label *lbl_mtype = memnew(Label(CG_DB_TR("Tipo de movimiento")));
+	lbl_mtype->add_theme_color_override("font_color", Color(0.55f, 0.85f, 1.0f));
+	mov_left_vbox->add_child(lbl_mtype);
+
+	mov_type_opt = memnew(OptionButton);
+	mov_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_type_opt->set_custom_minimum_size(Size2(0, row_h));
+	mov_type_opt->set_clip_text(true);
+	mov_type_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_type_selected));
+	mov_left_vbox->add_child(mov_type_opt);
+
+	// Sección Vagar
+	mov_wander_box = memnew(VBoxContainer);
+	mov_wander_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_wander_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	mov_left_vbox->add_child(mov_wander_box);
+
+	HBoxContainer *w_row = memnew(HBoxContainer);
+	w_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	w_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_wander_box->add_child(w_row);
+
+	Label *lbl_wr = memnew(Label(CG_DB_TR("Radio de vagar (casillas):")));
+	lbl_wr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_wr->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	w_row->add_child(lbl_wr);
+
+	mov_wander_spin = memnew(SpinBox);
+	mov_wander_spin->set_min(0.0);
+	mov_wander_spin->set_max(50.0);
+	mov_wander_spin->set_step(0.5);
+	mov_wander_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	_bind_numeric_spinbox(mov_wander_spin);
+	mov_wander_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed));
+	w_row->add_child(mov_wander_spin);
+
+	// Sección Patrulla
+	mov_patrol_box = memnew(VBoxContainer);
+	mov_patrol_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_patrol_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	mov_left_vbox->add_child(mov_patrol_box);
+
+	HBoxContainer *pm_row = memnew(HBoxContainer);
+	pm_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pm_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_patrol_box->add_child(pm_row);
+
+	pm_row->add_child(memnew(Label(CG_DB_TR("Modo de ruta:"))));
+	mov_patrol_mode_opt = memnew(OptionButton);
+	mov_patrol_mode_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_patrol_mode_opt->set_custom_minimum_size(Size2(0, row_h));
+	mov_patrol_mode_opt->add_item(CG_DB_TR("Ida y vuelta"), 0);
+	mov_patrol_mode_opt->add_item(CG_DB_TR("Bucle cerrado"), 1);
+	mov_patrol_mode_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed).unbind(1).bind(0.0));
+	pm_row->add_child(mov_patrol_mode_opt);
+
+	mov_patrol_box->add_child(memnew(Label(CG_DB_TR("Puntos de ruta (casillas):"))));
+	mov_patrol_list = memnew(ItemList);
+	mov_patrol_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_patrol_list->set_custom_minimum_size(Size2(0, 112 * EDSCALE));
+	mov_patrol_list->set_allow_reselect(true);
+	mov_patrol_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_patrol_list_selected));
+	mov_patrol_box->add_child(mov_patrol_list);
+
+	HBoxContainer *p_btns = memnew(HBoxContainer);
+	p_btns->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	p_btns->add_theme_constant_override("separation", int(4 * EDSCALE));
+	mov_patrol_box->add_child(p_btns);
+
+	btn_mov_patrol_add = memnew(Button(CG_DB_TR("+ Punto")));
+	btn_mov_patrol_add->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_mov_patrol_add->set_custom_minimum_size(Size2(0, row_h));
+	s_style_db_action_button(btn_mov_patrol_add, Color(0.26f, 0.72f, 0.42f));
+	btn_mov_patrol_add->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_patrol_add_pressed));
+	p_btns->add_child(btn_mov_patrol_add);
+
+	btn_mov_patrol_remove = memnew(Button("-"));
+	btn_mov_patrol_remove->set_custom_minimum_size(Size2(36 * EDSCALE, row_h));
+	s_style_db_action_button(btn_mov_patrol_remove, Color(0.88f, 0.32f, 0.32f));
+	btn_mov_patrol_remove->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_patrol_remove_pressed));
+	p_btns->add_child(btn_mov_patrol_remove);
+
+	btn_mov_patrol_up = memnew(Button(CG_DB_TR("↑")));
+	btn_mov_patrol_up->set_custom_minimum_size(Size2(36 * EDSCALE, row_h));
+	s_style_db_action_button(btn_mov_patrol_up);
+	btn_mov_patrol_up->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_patrol_move_pressed).bind(-1));
+	p_btns->add_child(btn_mov_patrol_up);
+
+	btn_mov_patrol_down = memnew(Button(CG_DB_TR("↓")));
+	btn_mov_patrol_down->set_custom_minimum_size(Size2(36 * EDSCALE, row_h));
+	s_style_db_action_button(btn_mov_patrol_down);
+	btn_mov_patrol_down->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_patrol_move_pressed).bind(1));
+	p_btns->add_child(btn_mov_patrol_down);
+
+	// Sección Seguir (NPC / NPC ARPG)
+	mov_follow_box = memnew(VBoxContainer);
+	mov_follow_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_follow_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	mov_left_vbox->add_child(mov_follow_box);
+
+	HBoxContainer *f_row = memnew(HBoxContainer);
+	f_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	f_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_follow_box->add_child(f_row);
+
+	Label *lbl_fd = memnew(Label(CG_DB_TR("Distancia al jugador (casillas):")));
+	lbl_fd->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_fd->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	f_row->add_child(lbl_fd);
+
+	mov_follow_dist_spin = memnew(SpinBox);
+	mov_follow_dist_spin->set_min(0.5);
+	mov_follow_dist_spin->set_max(20.0);
+	mov_follow_dist_spin->set_step(0.5);
+	mov_follow_dist_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	_bind_numeric_spinbox(mov_follow_dist_spin);
+	mov_follow_dist_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed));
+	f_row->add_child(mov_follow_dist_spin);
+
+	// Mirar al jugador al hablar (NPC / NPC ARPG)
+	mov_face_on_event_row = memnew(HBoxContainer);
+	mov_face_on_event_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_left_vbox->add_child(mov_face_on_event_row);
+
+	mov_face_on_event_chk = memnew(CheckBox(CG_DB_TR("Mirar al jugador al hablar")));
+	mov_face_on_event_chk->set_pressed(true);
+	mov_face_on_event_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_bool_toggled));
+	mov_face_on_event_row->add_child(mov_face_on_event_chk);
+
+	// Sección Persecución / Huida (Enemigos ARPG)
+	mov_chase_box = memnew(VBoxContainer);
+	mov_chase_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_chase_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	mov_left_vbox->add_child(mov_chase_box);
+
+	HBoxContainer *ls_row = memnew(HBoxContainer);
+	ls_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ls_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_chase_box->add_child(ls_row);
+
+	Label *lbl_ls = memnew(Label(CG_DB_TR("Perder de vista tras (s):")));
+	lbl_ls->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_ls->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	ls_row->add_child(lbl_ls);
+
+	mov_lose_sight_spin = memnew(SpinBox);
+	mov_lose_sight_spin->set_min(0.0);
+	mov_lose_sight_spin->set_max(60.0);
+	mov_lose_sight_spin->set_step(0.5);
+	mov_lose_sight_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	_bind_numeric_spinbox(mov_lose_sight_spin);
+	mov_lose_sight_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed));
+	ls_row->add_child(mov_lose_sight_spin);
+
+	// Sección A distancia (Enemigos ARPG)
+	mov_ranged_box = memnew(VBoxContainer);
+	mov_ranged_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mov_ranged_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	mov_left_vbox->add_child(mov_ranged_box);
+
+	HBoxContainer *mn_row = memnew(HBoxContainer);
+	mn_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mn_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_ranged_box->add_child(mn_row);
+
+	Label *lbl_mn = memnew(Label(CG_DB_TR("Distancia mínima (casillas):")));
+	lbl_mn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_mn->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	mn_row->add_child(lbl_mn);
+
+	mov_min_dist_spin = memnew(SpinBox);
+	mov_min_dist_spin->set_min(0.0);
+	mov_min_dist_spin->set_max(30.0);
+	mov_min_dist_spin->set_step(0.5);
+	mov_min_dist_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	_bind_numeric_spinbox(mov_min_dist_spin);
+	mov_min_dist_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed));
+	mn_row->add_child(mov_min_dist_spin);
+
+	HBoxContainer *mx_row = memnew(HBoxContainer);
+	mx_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mx_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_ranged_box->add_child(mx_row);
+
+	Label *lbl_mx = memnew(Label(CG_DB_TR("Distancia máxima (casillas):")));
+	lbl_mx->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_mx->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	mx_row->add_child(lbl_mx);
+
+	mov_max_dist_spin = memnew(SpinBox);
+	mov_max_dist_spin->set_min(0.5);
+	mov_max_dist_spin->set_max(40.0);
+	mov_max_dist_spin->set_step(0.5);
+	mov_max_dist_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	_bind_numeric_spinbox(mov_max_dist_spin);
+	mov_max_dist_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed));
+	mx_row->add_child(mov_max_dist_spin);
+
+	// Sección Navegación A*
+	mov_left_vbox->add_child(memnew(HSeparator));
+	Label *lbl_nav = memnew(Label(CG_DB_TR("Navegación y obstáculos")));
+	lbl_nav->add_theme_color_override("font_color", Color(0.55f, 0.85f, 1.0f));
+	mov_left_vbox->add_child(lbl_nav);
+
+	mov_avoid_obstacles_chk = memnew(CheckBox(CG_DB_TR("Rodear obstáculos")));
+	mov_avoid_obstacles_chk->set_pressed(true);
+	mov_avoid_obstacles_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_bool_toggled));
+	mov_left_vbox->add_child(mov_avoid_obstacles_chk);
+
+	HBoxContainer *rc_row = memnew(HBoxContainer);
+	rc_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rc_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	mov_left_vbox->add_child(rc_row);
+
+	Label *lbl_rc = memnew(Label(CG_DB_TR("Intervalo de recálculo (ms):")));
+	lbl_rc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_rc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	rc_row->add_child(lbl_rc);
+
+	mov_recalc_ms_spin = memnew(SpinBox);
+	mov_recalc_ms_spin->set_min(50);
+	mov_recalc_ms_spin->set_max(5000);
+	mov_recalc_ms_spin->set_step(25);
+	mov_recalc_ms_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	_bind_numeric_spinbox(mov_recalc_ms_spin);
+	mov_recalc_ms_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_mov_field_changed));
+	rc_row->add_child(mov_recalc_ms_spin);
+
+	// Columna derecha: Lienzo reutilizado ClockGearsShapeEditor en MODE_MOVEMENT
+	movement_shape_editor = memnew(ClockGearsShapeEditor);
+	movement_shape_editor->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	movement_shape_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	movement_shape_editor->set_editor_mode(ClockGearsShapeEditor::MODE_MOVEMENT);
+	movement_shape_editor->set_zoom(1);
+	movement_shape_editor->connect("movement_visual_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_movement_visual_changed));
+	movement_tab_hbox->add_child(movement_shape_editor);
+}
+
+void ClockGearsDatabaseDialog::_resolve_entity_idle_preview(const Dictionary &p_rec, Ref<Texture2D> &r_tex, Rect2i &r_region) const {
+	r_tex = Ref<Texture2D>();
+	r_region = Rect2i(0, 0, 32, 32);
+
+	static const char *k_idle_candidates[6] = {
+		"idle", "idle_abajo", "mover_abajo", "mover_izquierda", "mover_derecha", "mover_arriba"
+	};
+	String chosen_slot;
+	for (int i = 0; i < 6; i++) {
+		String sk = k_idle_candidates[i];
+		if (current_sprite_data.animations.has(sk) && current_sprite_data.animations[sk].get_frame_count() > 0) {
+			chosen_slot = sk;
+			break;
+		}
+	}
+	if (chosen_slot.is_empty()) {
+		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
+			if (E.value.get_frame_count() > 0) {
+				chosen_slot = E.key;
+				break;
+			}
+		}
+	}
+	if (!chosen_slot.is_empty()) {
+		const ClockGearsSpriteAnimation &anim = current_sprite_data.animations[chosen_slot];
+		String spath = anim.spritesheet_path;
+		if (!anim.frames_data.is_empty() && !anim.frames_data[0].sheet_path.is_empty()) {
+			spath = anim.frames_data[0].sheet_path;
+		}
+		if (spath.is_empty()) {
+			spath = String(p_rec.get("graphic_path", ""));
+		}
+		r_tex = _load_texture_from_path(spath);
+		int tw = r_tex.is_valid() ? r_tex->get_width() : 0;
+		int th = r_tex.is_valid() ? r_tex->get_height() : 0;
+		ClockGearsAnimationFrame fr = anim.get_frame(0, tw, th);
+		if (fr.region.size.x > 0 && fr.region.size.y > 0) {
+			r_region = fr.region;
+		} else if (r_tex.is_valid()) {
+			r_region = Rect2i(Point2i(), r_tex->get_size());
+		}
+		return;
+	}
+
+	String gp = String(p_rec.get("graphic_path", ""));
+	if (!gp.is_empty()) {
+		r_tex = _load_texture_from_path(gp);
+		if (r_tex.is_valid()) {
+			r_region = Rect2i(Point2i(), r_tex->get_size());
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_sync_entity_preview_textures() {
+	int idx = _db_selected_record_index(record_list);
+	if (idx < 0 || current_category < 0 || current_category >= CAT_MAX || idx >= category_data[current_category].size()) {
+		return;
+	}
+	Dictionary d = category_data[current_category][idx];
+	Ref<Texture2D> tex;
+	Rect2i reg;
+	_resolve_entity_idle_preview(d, tex, reg);
+	if (body_zones_editor) {
+		body_zones_editor->set_preview_texture(tex, reg);
+	}
+	if (movement_shape_editor) {
+		movement_shape_editor->set_preview_texture(tex, reg);
+	}
+}
+
+void ClockGearsDatabaseDialog::_load_body_zones_tab_from_record(const Dictionary &p_rec) {
+	if (!body_zones_editor) {
+		return;
+	}
+	if (bz_empty_label) {
+		bz_empty_label->set_visible(false);
+	}
+	body_zones_editor->set_visible(true);
+
+	bool allow_zones = (current_category != CAT_ACTORS);
+	body_zones_editor->set_body_zones_config(allow_zones);
+
+	Ref<Texture2D> tex;
+	Rect2i reg;
+	_resolve_entity_idle_preview(p_rec, tex, reg);
+	body_zones_editor->set_preview_texture(tex, reg);
+
+	Dictionary bshape = p_rec.get("body_shape", Dictionary());
+	bool bthrough = bool(p_rec.get("body_through", false));
+	Array zones = allow_zones ? Array(p_rec.get("detection_zones", Array())) : Array();
+
+	updating_bz_ui = true;
+	body_zones_editor->set_body_zones_data(bshape, bthrough, zones);
+	updating_bz_ui = false;
+	_refresh_zone_props_ui();
+}
+
+void ClockGearsDatabaseDialog::_refresh_zone_props_ui() {
+	if (!body_zones_editor || !zone_props_box) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	if (zidx < 0 || current_category == CAT_ACTORS) {
+		zone_props_box->set_visible(false);
+		return;
+	}
+	zone_props_box->set_visible(true);
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	updating_bz_ui = true;
+
+	String tf = String(zd.get("target_filter", "player")).strip_edges().to_lower();
+	if (zone_filter_opt) {
+		int sel_f = 0;
+		for (int i = 0; i < zone_filter_opt->get_item_count(); i++) {
+			if (String(zone_filter_opt->get_item_metadata(i)) == tf) {
+				sel_f = i;
+				break;
+			}
+		}
+		zone_filter_opt->select(sel_f);
+	}
+
+	String trig = String(zd.get("trigger", "enter")).strip_edges().to_lower();
+	if (zone_trigger_opt) {
+		int sel_t = 0;
+		for (int i = 0; i < zone_trigger_opt->get_item_count(); i++) {
+			if (String(zone_trigger_opt->get_item_metadata(i)) == trig) {
+				sel_t = i;
+				break;
+			}
+		}
+		zone_trigger_opt->select(sel_t);
+	}
+	if (zone_interval_row) {
+		zone_interval_row->set_visible(trig == "while_inside");
+	}
+	if (zone_interval_spin) {
+		double iv = MAX(0.1, double(zd.get("interval_sec", 0.5)));
+		zone_interval_spin->set_value(iv);
+		zone_interval_spin->set_meta("cg_last_valid_val", iv);
+	}
+
+	int prev_sel_act = -1;
+	if (zone_actions_list) {
+		Vector<int> prev_s = zone_actions_list->get_selected_items();
+		if (!prev_s.is_empty()) {
+			prev_sel_act = prev_s[0];
+		}
+		zone_actions_list->clear();
+		Array acts = zd.get("actions", Array());
+		for (int i = 0; i < acts.size(); i++) {
+			if (acts[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary ad = acts[i];
+			zone_actions_list->add_item(vformat("%d. %s", zone_actions_list->get_item_count() + 1, s_format_zone_action_summary(ad)));
+		}
+		int n_acts = zone_actions_list->get_item_count();
+		if (n_acts > 0) {
+			int pick = CLAMP(prev_sel_act >= 0 ? prev_sel_act : 0, 0, n_acts - 1);
+			zone_actions_list->select(pick);
+		}
+	}
+
+	updating_bz_ui = false;
+	_refresh_zone_action_detail_ui();
+}
+
+void ClockGearsDatabaseDialog::_refresh_zone_action_detail_ui() {
+	if (!body_zones_editor || !zone_actions_list || !zone_act_edit_box) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	Vector<int> sel = zone_actions_list->get_selected_items();
+	if (zidx < 0 || sel.is_empty()) {
+		zone_act_edit_box->set_visible(false);
+		if (btn_zone_act_remove) btn_zone_act_remove->set_disabled(true);
+		if (btn_zone_act_up) btn_zone_act_up->set_disabled(true);
+		if (btn_zone_act_down) btn_zone_act_down->set_disabled(true);
+		return;
+	}
+	int aidx = sel[0];
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	Array acts = zd.get("actions", Array());
+	if (aidx < 0 || aidx >= acts.size() || acts[aidx].get_type() != Variant::DICTIONARY) {
+		zone_act_edit_box->set_visible(false);
+		return;
+	}
+	if (btn_zone_act_remove) btn_zone_act_remove->set_disabled(false);
+	if (btn_zone_act_up) btn_zone_act_up->set_disabled(aidx <= 0);
+	if (btn_zone_act_down) btn_zone_act_down->set_disabled(aidx >= acts.size() - 1);
+
+	Dictionary ad = acts[aidx];
+	String atype = String(ad.get("type", "detenerse"));
+	zone_act_edit_box->set_visible(true);
+
+	updating_bz_ui = true;
+	if (zone_act_type_opt) {
+		int sel_t = 0;
+		for (int i = 0; i < zone_act_type_opt->get_item_count(); i++) {
+			if (String(zone_act_type_opt->get_item_metadata(i)) == atype) {
+				sel_t = i;
+				break;
+			}
+		}
+		zone_act_type_opt->select(sel_t);
+	}
+
+	bool is_ev = (atype == "ejecutar_evento");
+	bool is_sw = (atype == "activar_interruptor");
+	bool is_vr = (atype == "poner_variable");
+
+	if (zone_act_event_row) zone_act_event_row->set_visible(is_ev);
+	if (zone_act_switch_box) zone_act_switch_box->set_visible(is_sw);
+	if (zone_act_var_box) zone_act_var_box->set_visible(is_vr);
+
+	if (is_ev && zone_act_event_page_opt) {
+		zone_act_event_page_opt->clear();
+		zone_act_event_page_opt->add_item(CG_DB_TR("Página activa (condiciones)"), 0);
+		int rec_idx = _db_selected_record_index(record_list);
+		if (rec_idx >= 0 && current_category >= 0 && current_category < CAT_MAX && rec_idx < category_data[current_category].size()) {
+			Dictionary rec = category_data[current_category][rec_idx];
+			Array pages = rec.get("event_pages", Array());
+			for (int p = 0; p < pages.size(); p++) {
+				zone_act_event_page_opt->add_item(vformat(CG_DB_TR("Página %d"), p + 1), p + 1);
+			}
+		}
+		int ep = int(ad.get("event_page", 0));
+		int sel_ep = 0;
+		for (int i = 0; i < zone_act_event_page_opt->get_item_count(); i++) {
+			if (zone_act_event_page_opt->get_item_id(i) == ep) {
+				sel_ep = i;
+				break;
+			}
+		}
+		zone_act_event_page_opt->select(sel_ep);
+	}
+
+	if (is_sw) {
+		String sname = String(ad.get("switch_name", ""));
+		if (zone_act_switch_name_edit && zone_act_switch_name_edit->get_text() != sname) {
+			zone_act_switch_name_edit->set_text(sname);
+		}
+		if (zone_act_switch_picker) {
+			zone_act_switch_picker->set_selected_name(sname);
+		}
+		if (zone_act_switch_val_opt) {
+			bool sval = ad.has("value") ? bool(ad["value"]) : true;
+			zone_act_switch_val_opt->select(sval ? 0 : 1);
+		}
+	}
+
+	if (is_vr) {
+		String vname = String(ad.get("var_name", ""));
+		if (zone_act_var_name_edit && zone_act_var_name_edit->get_text() != vname) {
+			zone_act_var_name_edit->set_text(vname);
+		}
+		if (zone_act_var_picker) {
+			zone_act_var_picker->set_selected_name(vname);
+		}
+		if (zone_act_var_op_opt) {
+			String op = String(ad.get("op", "="));
+			int sel_op = 0;
+			for (int i = 0; i < zone_act_var_op_opt->get_item_count(); i++) {
+				if (String(zone_act_var_op_opt->get_item_metadata(i)) == op) {
+					sel_op = i;
+					break;
+				}
+			}
+			zone_act_var_op_opt->select(sel_op);
+		}
+		if (zone_act_var_val_spin) {
+			double vv = double(int(ad.get("value", 0)));
+			zone_act_var_val_spin->set_value(vv);
+			zone_act_var_val_spin->set_meta("cg_last_valid_val", vv);
+		}
+	}
+
+	updating_bz_ui = false;
+}
+
+void ClockGearsDatabaseDialog::_commit_zone_metadata_from_ui() {
+	if (!body_zones_editor) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	if (zidx < 0) {
+		return;
+	}
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	if (zone_filter_opt && zone_filter_opt->get_selected() >= 0) {
+		zd["target_filter"] = String(zone_filter_opt->get_selected_metadata());
+	}
+	if (zone_trigger_opt && zone_trigger_opt->get_selected() >= 0) {
+		String trig = String(zone_trigger_opt->get_selected_metadata());
+		zd["trigger"] = trig;
+		if (zone_interval_row) {
+			zone_interval_row->set_visible(trig == "while_inside");
+		}
+	}
+	if (zone_interval_spin) {
+		zd["interval_sec"] = MAX(0.1, double(zone_interval_spin->get_value()));
+	}
+	updating_bz_ui = true;
+	body_zones_editor->set_selected_zone_metadata(zidx, zd);
+	updating_bz_ui = false;
+	_commit_body_zones_to_record();
+}
+
+void ClockGearsDatabaseDialog::_commit_body_zones_to_record() {
+	if (!body_zones_editor || !s_has_body_zones_tab_category(current_category)) {
+		return;
+	}
+	int rec_idx = _db_selected_record_index(record_list);
+	if (rec_idx < 0 || rec_idx >= category_data[current_category].size()) {
+		return;
+	}
+	Dictionary d = category_data[current_category][rec_idx];
+	d["body_shape"] = body_zones_editor->get_body_shape_data();
+	d["body_through"] = body_zones_editor->is_body_through();
+	if (current_category != CAT_ACTORS) {
+		d["detection_zones"] = body_zones_editor->get_zones_data();
+	}
+	ClockGearsDataManager::normalize_record_defaults(current_category, d);
+	category_data[current_category][rec_idx] = d;
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_bz_editor_data_changed() {
+	if (updating_bz_ui || updating_ui) {
+		return;
+	}
+	_commit_body_zones_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_bz_editor_zone_selected(int p_zone_idx) {
+	if (updating_bz_ui) {
+		return;
+	}
+	_refresh_zone_props_ui();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_prop_changed(int p_unused) {
+	if (updating_bz_ui || updating_ui) {
+		return;
+	}
+	_commit_zone_metadata_from_ui();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_interval_changed(double p_val) {
+	if (updating_bz_ui || updating_ui) {
+		return;
+	}
+	_commit_zone_metadata_from_ui();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_action_list_selected(int p_idx) {
+	if (updating_bz_ui) {
+		return;
+	}
+	_refresh_zone_action_detail_ui();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_act_add_pressed() {
+	if (!body_zones_editor || !zone_actions_list) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	if (zidx < 0) {
+		return;
+	}
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	Array acts = Array(zd.get("actions", Array())).duplicate(true);
+	Dictionary na;
+	na["type"] = "perseguir";
+	acts.push_back(na);
+	zd["actions"] = acts;
+	updating_bz_ui = true;
+	body_zones_editor->set_selected_zone_metadata(zidx, zd);
+	updating_bz_ui = false;
+	_refresh_zone_props_ui();
+	if (zone_actions_list->get_item_count() > 0) {
+		zone_actions_list->select(zone_actions_list->get_item_count() - 1);
+		_refresh_zone_action_detail_ui();
+	}
+	_commit_body_zones_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_act_remove_pressed() {
+	if (!body_zones_editor || !zone_actions_list) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	Vector<int> sel = zone_actions_list->get_selected_items();
+	if (zidx < 0 || sel.is_empty()) {
+		return;
+	}
+	int aidx = sel[0];
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	Array acts = Array(zd.get("actions", Array())).duplicate(true);
+	if (aidx < 0 || aidx >= acts.size()) {
+		return;
+	}
+	acts.remove_at(aidx);
+	zd["actions"] = acts;
+	updating_bz_ui = true;
+	body_zones_editor->set_selected_zone_metadata(zidx, zd);
+	updating_bz_ui = false;
+	_refresh_zone_props_ui();
+	if (zone_actions_list->get_item_count() > 0) {
+		zone_actions_list->select(CLAMP(aidx, 0, zone_actions_list->get_item_count() - 1));
+		_refresh_zone_action_detail_ui();
+	}
+	_commit_body_zones_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_act_move_pressed(int p_delta) {
+	if (!body_zones_editor || !zone_actions_list) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	Vector<int> sel = zone_actions_list->get_selected_items();
+	if (zidx < 0 || sel.is_empty()) {
+		return;
+	}
+	int aidx = sel[0];
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	Array acts = Array(zd.get("actions", Array())).duplicate(true);
+	int target = aidx + p_delta;
+	if (aidx < 0 || aidx >= acts.size() || target < 0 || target >= acts.size()) {
+		return;
+	}
+	Variant tmp = acts[aidx];
+	acts[aidx] = acts[target];
+	acts[target] = tmp;
+	zd["actions"] = acts;
+	updating_bz_ui = true;
+	body_zones_editor->set_selected_zone_metadata(zidx, zd);
+	updating_bz_ui = false;
+	_refresh_zone_props_ui();
+	if (target >= 0 && target < zone_actions_list->get_item_count()) {
+		zone_actions_list->select(target);
+		_refresh_zone_action_detail_ui();
+	}
+	_commit_body_zones_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_act_detail_changed() {
+	if (updating_bz_ui || updating_ui || !body_zones_editor || !zone_actions_list) {
+		return;
+	}
+	int zidx = body_zones_editor->get_selected_bz_index();
+	Vector<int> sel = zone_actions_list->get_selected_items();
+	if (zidx < 0 || sel.is_empty()) {
+		return;
+	}
+	int aidx = sel[0];
+	Dictionary zd = body_zones_editor->get_selected_zone_metadata();
+	Array acts = Array(zd.get("actions", Array())).duplicate(true);
+	if (aidx < 0 || aidx >= acts.size()) {
+		return;
+	}
+	Dictionary ad = (acts[aidx].get_type() == Variant::DICTIONARY) ? Dictionary(acts[aidx]).duplicate(true) : Dictionary();
+	String prev_type = String(ad.get("type", ""));
+	String new_type = (zone_act_type_opt && zone_act_type_opt->get_selected() >= 0)
+			? String(zone_act_type_opt->get_selected_metadata())
+			: prev_type;
+	ad["type"] = new_type;
+
+	if (new_type == "ejecutar_evento" && zone_act_event_page_opt && zone_act_event_page_opt->get_selected() >= 0) {
+		int pid = zone_act_event_page_opt->get_selected_id();
+		if (pid > 0) {
+			ad["event_page"] = pid;
+		} else {
+			ad.erase("event_page");
+		}
+	} else if (new_type == "activar_interruptor") {
+		if (zone_act_switch_name_edit) {
+			ad["switch_name"] = zone_act_switch_name_edit->get_text();
+		}
+		if (zone_act_switch_val_opt) {
+			ad["value"] = (zone_act_switch_val_opt->get_selected_id() != 0);
+		}
+	} else if (new_type == "poner_variable") {
+		if (zone_act_var_name_edit) {
+			ad["var_name"] = zone_act_var_name_edit->get_text();
+		}
+		if (zone_act_var_op_opt && zone_act_var_op_opt->get_selected() >= 0) {
+			ad["op"] = String(zone_act_var_op_opt->get_selected_metadata());
+		}
+		if (zone_act_var_val_spin) {
+			ad["value"] = int(zone_act_var_val_spin->get_value());
+		}
+	}
+
+	acts[aidx] = ad;
+	zd["actions"] = acts;
+	updating_bz_ui = true;
+	body_zones_editor->set_selected_zone_metadata(zidx, zd);
+	if (zone_actions_list && aidx >= 0 && aidx < zone_actions_list->get_item_count()) {
+		zone_actions_list->set_item_text(aidx, vformat("%d. %s", aidx + 1, s_format_zone_action_summary(ad)));
+	}
+	updating_bz_ui = false;
+	if (prev_type != new_type) {
+		_refresh_zone_action_detail_ui();
+	}
+	_commit_body_zones_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_act_switch_picked(int p_id, const String &p_name) {
+	if (updating_bz_ui) {
+		return;
+	}
+	String chosen = p_name.strip_edges();
+	if (chosen.is_empty() && p_id > 0) {
+		chosen = itos(p_id);
+	}
+	if (zone_act_switch_name_edit) {
+		zone_act_switch_name_edit->set_text(chosen);
+	}
+	_on_zone_act_detail_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_zone_act_var_picked(int p_id, const String &p_name) {
+	if (updating_bz_ui) {
+		return;
+	}
+	String chosen = p_name.strip_edges();
+	if (chosen.is_empty() && p_id > 0) {
+		chosen = itos(p_id);
+	}
+	if (zone_act_var_name_edit) {
+		zone_act_var_name_edit->set_text(chosen);
+	}
+	_on_zone_act_detail_changed();
+}
+
+void ClockGearsDatabaseDialog::_load_movement_tab_from_record(const Dictionary &p_rec) {
+	if (!movement_tab_hbox || !mov_type_opt) {
+		return;
+	}
+	if (mov_empty_label) {
+		mov_empty_label->set_visible(false);
+	}
+	movement_tab_hbox->set_visible(true);
+
+	updating_mov_ui = true;
+	bool is_enemy = (current_category == CAT_ARPG_ENEMIES);
+	PackedStringArray modes = is_enemy
+			? ClockGearsDataManager::get_arpg_ai_types()
+			: ClockGearsDataManager::get_npc_move_types();
+
+	mov_type_opt->clear();
+	String cur_mode = is_enemy
+			? String(p_rec.get("ai_type", "persigue_y_ataca")).strip_edges().to_lower()
+			: String(p_rec.get("npc_move_type", "quieto")).strip_edges().to_lower();
+	int sel_m = 0;
+	for (int i = 0; i < modes.size(); i++) {
+		mov_type_opt->add_item(s_format_move_type_label(modes[i]), i);
+		mov_type_opt->set_item_metadata(i, modes[i]);
+		if (modes[i] == cur_mode) {
+			sel_m = i;
+		}
+	}
+	if (mov_type_opt->get_item_count() > 0) {
+		mov_type_opt->select(sel_m);
+	}
+
+	if (mov_wander_spin) {
+		double wr = MAX(0.0, double(p_rec.get("wander_radius", 3.0)));
+		mov_wander_spin->set_value(wr);
+		mov_wander_spin->set_meta("cg_last_valid_val", wr);
+	}
+	if (mov_patrol_mode_opt) {
+		mov_patrol_mode_opt->select(bool(p_rec.get("patrol_loop", false)) ? 1 : 0);
+	}
+	if (mov_follow_dist_spin) {
+		double fd = MAX(0.5, double(p_rec.get("follow_distance", 2.0)));
+		mov_follow_dist_spin->set_value(fd);
+		mov_follow_dist_spin->set_meta("cg_last_valid_val", fd);
+	}
+	if (mov_face_on_event_chk) {
+		mov_face_on_event_chk->set_pressed(p_rec.has("face_player_on_event") ? bool(p_rec["face_player_on_event"]) : true);
+	}
+	if (mov_lose_sight_spin) {
+		double ls = MAX(0.0, double(p_rec.get("lose_sight_sec", 4.0)));
+		mov_lose_sight_spin->set_value(ls);
+		mov_lose_sight_spin->set_meta("cg_last_valid_val", ls);
+	}
+	if (mov_min_dist_spin) {
+		double mn = MAX(0.0, double(p_rec.get("min_distance", 3.0)));
+		mov_min_dist_spin->set_value(mn);
+		mov_min_dist_spin->set_meta("cg_last_valid_val", mn);
+	}
+	if (mov_max_dist_spin) {
+		double mn = MAX(0.0, double(p_rec.get("min_distance", 3.0)));
+		double mx = MAX(mn, double(p_rec.get("max_distance", 5.0)));
+		mov_max_dist_spin->set_value(mx);
+		mov_max_dist_spin->set_meta("cg_last_valid_val", mx);
+	}
+	if (mov_avoid_obstacles_chk) {
+		mov_avoid_obstacles_chk->set_pressed(p_rec.has("avoid_obstacles") ? bool(p_rec["avoid_obstacles"]) : true);
+	}
+	if (mov_recalc_ms_spin) {
+		double rc = MAX(50.0, double(p_rec.get("path_recalc_ms", 250)));
+		mov_recalc_ms_spin->set_value(rc);
+		mov_recalc_ms_spin->set_meta("cg_last_valid_val", rc);
+	}
+
+	if (movement_shape_editor) {
+		Ref<Texture2D> tex;
+		Rect2i reg;
+		_resolve_entity_idle_preview(p_rec, tex, reg);
+		movement_shape_editor->set_preview_texture(tex, reg);
+		movement_shape_editor->set_movement_visual_data(
+				cur_mode,
+				double(p_rec.get("wander_radius", 3.0)),
+				p_rec.get("patrol_points", Array()),
+				bool(p_rec.get("patrol_loop", false)));
+	}
+
+	updating_mov_ui = false;
+	_update_movement_contextual_visibility(cur_mode);
+	_refresh_patrol_points_list();
+}
+
+void ClockGearsDatabaseDialog::_update_movement_contextual_visibility(const String &p_mode) {
+	bool is_enemy = (current_category == CAT_ARPG_ENEMIES);
+	bool is_npc = (current_category == CAT_NPCS || current_category == CAT_ARPG_NPCS);
+	if (mov_wander_box) mov_wander_box->set_visible(p_mode == "vagar");
+	if (mov_patrol_box) mov_patrol_box->set_visible(p_mode == "patrulla");
+	if (mov_follow_box) mov_follow_box->set_visible(is_npc && p_mode == "seguir");
+	if (mov_face_on_event_row) mov_face_on_event_row->set_visible(is_npc);
+	if (mov_chase_box) mov_chase_box->set_visible(is_enemy && (p_mode == "persigue_y_ataca" || p_mode == "huye" || p_mode == "a_distancia"));
+	if (mov_ranged_box) mov_ranged_box->set_visible(is_enemy && p_mode == "a_distancia");
+}
+
+void ClockGearsDatabaseDialog::_refresh_patrol_points_list() {
+	if (!mov_patrol_list || !movement_shape_editor) {
+		return;
+	}
+	bool prev = updating_mov_ui;
+	updating_mov_ui = true;
+	int prev_sel = movement_shape_editor->get_selected_patrol_index();
+	mov_patrol_list->clear();
+	Array pts = movement_shape_editor->get_patrol_points_data();
+	for (int i = 0; i < pts.size(); i++) {
+		Dictionary d = pts[i];
+		double px = double(d.get("x", 0.0));
+		double py = double(d.get("y", 0.0));
+		mov_patrol_list->add_item(vformat(CG_DB_TR("Punto %d: (%.2f, %.2f)"), i + 1, px, py));
+	}
+	if (prev_sel >= 0 && prev_sel < mov_patrol_list->get_item_count()) {
+		mov_patrol_list->select(prev_sel);
+	}
+	bool has_sel = (prev_sel >= 0 && prev_sel < pts.size());
+	if (btn_mov_patrol_remove) btn_mov_patrol_remove->set_disabled(!has_sel);
+	if (btn_mov_patrol_up) btn_mov_patrol_up->set_disabled(!has_sel || prev_sel <= 0);
+	if (btn_mov_patrol_down) btn_mov_patrol_down->set_disabled(!has_sel || prev_sel >= pts.size() - 1);
+	updating_mov_ui = prev;
+}
+
+void ClockGearsDatabaseDialog::_sync_movement_canvas() {
+	if (!movement_shape_editor || !mov_type_opt) {
+		return;
+	}
+	String move_mode = (mov_type_opt->get_selected() >= 0)
+			? String(mov_type_opt->get_selected_metadata())
+			: String("quieto");
+	double wr = mov_wander_spin ? double(mov_wander_spin->get_value()) : 3.0;
+	bool loop = mov_patrol_mode_opt ? (mov_patrol_mode_opt->get_selected() == 1) : false;
+	Array pts = movement_shape_editor->get_patrol_points_data();
+	movement_shape_editor->set_movement_visual_data(move_mode, wr, pts, loop);
+}
+
+void ClockGearsDatabaseDialog::_commit_movement_to_record() {
+	if (!s_has_movement_tab_category(current_category)) {
+		return;
+	}
+	int rec_idx = _db_selected_record_index(record_list);
+	if (rec_idx < 0 || rec_idx >= category_data[current_category].size()) {
+		return;
+	}
+	Dictionary d = category_data[current_category][rec_idx];
+	String move_mode = (mov_type_opt && mov_type_opt->get_selected() >= 0)
+			? String(mov_type_opt->get_selected_metadata())
+			: String("quieto");
+
+	if (current_category == CAT_ARPG_ENEMIES) {
+		d["ai_type"] = move_mode;
+		if (arpg_ai_type_opt) {
+			bool prev_ui = updating_ui;
+			updating_ui = true;
+			for (int i = 0; i < arpg_ai_type_opt->get_item_count(); i++) {
+				if (String(arpg_ai_type_opt->get_item_metadata(i)) == move_mode) {
+					arpg_ai_type_opt->select(i);
+					break;
+				}
+			}
+			updating_ui = prev_ui;
+		}
+		if (mov_lose_sight_spin) d["lose_sight_sec"] = MAX(0.0, double(mov_lose_sight_spin->get_value()));
+		if (mov_min_dist_spin) d["min_distance"] = MAX(0.0, double(mov_min_dist_spin->get_value()));
+		if (mov_max_dist_spin) {
+			double mn = double(d.get("min_distance", 3.0));
+			d["max_distance"] = MAX(mn, double(mov_max_dist_spin->get_value()));
+		}
+	} else {
+		d["npc_move_type"] = move_mode;
+		if (mov_follow_dist_spin) d["follow_distance"] = MAX(0.5, double(mov_follow_dist_spin->get_value()));
+		if (mov_face_on_event_chk) d["face_player_on_event"] = mov_face_on_event_chk->is_pressed();
+	}
+
+	if (mov_wander_spin) d["wander_radius"] = MAX(0.0, double(mov_wander_spin->get_value()));
+	if (mov_patrol_mode_opt) d["patrol_loop"] = (mov_patrol_mode_opt->get_selected() == 1);
+	if (movement_shape_editor) d["patrol_points"] = movement_shape_editor->get_patrol_points_data();
+	if (mov_avoid_obstacles_chk) d["avoid_obstacles"] = mov_avoid_obstacles_chk->is_pressed();
+	if (mov_recalc_ms_spin) d["path_recalc_ms"] = MAX(50, int(mov_recalc_ms_spin->get_value()));
+
+	ClockGearsDataManager::normalize_record_defaults(current_category, d);
+	category_data[current_category][rec_idx] = d;
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_mov_type_selected(int p_idx) {
+	if (updating_mov_ui || updating_ui || !mov_type_opt) {
+		return;
+	}
+	String move_mode = (p_idx >= 0) ? String(mov_type_opt->get_item_metadata(p_idx)) : String("quieto");
+	_update_movement_contextual_visibility(move_mode);
+	_sync_movement_canvas();
+	_commit_movement_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_mov_field_changed(double p_unused) {
+	if (updating_mov_ui || updating_ui) {
+		return;
+	}
+	_sync_movement_canvas();
+	_commit_movement_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_mov_bool_toggled(bool p_pressed) {
+	if (updating_mov_ui || updating_ui) {
+		return;
+	}
+	_sync_movement_canvas();
+	_commit_movement_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_mov_patrol_list_selected(int p_idx) {
+	if (updating_mov_ui || !movement_shape_editor) {
+		return;
+	}
+	movement_shape_editor->select_patrol_point(p_idx);
+	_refresh_patrol_points_list();
+}
+
+void ClockGearsDatabaseDialog::_on_mov_patrol_add_pressed() {
+	if (!movement_shape_editor) {
+		return;
+	}
+	Array pts = movement_shape_editor->get_patrol_points_data();
+	Vector2 next_pt(2.0f, 0.0f);
+	if (!pts.is_empty()) {
+		Dictionary last = pts[pts.size() - 1];
+		next_pt = Vector2(float(last.get("x", 0.0)) + 2.0f, float(last.get("y", 0.0)));
+	}
+	movement_shape_editor->add_patrol_point(next_pt);
+	_refresh_patrol_points_list();
+	_commit_movement_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_mov_patrol_remove_pressed() {
+	if (!movement_shape_editor) {
+		return;
+	}
+	if (movement_shape_editor->remove_selected_patrol_point()) {
+		_refresh_patrol_points_list();
+		_commit_movement_to_record();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_mov_patrol_move_pressed(int p_delta) {
+	if (!movement_shape_editor) {
+		return;
+	}
+	int sel = movement_shape_editor->get_selected_patrol_index();
+	Array pts = movement_shape_editor->get_patrol_points_data();
+	int target = sel + p_delta;
+	if (sel < 0 || sel >= pts.size() || target < 0 || target >= pts.size()) {
+		return;
+	}
+	Variant tmp = pts[sel];
+	pts[sel] = pts[target];
+	pts[target] = tmp;
+	String move_mode = (mov_type_opt && mov_type_opt->get_selected() >= 0) ? String(mov_type_opt->get_selected_metadata()) : String("patrulla");
+	double wr = mov_wander_spin ? double(mov_wander_spin->get_value()) : 3.0;
+	bool loop = mov_patrol_mode_opt ? (mov_patrol_mode_opt->get_selected() == 1) : false;
+	movement_shape_editor->set_movement_visual_data(move_mode, wr, pts, loop);
+	movement_shape_editor->select_patrol_point(target);
+	_refresh_patrol_points_list();
+	_commit_movement_to_record();
+}
+
+void ClockGearsDatabaseDialog::_on_movement_visual_changed() {
+	if (updating_mov_ui || updating_ui || !movement_shape_editor) {
+		return;
+	}
+	updating_mov_ui = true;
+	if (mov_wander_spin) {
+		double wr = movement_shape_editor->get_wander_radius();
+		mov_wander_spin->set_value(wr);
+		mov_wander_spin->set_meta("cg_last_valid_val", wr);
+	}
+	updating_mov_ui = false;
+	_refresh_patrol_points_list();
+	_commit_movement_to_record();
+}
+
+bool ClockGearsDatabaseDialog::select_main_tab_by_name(const String &p_name) {
+	if (!main_editor_tabs) {
+		return false;
+	}
+	String q = p_name.strip_edges().to_lower();
+	for (int i = 0; i < main_editor_tabs->get_tab_count(); i++) {
+		if (main_editor_tabs->is_tab_hidden(i)) {
+			continue;
+		}
+		if (main_editor_tabs->get_tab_title(i).strip_edges().to_lower() == q) {
+			main_editor_tabs->set_current_tab(i);
+			return true;
+		}
+	}
+	return false;
+}
+
+Dictionary ClockGearsDatabaseDialog::check_all_tabs_layout(const Vector2i &p_window_size) {
+	Dictionary out;
+	set_size(p_window_size);
+	Array tabs_report;
+	bool all_ok = true;
+	Rect2 win_rect{Vector2(), Vector2(p_window_size)};
+
+	if (main_editor_tabs) {
+		int prev_tab = main_editor_tabs->get_current_tab();
+		for (int i = 0; i < main_editor_tabs->get_tab_count(); i++) {
+			if (main_editor_tabs->is_tab_hidden(i)) {
+				continue;
+			}
+			main_editor_tabs->set_current_tab(i);
+			Control *page = main_editor_tabs->get_tab_control(i);
+			Dictionary tr;
+			tr["title"] = main_editor_tabs->get_tab_title(i);
+			bool has_hscroll = false;
+			bool clipped = false;
+			if (page) {
+				Rect2 pr = page->get_global_rect();
+				tr["rect"] = pr;
+				if (pr.size.x > win_rect.size.x + 2.0f || pr.position.x + pr.size.x > p_window_size.x + 2.0f) {
+					clipped = true;
+				}
+				Vector<Node *> stack;
+				stack.push_back(page);
+				while (!stack.is_empty()) {
+					Node *cur = stack[stack.size() - 1];
+					stack.remove_at(stack.size() - 1);
+					ScrollContainer *sc = Object::cast_to<ScrollContainer>(cur);
+					if (sc && sc->is_visible_in_tree()) {
+						if (sc->get_horizontal_scroll_mode() != ScrollContainer::SCROLL_MODE_DISABLED) {
+							HScrollBar *hs = sc->get_h_scroll_bar();
+							if (hs && hs->is_visible()) {
+								has_hscroll = true;
+							}
+						}
+					}
+					for (int c = 0; c < cur->get_child_count(); c++) {
+						stack.push_back(cur->get_child(c));
+					}
+				}
+			}
+			tr["has_hscroll"] = has_hscroll;
+			tr["clipped"] = clipped;
+			if (has_hscroll || clipped) {
+				all_ok = false;
+			}
+			tabs_report.push_back(tr);
+		}
+		if (prev_tab >= 0 && prev_tab < main_editor_tabs->get_tab_count()) {
+			main_editor_tabs->set_current_tab(prev_tab);
+		}
+	}
+	out["window_size"] = p_window_size;
+	out["tabs"] = tabs_report;
+	out["all_ok"] = all_ok;
+	return out;
+}
+
 
 

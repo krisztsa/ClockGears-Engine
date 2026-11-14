@@ -95,6 +95,66 @@ private:
 	Tree *event_tab_pages_tree = nullptr;
 	Button *btn_open_record_event_editor = nullptr;
 	ClockGearsEventEditorDialog *record_event_editor = nullptr;
+
+	// Pestaña 4: "Cuerpo y zonas" (Actores solo cuerpo; NPC, NPC ARPG, Enemigos ARPG cuerpo + zonas)
+	MarginContainer *body_zones_tab_margin = nullptr;
+	Label *bz_empty_label = nullptr;
+	ClockGearsShapeEditor *body_zones_editor = nullptr;
+	VBoxContainer *zone_props_box = nullptr;
+	OptionButton *zone_filter_opt = nullptr;
+	OptionButton *zone_trigger_opt = nullptr;
+	HBoxContainer *zone_interval_row = nullptr;
+	SpinBox *zone_interval_spin = nullptr;
+	ItemList *zone_actions_list = nullptr;
+	Button *btn_zone_act_add = nullptr;
+	Button *btn_zone_act_remove = nullptr;
+	Button *btn_zone_act_up = nullptr;
+	Button *btn_zone_act_down = nullptr;
+	VBoxContainer *zone_act_edit_box = nullptr;
+	OptionButton *zone_act_type_opt = nullptr;
+	HBoxContainer *zone_act_event_row = nullptr;
+	OptionButton *zone_act_event_page_opt = nullptr;
+	VBoxContainer *zone_act_switch_box = nullptr;
+	ClockGearsSwitchVarPickerButton *zone_act_switch_picker = nullptr;
+	LineEdit *zone_act_switch_name_edit = nullptr;
+	OptionButton *zone_act_switch_val_opt = nullptr;
+	VBoxContainer *zone_act_var_box = nullptr;
+	ClockGearsSwitchVarPickerButton *zone_act_var_picker = nullptr;
+	LineEdit *zone_act_var_name_edit = nullptr;
+	OptionButton *zone_act_var_op_opt = nullptr;
+	SpinBox *zone_act_var_val_spin = nullptr;
+	bool updating_bz_ui = false;
+
+	// Pestaña 5: "Movimiento" (NPC, NPC ARPG, Enemigos ARPG)
+	MarginContainer *movement_tab_margin = nullptr;
+	Label *mov_empty_label = nullptr;
+	HBoxContainer *movement_tab_hbox = nullptr;
+	ScrollContainer *mov_left_scroll = nullptr;
+	VBoxContainer *mov_left_vbox = nullptr;
+	OptionButton *mov_type_opt = nullptr;
+	VBoxContainer *mov_wander_box = nullptr;
+	SpinBox *mov_wander_spin = nullptr;
+	VBoxContainer *mov_patrol_box = nullptr;
+	OptionButton *mov_patrol_mode_opt = nullptr;
+	ItemList *mov_patrol_list = nullptr;
+	Button *btn_mov_patrol_add = nullptr;
+	Button *btn_mov_patrol_remove = nullptr;
+	Button *btn_mov_patrol_up = nullptr;
+	Button *btn_mov_patrol_down = nullptr;
+	VBoxContainer *mov_follow_box = nullptr;
+	SpinBox *mov_follow_dist_spin = nullptr;
+	HBoxContainer *mov_face_on_event_row = nullptr;
+	CheckBox *mov_face_on_event_chk = nullptr;
+	VBoxContainer *mov_chase_box = nullptr;
+	SpinBox *mov_lose_sight_spin = nullptr;
+	VBoxContainer *mov_ranged_box = nullptr;
+	SpinBox *mov_min_dist_spin = nullptr;
+	SpinBox *mov_max_dist_spin = nullptr;
+	CheckBox *mov_avoid_obstacles_chk = nullptr;
+	SpinBox *mov_recalc_ms_spin = nullptr;
+	ClockGearsShapeEditor *movement_shape_editor = nullptr;
+	bool updating_mov_ui = false;
+
 	VBoxContainer *general_section_box = nullptr;
 	VBoxContainer *stats_section_box = nullptr;
 	VBoxContainer *exp_section_box = nullptr;
@@ -794,6 +854,42 @@ private:
 	void _on_open_record_event_editor_pressed();
 	void _on_record_event_saved(const Array &p_pages);
 
+	// Pestaña Cuerpo y zonas + Pestaña Movimiento
+	void _setup_body_zones_tab_ui();
+	void _setup_movement_tab_ui();
+	void _resolve_entity_idle_preview(const Dictionary &p_rec, Ref<Texture2D> &r_tex, Rect2i &r_region) const;
+	void _sync_entity_preview_textures();
+	void _load_body_zones_tab_from_record(const Dictionary &p_rec);
+	void _refresh_zone_props_ui();
+	void _refresh_zone_action_detail_ui();
+	void _commit_zone_metadata_from_ui();
+	void _commit_body_zones_to_record();
+	void _on_bz_editor_data_changed();
+	void _on_bz_editor_zone_selected(int p_zone_idx);
+	void _on_zone_prop_changed(int p_unused = 0);
+	void _on_zone_interval_changed(double p_val);
+	void _on_zone_action_list_selected(int p_idx);
+	void _on_zone_act_add_pressed();
+	void _on_zone_act_remove_pressed();
+	void _on_zone_act_move_pressed(int p_delta);
+	void _on_zone_act_detail_changed();
+	void _on_zone_act_switch_picked(int p_id, const String &p_name);
+	void _on_zone_act_var_picked(int p_id, const String &p_name);
+
+	void _load_movement_tab_from_record(const Dictionary &p_rec);
+	void _update_movement_contextual_visibility(const String &p_mode);
+	void _refresh_patrol_points_list();
+	void _sync_movement_canvas();
+	void _commit_movement_to_record();
+	void _on_mov_type_selected(int p_idx);
+	void _on_mov_field_changed(double p_unused = 0.0);
+	void _on_mov_bool_toggled(bool p_pressed);
+	void _on_mov_patrol_list_selected(int p_idx);
+	void _on_mov_patrol_add_pressed();
+	void _on_mov_patrol_remove_pressed();
+	void _on_mov_patrol_move_pressed(int p_delta);
+	void _on_movement_visual_changed();
+
 	void _save_database_to_disk();
 	void _load_database_from_disk();
 
@@ -850,6 +946,11 @@ public:
 	void select_category_by_key(const String &p_key);
 	Ref<Texture2D> get_record_list_icon(int p_row_idx) const;
 	bool open_record_event_editor();
+	ClockGearsShapeEditor *get_body_zones_editor() const { return body_zones_editor; }
+	ClockGearsShapeEditor *get_movement_shape_editor() const { return movement_shape_editor; }
+	TabContainer *get_main_editor_tabs() const { return main_editor_tabs; }
+	bool select_main_tab_by_name(const String &p_name);
+	Dictionary check_all_tabs_layout(const Vector2i &p_window_size);
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

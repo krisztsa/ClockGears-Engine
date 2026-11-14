@@ -513,7 +513,7 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	chk_grid->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
 	tab_vis->add_child(chk_grid);
 
-	chk_bodies_zones = memnew(CheckBox(CG_DBG_TR("Cuerpos y zonas de detección")));
+	chk_bodies_zones = memnew(CheckBox(CG_DBG_TR("Mostrar cuerpos y zonas")));
 	chk_bodies_zones->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
 	tab_vis->add_child(chk_bodies_zones);
 

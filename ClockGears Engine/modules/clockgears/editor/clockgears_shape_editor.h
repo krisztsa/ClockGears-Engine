@@ -7,7 +7,9 @@
 #include "scene/gui/check_box.h"
 #include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
+#include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
@@ -58,6 +60,12 @@ class ClockGearsShapeEditor : public VBoxContainer {
 	friend class ClockGearsShapeCanvas;
 
 public:
+	enum EditorMode {
+		MODE_ANIMATION = 0,
+		MODE_BODY_ZONES = 1,
+		MODE_MOVEMENT = 2,
+	};
+
 	enum ToolMode {
 		TOOL_SELECT = 0,
 		TOOL_CIRCLE = 1,
@@ -77,6 +85,10 @@ public:
 		SEL_HITBOX = 1,
 		SEL_HURTBOX = 2,
 		SEL_ANCHOR = 3,
+		SEL_BODY = 4,
+		SEL_ZONE = 5,
+		SEL_WANDER_RADIUS = 6,
+		SEL_PATROL_POINT = 7,
 	};
 
 private:
@@ -87,7 +99,21 @@ private:
 		DRAG_MOVE_VERTEX = 3,
 		DRAG_CREATE_SHAPE = 4,
 		DRAG_MOVE_ANCHOR = 5,
+		DRAG_WANDER_RADIUS = 6,
+		DRAG_PATROL_POINT = 7,
+		DRAG_PAN_VIEW = 8,
 	};
+
+	struct ZoneEntry {
+		Dictionary raw;
+		String name;
+		ClockGearsHitShape shape;
+	};
+
+	EditorMode editor_mode = MODE_ANIMATION;
+	Vector2 view_pan;
+	Point2 pan_start_screen;
+	Vector2 pan_start_offset;
 
 	// Contexto visual
 	Ref<Texture2D> preview_texture;
@@ -99,12 +125,27 @@ private:
 	bool allow_hitboxes = true;
 	bool allow_hurtbox = true;
 	bool allow_weapon_anchor = true;
+	bool bz_allow_zones = true;
 
 	// Datos editados (genéricos, sin conocimiento de slots ni base de datos)
 	ClockGearsFrameHitboxData hitbox_data;
 	ClockGearsHurtboxData hurtbox_data;
 	bool has_hurtbox_override = false;
 	ClockGearsWeaponAnchor weapon_anchor_data;
+
+	// Datos MODE_BODY_ZONES (cuerpo en px, zonas en px)
+	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
+	bool body_through = false;
+	Vector<ZoneEntry> bz_zones;
+	int selected_bz_idx = -1; // -1 = Cuerpo, >= 0 = índice de zona
+
+	// Datos MODE_MOVEMENT (radio/puntos en casillas relativas al origen; 1 casilla = 32 px)
+	String move_mode = "quieto";
+	double wander_radius = 3.0;
+	Vector<Vector2> patrol_points;
+	bool patrol_loop = false;
+	int selected_patrol_idx = -1;
+	Vector2 drag_initial_patrol_pt;
 
 	// Estado de lienzo y herramienta
 	int zoom = 4; // Entero 1..8
@@ -135,8 +176,10 @@ private:
 	Button *zoom_btns[8] = { nullptr };
 	Button *btn_grid = nullptr;
 	Button *btn_snap = nullptr;
+	Button *btn_center_view = nullptr;
 
 	HFlowContainer *tools_bar = nullptr;
+	Label *lbl_tgt_hdr = nullptr;
 	Button *btn_target_hitbox = nullptr;
 	Button *btn_target_hurtbox = nullptr;
 	Button *btn_tool_select = nullptr;
@@ -154,7 +197,20 @@ private:
 	ClockGearsShapeCanvas *canvas = nullptr;
 
 	PanelContainer *inspector_panel = nullptr;
+	ScrollContainer *inspector_scroll = nullptr;
 	VBoxContainer *inspector_vbox = nullptr;
+
+	// Grupo Cuerpo y Zonas (MODE_BODY_ZONES)
+	VBoxContainer *bz_sec = nullptr;
+	VBoxContainer *bz_list_box = nullptr;
+	ItemList *bz_list = nullptr;
+	Button *btn_bz_add = nullptr;
+	Button *btn_bz_remove = nullptr;
+	Button *btn_bz_dup = nullptr;
+	CheckBox *chk_body_through = nullptr;
+	HBoxContainer *bz_name_row = nullptr;
+	LineEdit *bz_name_edit = nullptr;
+	VBoxContainer *bz_zone_props_host = nullptr;
 
 	// Grupo Hitbox
 	VBoxContainer *hitbox_sec = nullptr;
@@ -203,19 +259,29 @@ private:
 	int _hit_test_handles(const ClockGearsHitShape &p_shape, const Point2 &p_screen_pos, const Point2 &p_origin) const;
 	void _get_shape_handle_points(const ClockGearsHitShape &p_shape, Vector<Vector2> &r_local_points) const;
 	void _commit_created_shape(const ClockGearsHitShape &p_shape);
+	static float _estimate_shape_area(const ClockGearsHitShape &p_shape);
 
 	void _sync_inspector_from_data();
 	void _sync_selected_shape_controls();
+	void _refresh_bz_list();
 	void _update_toolbar_states();
 	void _emit_shape_changed();
 
 	void _on_zoom_btn_pressed(int p_zoom);
 	void _on_grid_toggled(bool p_pressed);
 	void _on_snap_toggled(bool p_pressed);
+	void _on_center_view_pressed();
 	void _on_target_btn_pressed(int p_target);
 	void _on_tool_btn_pressed(int p_tool);
 	void _on_finish_polygon_pressed();
 	void _on_delete_shape_pressed();
+
+	void _on_bz_list_selected(int p_idx);
+	void _on_bz_add_pressed();
+	void _on_bz_remove_pressed();
+	void _on_bz_dup_pressed();
+	void _on_body_through_toggled(bool p_pressed);
+	void _on_bz_name_changed(const String &p_text);
 
 	void _on_hb_dmg_slider_changed(double p_val);
 	void _on_hb_dmg_spin_changed(double p_val);
@@ -241,6 +307,11 @@ protected:
 	void _notification(int p_what);
 
 public:
+	static Color get_zone_color(int p_index);
+
+	void set_editor_mode(int p_mode);
+	int get_editor_mode() const { return (int)editor_mode; }
+
 	void set_preview_texture(const Ref<Texture2D> &p_tex, const Rect2i &p_region);
 	void set_mannequin(bool p_show, int p_size);
 	bool is_mannequin_shown() const { return show_mannequin; }
@@ -253,6 +324,31 @@ public:
 	Dictionary get_hurtbox_data() const;
 	bool has_hurtbox_override_enabled() const { return has_hurtbox_override; }
 	Dictionary get_weapon_anchor_data() const;
+
+	// API MODE_BODY_ZONES
+	void set_body_zones_config(bool p_allow_zones);
+	void set_body_zones_data(const Dictionary &p_body_shape, bool p_body_through, const Array &p_zones);
+	Dictionary get_body_shape_data() const;
+	bool is_body_through() const { return body_through; }
+	Array get_zones_data() const;
+	void set_selected_zone_metadata(int p_zone_idx, const Dictionary &p_zone_dict);
+	Dictionary get_selected_zone_metadata() const;
+	void select_entity_item(int p_bz_index);
+	int get_selected_bz_index() const { return selected_bz_idx; }
+	int add_entity_zone(const Dictionary &p_zone_dict = Dictionary());
+	bool remove_selected_entity_zone();
+	int duplicate_selected_entity_zone();
+	VBoxContainer *get_zone_props_host() const { return bz_zone_props_host; }
+
+	// API MODE_MOVEMENT
+	void set_movement_visual_data(const String &p_mode, double p_wander_radius, const Array &p_patrol_points, bool p_patrol_loop);
+	String get_movement_mode() const { return move_mode; }
+	double get_wander_radius() const { return wander_radius; }
+	Array get_patrol_points_data() const;
+	void select_patrol_point(int p_idx);
+	int get_selected_patrol_index() const { return selected_patrol_idx; }
+	int add_patrol_point(const Vector2 &p_tile_offset);
+	bool remove_selected_patrol_point();
 
 	void set_zoom(int p_zoom);
 	int get_zoom() const { return zoom; }

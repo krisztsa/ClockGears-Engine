@@ -39,7 +39,11 @@ Size2 ClockGearsShapeCanvas::get_minimum_size() const {
 
 Point2 ClockGearsShapeCanvas::get_canvas_origin() const {
 	Size2 csz = get_size();
-	return (csz * 0.5f).round();
+	Point2 base = (csz * 0.5f).round();
+	if (owner_editor) {
+		base += owner_editor->view_pan;
+	}
+	return base.round();
 }
 
 Vector2 ClockGearsShapeCanvas::screen_to_local(const Point2 &p_screen_pos) const {
@@ -274,65 +278,200 @@ void ClockGearsShapeCanvas::_notification(int p_what) {
 	}
 	draw_rect(frame_dest, Color(0.65f, 0.72f, 0.85f, 0.38f), false, 1.0f);
 
-	// 5. Hurtbox en azul
-	if (owner_editor->allow_hurtbox && owner_editor->hurtbox_data.enabled) {
-		bool is_sel = (owner_editor->selected_kind == ClockGearsShapeEditor::SEL_HURTBOX);
-		_draw_single_shape(
-				owner_editor->hurtbox_data.shape,
-				origin,
-				z,
-				Color(0.20f, 0.58f, 1.0f, 0.22f),
-				Color(0.28f, 0.72f, 1.0f, 0.96f),
-				CG_SE_TR("Hurtbox"),
-				is_sel);
-	}
-
-	// 6. Hitboxes en rojo
-	if (owner_editor->allow_hitboxes) {
-		int hb_count = owner_editor->hitbox_data.shapes.size();
-		for (int i = 0; i < hb_count; i++) {
-			bool is_sel = (owner_editor->selected_kind == ClockGearsShapeEditor::SEL_HITBOX && owner_editor->selected_hitbox_idx == i);
-			String lbl = (hb_count > 1) ? vformat("Hitbox #%d", i + 1) : String("Hitbox");
+	// 5..8 según editor_mode
+	if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_ANIMATION) {
+		// 5. Hurtbox en azul
+		if (owner_editor->allow_hurtbox && owner_editor->hurtbox_data.enabled) {
+			bool is_sel = (owner_editor->selected_kind == ClockGearsShapeEditor::SEL_HURTBOX);
 			_draw_single_shape(
-					owner_editor->hitbox_data.shapes[i],
+					owner_editor->hurtbox_data.shape,
 					origin,
 					z,
-					Color(0.95f, 0.22f, 0.22f, 0.26f),
-					Color(1.0f, 0.30f, 0.30f, 0.98f),
-					lbl,
+					Color(0.20f, 0.58f, 1.0f, 0.22f),
+					Color(0.28f, 0.72f, 1.0f, 0.96f),
+					CG_SE_TR("Hurtbox"),
 					is_sel);
 		}
-	}
 
-	// 7. Vista previa durante creación de forma o polígono en curso
-	if (owner_editor->create_drag_active) {
-		bool as_hurt = (owner_editor->current_target == ClockGearsShapeEditor::TARGET_HURTBOX || !owner_editor->allow_hitboxes);
-		Color dfill = as_hurt ? Color(0.20f, 0.58f, 1.0f, 0.22f) : Color(0.95f, 0.22f, 0.22f, 0.26f);
-		Color dbord = as_hurt ? Color(0.35f, 0.78f, 1.0f, 1.0f) : Color(1.0f, 0.40f, 0.40f, 1.0f);
-		_draw_single_shape(owner_editor->create_draft_shape, origin, z, dfill, dbord, "", false);
-	}
+		// 6. Hitboxes en rojo
+		if (owner_editor->allow_hitboxes) {
+			int hb_count = owner_editor->hitbox_data.shapes.size();
+			for (int i = 0; i < hb_count; i++) {
+				bool is_sel = (owner_editor->selected_kind == ClockGearsShapeEditor::SEL_HITBOX && owner_editor->selected_hitbox_idx == i);
+				String lbl = (hb_count > 1) ? vformat("Hitbox #%d", i + 1) : String("Hitbox");
+				_draw_single_shape(
+						owner_editor->hitbox_data.shapes[i],
+						origin,
+						z,
+						Color(0.95f, 0.22f, 0.22f, 0.26f),
+						Color(1.0f, 0.30f, 0.30f, 0.98f),
+						lbl,
+						is_sel);
+			}
+		}
 
-	if (!owner_editor->poly_draft_vertices.is_empty()) {
-		bool as_hurt = (owner_editor->current_target == ClockGearsShapeEditor::TARGET_HURTBOX || !owner_editor->allow_hitboxes);
-		Color pcol = as_hurt ? Color(0.35f, 0.78f, 1.0f, 1.0f) : Color(1.0f, 0.40f, 0.40f, 1.0f);
-		PackedVector2Array scr_pts;
-		for (int i = 0; i < owner_editor->poly_draft_vertices.size(); i++) {
-			Point2 sp = origin + owner_editor->poly_draft_vertices[i] * float(z);
-			scr_pts.push_back(sp);
-			draw_circle(sp, (i == 0 ? 5.5f : 4.0f) * CG_SE_EDSCALE, pcol);
+		// 7. Vista previa durante creación de forma o polígono en curso
+		if (owner_editor->create_drag_active) {
+			bool as_hurt = (owner_editor->current_target == ClockGearsShapeEditor::TARGET_HURTBOX || !owner_editor->allow_hitboxes);
+			Color dfill = as_hurt ? Color(0.20f, 0.58f, 1.0f, 0.22f) : Color(0.95f, 0.22f, 0.22f, 0.26f);
+			Color dbord = as_hurt ? Color(0.35f, 0.78f, 1.0f, 1.0f) : Color(1.0f, 0.40f, 0.40f, 1.0f);
+			_draw_single_shape(owner_editor->create_draft_shape, origin, z, dfill, dbord, "", false);
 		}
-		if (owner_editor->poly_hover_valid) {
-			scr_pts.push_back(origin + owner_editor->poly_hover_local * float(z));
-		}
-		if (scr_pts.size() >= 2) {
-			draw_polyline(scr_pts, pcol, 2.0f);
-		}
-	}
 
-	// 8. Ancla de arma
-	if (owner_editor->allow_weapon_anchor && owner_editor->weapon_anchor_data.enabled) {
-		bool is_sel = (owner_editor->selected_kind == ClockGearsShapeEditor::SEL_ANCHOR);
-		_draw_weapon_anchor(owner_editor->weapon_anchor_data, origin, z, is_sel);
+		if (!owner_editor->poly_draft_vertices.is_empty()) {
+			bool as_hurt = (owner_editor->current_target == ClockGearsShapeEditor::TARGET_HURTBOX || !owner_editor->allow_hitboxes);
+			Color pcol = as_hurt ? Color(0.35f, 0.78f, 1.0f, 1.0f) : Color(1.0f, 0.40f, 0.40f, 1.0f);
+			PackedVector2Array scr_pts;
+			for (int i = 0; i < owner_editor->poly_draft_vertices.size(); i++) {
+				Point2 sp = origin + owner_editor->poly_draft_vertices[i] * float(z);
+				scr_pts.push_back(sp);
+				draw_circle(sp, (i == 0 ? 5.5f : 4.0f) * CG_SE_EDSCALE, pcol);
+			}
+			if (owner_editor->poly_hover_valid) {
+				scr_pts.push_back(origin + owner_editor->poly_hover_local * float(z));
+			}
+			if (scr_pts.size() >= 2) {
+				draw_polyline(scr_pts, pcol, 2.0f);
+			}
+		}
+
+		// 8. Ancla de arma
+		if (owner_editor->allow_weapon_anchor && owner_editor->weapon_anchor_data.enabled) {
+			bool is_sel = (owner_editor->selected_kind == ClockGearsShapeEditor::SEL_ANCHOR);
+			_draw_weapon_anchor(owner_editor->weapon_anchor_data, origin, z, is_sel);
+		}
+	} else if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_BODY_ZONES) {
+		// Dibujar zonas ordenadas de mayor a menor área para que las zonas internas siempre queden encima
+		struct DrawItem {
+			int bz_idx; // -1 = cuerpo, >=0 = zona
+			float area;
+		};
+		Vector<DrawItem> items;
+		if (owner_editor->bz_allow_zones) {
+			for (int i = 0; i < owner_editor->bz_zones.size(); i++) {
+				items.push_back({ i, ClockGearsShapeEditor::_estimate_shape_area(owner_editor->bz_zones[i].shape) });
+			}
+		}
+		items.push_back({ -1, ClockGearsShapeEditor::_estimate_shape_area(owner_editor->body_shape) - 1000.0f });
+		// Orden descendente simple por área (el cuerpo va al final o según su área; dibujamos primero las más grandes)
+		for (int i = 0; i < items.size(); i++) {
+			for (int j = i + 1; j < items.size(); j++) {
+				if (items[j].area > items[i].area) {
+					DrawItem tmp = items[i];
+					items.write[i] = items[j];
+					items.write[j] = tmp;
+				}
+			}
+		}
+		for (int i = 0; i < items.size(); i++) {
+			int idx = items[i].bz_idx;
+			bool is_sel = (owner_editor->selected_bz_idx == idx);
+			if (idx < 0) {
+				Color c_fill = owner_editor->body_through ? Color(0.28f, 0.85f, 0.95f, 0.14f) : Color(0.18f, 0.72f, 1.0f, 0.26f);
+				Color c_bord = owner_editor->body_through ? Color(0.55f, 0.92f, 1.0f, 0.95f) : Color(0.32f, 0.84f, 1.0f, 1.0f);
+				String lbl = owner_editor->body_through ? CG_SE_TR("Cuerpo (Atravesable)") : CG_SE_TR("Cuerpo");
+				_draw_single_shape(owner_editor->body_shape, origin, z, c_fill, c_bord, lbl, is_sel);
+			} else {
+				Color zcol = ClockGearsShapeEditor::get_zone_color(idx);
+				Color zfill(zcol.r, zcol.g, zcol.b, is_sel ? 0.24f : 0.14f);
+				String zname = owner_editor->bz_zones[idx].name.strip_edges();
+				if (zname.is_empty()) {
+					zname = vformat(CG_SE_TR("Zona #%d"), idx + 1);
+				}
+				_draw_single_shape(owner_editor->bz_zones[idx].shape, origin, z, zfill, zcol, zname, is_sel);
+			}
+		}
+
+		// Borrador durante creación en Cuerpo y Zonas
+		Color draft_col = (owner_editor->selected_bz_idx >= 0)
+				? ClockGearsShapeEditor::get_zone_color(owner_editor->selected_bz_idx)
+				: Color(0.32f, 0.84f, 1.0f, 1.0f);
+		if (owner_editor->create_drag_active) {
+			_draw_single_shape(
+					owner_editor->create_draft_shape,
+					origin,
+					z,
+					Color(draft_col.r, draft_col.g, draft_col.b, 0.24f),
+					draft_col,
+					"",
+					false);
+		}
+		if (!owner_editor->poly_draft_vertices.is_empty()) {
+			PackedVector2Array scr_pts;
+			for (int i = 0; i < owner_editor->poly_draft_vertices.size(); i++) {
+				Point2 sp = origin + owner_editor->poly_draft_vertices[i] * float(z);
+				scr_pts.push_back(sp);
+				draw_circle(sp, (i == 0 ? 5.5f : 4.0f) * CG_SE_EDSCALE, draft_col);
+			}
+			if (owner_editor->poly_hover_valid) {
+				scr_pts.push_back(origin + owner_editor->poly_hover_local * float(z));
+			}
+			if (scr_pts.size() >= 2) {
+				draw_polyline(scr_pts, draft_col, 2.0f);
+			}
+		}
+	} else if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_MOVEMENT) {
+		Ref<Font> font = get_theme_default_font();
+		int fsize = MAX(9, int(10 * CG_SE_EDSCALE));
+
+		// Marca de origen (spawn)
+		draw_line(origin + Vector2(-8, 0), origin + Vector2(8, 0), Color(0.85f, 0.90f, 1.0f, 0.7f), 1.5f);
+		draw_line(origin + Vector2(0, -8), origin + Vector2(0, 8), Color(0.85f, 0.90f, 1.0f, 0.7f), 1.5f);
+
+		// Radio de vagar (en casillas -> 32 px)
+		if (owner_editor->move_mode == "vagar" || owner_editor->wander_radius > 0.01) {
+			bool active_vagar = (owner_editor->move_mode == "vagar");
+			float rad_px = float(MAX(0.0, owner_editor->wander_radius)) * CG_SHAPE_GRID_STEP * float(z);
+			Color wfill = active_vagar ? Color(0.20f, 0.85f, 0.75f, 0.16f) : Color(0.20f, 0.85f, 0.75f, 0.05f);
+			Color wline = active_vagar ? Color(0.28f, 0.95f, 0.84f, 0.98f) : Color(0.28f, 0.95f, 0.84f, 0.35f);
+			if (rad_px > 1.0f) {
+				draw_circle(origin, rad_px, wfill);
+				draw_arc(origin, rad_px, 0.0f, Math::TAU, 64, wline, active_vagar ? 2.2f : 1.2f);
+			}
+			if (active_vagar) {
+				Point2 hpt = origin + Vector2(rad_px, 0.0f);
+				draw_line(origin, hpt, Color(0.28f, 0.95f, 0.84f, 0.55f), 1.2f);
+				draw_circle(hpt, 6.0f * CG_SE_EDSCALE, Color(1.0f, 1.0f, 1.0f));
+				draw_arc(hpt, 6.0f * CG_SE_EDSCALE, 0.0f, Math::TAU, 16, wline, 1.8f);
+				if (font.is_valid()) {
+					String wlbl = vformat(CG_SE_TR("Radio de vagar: %.1f casillas"), owner_editor->wander_radius);
+					draw_string(font, hpt + Vector2(10.0f, -6.0f), wlbl, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, wline);
+				}
+			}
+		}
+
+		// Puntos de patrulla (en casillas -> 32 px)
+		int np = owner_editor->patrol_points.size();
+		if (owner_editor->move_mode == "patrulla" || np > 0) {
+			bool active_patrol = (owner_editor->move_mode == "patrulla");
+			Color line_col = active_patrol ? Color(1.0f, 0.75f, 0.25f, 0.95f) : Color(1.0f, 0.75f, 0.25f, 0.35f);
+			if (np >= 1) {
+				Point2 p0_scr = origin + owner_editor->patrol_points[0] * CG_SHAPE_GRID_STEP * float(z);
+				draw_line(origin, p0_scr, Color(line_col.r, line_col.g, line_col.b, line_col.a * 0.45f), 1.2f);
+			}
+			for (int i = 0; i + 1 < np; i++) {
+				Point2 a = origin + owner_editor->patrol_points[i] * CG_SHAPE_GRID_STEP * float(z);
+				Point2 b = origin + owner_editor->patrol_points[i + 1] * CG_SHAPE_GRID_STEP * float(z);
+				draw_line(a, b, line_col, active_patrol ? 2.2f : 1.4f);
+			}
+			if (owner_editor->patrol_loop && np >= 2) {
+				Point2 a = origin + owner_editor->patrol_points[np - 1] * CG_SHAPE_GRID_STEP * float(z);
+				Point2 b = origin + owner_editor->patrol_points[0] * CG_SHAPE_GRID_STEP * float(z);
+				draw_line(a, b, Color(0.45f, 0.92f, 0.55f, line_col.a), active_patrol ? 2.0f : 1.2f);
+			}
+			for (int i = 0; i < np; i++) {
+				Point2 p_scr = origin + owner_editor->patrol_points[i] * CG_SHAPE_GRID_STEP * float(z);
+				bool is_sel = (active_patrol && owner_editor->selected_patrol_idx == i);
+				Color pt_col = is_sel ? Color(1.0f, 0.95f, 0.40f) : line_col;
+				float pr = (is_sel ? 8.5f : 6.5f) * CG_SE_EDSCALE;
+				draw_circle(p_scr, pr, pt_col);
+				draw_arc(p_scr, pr, 0.0f, Math::TAU, 18, Color(0.10f, 0.12f, 0.16f, 0.95f), 1.6f);
+				if (font.is_valid()) {
+					String idx_str = itos(i + 1);
+					draw_string(font, p_scr + Vector2(9.0f * CG_SE_EDSCALE, -5.0f), idx_str, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, pt_col);
+				}
+			}
+		}
 	}
 }
 
@@ -376,6 +515,101 @@ void ClockGearsShapeCanvas::handle_canvas_event(const Ref<InputEvent> &p_event) 
 		Vector2 snapped_local = owner_editor->_maybe_snap_local(raw_local);
 		Point2 origin = get_canvas_origin();
 
+		// Desplazamiento de vista con botón central (o Alt + arrastrar) para zonas grandes
+		if (btn == MouseButton::MIDDLE || (btn == MouseButton::LEFT && mb->is_alt_pressed())) {
+			if (mb->is_pressed()) {
+				owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_PAN_VIEW;
+				owner_editor->pan_start_screen = scr;
+				owner_editor->pan_start_offset = owner_editor->view_pan;
+			} else if (owner_editor->drag_kind == ClockGearsShapeEditor::DRAG_PAN_VIEW) {
+				owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_NONE;
+			}
+			accept_event();
+			return;
+		}
+
+		// Modo MOVIMIENTO (radio de vagar y puntos de patrulla sobre el lienzo)
+		if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_MOVEMENT) {
+			if (btn == MouseButton::RIGHT && mb->is_pressed() && owner_editor->move_mode == "patrulla") {
+				float hit_thresh = 13.0f * CG_SE_EDSCALE;
+				for (int i = owner_editor->patrol_points.size() - 1; i >= 0; i--) {
+					Point2 p_scr = local_to_screen(owner_editor->patrol_points[i] * CG_SHAPE_GRID_STEP);
+					if (scr.distance_to(p_scr) <= hit_thresh) {
+						owner_editor->patrol_points.remove_at(i);
+						if (owner_editor->selected_patrol_idx >= owner_editor->patrol_points.size()) {
+							owner_editor->selected_patrol_idx = owner_editor->patrol_points.size() - 1;
+						}
+						owner_editor->_update_toolbar_states();
+						owner_editor->emit_signal("movement_visual_changed");
+						queue_redraw();
+						accept_event();
+						return;
+					}
+				}
+			}
+
+			if (btn == MouseButton::LEFT) {
+				if (mb->is_pressed()) {
+					grab_focus();
+					if (owner_editor->move_mode == "vagar") {
+						float z = float(MAX(1, owner_editor->get_zoom()));
+						float rad_local = float(MAX(0.0, owner_editor->wander_radius)) * CG_SHAPE_GRID_STEP;
+						Point2 handle_scr = origin + Vector2(rad_local * z, 0.0f);
+						float dist_to_ring = Math::abs(scr.distance_to(origin) - rad_local * z);
+						if (scr.distance_to(handle_scr) <= 14.0f * CG_SE_EDSCALE || dist_to_ring <= 10.0f * CG_SE_EDSCALE) {
+							owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_WANDER_RADIUS;
+							owner_editor->selected_kind = ClockGearsShapeEditor::SEL_WANDER_RADIUS;
+							accept_event();
+							return;
+						}
+					} else if (owner_editor->move_mode == "patrulla") {
+						float hit_thresh = 13.0f * CG_SE_EDSCALE;
+						for (int i = owner_editor->patrol_points.size() - 1; i >= 0; i--) {
+							Point2 p_scr = local_to_screen(owner_editor->patrol_points[i] * CG_SHAPE_GRID_STEP);
+							if (scr.distance_to(p_scr) <= hit_thresh) {
+								owner_editor->selected_patrol_idx = i;
+								owner_editor->selected_kind = ClockGearsShapeEditor::SEL_PATROL_POINT;
+								owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_PATROL_POINT;
+								owner_editor->drag_start_local = raw_local;
+								owner_editor->drag_initial_patrol_pt = owner_editor->patrol_points[i];
+								owner_editor->_update_toolbar_states();
+								owner_editor->emit_signal("movement_visual_changed");
+								queue_redraw();
+								accept_event();
+								return;
+							}
+						}
+						// Clic en vacío -> colocar nuevo punto de patrulla (en casillas relativas)
+						Vector2 target_px = owner_editor->snap_enabled ? snapped_local : raw_local;
+						Vector2 tile_pt(
+								Math::round((target_px.x / CG_SHAPE_GRID_STEP) * 4.0f) / 4.0f,
+								Math::round((target_px.y / CG_SHAPE_GRID_STEP) * 4.0f) / 4.0f);
+						owner_editor->patrol_points.push_back(tile_pt);
+						owner_editor->selected_patrol_idx = owner_editor->patrol_points.size() - 1;
+						owner_editor->selected_kind = ClockGearsShapeEditor::SEL_PATROL_POINT;
+						owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_PATROL_POINT;
+						owner_editor->drag_start_local = raw_local;
+						owner_editor->drag_initial_patrol_pt = tile_pt;
+						owner_editor->_update_toolbar_states();
+						owner_editor->emit_signal("movement_visual_changed");
+						queue_redraw();
+						accept_event();
+						return;
+					}
+					accept_event();
+					return;
+				} else if (owner_editor->drag_kind == ClockGearsShapeEditor::DRAG_WANDER_RADIUS ||
+						owner_editor->drag_kind == ClockGearsShapeEditor::DRAG_PATROL_POINT) {
+					owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_NONE;
+					owner_editor->emit_signal("movement_visual_changed");
+					queue_redraw();
+					accept_event();
+					return;
+				}
+			}
+			return;
+		}
+
 		if (btn == MouseButton::RIGHT && mb->is_pressed()) {
 			if (owner_editor->current_tool == ClockGearsShapeEditor::TOOL_POLYGON) {
 				if (owner_editor->poly_draft_vertices.size() >= 3) {
@@ -387,10 +621,12 @@ void ClockGearsShapeCanvas::handle_canvas_event(const Ref<InputEvent> &p_event) 
 				accept_event();
 				return;
 			}
-			owner_editor->selected_kind = ClockGearsShapeEditor::SEL_NONE;
-			owner_editor->selected_hitbox_idx = -1;
-			owner_editor->_sync_selected_shape_controls();
-			queue_redraw();
+			if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_ANIMATION) {
+				owner_editor->selected_kind = ClockGearsShapeEditor::SEL_NONE;
+				owner_editor->selected_hitbox_idx = -1;
+				owner_editor->_sync_selected_shape_controls();
+				queue_redraw();
+			}
 			accept_event();
 			return;
 		}
@@ -437,8 +673,10 @@ void ClockGearsShapeCanvas::handle_canvas_event(const Ref<InputEvent> &p_event) 
 					return;
 				}
 
-				// TOOL_SELECT: 1) Ancla de arma si está habilitada y se pulsa cerca
-				if (owner_editor->allow_weapon_anchor && owner_editor->weapon_anchor_data.enabled) {
+				// TOOL_SELECT:
+				// 1) Ancla de arma si está habilitada y se pulsa cerca (solo MODE_ANIMATION)
+				if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_ANIMATION &&
+						owner_editor->allow_weapon_anchor && owner_editor->weapon_anchor_data.enabled) {
 					Point2 anc_scr = local_to_screen(owner_editor->weapon_anchor_data.position);
 					if (scr.distance_to(anc_scr) <= 12.0f * CG_SE_EDSCALE) {
 						owner_editor->selected_kind = ClockGearsShapeEditor::SEL_ANCHOR;
@@ -467,6 +705,43 @@ void ClockGearsShapeCanvas::handle_canvas_event(const Ref<InputEvent> &p_event) 
 						accept_event();
 						return;
 					}
+				}
+
+				if (owner_editor->editor_mode == ClockGearsShapeEditor::MODE_BODY_ZONES) {
+					// Escoger la forma golpeada de MENOR área para que las zonas grandes no tapen el Cuerpo ni zonas interiores
+					int best_bz = -99;
+					float best_area = 1e18f;
+					if (owner_editor->_hit_test_shape(owner_editor->body_shape, raw_local)) {
+						best_bz = -1;
+						best_area = ClockGearsShapeEditor::_estimate_shape_area(owner_editor->body_shape) * 0.99f;
+					}
+					if (owner_editor->bz_allow_zones) {
+						for (int i = 0; i < owner_editor->bz_zones.size(); i++) {
+							if (owner_editor->_hit_test_shape(owner_editor->bz_zones[i].shape, raw_local)) {
+								float area = ClockGearsShapeEditor::_estimate_shape_area(owner_editor->bz_zones[i].shape);
+								if (area < best_area) {
+									best_area = area;
+									best_bz = i;
+								}
+							}
+						}
+					}
+					if (best_bz != -99) {
+						owner_editor->selected_bz_idx = best_bz;
+						owner_editor->selected_kind = (best_bz < 0) ? ClockGearsShapeEditor::SEL_BODY : ClockGearsShapeEditor::SEL_ZONE;
+						owner_editor->drag_kind = ClockGearsShapeEditor::DRAG_MOVE_SHAPE;
+						owner_editor->drag_start_local = raw_local;
+						owner_editor->drag_initial_shape = (best_bz < 0) ? owner_editor->body_shape : owner_editor->bz_zones[best_bz].shape;
+						owner_editor->_refresh_bz_list();
+						owner_editor->_sync_inspector_from_data();
+						owner_editor->_update_toolbar_states();
+						owner_editor->emit_signal("body_zone_selected", best_bz);
+						queue_redraw();
+						accept_event();
+						return;
+					}
+					accept_event();
+					return;
 				}
 
 				// 3) Hitbox shapes (de arriba abajo)
@@ -549,6 +824,44 @@ void ClockGearsShapeCanvas::handle_canvas_event(const Ref<InputEvent> &p_event) 
 		Point2 scr = mm->get_position();
 		Vector2 raw_local = screen_to_local(scr);
 		Vector2 snapped_local = owner_editor->_maybe_snap_local(raw_local);
+
+		if (owner_editor->drag_kind == ClockGearsShapeEditor::DRAG_PAN_VIEW) {
+			owner_editor->view_pan = owner_editor->pan_start_offset + (scr - owner_editor->pan_start_screen);
+			queue_redraw();
+			accept_event();
+			return;
+		}
+
+		if (owner_editor->drag_kind == ClockGearsShapeEditor::DRAG_WANDER_RADIUS) {
+			double tiles = MAX(0.5, double(raw_local.length() / CG_SHAPE_GRID_STEP));
+			if (owner_editor->snap_enabled) {
+				tiles = Math::round(tiles * 2.0) / 2.0;
+			} else {
+				tiles = Math::round(tiles * 10.0) / 10.0;
+			}
+			owner_editor->wander_radius = MAX(0.5, tiles);
+			owner_editor->emit_signal("movement_visual_changed");
+			queue_redraw();
+			accept_event();
+			return;
+		}
+
+		if (owner_editor->drag_kind == ClockGearsShapeEditor::DRAG_PATROL_POINT &&
+				owner_editor->selected_patrol_idx >= 0 &&
+				owner_editor->selected_patrol_idx < owner_editor->patrol_points.size()) {
+			Vector2 delta_px = raw_local - owner_editor->drag_start_local;
+			Vector2 new_px = owner_editor->drag_initial_patrol_pt * CG_SHAPE_GRID_STEP + delta_px;
+			if (owner_editor->snap_enabled) {
+				new_px = owner_editor->_maybe_snap_local(new_px);
+			}
+			owner_editor->patrol_points.write[owner_editor->selected_patrol_idx] = Vector2(
+					Math::round((new_px.x / CG_SHAPE_GRID_STEP) * 4.0f) / 4.0f,
+					Math::round((new_px.y / CG_SHAPE_GRID_STEP) * 4.0f) / 4.0f);
+			owner_editor->emit_signal("movement_visual_changed");
+			queue_redraw();
+			accept_event();
+			return;
+		}
 
 		if (owner_editor->current_tool == ClockGearsShapeEditor::TOOL_POLYGON && !owner_editor->poly_draft_vertices.is_empty()) {
 			owner_editor->poly_hover_local = snapped_local;
@@ -711,6 +1024,30 @@ void ClockGearsShapeEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_tool", "tool"), &ClockGearsShapeEditor::set_tool);
 	ClassDB::bind_method(D_METHOD("get_tool"), &ClockGearsShapeEditor::get_tool);
 
+	ClassDB::bind_method(D_METHOD("set_editor_mode", "mode"), &ClockGearsShapeEditor::set_editor_mode);
+	ClassDB::bind_method(D_METHOD("get_editor_mode"), &ClockGearsShapeEditor::get_editor_mode);
+	ClassDB::bind_method(D_METHOD("set_body_zones_config", "allow_zones"), &ClockGearsShapeEditor::set_body_zones_config);
+	ClassDB::bind_method(D_METHOD("set_body_zones_data", "body_shape", "body_through", "zones"), &ClockGearsShapeEditor::set_body_zones_data);
+	ClassDB::bind_method(D_METHOD("get_body_shape_data"), &ClockGearsShapeEditor::get_body_shape_data);
+	ClassDB::bind_method(D_METHOD("is_body_through"), &ClockGearsShapeEditor::is_body_through);
+	ClassDB::bind_method(D_METHOD("get_zones_data"), &ClockGearsShapeEditor::get_zones_data);
+	ClassDB::bind_method(D_METHOD("set_selected_zone_metadata", "zone_idx", "zone_dict"), &ClockGearsShapeEditor::set_selected_zone_metadata);
+	ClassDB::bind_method(D_METHOD("get_selected_zone_metadata"), &ClockGearsShapeEditor::get_selected_zone_metadata);
+	ClassDB::bind_method(D_METHOD("select_entity_item", "bz_index"), &ClockGearsShapeEditor::select_entity_item);
+	ClassDB::bind_method(D_METHOD("get_selected_bz_index"), &ClockGearsShapeEditor::get_selected_bz_index);
+	ClassDB::bind_method(D_METHOD("add_entity_zone", "zone_dict"), &ClockGearsShapeEditor::add_entity_zone, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("remove_selected_entity_zone"), &ClockGearsShapeEditor::remove_selected_entity_zone);
+	ClassDB::bind_method(D_METHOD("duplicate_selected_entity_zone"), &ClockGearsShapeEditor::duplicate_selected_entity_zone);
+
+	ClassDB::bind_method(D_METHOD("set_movement_visual_data", "mode", "wander_radius", "patrol_points", "patrol_loop"), &ClockGearsShapeEditor::set_movement_visual_data);
+	ClassDB::bind_method(D_METHOD("get_movement_mode"), &ClockGearsShapeEditor::get_movement_mode);
+	ClassDB::bind_method(D_METHOD("get_wander_radius"), &ClockGearsShapeEditor::get_wander_radius);
+	ClassDB::bind_method(D_METHOD("get_patrol_points_data"), &ClockGearsShapeEditor::get_patrol_points_data);
+	ClassDB::bind_method(D_METHOD("select_patrol_point", "index"), &ClockGearsShapeEditor::select_patrol_point);
+	ClassDB::bind_method(D_METHOD("get_selected_patrol_index"), &ClockGearsShapeEditor::get_selected_patrol_index);
+	ClassDB::bind_method(D_METHOD("add_patrol_point", "tile_offset"), &ClockGearsShapeEditor::add_patrol_point);
+	ClassDB::bind_method(D_METHOD("remove_selected_patrol_point"), &ClockGearsShapeEditor::remove_selected_patrol_point);
+
 	ClassDB::bind_method(D_METHOD("add_hitbox_shape", "shape_dict"), &ClockGearsShapeEditor::add_hitbox_shape);
 	ClassDB::bind_method(D_METHOD("set_hurtbox_shape", "shape_dict"), &ClockGearsShapeEditor::set_hurtbox_shape);
 	ClassDB::bind_method(D_METHOD("finish_polygon"), &ClockGearsShapeEditor::finish_polygon);
@@ -721,6 +1058,9 @@ void ClockGearsShapeEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_shape_canvas"), &ClockGearsShapeEditor::get_shape_canvas);
 
 	ADD_SIGNAL(MethodInfo("shape_data_changed"));
+	ADD_SIGNAL(MethodInfo("body_zones_changed"));
+	ADD_SIGNAL(MethodInfo("body_zone_selected", PropertyInfo(Variant::INT, "index")));
+	ADD_SIGNAL(MethodInfo("movement_visual_changed"));
 }
 
 void ClockGearsShapeEditor::_notification(int p_what) {
@@ -770,6 +1110,11 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 	btn_snap->connect("toggled", callable_mp(this, &ClockGearsShapeEditor::_on_snap_toggled));
 	top_bar->add_child(btn_snap);
 
+	btn_center_view = memnew(Button(CG_SE_TR("Centrar")));
+	btn_center_view->set_custom_minimum_size(Size2(74.0f * CG_SE_EDSCALE, btn_h));
+	btn_center_view->connect("pressed", callable_mp(this, &ClockGearsShapeEditor::_on_center_view_pressed));
+	top_bar->add_child(btn_center_view);
+
 	// Barra 2: Destino (Hitbox/Hurtbox) + Herramientas de forma
 	tools_bar = memnew(HFlowContainer);
 	tools_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -777,8 +1122,8 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 	tools_bar->add_theme_constant_override("v_separation", int(6.0f * CG_SE_EDSCALE));
 	add_child(tools_bar);
 
-	Label *lbl_tgt = memnew(Label(CG_SE_TR("Capa:")));
-	tools_bar->add_child(lbl_tgt);
+	lbl_tgt_hdr = memnew(Label(CG_SE_TR("Capa:")));
+	tools_bar->add_child(lbl_tgt_hdr);
 
 	btn_target_hitbox = memnew(Button(CG_SE_TR("Hitbox (Rojo)")));
 	btn_target_hitbox->set_custom_minimum_size(Size2(98.0f * CG_SE_EDSCALE, btn_h));
@@ -848,7 +1193,7 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 
 	// Panel Inspector derecho (ancho compacto pero cómodo, sin scroll horizontal)
 	inspector_panel = memnew(PanelContainer);
-	inspector_panel->set_custom_minimum_size(Size2(290.0f * CG_SE_EDSCALE, 0));
+	inspector_panel->set_custom_minimum_size(Size2(304.0f * CG_SE_EDSCALE, 0));
 	inspector_panel->set_h_size_flags(Control::SIZE_FILL);
 	inspector_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	Ref<StyleBoxFlat> ins_sb = _make_rounded_btn_style(Color(0.13f, 0.15f, 0.20f, 0.95f), Color(0.28f, 0.33f, 0.44f, 0.85f), 8);
@@ -856,10 +1201,83 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 	inspector_panel->add_theme_style_override("panel", ins_sb);
 	workspace_hb->add_child(inspector_panel);
 
+	inspector_scroll = memnew(ScrollContainer);
+	inspector_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	inspector_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	inspector_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	inspector_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	inspector_panel->add_child(inspector_scroll);
+
 	inspector_vbox = memnew(VBoxContainer);
 	inspector_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	inspector_vbox->add_theme_constant_override("separation", int(8.0f * CG_SE_EDSCALE));
-	inspector_panel->add_child(inspector_vbox);
+	inspector_scroll->add_child(inspector_vbox);
+
+	// Sección Cuerpo y Zonas (MODE_BODY_ZONES)
+	bz_sec = memnew(VBoxContainer);
+	bz_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_sec->add_theme_constant_override("separation", int(6.0f * CG_SE_EDSCALE));
+	bz_sec->hide();
+	inspector_vbox->add_child(bz_sec);
+
+	bz_list_box = memnew(VBoxContainer);
+	bz_list_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_list_box->add_theme_constant_override("separation", int(6.0f * CG_SE_EDSCALE));
+	bz_sec->add_child(bz_list_box);
+
+	Label *lbl_bz_hdr = memnew(Label(CG_SE_TR("Cuerpo y zonas de detección")));
+	lbl_bz_hdr->add_theme_color_override("font_color", Color(0.55f, 0.85f, 1.0f));
+	bz_list_box->add_child(lbl_bz_hdr);
+
+	bz_list = memnew(ItemList);
+	bz_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_list->set_custom_minimum_size(Size2(0, 112.0f * CG_SE_EDSCALE));
+	bz_list->set_allow_reselect(true);
+	Ref<StyleBoxFlat> bzl_sb = _make_rounded_btn_style(Color(0.10f, 0.12f, 0.16f, 0.96f), Color(0.28f, 0.34f, 0.45f, 0.85f), 6);
+	bz_list->add_theme_style_override("panel", bzl_sb);
+	bz_list->connect("item_selected", callable_mp(this, &ClockGearsShapeEditor::_on_bz_list_selected));
+	bz_list_box->add_child(bz_list);
+
+	HBoxContainer *bz_btn_row = memnew(HBoxContainer);
+	bz_btn_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_btn_row->add_theme_constant_override("separation", int(6.0f * CG_SE_EDSCALE));
+	bz_list_box->add_child(bz_btn_row);
+
+	btn_bz_add = memnew(Button(CG_SE_TR("+ Zona")));
+	btn_bz_add->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_bz_add->set_custom_minimum_size(Size2(0, btn_h));
+	_apply_rounded_button_styles(btn_bz_add, false, Color(0.26f, 0.72f, 0.42f));
+	btn_bz_add->connect("pressed", callable_mp(this, &ClockGearsShapeEditor::_on_bz_add_pressed));
+	bz_btn_row->add_child(btn_bz_add);
+
+	btn_bz_remove = memnew(Button(CG_SE_TR("-")));
+	btn_bz_remove->set_custom_minimum_size(Size2(38.0f * CG_SE_EDSCALE, btn_h));
+	_apply_rounded_button_styles(btn_bz_remove, false, Color(0.88f, 0.32f, 0.32f));
+	btn_bz_remove->connect("pressed", callable_mp(this, &ClockGearsShapeEditor::_on_bz_remove_pressed));
+	bz_btn_row->add_child(btn_bz_remove);
+
+	btn_bz_dup = memnew(Button(CG_SE_TR("Duplicar")));
+	btn_bz_dup->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_bz_dup->set_custom_minimum_size(Size2(0, btn_h));
+	_apply_rounded_button_styles(btn_bz_dup, false, Color(0.32f, 0.58f, 0.92f));
+	btn_bz_dup->connect("pressed", callable_mp(this, &ClockGearsShapeEditor::_on_bz_dup_pressed));
+	bz_btn_row->add_child(btn_bz_dup);
+
+	chk_body_through = memnew(CheckBox(CG_SE_TR("Atravesable (no bloquea el paso)")));
+	chk_body_through->connect("toggled", callable_mp(this, &ClockGearsShapeEditor::_on_body_through_toggled));
+	bz_sec->add_child(chk_body_through);
+
+	bz_name_row = memnew(HBoxContainer);
+	bz_name_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_name_row->add_theme_constant_override("separation", int(6.0f * CG_SE_EDSCALE));
+	bz_sec->add_child(bz_name_row);
+
+	bz_name_row->add_child(memnew(Label(CG_SE_TR("Nombre:"))));
+	bz_name_edit = memnew(LineEdit);
+	bz_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_name_edit->set_placeholder(CG_SE_TR("Ej. Visión / Ataque"));
+	bz_name_edit->connect("text_changed", callable_mp(this, &ClockGearsShapeEditor::_on_bz_name_changed));
+	bz_name_row->add_child(bz_name_edit);
 
 	auto make_slider_spin_row = [&](VBoxContainer *p_parent, const String &p_title, double p_smin, double p_smax, double p_spin_max, double p_step, HSlider *&r_sl, SpinBox *&r_sp) {
 		VBoxContainer *pair = memnew(VBoxContainer);
@@ -968,11 +1386,18 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 	};
 
 	Label *dummy_lbl = nullptr;
-	make_num_cell(CG_SE_TR("Centro X:"), -512, 512, sel_off_x_spin, dummy_lbl);
-	make_num_cell(CG_SE_TR("Centro Y:"), -512, 512, sel_off_y_spin, dummy_lbl);
-	make_num_cell(CG_SE_TR("Ancho / Radio:"), 1, 512, sel_dim1_spin, lbl_sel_dim1);
-	make_num_cell(CG_SE_TR("Alto:"), 1, 512, sel_dim2_spin, lbl_sel_dim2);
+	make_num_cell(CG_SE_TR("Centro X:"), -2048, 2048, sel_off_x_spin, dummy_lbl);
+	make_num_cell(CG_SE_TR("Centro Y:"), -2048, 2048, sel_off_y_spin, dummy_lbl);
+	make_num_cell(CG_SE_TR("Ancho / Radio:"), 1, 2048, sel_dim1_spin, lbl_sel_dim1);
+	make_num_cell(CG_SE_TR("Alto:"), 1, 2048, sel_dim2_spin, lbl_sel_dim2);
 	make_num_cell(CG_SE_TR("Rotación (°):"), -360, 360, sel_rot_spin, dummy_lbl);
+
+	// Contenedor host para propiedades específicas de la zona seleccionada (inyectado por la Base de Datos)
+	bz_zone_props_host = memnew(VBoxContainer);
+	bz_zone_props_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bz_zone_props_host->add_theme_constant_override("separation", int(6.0f * CG_SE_EDSCALE));
+	bz_zone_props_host->hide();
+	inspector_vbox->add_child(bz_zone_props_host);
 
 	// Sección Ancla de arma
 	anchor_sec = memnew(VBoxContainer);
@@ -1034,7 +1459,51 @@ Vector2 ClockGearsShapeEditor::_maybe_snap_local(const Vector2 &p_local) const {
 			Math::round(p_local.y / CG_SHAPE_GRID_STEP) * CG_SHAPE_GRID_STEP);
 }
 
+float ClockGearsShapeEditor::_estimate_shape_area(const ClockGearsHitShape &p_shape) {
+	if (p_shape.type == CG_SHAPE_CIRCLE) {
+		float r = MAX(1.0f, p_shape.get_radius());
+		return float(Math::PI) * r * r;
+	}
+	if (p_shape.type == CG_SHAPE_RECT || p_shape.type == CG_SHAPE_CAPSULE) {
+		return MAX(1.0f, p_shape.size.x) * MAX(1.0f, p_shape.size.y);
+	}
+	if (p_shape.type == CG_SHAPE_POLYGON && !p_shape.vertices.is_empty()) {
+		Vector2 mn = p_shape.vertices[0];
+		Vector2 mx = p_shape.vertices[0];
+		for (int i = 1; i < p_shape.vertices.size(); i++) {
+			mn.x = MIN(mn.x, p_shape.vertices[i].x);
+			mn.y = MIN(mn.y, p_shape.vertices[i].y);
+			mx.x = MAX(mx.x, p_shape.vertices[i].x);
+			mx.y = MAX(mx.y, p_shape.vertices[i].y);
+		}
+		return MAX(1.0f, (mx.x - mn.x) * (mx.y - mn.y));
+	}
+	return 100.0f;
+}
+
+Color ClockGearsShapeEditor::get_zone_color(int p_index) {
+	static const Color k_palette[6] = {
+		Color(1.00f, 0.70f, 0.22f, 1.0f), // Ámbar / Naranja
+		Color(0.32f, 0.88f, 0.45f, 1.0f), // Verde
+		Color(0.84f, 0.44f, 0.98f, 1.0f), // Violeta
+		Color(0.98f, 0.36f, 0.56f, 1.0f), // Rosa / Coral
+		Color(0.66f, 0.94f, 0.30f, 1.0f), // Lima
+		Color(1.00f, 0.88f, 0.28f, 1.0f), // Dorado
+	};
+	int idx = (p_index >= 0) ? (p_index % 6) : 0;
+	return k_palette[idx];
+}
+
 ClockGearsHitShape *ClockGearsShapeEditor::_get_mutable_selected_shape() {
+	if (editor_mode == MODE_BODY_ZONES) {
+		if (selected_bz_idx < 0) {
+			return &body_shape;
+		}
+		if (bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()) {
+			return &bz_zones.write[selected_bz_idx].shape;
+		}
+		return nullptr;
+	}
 	if (selected_kind == SEL_HITBOX && allow_hitboxes &&
 			selected_hitbox_idx >= 0 && selected_hitbox_idx < hitbox_data.shapes.size()) {
 		return &hitbox_data.shapes.write[selected_hitbox_idx];
@@ -1046,6 +1515,15 @@ ClockGearsHitShape *ClockGearsShapeEditor::_get_mutable_selected_shape() {
 }
 
 const ClockGearsHitShape *ClockGearsShapeEditor::_get_const_selected_shape() const {
+	if (editor_mode == MODE_BODY_ZONES) {
+		if (selected_bz_idx < 0) {
+			return &body_shape;
+		}
+		if (bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()) {
+			return &bz_zones[selected_bz_idx].shape;
+		}
+		return nullptr;
+	}
 	if (selected_kind == SEL_HITBOX && allow_hitboxes &&
 			selected_hitbox_idx >= 0 && selected_hitbox_idx < hitbox_data.shapes.size()) {
 		return &hitbox_data.shapes[selected_hitbox_idx];
@@ -1121,6 +1599,24 @@ int ClockGearsShapeEditor::_hit_test_handles(const ClockGearsHitShape &p_shape, 
 }
 
 void ClockGearsShapeEditor::_commit_created_shape(const ClockGearsHitShape &p_shape) {
+	if (editor_mode == MODE_BODY_ZONES) {
+		if (selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size() && bz_allow_zones) {
+			bz_zones.write[selected_bz_idx].shape = p_shape;
+			selected_kind = SEL_ZONE;
+		} else {
+			selected_bz_idx = -1;
+			body_shape = p_shape;
+			selected_kind = SEL_BODY;
+		}
+		_refresh_bz_list();
+		_sync_inspector_from_data();
+		_update_toolbar_states();
+		if (canvas) {
+			canvas->queue_redraw();
+		}
+		_emit_shape_changed();
+		return;
+	}
 	if (current_target == TARGET_HITBOX && allow_hitboxes) {
 		hitbox_data.shapes.push_back(p_shape);
 		selected_kind = SEL_HITBOX;
@@ -1144,7 +1640,7 @@ void ClockGearsShapeEditor::_sync_selected_shape_controls() {
 		return;
 	}
 	const ClockGearsHitShape *sh = _get_const_selected_shape();
-	if (!sh) {
+	if (!sh || editor_mode == MODE_MOVEMENT) {
 		sel_shape_sec->set_visible(false);
 		return;
 	}
@@ -1153,6 +1649,14 @@ void ClockGearsShapeEditor::_sync_selected_shape_controls() {
 	updating_controls = true;
 
 	String kind_txt = (selected_kind == SEL_HITBOX) ? CG_SE_TR("Hitbox") : CG_SE_TR("Hurtbox");
+	if (editor_mode == MODE_BODY_ZONES) {
+		if (selected_bz_idx < 0) {
+			kind_txt = CG_SE_TR("Cuerpo");
+		} else if (selected_bz_idx < bz_zones.size()) {
+			String zn = bz_zones[selected_bz_idx].name.strip_edges();
+			kind_txt = zn.is_empty() ? vformat(CG_SE_TR("Zona #%d"), selected_bz_idx + 1) : zn;
+		}
+	}
 	if (lbl_sel_shape_title) {
 		String tname = CG_SE_TR("Rectángulo");
 		if (sh->type == CG_SHAPE_CIRCLE) tname = CG_SE_TR("Círculo");
@@ -1194,8 +1698,44 @@ void ClockGearsShapeEditor::_sync_inspector_from_data() {
 	bool prev = updating_controls;
 	updating_controls = true;
 
+	bool is_anim = (editor_mode == MODE_ANIMATION);
+	bool is_bz = (editor_mode == MODE_BODY_ZONES);
+	bool is_mov = (editor_mode == MODE_MOVEMENT);
+
+	if (inspector_panel) {
+		inspector_panel->set_visible(!is_mov);
+	}
+
+	if (bz_sec) {
+		bz_sec->set_visible(is_bz);
+	}
+	if (bz_list_box) {
+		bz_list_box->set_visible(is_bz && bz_allow_zones);
+	}
+	if (btn_bz_remove) {
+		btn_bz_remove->set_disabled(!(is_bz && bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()));
+	}
+	if (btn_bz_dup) {
+		btn_bz_dup->set_disabled(!(is_bz && bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()));
+	}
+	if (chk_body_through) {
+		chk_body_through->set_visible(is_bz && selected_bz_idx < 0);
+		chk_body_through->set_pressed(body_through);
+	}
+	if (bz_name_row) {
+		bz_name_row->set_visible(is_bz && bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size());
+	}
+	if (bz_name_edit && is_bz && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()) {
+		if (bz_name_edit->get_text() != bz_zones[selected_bz_idx].name) {
+			bz_name_edit->set_text(bz_zones[selected_bz_idx].name);
+		}
+	}
+	if (bz_zone_props_host) {
+		bz_zone_props_host->set_visible(is_bz && bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size());
+	}
+
 	if (hitbox_sec) {
-		hitbox_sec->set_visible(allow_hitboxes);
+		hitbox_sec->set_visible(is_anim && allow_hitboxes);
 	}
 	if (hb_dmg_slider) hb_dmg_slider->set_value(hitbox_data.damage_mult_pct);
 	if (hb_dmg_spin) hb_dmg_spin->set_value(hitbox_data.damage_mult_pct);
@@ -1205,7 +1745,7 @@ void ClockGearsShapeEditor::_sync_inspector_from_data() {
 	if (hb_hitstop_spin) hb_hitstop_spin->set_value(hitbox_data.hitstop_ms);
 
 	if (hurtbox_sec) {
-		hurtbox_sec->set_visible(allow_hurtbox);
+		hurtbox_sec->set_visible(is_anim && allow_hurtbox);
 	}
 	if (chk_hurtbox_override) chk_hurtbox_override->set_pressed(has_hurtbox_override);
 	if (lbl_hurtbox_mode) {
@@ -1218,7 +1758,7 @@ void ClockGearsShapeEditor::_sync_inspector_from_data() {
 	if (hurt_dmg_spin) hurt_dmg_spin->set_value(hurtbox_data.damage_mult_pct);
 
 	if (anchor_sec) {
-		anchor_sec->set_visible(allow_weapon_anchor);
+		anchor_sec->set_visible(is_anim && allow_weapon_anchor);
 	}
 	if (chk_anchor_enabled) chk_anchor_enabled->set_pressed(weapon_anchor_data.enabled);
 	if (anchor_x_spin) {
@@ -1254,42 +1794,105 @@ void ClockGearsShapeEditor::_update_toolbar_states() {
 		btn_snap->set_pressed_no_signal(snap_enabled);
 		_apply_rounded_button_styles(btn_snap, snap_enabled, Color(0.90f, 0.68f, 0.25f));
 	}
+	if (btn_center_view) {
+		btn_center_view->set_visible(editor_mode != MODE_ANIMATION || view_pan.length_squared() > 0.5f);
+		_apply_rounded_button_styles(btn_center_view, false, Color(0.32f, 0.58f, 0.92f));
+	}
+
+	bool is_anim = (editor_mode == MODE_ANIMATION);
+	bool is_bz = (editor_mode == MODE_BODY_ZONES);
+	bool is_mov = (editor_mode == MODE_MOVEMENT);
+
+	if (tools_bar) {
+		tools_bar->set_visible(!is_mov || move_mode == "patrulla");
+	}
+	if (lbl_tgt_hdr) {
+		lbl_tgt_hdr->set_visible(is_anim);
+	}
 
 	if (!allow_hitboxes && current_target == TARGET_HITBOX) {
 		current_target = TARGET_HURTBOX;
 	}
 	if (btn_target_hitbox) {
-		btn_target_hitbox->set_visible(allow_hitboxes);
+		btn_target_hitbox->set_visible(is_anim && allow_hitboxes);
 		_apply_rounded_button_styles(btn_target_hitbox, current_target == TARGET_HITBOX, Color(0.92f, 0.30f, 0.30f));
 	}
 	if (btn_target_hurtbox) {
-		btn_target_hurtbox->set_visible(allow_hurtbox);
+		btn_target_hurtbox->set_visible(is_anim && allow_hurtbox);
 		_apply_rounded_button_styles(btn_target_hurtbox, current_target == TARGET_HURTBOX, Color(0.25f, 0.62f, 0.96f));
 	}
 
-	Color tool_accent = (current_target == TARGET_HITBOX && allow_hitboxes)
-			? Color(0.92f, 0.34f, 0.34f)
-			: Color(0.28f, 0.62f, 0.96f);
-	_apply_rounded_button_styles(btn_tool_select, current_tool == TOOL_SELECT, Color(0.32f, 0.58f, 0.92f));
-	_apply_rounded_button_styles(btn_tool_circle, current_tool == TOOL_CIRCLE, tool_accent);
-	_apply_rounded_button_styles(btn_tool_rect, current_tool == TOOL_RECT, tool_accent);
-	_apply_rounded_button_styles(btn_tool_capsule, current_tool == TOOL_CAPSULE, tool_accent);
-	_apply_rounded_button_styles(btn_tool_polygon, current_tool == TOOL_POLYGON, tool_accent);
+	Color tool_accent = Color(0.28f, 0.62f, 0.96f);
+	if (is_anim) {
+		tool_accent = (current_target == TARGET_HITBOX && allow_hitboxes)
+				? Color(0.92f, 0.34f, 0.34f)
+				: Color(0.28f, 0.62f, 0.96f);
+	} else if (is_bz) {
+		tool_accent = (selected_bz_idx >= 0) ? get_zone_color(selected_bz_idx) : Color(0.32f, 0.84f, 1.0f);
+	}
+
+	if (btn_tool_select) {
+		btn_tool_select->set_visible(!is_mov);
+		_apply_rounded_button_styles(btn_tool_select, current_tool == TOOL_SELECT, Color(0.32f, 0.58f, 0.92f));
+	}
+	if (btn_tool_circle) {
+		btn_tool_circle->set_visible(!is_mov);
+		_apply_rounded_button_styles(btn_tool_circle, current_tool == TOOL_CIRCLE, tool_accent);
+	}
+	if (btn_tool_rect) {
+		btn_tool_rect->set_visible(!is_mov);
+		_apply_rounded_button_styles(btn_tool_rect, current_tool == TOOL_RECT, tool_accent);
+	}
+	if (btn_tool_capsule) {
+		btn_tool_capsule->set_visible(!is_mov);
+		_apply_rounded_button_styles(btn_tool_capsule, current_tool == TOOL_CAPSULE, tool_accent);
+	}
+	if (btn_tool_polygon) {
+		btn_tool_polygon->set_visible(!is_mov);
+		_apply_rounded_button_styles(btn_tool_polygon, current_tool == TOOL_POLYGON, tool_accent);
+	}
 
 	if (btn_finish_polygon) {
-		bool show_finish = (current_tool == TOOL_POLYGON && poly_draft_vertices.size() >= 3);
+		bool show_finish = (!is_mov && current_tool == TOOL_POLYGON && poly_draft_vertices.size() >= 3);
 		btn_finish_polygon->set_visible(show_finish);
 		_apply_rounded_button_styles(btn_finish_polygon, true, Color(0.26f, 0.72f, 0.42f));
 	}
 	if (btn_delete_shape) {
-		bool can_del = (selected_kind == SEL_HITBOX || selected_kind == SEL_HURTBOX);
+		bool can_del = false;
+		if (is_anim) {
+			can_del = (selected_kind == SEL_HITBOX || selected_kind == SEL_HURTBOX);
+		} else if (is_bz) {
+			can_del = (bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size());
+		} else if (is_mov) {
+			can_del = (move_mode == "patrulla" && selected_patrol_idx >= 0 && selected_patrol_idx < patrol_points.size());
+		}
+		btn_delete_shape->set_visible(!is_mov || move_mode == "patrulla");
 		btn_delete_shape->set_disabled(!can_del);
 		_apply_rounded_button_styles(btn_delete_shape, false, Color(0.85f, 0.30f, 0.30f));
+	}
+	if (status_label) {
+		if (is_mov) {
+			if (move_mode == "vagar") {
+				status_label->set_text(CG_SE_TR("Arrastra el tirador del círculo para ajustar el radio de vagar. La rueda no hace zoom."));
+			} else if (move_mode == "patrulla") {
+				status_label->set_text(CG_SE_TR("Clic en el lienzo para añadir punto, arrastra para mover, clic derecho sobre un punto para borrarlo."));
+			} else {
+				status_label->set_text(CG_SE_TR("Vista previa de movimiento. Botón central o Alt + arrastrar para desplazar el lienzo."));
+			}
+		} else if (is_bz) {
+			status_label->set_text(CG_SE_TR("Arrastra formas o tiradores en el lienzo. Botón central o Alt + arrastrar para desplazar la vista. La rueda no hace zoom."));
+		} else {
+			status_label->set_text(CG_SE_TR("Clic o arrastra para mover, tirar de los puntos para redimensionar. La rueda no hace zoom."));
+		}
 	}
 }
 
 void ClockGearsShapeEditor::_emit_shape_changed() {
-	emit_signal("shape_data_changed");
+	if (editor_mode == MODE_BODY_ZONES) {
+		emit_signal("body_zones_changed");
+	} else {
+		emit_signal("shape_data_changed");
+	}
 }
 
 void ClockGearsShapeEditor::set_preview_texture(const Ref<Texture2D> &p_tex, const Rect2i &p_region) {
@@ -1467,6 +2070,12 @@ bool ClockGearsShapeEditor::finish_polygon() {
 }
 
 bool ClockGearsShapeEditor::delete_selected_shape() {
+	if (editor_mode == MODE_BODY_ZONES) {
+		return remove_selected_entity_zone();
+	}
+	if (editor_mode == MODE_MOVEMENT) {
+		return remove_selected_patrol_point();
+	}
 	if (selected_kind == SEL_HITBOX && selected_hitbox_idx >= 0 && selected_hitbox_idx < hitbox_data.shapes.size()) {
 		hitbox_data.shapes.remove_at(selected_hitbox_idx);
 		selected_kind = SEL_NONE;
@@ -1703,4 +2312,376 @@ void ClockGearsShapeEditor::_on_anchor_rot_spin_changed(double p_val) {
 		canvas->queue_redraw();
 	}
 	_emit_shape_changed();
+}
+
+void ClockGearsShapeEditor::_on_center_view_pressed() {
+	view_pan = Vector2();
+	_update_toolbar_states();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+}
+
+void ClockGearsShapeEditor::set_editor_mode(int p_mode) {
+	editor_mode = (EditorMode)CLAMP(p_mode, (int)MODE_ANIMATION, (int)MODE_MOVEMENT);
+	view_pan = Vector2();
+	poly_draft_vertices.clear();
+	poly_hover_valid = false;
+	drag_kind = DRAG_NONE;
+	create_drag_active = false;
+	if (editor_mode == MODE_BODY_ZONES) {
+		selected_kind = (selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()) ? SEL_ZONE : SEL_BODY;
+		if (zoom > 2) {
+			// Por defecto zoom x1 o x2 para ver zonas grandes con claridad si estaba en zoom alto
+		}
+	} else if (editor_mode == MODE_MOVEMENT) {
+		selected_kind = SEL_NONE;
+	}
+	_refresh_bz_list();
+	_update_toolbar_states();
+	_sync_inspector_from_data();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+}
+
+void ClockGearsShapeEditor::set_body_zones_config(bool p_allow_zones) {
+	bz_allow_zones = p_allow_zones;
+	if (!bz_allow_zones) {
+		selected_bz_idx = -1;
+		selected_kind = SEL_BODY;
+	}
+	_refresh_bz_list();
+	_update_toolbar_states();
+	_sync_inspector_from_data();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+}
+
+void ClockGearsShapeEditor::_refresh_bz_list() {
+	if (!bz_list) {
+		return;
+	}
+	bool prev = updating_controls;
+	updating_controls = true;
+	bz_list->clear();
+	bz_list->add_item(body_through ? CG_SE_TR("Cuerpo (Atravesable)") : CG_SE_TR("Cuerpo"));
+	bz_list->set_item_metadata(0, -1);
+	bz_list->set_item_custom_fg_color(0, Color(0.45f, 0.88f, 1.0f));
+	if (bz_allow_zones) {
+		for (int i = 0; i < bz_zones.size(); i++) {
+			String zname = bz_zones[i].name.strip_edges();
+			if (zname.is_empty()) {
+				zname = vformat(CG_SE_TR("Zona #%d"), i + 1);
+			}
+			int row = bz_list->get_item_count();
+			bz_list->add_item(vformat("Z%d: %s", i + 1, zname));
+			bz_list->set_item_metadata(row, i);
+			bz_list->set_item_custom_fg_color(row, get_zone_color(i));
+		}
+	}
+	int sel_row = 0;
+	if (bz_allow_zones && selected_bz_idx >= 0 && selected_bz_idx < bz_zones.size()) {
+		sel_row = selected_bz_idx + 1;
+	} else {
+		selected_bz_idx = -1;
+	}
+	if (sel_row >= 0 && sel_row < bz_list->get_item_count()) {
+		bz_list->select(sel_row);
+	}
+	updating_controls = prev;
+}
+
+void ClockGearsShapeEditor::set_body_zones_data(const Dictionary &p_body_shape, bool p_body_through, const Array &p_zones) {
+	if (p_body_shape.is_empty()) {
+		body_shape = ClockGearsHitShape::make_circle(12.0f);
+	} else {
+		body_shape.from_dict(p_body_shape);
+	}
+	body_through = p_body_through;
+	bz_zones.clear();
+	for (int i = 0; i < p_zones.size(); i++) {
+		if (p_zones[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary zd = Dictionary(p_zones[i]).duplicate(true);
+		ZoneEntry ze;
+		ze.raw = zd;
+		ze.name = String(zd.get("name", vformat("Zona %d", i + 1)));
+		Dictionary sd = zd.get("shape", Dictionary());
+		if (sd.is_empty()) {
+			ze.shape = ClockGearsHitShape::make_circle(64.0f);
+		} else {
+			ze.shape.from_dict(sd);
+		}
+		bz_zones.push_back(ze);
+	}
+	if (!bz_allow_zones || selected_bz_idx >= bz_zones.size()) {
+		selected_bz_idx = -1;
+	}
+	selected_kind = (selected_bz_idx >= 0) ? SEL_ZONE : SEL_BODY;
+	_refresh_bz_list();
+	_update_toolbar_states();
+	_sync_inspector_from_data();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+}
+
+Dictionary ClockGearsShapeEditor::get_body_shape_data() const {
+	return body_shape.to_dict();
+}
+
+Array ClockGearsShapeEditor::get_zones_data() const {
+	Array out;
+	for (int i = 0; i < bz_zones.size(); i++) {
+		Dictionary d = bz_zones[i].raw.duplicate(true);
+		d["name"] = bz_zones[i].name.strip_edges().is_empty() ? vformat("Zona %d", i + 1) : bz_zones[i].name;
+		d["shape"] = bz_zones[i].shape.to_dict();
+		out.push_back(d);
+	}
+	return out;
+}
+
+void ClockGearsShapeEditor::set_selected_zone_metadata(int p_zone_idx, const Dictionary &p_zone_dict) {
+	if (p_zone_idx < 0 || p_zone_idx >= bz_zones.size()) {
+		return;
+	}
+	Dictionary merged = bz_zones[p_zone_idx].raw.duplicate(true);
+	Array keys = p_zone_dict.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		Variant k = keys[i];
+		if (String(k) == "shape") {
+			continue;
+		}
+		merged[k] = p_zone_dict[k];
+	}
+	if (merged.has("name")) {
+		bz_zones.write[p_zone_idx].name = String(merged["name"]);
+	}
+	bz_zones.write[p_zone_idx].raw = merged;
+	_refresh_bz_list();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	_emit_shape_changed();
+}
+
+Dictionary ClockGearsShapeEditor::get_selected_zone_metadata() const {
+	if (selected_bz_idx < 0 || selected_bz_idx >= bz_zones.size()) {
+		return Dictionary();
+	}
+	Dictionary d = bz_zones[selected_bz_idx].raw.duplicate(true);
+	d["name"] = bz_zones[selected_bz_idx].name;
+	d["shape"] = bz_zones[selected_bz_idx].shape.to_dict();
+	return d;
+}
+
+void ClockGearsShapeEditor::select_entity_item(int p_bz_index) {
+	if (!bz_allow_zones || p_bz_index < 0 || p_bz_index >= bz_zones.size()) {
+		selected_bz_idx = -1;
+		selected_kind = SEL_BODY;
+	} else {
+		selected_bz_idx = p_bz_index;
+		selected_kind = SEL_ZONE;
+	}
+	_refresh_bz_list();
+	_update_toolbar_states();
+	_sync_inspector_from_data();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	emit_signal("body_zone_selected", selected_bz_idx);
+}
+
+int ClockGearsShapeEditor::add_entity_zone(const Dictionary &p_zone_dict) {
+	if (!bz_allow_zones) {
+		return -1;
+	}
+	int new_idx = bz_zones.size();
+	ZoneEntry ze;
+	if (!p_zone_dict.is_empty()) {
+		ze.raw = p_zone_dict.duplicate(true);
+	}
+	ze.name = String(ze.raw.get("name", vformat("Zona %d", new_idx + 1)));
+	if (!ze.raw.has("target_filter")) ze.raw["target_filter"] = "player";
+	if (!ze.raw.has("trigger")) ze.raw["trigger"] = "enter";
+	if (!ze.raw.has("interval_sec")) ze.raw["interval_sec"] = 0.5;
+	if (!ze.raw.has("actions")) ze.raw["actions"] = Array();
+	Dictionary sd = ze.raw.get("shape", Dictionary());
+	if (sd.is_empty()) {
+		ze.shape = ClockGearsHitShape::make_circle(64.0f);
+	} else {
+		ze.shape.from_dict(sd);
+	}
+	ze.raw["name"] = ze.name;
+	ze.raw["shape"] = ze.shape.to_dict();
+	bz_zones.push_back(ze);
+
+	selected_bz_idx = new_idx;
+	selected_kind = SEL_ZONE;
+	_refresh_bz_list();
+	_update_toolbar_states();
+	_sync_inspector_from_data();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	emit_signal("body_zone_selected", selected_bz_idx);
+	_emit_shape_changed();
+	return new_idx;
+}
+
+bool ClockGearsShapeEditor::remove_selected_entity_zone() {
+	if (!bz_allow_zones || selected_bz_idx < 0 || selected_bz_idx >= bz_zones.size()) {
+		return false;
+	}
+	bz_zones.remove_at(selected_bz_idx);
+	if (bz_zones.is_empty()) {
+		selected_bz_idx = -1;
+		selected_kind = SEL_BODY;
+	} else {
+		selected_bz_idx = CLAMP(selected_bz_idx, 0, bz_zones.size() - 1);
+		selected_kind = SEL_ZONE;
+	}
+	_refresh_bz_list();
+	_update_toolbar_states();
+	_sync_inspector_from_data();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	emit_signal("body_zone_selected", selected_bz_idx);
+	_emit_shape_changed();
+	return true;
+}
+
+int ClockGearsShapeEditor::duplicate_selected_entity_zone() {
+	if (!bz_allow_zones || selected_bz_idx < 0 || selected_bz_idx >= bz_zones.size()) {
+		return -1;
+	}
+	Dictionary src = get_selected_zone_metadata();
+	src["name"] = String(src.get("name", "Zona")) + CG_SE_TR(" (Copia)");
+	return add_entity_zone(src);
+}
+
+void ClockGearsShapeEditor::_on_bz_list_selected(int p_idx) {
+	if (updating_controls || !bz_list || p_idx < 0 || p_idx >= bz_list->get_item_count()) {
+		return;
+	}
+	int bz_id = int(bz_list->get_item_metadata(p_idx));
+	select_entity_item(bz_id);
+}
+
+void ClockGearsShapeEditor::_on_bz_add_pressed() {
+	add_entity_zone();
+}
+
+void ClockGearsShapeEditor::_on_bz_remove_pressed() {
+	remove_selected_entity_zone();
+}
+
+void ClockGearsShapeEditor::_on_bz_dup_pressed() {
+	duplicate_selected_entity_zone();
+}
+
+void ClockGearsShapeEditor::_on_body_through_toggled(bool p_pressed) {
+	if (updating_controls) {
+		return;
+	}
+	body_through = p_pressed;
+	_refresh_bz_list();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	_emit_shape_changed();
+}
+
+void ClockGearsShapeEditor::_on_bz_name_changed(const String &p_text) {
+	if (updating_controls || selected_bz_idx < 0 || selected_bz_idx >= bz_zones.size()) {
+		return;
+	}
+	bz_zones.write[selected_bz_idx].name = p_text;
+	bz_zones.write[selected_bz_idx].raw["name"] = p_text;
+	_refresh_bz_list();
+	_sync_selected_shape_controls();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	_emit_shape_changed();
+}
+
+void ClockGearsShapeEditor::set_movement_visual_data(const String &p_mode, double p_wander_radius, const Array &p_patrol_points, bool p_patrol_loop) {
+	move_mode = p_mode.strip_edges().to_lower();
+	wander_radius = MAX(0.0, p_wander_radius);
+	patrol_loop = p_patrol_loop;
+	patrol_points.clear();
+	for (int i = 0; i < p_patrol_points.size(); i++) {
+		if (p_patrol_points[i].get_type() == Variant::DICTIONARY) {
+			Dictionary pd = p_patrol_points[i];
+			patrol_points.push_back(Vector2(float(pd.get("x", 0.0)), float(pd.get("y", 0.0))));
+		} else if (p_patrol_points[i].get_type() == Variant::VECTOR2 || p_patrol_points[i].get_type() == Variant::VECTOR2I) {
+			patrol_points.push_back(Vector2(p_patrol_points[i]));
+		}
+	}
+	if (selected_patrol_idx >= patrol_points.size()) {
+		selected_patrol_idx = patrol_points.size() - 1;
+	}
+	_update_toolbar_states();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+}
+
+Array ClockGearsShapeEditor::get_patrol_points_data() const {
+	Array out;
+	for (int i = 0; i < patrol_points.size(); i++) {
+		Dictionary d;
+		d["x"] = double(patrol_points[i].x);
+		d["y"] = double(patrol_points[i].y);
+		out.push_back(d);
+	}
+	return out;
+}
+
+void ClockGearsShapeEditor::select_patrol_point(int p_idx) {
+	if (p_idx >= 0 && p_idx < patrol_points.size()) {
+		selected_patrol_idx = p_idx;
+		selected_kind = SEL_PATROL_POINT;
+	} else {
+		selected_patrol_idx = -1;
+	}
+	_update_toolbar_states();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+}
+
+int ClockGearsShapeEditor::add_patrol_point(const Vector2 &p_tile_offset) {
+	patrol_points.push_back(p_tile_offset);
+	selected_patrol_idx = patrol_points.size() - 1;
+	selected_kind = SEL_PATROL_POINT;
+	_update_toolbar_states();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	emit_signal("movement_visual_changed");
+	return selected_patrol_idx;
+}
+
+bool ClockGearsShapeEditor::remove_selected_patrol_point() {
+	if (selected_patrol_idx < 0 || selected_patrol_idx >= patrol_points.size()) {
+		return false;
+	}
+	patrol_points.remove_at(selected_patrol_idx);
+	if (patrol_points.is_empty()) {
+		selected_patrol_idx = -1;
+	} else {
+		selected_patrol_idx = CLAMP(selected_patrol_idx, 0, patrol_points.size() - 1);
+	}
+	_update_toolbar_states();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	emit_signal("movement_visual_changed");
+	return true;
 }
