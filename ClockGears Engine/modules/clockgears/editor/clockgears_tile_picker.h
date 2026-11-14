@@ -6,10 +6,12 @@
 #include "scene/gui/button.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/scroll_bar.h"
 #include "modules/tilemap/tile_set.h"
 #include "scene/resources/texture.h"
@@ -106,9 +108,13 @@ private:
 	Button *btn_zoom_in = nullptr;
 	Button *btn_grid_toggle = nullptr;
 	HBoxContainer *mode_buttons_box = nullptr;
+	HFlowContainer *mode_flow_box = nullptr;
 	Vector<Button *> mode_buttons;
+	bool tileset_panel_mode = false;
+	int fixed_tile_draw_scale = 1;
 
 	// Lienzo central y barras de desplazamiento
+	PanelContainer *canvas_frame = nullptr;
 	ClockGearsTilePickerCanvas *canvas = nullptr;
 	HScrollBar *h_scroll = nullptr;
 	VScrollBar *v_scroll = nullptr;
@@ -195,6 +201,10 @@ public:
 
 	void set_edit_mode(EditMode p_mode);
 	EditMode get_edit_mode() const { return current_edit_mode; }
+
+	void set_tileset_panel_mode(bool p_enabled, int p_int_scale = 1);
+	bool is_tileset_panel_mode() const { return tileset_panel_mode; }
+	float get_atlas_draw_width() const;
 
 	void set_slot_key(const String &p_key) { current_slot_key = p_key; }
 	String get_slot_key() const { return current_slot_key; }

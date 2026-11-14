@@ -1027,18 +1027,57 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (standard_graphic_box) {
 		standard_graphic_box->set_visible(has_single_graphic);
 	}
+	if (general_section_box && col2_box && tileset_left_col) {
+		s_reparent_control(general_section_box, is_tileset ? (Control *)tileset_left_col : (Control *)col2_box);
+		Control *gen_parent = general_section_box->get_parent_control();
+		if (gen_parent) {
+			gen_parent->move_child(general_section_box, 0);
+		}
+	}
+	if (params_grid) {
+		params_grid->set_columns(is_tileset ? 2 : 4);
+		params_grid->add_theme_constant_override("h_separation", int((is_tileset ? 8 : 12) * EDSCALE));
+		const float row_h_min = 32.0f * EDSCALE;
+		if (name_edit) {
+			name_edit->set_custom_minimum_size(Size2((is_tileset ? 115.0f : 150.0f) * EDSCALE, row_h_min));
+		}
+		if (desc_edit) {
+			desc_edit->set_custom_minimum_size(Size2((is_tileset ? 115.0f : 150.0f) * EDSCALE, row_h_min));
+		}
+		if (type_option) {
+			type_option->set_fit_to_longest_item(!is_tileset);
+			type_option->set_custom_minimum_size(Size2((is_tileset ? 208.0f : 140.0f) * EDSCALE, row_h_min));
+		}
+	}
 	if (tileset_main_hbox) {
 		tileset_main_hbox->set_visible(is_tileset);
+	}
+	if (tileset_left_col) {
+		tileset_left_col->set_visible(is_tileset);
 	}
 	if (tileset_slots_box) {
 		tileset_slots_box->set_visible(is_tileset);
 	}
+	if (tileset_collision_panel) {
+		tileset_collision_panel->set_visible(is_tileset);
+	}
 	if (tileset_collision_box) {
 		tileset_collision_box->set_visible(is_tileset);
 	}
+	if (tab0_margin_container) {
+		int m_lr = is_tileset ? int(8 * EDSCALE) : int(12 * EDSCALE);
+		int m_tb = is_tileset ? 0 : int(12 * EDSCALE);
+		tab0_margin_container->add_theme_constant_override("margin_left", m_lr);
+		tab0_margin_container->add_theme_constant_override("margin_top", m_tb);
+		tab0_margin_container->add_theme_constant_override("margin_right", m_lr);
+		tab0_margin_container->add_theme_constant_override("margin_bottom", m_tb);
+	}
 	if (col2_scroll_container) {
 		col2_scroll_container->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-		col2_scroll_container->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+		col2_scroll_container->set_vertical_scroll_mode(is_tileset ? ScrollContainer::SCROLL_MODE_DISABLED : ScrollContainer::SCROLL_MODE_AUTO);
+	}
+	if (is_tileset) {
+		callable_mp(this, &ClockGearsDatabaseDialog::_update_tileset_split_layout).call_deferred();
 	}
 	if (enemy_element_rates_box) {
 		enemy_element_rates_box->set_visible(is_enemy);
@@ -3514,7 +3553,8 @@ void ClockGearsDatabaseDialog::_refresh_tileset_slots_ui() {
 
 	String active_key = _get_slot_key(active_tileset_slot_index);
 	if (active_slot_info_label) {
-		active_slot_info_label->set_text(vformat(CG_DB_TR("Ranura Activa: %s (Rejilla 32x32 Anexo A4)"), active_key));
+		active_slot_info_label->set_text(vformat(CG_DB_TR("Ranura activa: %s"), active_key));
+		active_slot_info_label->set_tooltip_text(vformat(CG_DB_TR("Ranura Activa: %s (Rejilla 32x32 Anexo A4)"), active_key));
 	}
 	if (btn_load_tileset_sheet) {
 		btn_load_tileset_sheet->set_text(vformat(CG_DB_TR("Cargar Hoja en Ranura %s..."), active_key));
@@ -3592,6 +3632,38 @@ void ClockGearsDatabaseDialog::_refresh_tileset_slots_ui() {
 	if (tileset_collision_editor) {
 		tileset_collision_editor->set_tileset_texture(tex);
 		tileset_collision_editor->set_collision_map(active_cols);
+	}
+	callable_mp(this, &ClockGearsDatabaseDialog::_update_tileset_split_layout).call_deferred();
+}
+
+void ClockGearsDatabaseDialog::_update_tileset_split_layout() {
+	if (current_category != CAT_TILESETS || !tileset_main_hbox || !tileset_left_col || !tileset_collision_panel || !db_tile_picker) {
+		return;
+	}
+	float total_w = tileset_main_hbox->get_size().x;
+	if (total_w <= 10.0f) {
+		return;
+	}
+	float sep = float(tileset_main_hbox->get_theme_constant("separation"));
+	float left_min = tileset_left_col->get_combined_minimum_size().x;
+	float max_right = MAX(320.0f * EDSCALE, total_w - left_min - sep);
+	float sheet_w = db_tile_picker->get_atlas_draw_width();
+	// 8+8 px panel padding + 2 px border + ~12 px v_scroll + 4 px holgura
+	float needed_right = (sheet_w > 0.0f) ? (sheet_w + 34.0f * EDSCALE) : (340.0f * EDSCALE);
+	float default_right = (total_w - sep) * 0.64f;
+
+	if (sheet_w > 0.0f && needed_right > default_right) {
+		float right_min = CLAMP(needed_right, 340.0f * EDSCALE, max_right);
+		tileset_collision_panel->set_custom_minimum_size(Size2(right_min, 0));
+		float left_extra = MAX(0.0f, total_w - sep - right_min - left_min);
+		tileset_left_col->set_h_size_flags(left_extra > 4.0f ? Control::SIZE_EXPAND_FILL : Control::SIZE_FILL);
+		tileset_left_col->set_stretch_ratio(0.15f);
+		tileset_collision_panel->set_stretch_ratio(0.85f);
+	} else {
+		tileset_collision_panel->set_custom_minimum_size(Size2(MIN(340.0f * EDSCALE, max_right), 0));
+		tileset_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		tileset_left_col->set_stretch_ratio(0.36f);
+		tileset_collision_panel->set_stretch_ratio(0.64f);
 	}
 }
 
@@ -3754,6 +3826,9 @@ void ClockGearsDatabaseDialog::_on_window_size_changed() {
 	Size2i min_sz = get_min_size();
 	if (cur_sz.x >= min_sz.x && cur_sz.y >= min_sz.y) {
 		_save_editor_ui_state();
+	}
+	if (current_category == CAT_TILESETS) {
+		callable_mp(this, &ClockGearsDatabaseDialog::_update_tileset_split_layout).call_deferred();
 	}
 }
 
@@ -4328,6 +4403,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	main_editor_tabs->add_child(col2_scroll);
 
 	MarginContainer *tab0_margin = memnew(MarginContainer);
+	tab0_margin_container = tab0_margin;
 	tab0_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tab0_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tab0_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
@@ -5045,21 +5121,38 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	enemy_element_rates_box->add_child(enemy_element_rates_rows_vbox);
 
 	// ========================================================================
-	// SECCIÓN TILESETS (En General: Ranuras a la izquierda + Editor de Pasabilidad a la derecha)
+	// SECCIÓN TILESETS (Izquierda: General + Ranuras | Derecha: Hoja vertical completa)
 	// ========================================================================
 	tileset_main_hbox = memnew(HBoxContainer);
 	tileset_main_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_main_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	tileset_main_hbox->add_theme_constant_override("separation", int(16 * EDSCALE));
+	tileset_main_hbox->add_theme_constant_override("separation", int(12 * EDSCALE));
+	tileset_main_hbox->connect("resized", callable_mp(this, &ClockGearsDatabaseDialog::_update_tileset_split_layout));
 	tileset_main_hbox->hide();
 	col2_box->add_child(tileset_main_hbox);
 
+	tileset_left_col = memnew(VBoxContainer);
+	tileset_left_col->set_custom_minimum_size(Size2(240 * EDSCALE, 0));
+	tileset_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_left_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_left_col->set_stretch_ratio(0.36f);
+	tileset_left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	tileset_left_col->hide();
+	tileset_main_hbox->add_child(tileset_left_col);
+
+	tileset_slots_scroll = memnew(ScrollContainer);
+	tileset_slots_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_slots_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_slots_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	tileset_slots_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	tileset_left_col->add_child(tileset_slots_scroll);
+
 	tileset_slots_box = memnew(VBoxContainer);
-	tileset_slots_box->set_custom_minimum_size(Size2(280 * EDSCALE, 0));
-	tileset_slots_box->set_h_size_flags(Control::SIZE_FILL);
-	tileset_slots_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	tileset_slots_box->set_custom_minimum_size(Size2(220 * EDSCALE, 0));
+	tileset_slots_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_slots_box->add_theme_constant_override("separation", int(6 * EDSCALE));
 	tileset_slots_box->hide();
-	tileset_main_hbox->add_child(tileset_slots_box);
+	tileset_slots_scroll->add_child(tileset_slots_box);
 
 	HBoxContainer *slots_hdr_hb = memnew(HBoxContainer);
 	slots_hdr_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -6005,20 +6098,91 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	effect_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_effect_confirmed));
 	add_child(effect_dialog);
 
-	// Tileset Collision Box (shown when CAT_TILESETS is active, inside tileset_main_hbox)
+	// Tileset Collision Panel (shown on the right when CAT_TILESETS is active)
+	tileset_collision_panel = memnew(PanelContainer);
+	tileset_collision_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_collision_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_collision_panel->set_stretch_ratio(0.64f);
+	tileset_collision_panel->set_custom_minimum_size(Size2(340 * EDSCALE, 0));
+	Ref<StyleBoxFlat> ts_panel_sb = memnew(StyleBoxFlat);
+	ts_panel_sb->set_anti_aliased(true);
+	ts_panel_sb->set_bg_color(Color::html("#1a1d24"));
+	ts_panel_sb->set_corner_radius_all(int(6 * EDSCALE));
+	ts_panel_sb->set_border_width_all(1);
+	ts_panel_sb->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.12f));
+	ts_panel_sb->set_content_margin_individual(int(8 * EDSCALE), int(4 * EDSCALE), int(8 * EDSCALE), int(4 * EDSCALE));
+	tileset_collision_panel->add_theme_style_override("panel", ts_panel_sb);
+	tileset_collision_panel->hide();
+	tileset_main_hbox->add_child(tileset_collision_panel);
+
 	tileset_collision_box = memnew(VBoxContainer);
 	tileset_collision_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_collision_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_collision_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	tileset_collision_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	tileset_collision_box->add_theme_constant_override("separation", int(6 * EDSCALE));
 	tileset_collision_box->hide();
-	tileset_main_hbox->add_child(tileset_collision_box);
+	tileset_collision_panel->add_child(tileset_collision_box);
 
-	// Pestañas principales de hojas: A | B | C | D | E
+	// a) Fila superior, b) Lienzo, c) Estado, d) Modos (ordenado dentro de db_tile_picker en modo panel)
+	db_tile_picker = memnew(ClockGearsTilePicker);
+	db_tile_picker->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	db_tile_picker->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	db_tile_picker->set_custom_minimum_size(Size2(220 * EDSCALE, 200 * EDSCALE));
+	db_tile_picker->set_metadata_editing_enabled(true);
+	db_tile_picker->set_tileset_panel_mode(true, ClockGearsIcons::get_editor_icon_scale(this));
+	db_tile_picker->set_edit_mode(ClockGearsTilePicker::MODE_PASSAGE_BASIC);
+	db_tile_picker->set_on_metadata_changed(callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_collision_changed));
+	db_tile_picker->set_on_request_load(callable_mp(this, &ClockGearsDatabaseDialog::_on_load_tileset_sheet_pressed));
+	tileset_collision_box->add_child(db_tile_picker);
+
+	// Estilo compacto redondeado (esquinas 6px, borde 1px) para botones del pie de Tilesets
+	const Color ts_accent = ClockGearsTheme::color_accent_amber();
+	const int ts_r6 = int(6 * EDSCALE);
+	Ref<StyleBoxFlat> ts_tab_norm = memnew(StyleBoxFlat);
+	ts_tab_norm->set_anti_aliased(true);
+	ts_tab_norm->set_bg_color(Color::html("#2a2e38"));
+	ts_tab_norm->set_corner_radius_all(ts_r6);
+	ts_tab_norm->set_border_width_all(1);
+	ts_tab_norm->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.14f));
+	ts_tab_norm->set_content_margin_all(int(2 * EDSCALE));
+
+	Ref<StyleBoxFlat> ts_tab_hov = ts_tab_norm->duplicate();
+	ts_tab_hov->set_bg_color(Color::html("#353b48"));
+	ts_tab_hov->set_border_color(Color(ts_accent.r, ts_accent.g, ts_accent.b, 0.65f));
+
+	Ref<StyleBoxFlat> ts_tab_prs = ts_tab_norm->duplicate();
+	ts_tab_prs->set_bg_color(Color(0.24f, 0.20f, 0.14f, 1.0f));
+	ts_tab_prs->set_border_color(ts_accent);
+
+	Ref<StyleBoxFlat> ts_tab_hprs = ts_tab_prs->duplicate();
+	ts_tab_hprs->set_bg_color(Color(0.29f, 0.24f, 0.16f, 1.0f));
+
+	auto apply_ts_btn_style = [&](Button *p_btn, int p_pad_lr) {
+		Ref<StyleBoxFlat> bn = ts_tab_norm->duplicate();
+		Ref<StyleBoxFlat> bh = ts_tab_hov->duplicate();
+		Ref<StyleBoxFlat> bp = ts_tab_prs->duplicate();
+		Ref<StyleBoxFlat> bhp = ts_tab_hprs->duplicate();
+		bn->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
+		bh->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
+		bp->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
+		bhp->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
+		p_btn->add_theme_style_override("normal", bn);
+		p_btn->add_theme_style_override("hover", bh);
+		p_btn->add_theme_style_override("pressed", bp);
+		p_btn->add_theme_style_override("hover_pressed", bhp);
+	};
+
+	// e) Pestañas A B C D E + subpestañas A1 A2 A3 A4 A5 en una sola fila alineada a la izquierda (28x28 px)
+	tileset_tabs_row = memnew(HBoxContainer);
+	tileset_tabs_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_tabs_row->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
+	tileset_tabs_row->add_theme_constant_override("separation", int(12 * EDSCALE));
+	tileset_collision_box->add_child(tileset_tabs_row);
+
 	tileset_group_tabs_box = memnew(HBoxContainer);
-	tileset_group_tabs_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	tileset_group_tabs_box->add_theme_constant_override("separation", 3);
-	tileset_collision_box->add_child(tileset_group_tabs_box);
+	tileset_group_tabs_box->set_h_size_flags(Control::SIZE_SHRINK_BEGIN);
+	tileset_group_tabs_box->add_theme_constant_override("separation", int(4 * EDSCALE));
+	tileset_tabs_row->add_child(tileset_group_tabs_box);
 
 	const char *group_names[5] = { "A", "B", "C", "D", "E" };
 	const char *group_tips[5] = {
@@ -6032,18 +6196,21 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn_ts_group_tab[g] = memnew(Button(group_names[g]));
 		btn_ts_group_tab[g]->set_toggle_mode(true);
 		btn_ts_group_tab[g]->set_pressed(g == 0);
-		btn_ts_group_tab[g]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		btn_ts_group_tab[g]->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
+		btn_ts_group_tab[g]->set_h_size_flags(Control::SIZE_SHRINK_BEGIN);
+		btn_ts_group_tab[g]->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		btn_ts_group_tab[g]->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
+		btn_ts_group_tab[g]->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 		btn_ts_group_tab[g]->set_tooltip_text(CG_DB_TR(group_tips[g]));
+		apply_ts_btn_style(btn_ts_group_tab[g], int(2 * EDSCALE));
 		btn_ts_group_tab[g]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_group_tab_pressed).bind(g));
 		tileset_group_tabs_box->add_child(btn_ts_group_tab[g]);
 	}
 
-	// Sub-pestañas cuando A está activa: A1 | A2 | A3 | A4 | A5
+	// Sub-pestañas cuando A está activa: A1 | A2 | A3 | A4 | A5 (justo a la derecha de A..E)
 	tileset_a_subtabs_box = memnew(HBoxContainer);
-	tileset_a_subtabs_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	tileset_a_subtabs_box->add_theme_constant_override("separation", 3);
-	tileset_collision_box->add_child(tileset_a_subtabs_box);
+	tileset_a_subtabs_box->set_h_size_flags(Control::SIZE_SHRINK_BEGIN);
+	tileset_a_subtabs_box->add_theme_constant_override("separation", int(4 * EDSCALE));
+	tileset_tabs_row->add_child(tileset_a_subtabs_box);
 
 	const char *sub_names[5] = { "A1", "A2", "A3", "A4", "A5" };
 	const char *sub_tips[5] = {
@@ -6057,43 +6224,46 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn_ts_a_subtab[a] = memnew(Button(sub_names[a]));
 		btn_ts_a_subtab[a]->set_toggle_mode(true);
 		btn_ts_a_subtab[a]->set_pressed(a == 4);
-		btn_ts_a_subtab[a]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		btn_ts_a_subtab[a]->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
+		btn_ts_a_subtab[a]->set_h_size_flags(Control::SIZE_SHRINK_BEGIN);
+		btn_ts_a_subtab[a]->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		btn_ts_a_subtab[a]->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
+		btn_ts_a_subtab[a]->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 		btn_ts_a_subtab[a]->set_tooltip_text(CG_DB_TR(sub_tips[a]));
+		apply_ts_btn_style(btn_ts_a_subtab[a], int(2 * EDSCALE));
 		btn_ts_a_subtab[a]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_a_subtab_pressed).bind(a));
 		tileset_a_subtabs_box->add_child(btn_ts_a_subtab[a]);
 	}
 
+	// f) Fila inferior de estado compacta ("Ranura activa: ...", botón "Cargar Hoja..." y "?")
 	HBoxContainer *slot_status_row = memnew(HBoxContainer);
 	slot_status_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	slot_status_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	slot_status_row->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
+	slot_status_row->add_theme_constant_override("separation", int(6 * EDSCALE));
 	tileset_collision_box->add_child(slot_status_row);
 
-	active_slot_info_label = memnew(Label(CG_DB_TR("Ranura: A5 (32x32)")));
+	active_slot_info_label = memnew(Label(CG_DB_TR("Ranura activa: A5")));
 	active_slot_info_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	active_slot_info_label->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	active_slot_info_label->set_clip_text(true);
+	active_slot_info_label->add_theme_color_override("font_color", ts_accent);
 	slot_status_row->add_child(active_slot_info_label);
 
 	btn_load_tileset_sheet = memnew(Button(CG_DB_TR("Cargar Hoja...")));
 	btn_load_tileset_sheet->set_tooltip_text(CG_DB_TR("Cargar archivo PNG 32x32 para la ranura activa"));
-	btn_load_tileset_sheet->set_custom_minimum_size(Size2(110 * EDSCALE, 32 * EDSCALE));
+	btn_load_tileset_sheet->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	btn_load_tileset_sheet->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	btn_load_tileset_sheet->set_custom_minimum_size(Size2(0, int(28 * EDSCALE)));
+	apply_ts_btn_style(btn_load_tileset_sheet, int(8 * EDSCALE));
 	btn_load_tileset_sheet->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_load_tileset_sheet_pressed));
 	slot_status_row->add_child(btn_load_tileset_sheet);
 
 	Button *btn_picker_help = memnew(Button("?"));
-	btn_picker_help->set_custom_minimum_size(Size2(32 * EDSCALE, 32 * EDSCALE));
+	btn_picker_help->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	btn_picker_help->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	btn_picker_help->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
+	btn_picker_help->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	apply_ts_btn_style(btn_picker_help, int(2 * EDSCALE));
 	btn_picker_help->set_tooltip_text(CG_DB_TR("Clic en cada tile para alternar pasabilidad:\n○ (Círculo) = Pasable (Suelo)\n× (Cruz) = Bloqueado (Colisión)\n★ (Estrella) = Sobre personaje (Techo/Pasa detrás)\n4-Dir = Pasabilidad por flechas (↓ ← → ↑)\nTerr = Etiqueta de Terreno (0 a 7)\nArb = Arbusto (~)\nMost = Mostrador (♦)\nEsc = Escalera (H)\nDaño = Daño de suelo (▲)"));
 	slot_status_row->add_child(btn_picker_help);
-
-	db_tile_picker = memnew(ClockGearsTilePicker);
-	db_tile_picker->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	db_tile_picker->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	db_tile_picker->set_custom_minimum_size(Size2(260 * EDSCALE, 320 * EDSCALE));
-	db_tile_picker->set_metadata_editing_enabled(true);
-	db_tile_picker->set_edit_mode(ClockGearsTilePicker::MODE_PASSAGE_BASIC);
-	db_tile_picker->set_on_metadata_changed(callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_collision_changed));
-	db_tile_picker->set_on_request_load(callable_mp(this, &ClockGearsDatabaseDialog::_on_load_tileset_sheet_pressed));
-	tileset_collision_box->add_child(db_tile_picker);
 
 	tileset_scroll = memnew(ScrollContainer);
 	tileset_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -6189,6 +6359,10 @@ void ClockGearsDatabaseDialog::_refresh_icon_scale() {
 	}
 	_clear_record_list_icon_cache();
 	_refresh_record_list();
+	if (db_tile_picker) {
+		db_tile_picker->set_tileset_panel_mode(true, icon_scale);
+	}
+	_update_tileset_split_layout();
 }
 
 void ClockGearsDatabaseDialog::_on_editor_settings_changed() {

@@ -41,6 +41,9 @@ void ClockGearsTilePickerCanvas::gui_input(const Ref<InputEvent> &p_event) {
 }
 
 Size2 ClockGearsTilePickerCanvas::get_minimum_size() const {
+	if (owner_picker && owner_picker->is_tileset_panel_mode()) {
+		return Size2(128 * EDSCALE, 128 * EDSCALE);
+	}
 	return Size2(160 * EDSCALE, 160 * EDSCALE);
 }
 
@@ -667,14 +670,18 @@ void ClockGearsTilePicker::set_tile_size(int p_size) {
 }
 
 void ClockGearsTilePicker::set_zoom_level(float p_zoom) {
-	zoom_level = CLAMP(p_zoom, 0.25f, 8.0f);
-	// Sincronizar selector de zoom si coincide con uno de los niveles predefinidos
-	const float presets[] = { 0.25f, 0.50f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f };
-	if (zoom_selector) {
-		for (int i = 0; i < 8; i++) {
-			if (Math::is_equal_approx(zoom_level, presets[i])) {
-				zoom_selector->select(i);
-				break;
+	if (tileset_panel_mode) {
+		zoom_level = float(MAX(1, fixed_tile_draw_scale));
+	} else {
+		zoom_level = CLAMP(p_zoom, 0.25f, 8.0f);
+		// Sincronizar selector de zoom si coincide con uno de los niveles predefinidos
+		const float presets[] = { 0.25f, 0.50f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f };
+		if (zoom_selector) {
+			for (int i = 0; i < 8; i++) {
+				if (Math::is_equal_approx(zoom_level, presets[i])) {
+					zoom_selector->select(i);
+					break;
+				}
 			}
 		}
 	}
@@ -687,7 +694,13 @@ void ClockGearsTilePicker::set_zoom_level(float p_zoom) {
 void ClockGearsTilePicker::set_metadata_editing_enabled(bool p_enabled) {
 	metadata_editing_enabled = p_enabled;
 	if (mode_buttons_box) {
-		mode_buttons_box->set_visible(p_enabled);
+		mode_buttons_box->set_visible(p_enabled && !tileset_panel_mode);
+	}
+	if (mode_flow_box) {
+		mode_flow_box->set_visible(p_enabled && tileset_panel_mode);
+	}
+	if (tileset_panel_mode && mode_buttons.size() > MODE_PASSAGE_BASIC && mode_buttons[MODE_PASSAGE_BASIC]) {
+		mode_buttons[MODE_PASSAGE_BASIC]->set_visible(p_enabled);
 	}
 	if (!p_enabled) {
 		current_edit_mode = MODE_SELECT;
@@ -696,6 +709,264 @@ void ClockGearsTilePicker::set_metadata_editing_enabled(bool p_enabled) {
 		canvas->queue_redraw();
 	}
 	_update_footer_info();
+}
+
+float ClockGearsTilePicker::get_atlas_draw_width() const {
+	if (current_atlas_texture.is_null()) {
+		return 0.0f;
+	}
+	return current_atlas_texture->get_size().x * zoom_level;
+}
+
+void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scale) {
+	tileset_panel_mode = p_enabled;
+	fixed_tile_draw_scale = MAX(1, p_int_scale);
+	if (!tileset_panel_mode) {
+		return;
+	}
+
+	const float s = EDSCALE;
+	const int pad = int(6 * s);
+	add_theme_constant_override("separation", pad);
+	zoom_level = float(fixed_tile_draw_scale);
+
+	if (canvas) {
+		canvas->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		canvas->set_custom_minimum_size(Size2(128 * s, 128 * s));
+	}
+
+	// Ocultar controles y atajos de zoom (prohibido hacer zoom en el editor de Tilesets DB)
+	if (btn_zoom_out) {
+		btn_zoom_out->hide();
+	}
+	if (zoom_selector) {
+		zoom_selector->hide();
+	}
+	if (btn_zoom_in) {
+		btn_zoom_in->hide();
+	}
+
+	// Estilo compacto redondeado (esquinas 6px, borde 1px) coherente con el tema
+	const int r6 = int(6 * s);
+	const Color accent = ClockGearsTheme::color_accent_amber();
+
+	Ref<StyleBoxFlat> sb_compact;
+	sb_compact.instantiate();
+	sb_compact->set_anti_aliased(true);
+	sb_compact->set_bg_color(Color::html("#2a2e38"));
+	sb_compact->set_corner_radius_all(r6);
+	sb_compact->set_border_width_all(1);
+	sb_compact->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.14f));
+	sb_compact->set_content_margin_individual(int(5 * s), int(2 * s), int(5 * s), int(2 * s));
+
+	Ref<StyleBoxFlat> sb_compact_hover = sb_compact->duplicate();
+	sb_compact_hover->set_bg_color(Color::html("#353b48"));
+	sb_compact_hover->set_border_color(Color(accent.r, accent.g, accent.b, 0.65f));
+
+	Ref<StyleBoxFlat> sb_compact_pressed = sb_compact->duplicate();
+	sb_compact_pressed->set_bg_color(Color(0.24f, 0.20f, 0.14f, 1.0f));
+	sb_compact_pressed->set_border_color(accent);
+
+	Ref<StyleBoxFlat> sb_compact_hover_pressed = sb_compact_pressed->duplicate();
+	sb_compact_hover_pressed->set_bg_color(Color(0.29f, 0.24f, 0.16f, 1.0f));
+
+	Ref<StyleBoxFlat> sb_icon_compact = sb_compact->duplicate();
+	sb_icon_compact->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
+	Ref<StyleBoxFlat> sb_icon_hover = sb_compact_hover->duplicate();
+	sb_icon_hover->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
+	Ref<StyleBoxFlat> sb_icon_pressed = sb_compact_pressed->duplicate();
+	sb_icon_pressed->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
+	Ref<StyleBoxFlat> sb_icon_hover_pressed = sb_compact_hover_pressed->duplicate();
+	sb_icon_hover_pressed->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
+
+	// Estilo con acento para "O/X/★" (modo más importante)
+	Ref<StyleBoxFlat> sb_pass_norm = sb_compact->duplicate();
+	sb_pass_norm->set_bg_color(Color(0.21f, 0.18f, 0.13f, 1.0f));
+	sb_pass_norm->set_border_color(Color(accent.r, accent.g, accent.b, 0.55f));
+	sb_pass_norm->set_content_margin_individual(int(10 * s), int(3 * s), int(10 * s), int(3 * s));
+
+	Ref<StyleBoxFlat> sb_pass_hover = sb_pass_norm->duplicate();
+	sb_pass_hover->set_bg_color(Color(0.28f, 0.23f, 0.15f, 1.0f));
+	sb_pass_hover->set_border_color(accent);
+
+	Ref<StyleBoxFlat> sb_pass_pressed = sb_pass_norm->duplicate();
+	sb_pass_pressed->set_bg_color(Color(accent.r, accent.g, accent.b, 0.28f));
+	sb_pass_pressed->set_border_color(accent);
+
+	Ref<StyleBoxFlat> sb_pass_hover_pressed = sb_pass_pressed->duplicate();
+	sb_pass_hover_pressed->set_bg_color(Color(accent.r, accent.g, accent.b, 0.36f));
+
+	auto apply_compact_styles = [&](Control *p_ctrl, const Ref<StyleBoxFlat> &p_norm, const Ref<StyleBoxFlat> &p_hov, const Ref<StyleBoxFlat> &p_prs, const Ref<StyleBoxFlat> &p_hprs) {
+		p_ctrl->add_theme_style_override("normal", p_norm);
+		p_ctrl->add_theme_style_override("hover", p_hov);
+		p_ctrl->add_theme_style_override("pressed", p_prs);
+		p_ctrl->add_theme_style_override("hover_pressed", p_hprs);
+	};
+
+	// Reordenar árbol: a) Fila superior -> b) Hoja -> c) Estado -> d) Modos secundarios
+	if (top_row_1) {
+		top_row_1->add_theme_constant_override("separation", int(4 * s));
+		top_row_1->set_v_size_flags(SIZE_SHRINK_BEGIN);
+		move_child(top_row_1, 0);
+	}
+
+	// a) Botón acentuado "O/X/★" al inicio de top_row_1 (32 px alto)
+	if (mode_buttons.size() > MODE_PASSAGE_BASIC && mode_buttons[MODE_PASSAGE_BASIC] && top_row_1) {
+		Button *bp = mode_buttons[MODE_PASSAGE_BASIC];
+		if (bp->get_parent() != top_row_1) {
+			if (bp->get_parent()) {
+				bp->get_parent()->remove_child(bp);
+			}
+			top_row_1->add_child(bp);
+		}
+		top_row_1->move_child(bp, 0);
+		bp->set_h_size_flags(SIZE_SHRINK_BEGIN);
+		bp->set_v_size_flags(SIZE_SHRINK_CENTER);
+		bp->set_clip_text(false);
+		bp->set_custom_minimum_size(Size2(0, int(32 * s)));
+		bp->set_tooltip_text(CG_TP_TR("Controla las colisiones: O pasa, X bloquea, ★ se dibuja por encima del jugador"));
+		bp->set_visible(metadata_editing_enabled);
+		apply_compact_styles(bp, sb_pass_norm, sb_pass_hover, sb_pass_pressed, sb_pass_hover_pressed);
+	}
+
+	if (atlas_selector) {
+		atlas_selector->set_h_size_flags(SIZE_EXPAND_FILL);
+		atlas_selector->set_v_size_flags(SIZE_SHRINK_CENTER);
+		atlas_selector->set_custom_minimum_size(Size2(int(90 * s), int(28 * s)));
+		apply_compact_styles(atlas_selector, sb_compact, sb_compact_hover, sb_compact_pressed, sb_compact_hover_pressed);
+	}
+	if (btn_load_tileset) {
+		btn_load_tileset->set_h_size_flags(SIZE_SHRINK_CENTER);
+		btn_load_tileset->set_v_size_flags(SIZE_SHRINK_CENTER);
+		btn_load_tileset->set_custom_minimum_size(Size2(int(28 * s), int(28 * s)));
+		if (btn_load_tileset->has_theme_icon(SNAME("Folder"), SNAME("EditorIcons"))) {
+			btn_load_tileset->set_text("");
+			btn_load_tileset->set_button_icon(btn_load_tileset->get_theme_icon(SNAME("Folder"), SNAME("EditorIcons")));
+		} else if (btn_load_tileset->has_theme_icon(SNAME("Load"), SNAME("EditorIcons"))) {
+			btn_load_tileset->set_text("");
+			btn_load_tileset->set_button_icon(btn_load_tileset->get_theme_icon(SNAME("Load"), SNAME("EditorIcons")));
+		} else {
+			btn_load_tileset->set_text("+");
+		}
+		apply_compact_styles(btn_load_tileset, sb_icon_compact, sb_icon_hover, sb_icon_pressed, sb_icon_hover_pressed);
+	}
+	if (search_filter_edit) {
+		search_filter_edit->set_h_size_flags(SIZE_SHRINK_CENTER);
+		search_filter_edit->set_v_size_flags(SIZE_SHRINK_CENTER);
+		search_filter_edit->set_custom_minimum_size(Size2(int(104 * s), int(28 * s)));
+		Ref<StyleBoxFlat> le_norm = memnew(StyleBoxFlat);
+		le_norm->set_anti_aliased(true);
+		le_norm->set_bg_color(Color::html("#17191f"));
+		le_norm->set_corner_radius_all(r6);
+		le_norm->set_border_width_all(1);
+		le_norm->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.14f));
+		le_norm->set_content_margin_individual(int(8 * s), int(2 * s), int(8 * s), int(2 * s));
+		Ref<StyleBoxFlat> le_focus = le_norm->duplicate();
+		le_focus->set_border_color(accent);
+		search_filter_edit->add_theme_style_override("normal", le_norm);
+		search_filter_edit->add_theme_style_override("focus", le_focus);
+	}
+	Button *tiny_btns[3] = { btn_fav_toggle, btn_only_favorites, btn_grid_toggle };
+	for (int i = 0; i < 3; i++) {
+		if (tiny_btns[i]) {
+			tiny_btns[i]->set_h_size_flags(SIZE_SHRINK_CENTER);
+			tiny_btns[i]->set_v_size_flags(SIZE_SHRINK_CENTER);
+			tiny_btns[i]->set_custom_minimum_size(Size2(int(28 * s), int(28 * s)));
+			apply_compact_styles(tiny_btns[i], sb_icon_compact, sb_icon_hover, sb_icon_pressed, sb_icon_hover_pressed);
+		}
+	}
+
+	// b) Marco de la hoja (todo el alto disponible) + barras de scroll (~12px, esquinas redondeadas)
+	if (canvas_frame) {
+		canvas_frame->set_custom_minimum_size(Size2(140 * s, 128 * s));
+		Ref<StyleBoxFlat> cf_style = memnew(StyleBoxFlat);
+		cf_style->set_anti_aliased(true);
+		cf_style->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
+		cf_style->set_corner_radius_all(r6);
+		cf_style->set_border_width_all(1);
+		cf_style->set_border_color(Color(0.24f, 0.27f, 0.33f, 1.0f));
+		cf_style->set_content_margin_all(1);
+		canvas_frame->add_theme_style_override("panel", cf_style);
+		move_child(canvas_frame, 1);
+	}
+
+	Ref<StyleBoxFlat> sb_track;
+	sb_track.instantiate();
+	sb_track->set_anti_aliased(true);
+	sb_track->set_bg_color(Color(0.06f, 0.07f, 0.09f, 0.85f));
+	sb_track->set_corner_radius_all(r6);
+	sb_track->set_content_margin_all(int(5 * s));
+
+	Ref<StyleBoxFlat> sb_grab;
+	sb_grab.instantiate();
+	sb_grab->set_anti_aliased(true);
+	sb_grab->set_bg_color(Color(0.32f, 0.36f, 0.44f, 0.90f));
+	sb_grab->set_corner_radius_all(r6);
+
+	Ref<StyleBoxFlat> sb_grab_hov = sb_grab->duplicate();
+	sb_grab_hov->set_bg_color(Color(accent.r, accent.g, accent.b, 0.72f));
+	Ref<StyleBoxFlat> sb_grab_prs = sb_grab->duplicate();
+	sb_grab_prs->set_bg_color(accent);
+
+	if (v_scroll) {
+		v_scroll->set_custom_minimum_size(Size2(int(12 * s), 0));
+		v_scroll->add_theme_style_override("scroll", sb_track);
+		v_scroll->add_theme_style_override("grabber", sb_grab);
+		v_scroll->add_theme_style_override("grabber_highlight", sb_grab_hov);
+		v_scroll->add_theme_style_override("grabber_pressed", sb_grab_prs);
+	}
+	if (h_scroll) {
+		h_scroll->set_custom_minimum_size(Size2(0, int(12 * s)));
+		h_scroll->add_theme_style_override("scroll", sb_track);
+		h_scroll->add_theme_style_override("grabber", sb_grab);
+		h_scroll->add_theme_style_override("grabber_highlight", sb_grab_hov);
+		h_scroll->add_theme_style_override("grabber_pressed", sb_grab_prs);
+	}
+
+	// c) Línea de estado justo debajo del lienzo
+	if (footer_bar) {
+		footer_bar->set_v_size_flags(SIZE_SHRINK_BEGIN);
+		move_child(footer_bar, 2);
+	}
+
+	// d) Modos en HFlowContainer compacto debajo de la línea de estado (sin estirar)
+	if (!mode_flow_box) {
+		mode_flow_box = memnew(HFlowContainer);
+		mode_flow_box->set_h_size_flags(SIZE_EXPAND_FILL);
+		mode_flow_box->set_v_size_flags(SIZE_SHRINK_BEGIN);
+		mode_flow_box->add_theme_constant_override("h_separation", pad);
+		mode_flow_box->add_theme_constant_override("v_separation", pad);
+		add_child(mode_flow_box);
+	}
+	move_child(mode_flow_box, 3);
+	mode_flow_box->set_visible(metadata_editing_enabled);
+
+	for (int i = 0; i < mode_buttons.size(); i++) {
+		if (i == MODE_PASSAGE_BASIC || !mode_buttons[i]) {
+			continue;
+		}
+		Button *mb = mode_buttons[i];
+		if (mb->get_parent() != mode_flow_box) {
+			if (mb->get_parent()) {
+				mb->get_parent()->remove_child(mb);
+			}
+			mode_flow_box->add_child(mb);
+		}
+		mb->set_h_size_flags(SIZE_SHRINK_BEGIN);
+		mb->set_v_size_flags(SIZE_SHRINK_CENTER);
+		mb->set_clip_text(false);
+		mb->set_custom_minimum_size(Size2(0, int(28 * s)));
+		apply_compact_styles(mb, sb_compact, sb_compact_hover, sb_compact_pressed, sb_compact_hover_pressed);
+	}
+
+	if (mode_buttons_box) {
+		mode_buttons_box->hide();
+	}
+
+	_update_scrollbars();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
 }
 
 void ClockGearsTilePicker::set_edit_mode(EditMode p_mode) {
@@ -884,6 +1155,12 @@ void ClockGearsTilePicker::_update_scrollbars() {
 	float max_x = MAX(content_sz.x, canvas_sz.x);
 	float max_y = MAX(content_sz.y, canvas_sz.y);
 
+	if (tileset_panel_mode) {
+		pan_offset.x = -CLAMP(-pan_offset.x, 0.0f, MAX(0.0f, max_x - canvas_sz.x));
+		pan_offset.y = -CLAMP(-pan_offset.y, 0.0f, MAX(0.0f, max_y - canvas_sz.y));
+		pan_offset = pan_offset.round();
+	}
+
 	h_scroll->set_min(0);
 	h_scroll->set_max(max_x);
 	h_scroll->set_page(canvas_sz.x);
@@ -911,6 +1188,10 @@ void ClockGearsTilePicker::_on_scroll_changed(double p_val) {
 }
 
 void ClockGearsTilePicker::_on_zoom_out_pressed() {
+	if (tileset_panel_mode) {
+		set_zoom_level(float(fixed_tile_draw_scale));
+		return;
+	}
 	const float steps[] = { 0.25f, 0.50f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f };
 	for (int i = 7; i >= 0; i--) {
 		if (steps[i] < zoom_level - 0.01f) {
@@ -922,6 +1203,10 @@ void ClockGearsTilePicker::_on_zoom_out_pressed() {
 }
 
 void ClockGearsTilePicker::_on_zoom_in_pressed() {
+	if (tileset_panel_mode) {
+		set_zoom_level(float(fixed_tile_draw_scale));
+		return;
+	}
 	const float steps[] = { 0.25f, 0.50f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f };
 	for (int i = 0; i < 8; i++) {
 		if (steps[i] > zoom_level + 0.01f) {
@@ -1070,16 +1355,32 @@ void ClockGearsTilePicker::_handle_metadata_click(const Vector2i &p_tile, const 
 void ClockGearsTilePicker::_gui_input_canvas(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid()) {
-		// Zoom con rueda del ratón (priorizando enteros 1x, 2x, 3x, 4x, 8x para Pixel Art A4.5)
-		if (mb->is_pressed() && mb->get_button_index() == MouseButton::WHEEL_UP) {
-			_on_zoom_in_pressed();
-			canvas->accept_event();
-			return;
-		}
-		if (mb->is_pressed() && mb->get_button_index() == MouseButton::WHEEL_DOWN) {
-			_on_zoom_out_pressed();
-			canvas->accept_event();
-			return;
+		if (tileset_panel_mode) {
+			MouseButton bi = mb->get_button_index();
+			if (mb->is_pressed() && (bi == MouseButton::WHEEL_UP || bi == MouseButton::WHEEL_DOWN || bi == MouseButton::WHEEL_LEFT || bi == MouseButton::WHEEL_RIGHT)) {
+				float scroll_step = float(MAX(32, tile_size * fixed_tile_draw_scale));
+				float dir = (bi == MouseButton::WHEEL_DOWN || bi == MouseButton::WHEEL_RIGHT) ? 1.0f : -1.0f;
+				bool use_h = (bi == MouseButton::WHEEL_LEFT || bi == MouseButton::WHEEL_RIGHT || mb->is_shift_pressed() || ((!v_scroll || !v_scroll->is_visible()) && h_scroll && h_scroll->is_visible()));
+				if (use_h && h_scroll && h_scroll->is_visible()) {
+					h_scroll->set_value(h_scroll->get_value() + dir * scroll_step);
+				} else if (!use_h && v_scroll && v_scroll->is_visible()) {
+					v_scroll->set_value(v_scroll->get_value() + dir * scroll_step);
+				}
+				canvas->accept_event();
+				return;
+			}
+		} else {
+			// Zoom con rueda del ratón (priorizando enteros 1x, 2x, 3x, 4x, 8x para Pixel Art A4.5)
+			if (mb->is_pressed() && mb->get_button_index() == MouseButton::WHEEL_UP) {
+				_on_zoom_in_pressed();
+				canvas->accept_event();
+				return;
+			}
+			if (mb->is_pressed() && mb->get_button_index() == MouseButton::WHEEL_DOWN) {
+				_on_zoom_out_pressed();
+				canvas->accept_event();
+				return;
+			}
 		}
 
 		// Paneo con botón central del ratón (Sección 6.1)
@@ -1612,7 +1913,7 @@ ClockGearsTilePicker::ClockGearsTilePicker() {
 	}
 
 	// --- LIENZO CENTRAL CON BARRAS DE DESPLAZAMIENTO (HScrollBar y VScrollBar) ---
-	PanelContainer *canvas_frame = memnew(PanelContainer);
+	canvas_frame = memnew(PanelContainer);
 	canvas_frame->set_h_size_flags(SIZE_EXPAND_FILL);
 	canvas_frame->set_v_size_flags(SIZE_EXPAND_FILL);
 	canvas_frame->set_custom_minimum_size(Size2(180 * EDSCALE, 180 * EDSCALE));

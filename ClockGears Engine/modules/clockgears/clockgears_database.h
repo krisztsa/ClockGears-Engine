@@ -110,6 +110,7 @@ private:
 
 	// Column 2: Parameters
 	VBoxContainer *col2_box = nullptr;
+	MarginContainer *tab0_margin_container = nullptr;
 	Label *col2_title = nullptr;
 	GridContainer *params_grid = nullptr;
 	LineEdit *name_edit = nullptr;
@@ -393,13 +394,17 @@ private:
 	int active_tileset_slot_index = 4; // Por defecto A5 (tiles normales 32x32)
 	int pending_load_slot_index = -1;
 	int active_a_subtab_index = 4; // 0=A1, 1=A2, 2=A3, 3=A4, 4=A5
+	VBoxContainer *tileset_left_col = nullptr;
+	ScrollContainer *tileset_slots_scroll = nullptr;
 	VBoxContainer *tileset_slots_box = nullptr;
 	LineEdit *tileset_slot_edits[TILESET_SLOT_COUNT] = { nullptr };
 	Button *btn_load_slot[TILESET_SLOT_COUNT] = { nullptr };
 	Button *btn_clear_slot[TILESET_SLOT_COUNT] = { nullptr };
 
 	// Tileset Collision Box (when CAT_TILESETS is selected)
+	PanelContainer *tileset_collision_panel = nullptr;
 	VBoxContainer *tileset_collision_box = nullptr;
+	HBoxContainer *tileset_tabs_row = nullptr;
 	HBoxContainer *tileset_group_tabs_box = nullptr;
 	Button *btn_ts_group_tab[5] = { nullptr }; // A, B, C, D, E
 	HBoxContainer *tileset_a_subtabs_box = nullptr;
@@ -429,6 +434,7 @@ private:
 	static int _find_slot_index(const String &p_slot_key);
 	int _ensure_active_tileset_record();
 	void _refresh_tileset_slots_ui();
+	void _update_tileset_split_layout();
 	void _on_tileset_group_tab_pressed(int p_group_idx);
 	void _on_tileset_a_subtab_pressed(int p_sub_idx);
 	void _on_load_slot_button_pressed(int p_slot_idx);
