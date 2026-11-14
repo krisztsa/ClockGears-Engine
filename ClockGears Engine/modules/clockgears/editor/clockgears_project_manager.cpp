@@ -1,6 +1,7 @@
 #include "clockgears_project_manager.h"
 #include "../core/clockgears_pixel_art.h"
 #include "../icons/clockgears_icons.h"
+#include "../runtime/clockgears_title_screen.h"
 #include "clockgears_theme.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -192,6 +193,7 @@ Error ClockGearsProjectStructure::initialize_new_project(const String &p_project
 				"[application]\n"
 				"\n"
 				"config/name=\"%s\"\n"
+				"run/main_scene=\"res://title_screen.tscn\"\n"
 				"config/features=PackedStringArray(\"4.8\", \"Forward Plus\")\n"
 				"config/icon=\"res://icon.svg\"\n"
 				"\n"
@@ -244,6 +246,8 @@ Error ClockGearsProjectStructure::initialize_new_project(const String &p_project
 		fa->store_string(godot_cfg);
 		fa->close();
 	}
+
+	ClockGearsTitleScreen::ensure_title_screen_scene(base_dir.path_join("title_screen.tscn"));
 
 	// 3. Generar LEEME.txt en la raíz del proyecto (Requisito 7)
 	ensure_readme_file(base_dir, false);

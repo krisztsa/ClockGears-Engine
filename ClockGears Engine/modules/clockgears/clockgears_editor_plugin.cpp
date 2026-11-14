@@ -4,6 +4,7 @@
 #include "clockgears_animation.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_system_catalog.h"
+#include "runtime/clockgears_title_screen.h"
 #include "core/config/project_settings.h"
 #include "core/input/input_event.h"
 #include "core/io/dir_access.h"
@@ -669,8 +670,9 @@ Node *ClockGearsEditorPlugin::ensure_active_map() {
 	ResourceSaver::save(packed, map_path);
 	memdelete(map);
 
+	ClockGearsTitleScreen::ensure_title_screen_scene("res://title_screen.tscn");
 	if (ProjectSettings::get_singleton()) {
-		ProjectSettings::get_singleton()->set_setting("application/run/main_scene", map_path);
+		ProjectSettings::get_singleton()->set_setting("application/run/main_scene", "res://title_screen.tscn");
 		ProjectSettings::get_singleton()->save();
 	}
 
@@ -1739,8 +1741,15 @@ bool ClockGearsEditorPlugin::start_playtest() {
 	// Persistir Base de Datos JSON antes de lanzar el proceso de juego
 	dm->save_all("res://clockgears_data");
 
+	const String title_scene_path = "res://title_screen.tscn";
+	ClockGearsTitleScreen::ensure_title_screen_scene(title_scene_path);
+
 	if (ProjectSettings::get_singleton()) {
-		ProjectSettings::get_singleton()->set_setting("application/run/main_scene", target_map_path);
+		ProjectSettings::get_singleton()->set_setting("application/run/main_scene", title_scene_path);
+		String game_title = dm->get_effective_game_title();
+		if (!game_title.is_empty()) {
+			ProjectSettings::get_singleton()->set_setting("application/config/name", game_title);
+		}
 		ProjectSettings::get_singleton()->save();
 	}
 
@@ -1750,7 +1759,7 @@ bool ClockGearsEditorPlugin::start_playtest() {
 		playtest_pid = 0;
 	}
 
-	// Lanzar ventana independiente de juego con ruta real sin corromper espacios (%20) ni ocultar en GameView
+	// Lanzar ventana independiente de juego arrancando siempre por la pantalla de título
 	List<String> args;
 	String resource_path = ProjectSettings::get_singleton()->get_resource_path();
 	if (!resource_path.is_empty()) {
@@ -1760,10 +1769,10 @@ bool ClockGearsEditorPlugin::start_playtest() {
 	args.push_back("--position");
 	args.push_back("120,80");
 	args.push_back("--clockgears-playtest");
-	args.push_back(target_map_path);
+	args.push_back(title_scene_path);
 
-	print_line(vformat("[ClockGears Playtest] Lanzando juego: ejecutable='%s' --path '%s' escena='%s'",
-			OS::get_singleton()->get_executable_path(), resource_path, target_map_path));
+	print_line(vformat("[ClockGears Playtest] Lanzando juego: ejecutable='%s' --path '%s' escena='%s' (start_map='%s')",
+			OS::get_singleton()->get_executable_path(), resource_path, title_scene_path, target_map_path));
 
 	Error err = OS::get_singleton()->create_instance(args, &playtest_pid);
 	if (err != OK) {

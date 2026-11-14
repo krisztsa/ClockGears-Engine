@@ -173,6 +173,7 @@ public:
 	}
 
 	void set_grid_cell_immediate(const Vector2i &p_cell, int p_dir = 2);
+	void set_world_position_immediate(const Vector2 &p_pos, int p_dir = 2);
 	Vector2i get_grid_cell() const { return grid_cell; }
 
 	void set_direction(int p_dir);

@@ -214,7 +214,8 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 	gold_panel->hide();
 	add_child(gold_panel);
 
-	gold_label = memnew(Label(CG_MW_TR("0 G")));
+	String init_currency = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->get_currency_unit() : String("G");
+	gold_label = memnew(Label(vformat("0 %s", init_currency)));
 	gold_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
 	gold_label->add_theme_color_override("font_color", Color(0.95f, 0.85f, 0.35f, 1.0f));
 	gold_label->set_focus_mode(FOCUS_NONE);
@@ -556,7 +557,8 @@ void ClockGearsMessageWindow::show_message(const String &p_text, const String &p
 		if (active_message.show_gold) {
 			ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 			int gold = dm ? dm->get_gold() : 0;
-			gold_label->set_text(vformat(CG_MW_TR("%d G"), gold));
+			String currency = dm ? dm->get_currency_unit() : String("G");
+			gold_label->set_text(vformat("%d %s", gold, currency));
 			gold_panel->show();
 		} else {
 			gold_panel->hide();

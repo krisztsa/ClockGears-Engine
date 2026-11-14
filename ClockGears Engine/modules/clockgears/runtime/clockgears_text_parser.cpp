@@ -188,16 +188,9 @@ String ClockGearsTextParser::resolve_data_escapes(const String &p_text) {
 					}
 				}
 
-				// 5. \G -> Moneda del Sistema
+				// 5. \G -> Unidad Monetaria del Sistema (fuente única de verdad)
 				if (next == 'G') {
-					String currency = "G";
-					if (dm) {
-						Array sys_arr = dm->get_category_array(CAT_SYSTEM);
-						if (!sys_arr.is_empty()) {
-							Dictionary sys = sys_arr[0];
-							currency = sys.get("currency_name", "G");
-						}
-					}
+					String currency = dm ? dm->get_currency_unit() : String("G");
 					res += currency;
 					i += 2;
 					any_replaced = true;

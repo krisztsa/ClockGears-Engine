@@ -56,6 +56,17 @@ private:
 	Array category_data[CAT_MAX];
 	Dictionary system_config;
 	Dictionary vocabulary_config;
+	Dictionary title_menu_config;
+	Dictionary player_options;
+	bool player_options_loaded = false;
+	String player_options_path_override;
+	String save_directory_override;
+	String pending_loaded_map_path;
+	double applied_music_volume = 0.8;
+	double applied_sfx_volume = 0.8;
+	double applied_brightness = 1.0;
+	bool applied_fullscreen = false;
+	String applied_window_title;
 	Dictionary switches_names;
 	Dictionary variables_names;
 	Dictionary runtime_switches;
@@ -72,6 +83,7 @@ private:
 	Variant _normalize_json_numbers(const Variant &p_val) const;
 	bool _write_json_atomic(const String &p_file_path, const Variant &p_data) const;
 	bool _read_json_with_backup(const String &p_file_path, Variant &r_data) const;
+	void _normalize_system_and_vocabulary_config();
 	void _migrate_schema_if_needed(int p_from_version);
 	int _clean_cross_references_on_delete(int p_category, int p_deleted_id);
 
@@ -112,6 +124,49 @@ public:
 
 	Dictionary get_vocabulary_config() const { return vocabulary_config.duplicate(true); }
 	void set_vocabulary_config(const Dictionary &p_vocab);
+
+	// Datos del Menú Principal (9B Tanda 1)
+	static Dictionary get_default_title_menu_config();
+	static Dictionary normalize_title_menu_config(const Dictionary &p_cfg);
+	Dictionary get_title_menu_config() const { return title_menu_config.duplicate(true); }
+	void set_title_menu_config(const Dictionary &p_cfg);
+	Array get_visible_title_entries() const;
+	int get_save_slot_count() const;
+	void set_save_slot_count(int p_count);
+
+	// Título del proyecto y Unidad Monetaria (fuente única de verdad)
+	String get_effective_game_title() const;
+	void apply_game_window_title(Node *p_context = nullptr);
+	String get_applied_window_title() const { return applied_window_title; }
+	String get_currency_unit() const;
+	void set_currency_unit(const String &p_unit);
+
+	// Opciones del jugador (archivo separado en user://)
+	static Dictionary get_default_player_options();
+	static Dictionary normalize_player_options(const Dictionary &p_opts);
+	void set_player_options_path(const String &p_path);
+	String get_player_options_path() const;
+	Dictionary get_player_options() const { return player_options.duplicate(true); }
+	void set_player_options(const Dictionary &p_opts, bool p_save_and_apply = true);
+	bool load_player_options();
+	bool save_player_options() const;
+	void ensure_player_options_loaded();
+	void apply_player_options(Node *p_context = nullptr);
+	Dictionary get_applied_player_options_state() const;
+
+	// Guardado y carga de N ranuras (separadas de opciones)
+	void set_save_directory(const String &p_dir);
+	String get_save_directory() const;
+	String get_save_slot_path(int p_slot) const;
+	bool save_game_slot(int p_slot, const Dictionary &p_context = Dictionary());
+	bool load_game_slot(int p_slot);
+	bool start_game_from_save(int p_slot, Node *p_context = nullptr);
+	Dictionary get_save_slot_info(int p_slot) const;
+	Array list_save_slots() const;
+	bool has_any_save() const;
+	bool delete_save_slot(int p_slot);
+	String get_pending_loaded_map_path() const { return pending_loaded_map_path; }
+	static String format_playtime_hms(double p_seconds);
 
 	Dictionary get_switches_names() const { return switches_names.duplicate(true); }
 	void set_switches_names(const Dictionary &p_names);

@@ -1,5 +1,6 @@
 #include "clockgears_battle.h"
 #include "clockgears_debug_panel.h"
+#include "core/clockgears_data_manager.h"
 
 // ============================================================================
 // ClockGearsBattleUnit
@@ -1574,7 +1575,8 @@ void ClockGearsBattleController::process_victory_rewards() {
 		}
 	}
 
-	String vic_log = vformat(String::utf8("[Batalla] ¡Victoria! +%d EXP, +%d Oro."), total_exp_reward, total_gold_reward);
+	String currency = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->get_currency_unit() : String("G");
+	String vic_log = vformat(String::utf8("[Batalla] ¡Victoria! +%d EXP, +%d %s."), total_exp_reward, total_gold_reward, currency);
 	print_line(vic_log);
 	log_history.push_back(vic_log);
 	ClockGearsDebugOverlay::log_battle(vic_log);

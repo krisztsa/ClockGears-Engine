@@ -1235,6 +1235,9 @@ void ClockGearsMap::init_runtime_session() {
 	if (dm->get_category_array(CAT_ACTORS).is_empty() && FileAccess::exists("res://clockgears_data/actors.json")) {
 		dm->load_all("res://clockgears_data");
 	}
+	dm->ensure_player_options_loaded();
+	dm->apply_player_options(this);
+	dm->apply_game_window_title(this);
 
 	Array actors = dm->get_category_array(CAT_ACTORS);
 	Dictionary sys = dm->get_system_config();
@@ -1297,12 +1300,21 @@ void ClockGearsMap::init_runtime_session() {
 		start_dir = 2;
 	}
 
+	bool has_exact_pos = false;
+	Vector2 exact_px;
 	if ((bool)sys.get("runtime_has_transfer", false)) {
 		start_cell = Vector2i(
 				(int)sys.get("runtime_transfer_x", start_cell.x),
 				(int)sys.get("runtime_transfer_y", start_cell.y));
 		start_dir = (int)sys.get("runtime_transfer_dir", start_dir);
+		if ((bool)sys.get("runtime_has_exact_pos", false)) {
+			has_exact_pos = true;
+			exact_px = Vector2(
+					float(sys.get("runtime_transfer_px_x", double(start_cell.x * grid_resolution))),
+					float(sys.get("runtime_transfer_px_y", double(start_cell.y * grid_resolution))));
+		}
 		sys["runtime_has_transfer"] = false;
+		sys.erase("runtime_has_exact_pos");
 		dm->set_system_config(sys);
 	}
 
@@ -1337,7 +1349,11 @@ void ClockGearsMap::init_runtime_session() {
 	runtime_player->load_actor_data(leader_id);
 	runtime_player->setup_on_map(this, runtime_followers, nullptr);
 	runtime_player->set_allow_diagonal(int(sys.get("movement_directions", 4)) == 8);
-	runtime_player->set_grid_cell_immediate(start_cell, start_dir);
+	if (has_exact_pos) {
+		runtime_player->set_world_position_immediate(exact_px, start_dir);
+	} else {
+		runtime_player->set_grid_cell_immediate(start_cell, start_dir);
+	}
 
 	// 3. Cámara Pixel-Perfect (Anexo A4.1)
 	runtime_camera = memnew(ClockGearsPixelCamera2D);

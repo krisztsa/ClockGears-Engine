@@ -1,5 +1,6 @@
 #include "clockgears_runtime.h"
 #include "clockgears_entity_ai.h"
+#include "clockgears_title_screen.h"
 #include "../clockgears_battle_window.h"
 #include "../clockgears_debug_panel.h"
 #include "../core/clockgears_data_manager.h"
@@ -139,6 +140,7 @@ static Ref<Texture2D> _cg_make_pixel_char_sheet(const Color &p_body, const Color
 
 void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_grid_cell_immediate", "cell", "dir"), &ClockGearsPlayer::set_grid_cell_immediate, DEFVAL(2));
+	ClassDB::bind_method(D_METHOD("set_world_position_immediate", "pos", "dir"), &ClockGearsPlayer::set_world_position_immediate, DEFVAL(2));
 	ClassDB::bind_method(D_METHOD("get_grid_cell"), &ClockGearsPlayer::get_grid_cell);
 	ClassDB::bind_method(D_METHOD("set_direction", "dir"), &ClockGearsPlayer::set_direction);
 	ClassDB::bind_method(D_METHOD("get_direction"), &ClockGearsPlayer::get_direction);
@@ -1306,6 +1308,20 @@ void ClockGearsPlayer::set_grid_cell_immediate(const Vector2i &p_cell, int p_dir
 	step_target_px = step_start_px;
 	step_exact_px = step_start_px;
 	set_position(step_start_px);
+	anim_pattern_idx = 1;
+	_sync_locomotion_state();
+	_update_sprite_frame();
+}
+
+void ClockGearsPlayer::set_world_position_immediate(const Vector2 &p_pos, int p_dir) {
+	moving_step = false;
+	dashing = false;
+	direction = ClockGearsCharacterStateRegistry::is_valid_direction(p_dir) ? p_dir : 2;
+	step_start_px = p_pos;
+	step_target_px = p_pos;
+	step_exact_px = p_pos;
+	set_position(p_pos);
+	_sync_grid_cell_from_world_pos(p_pos);
 	anim_pattern_idx = 1;
 	_sync_locomotion_state();
 	_update_sprite_frame();
@@ -3338,6 +3354,17 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 
 		state = STATE_WAITING_BATTLE;
 		return false;
+	}
+
+	// --- Volver al Título ---
+	if (type == "return_to_title" || code == CG_CMD_RETURN_TO_TITLE) {
+		if (is_inside_tree() && get_tree()) {
+			ClockGearsTitleScreen::ensure_title_screen_scene("res://title_screen.tscn");
+			if (ResourceLoader::exists("res://title_screen.tscn")) {
+				get_tree()->change_scene_to_file("res://title_screen.tscn");
+			}
+		}
+		return true;
 	}
 
 	return true;

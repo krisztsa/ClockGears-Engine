@@ -37,6 +37,7 @@
 #include "runtime/clockgears_picture_manager.h"
 #include "runtime/clockgears_cutscene.h"
 #include "runtime/clockgears_entity_ai.h"
+#include "runtime/clockgears_title_screen.h"
 #include "clockgears_debug_panel.h"
 
 #ifdef TOOLS_ENABLED
@@ -175,6 +176,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsBattleUnit);
 		GDREGISTER_CLASS(ClockGearsBattleController);
 		GDREGISTER_CLASS(ClockGearsBattleScene);
+		GDREGISTER_CLASS(ClockGearsTitleScreen);
 
 		ClockGearsPlayer::ensure_default_arpg_input_actions();
 	}

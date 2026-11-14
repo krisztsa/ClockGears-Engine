@@ -1,5 +1,6 @@
 #include "clockgears_battle_window.h"
 #include "clockgears_debug_panel.h"
+#include "core/clockgears_data_manager.h"
 #include "clockgears_fx_manager.h"
 #include "editor/clockgears_theme.h"
 #include "editor/themes/editor_scale.h"
@@ -1260,7 +1261,8 @@ void ClockGearsBattleScene::_check_battle_state() {
 			return;
 		}
 		if (res == ClockGearsBattleController::RESULT_VICTORY) {
-			String vic_msg = vformat(String::utf8("¡Victoria! Has ganado %d EXP y %d de Oro."), controller->get_total_exp(), controller->get_total_gold());
+			String currency = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->get_currency_unit() : String("G");
+			String vic_msg = vformat(String::utf8("¡Victoria! Has ganado %d EXP y %d %s."), controller->get_total_exp(), controller->get_total_gold(), currency);
 			Array drs = controller->get_dropped_items();
 			if (!drs.is_empty()) {
 				vic_msg += String::utf8("\n¡Objetos encontrados: ");

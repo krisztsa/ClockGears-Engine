@@ -1,4 +1,5 @@
 #include "clockgears_turn_battle.h"
+#include "core/clockgears_data_manager.h"
 
 void ClockGearsTurnBattle::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("start_battle", "party_battlers", "enemy_battlers"), &ClockGearsTurnBattle::start_battle);
@@ -402,7 +403,8 @@ bool ClockGearsTurnBattle::_check_battle_end() {
 		for (int i = 0; i < party_members.size(); i++) {
 			party_members[i]->gain_exp(total_exp);
 		}
-		log_label->set_text(vformat(String::utf8("¡Victoria! Conseguiste %d EXP y %d de Oro."), total_exp, total_gold));
+		String currency = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->get_currency_unit() : String("G");
+		log_label->set_text(vformat(String::utf8("¡Victoria! Conseguiste %d EXP y %d %s."), total_exp, total_gold, currency));
 		emit_signal("battle_finished", true, total_exp, total_gold);
 		return true;
 	}

@@ -729,7 +729,8 @@ void ClockGearsEvent::execute() {
 			if (dm) {
 				dm->change_gold((op == "-") ? -amount : amount);
 			}
-			print_line(vformat("  [Dinero] %s%d Oro", op, amount));
+			String currency = dm ? dm->get_currency_unit() : String("G");
+			print_line(vformat("  [Dinero] %s%d %s", op, amount, currency));
 		} else if (type == "hp_mp") {
 			String stat = cmd.get("stat", "HP");
 			String op = cmd.get("op", "+");

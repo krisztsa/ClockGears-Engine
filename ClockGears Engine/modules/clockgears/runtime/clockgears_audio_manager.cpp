@@ -433,6 +433,19 @@ void ClockGearsAudioManager::restore_bgm(float p_crossfade_time) {
 void ClockGearsAudioManager::set_bus_volume(int p_bus, float p_volume) {
 	if (p_bus >= 0 && p_bus < BUS_COUNT) {
 		bus_volumes[p_bus] = CLAMP(p_volume, 0.0f, 1.0f);
+		AudioStreamPlayer *active_bgm = using_bgm_a ? bgm_a : bgm_b;
+		if (active_bgm && active_bgm->is_playing()) {
+			float eff_bgm = bgm_target_volume * bus_volumes[BUS_BGM] * bus_volumes[BUS_MASTER] * duck_current_lerp;
+			active_bgm->set_volume_db(Math::linear_to_db(MAX(0.0001f, eff_bgm)));
+		}
+		if (bgs_player && bgs_player->is_playing()) {
+			float eff_bgs = bgs_volume * bus_volumes[BUS_BGS] * bus_volumes[BUS_MASTER];
+			bgs_player->set_volume_db(Math::linear_to_db(MAX(0.0001f, eff_bgs)));
+		}
+		if (me_player && me_player->is_playing()) {
+			float eff_me = bus_volumes[BUS_ME] * bus_volumes[BUS_MASTER];
+			me_player->set_volume_db(Math::linear_to_db(MAX(0.0001f, eff_me)));
+		}
 	}
 }
 

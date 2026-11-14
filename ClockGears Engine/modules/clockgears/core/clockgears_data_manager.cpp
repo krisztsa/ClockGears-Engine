@@ -1,16 +1,29 @@
 #include "clockgears_data_manager.h"
 #include "../clockgears_animation.h"
 #include "../clockgears_battle.h"
+#include "../clockgears_map.h"
 #include "../clockgears_types.h"
+#include "../runtime/clockgears_audio_manager.h"
+#include "../runtime/clockgears_runtime.h"
 #include "clockgears_formulas.h"
 #include "clockgears_id_registry.h"
 #include "clockgears_system_catalog.h"
 #include "clockgears_time_manager.h"
+#include "core/config/engine.h"
+#include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
 #include "core/os/time.h"
+#include "scene/gui/color_rect.h"
+#include "scene/main/canvas_layer.h"
+#include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
+#include "scene/resources/canvas_item_material.h"
+#include "scene/resources/material.h"
+#include "servers/display/display_server.h"
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -83,7 +96,7 @@ void ClockGearsDataManager::init_empty() {
 
 	system_config.clear();
 	system_config["game_title"] = "";
-	system_config["currency_unit"] = "G";
+	system_config["currency"] = "G";
 	system_config["combat_mode"] = 0; // 0 = Turnos Clásico, 1 = Action RPG Tiempo Real
 	system_config["movement_directions"] = 4; // 4 o 8 direcciones de movimiento
 	system_config["mannequin_size"] = 32; // Tamaño de maniquí de referencia (32, 48, 64; no se exporta)
@@ -115,6 +128,12 @@ void ClockGearsDataManager::init_empty() {
 	vocabulary_config["formation"] = String::utf8("Formación");
 	vocabulary_config["save"] = "Guardar";
 	vocabulary_config["game_end"] = "Salir";
+
+	title_menu_config = get_default_title_menu_config();
+	if (!player_options_loaded) {
+		player_options = get_default_player_options();
+	}
+	pending_loaded_map_path = "";
 
 	switches_names.clear();
 	variables_names.clear();
@@ -162,6 +181,10 @@ Variant ClockGearsDataManager::_normalize_json_numbers(const Variant &p_val) con
 }
 
 bool ClockGearsDataManager::_write_json_atomic(const String &p_file_path, const Variant &p_data) const {
+	String base_dir = p_file_path.get_base_dir();
+	if (!base_dir.is_empty()) {
+		DirAccess::make_dir_recursive_absolute(base_dir);
+	}
 	String tmp_path = p_file_path + ".tmp";
 	String bak_path = p_file_path + ".bak";
 
@@ -173,7 +196,10 @@ bool ClockGearsDataManager::_write_json_atomic(const String &p_file_path, const 
 		f->flush();
 	}
 
-	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	Ref<DirAccess> dir = DirAccess::create_for_path(p_file_path);
+	if (dir.is_null()) {
+		dir = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	}
 	ERR_FAIL_COND_V(dir.is_null(), false);
 
 	if (FileAccess::exists(p_file_path)) {
@@ -1121,10 +1147,43 @@ void ClockGearsDataManager::normalize_arpg_system_config(Dictionary &r_cfg) {
 	r_cfg["arpg_dodge_cooldown"] = CLAMP(dcd, 0.0, 30.0);
 }
 
+void ClockGearsDataManager::_normalize_system_and_vocabulary_config() {
+	// Fuente única de verdad para Unidad Monetaria: system_config["currency"]
+	String cur;
+	if (system_config.has("currency")) {
+		cur = String(system_config["currency"]).strip_edges();
+	}
+	if (cur.is_empty() && system_config.has("currency_unit")) {
+		cur = String(system_config["currency_unit"]).strip_edges();
+	}
+	if (cur.is_empty() && system_config.has("currency_name")) {
+		cur = String(system_config["currency_name"]).strip_edges();
+	}
+	if (cur.is_empty() && vocabulary_config.has("gold")) {
+		cur = String(vocabulary_config["gold"]).strip_edges();
+	}
+	if (cur.is_empty()) {
+		cur = "G";
+	}
+	system_config["currency"] = cur;
+	system_config.erase("currency_unit");
+	system_config.erase("currency_name");
+	vocabulary_config.erase("gold");
+
+	if (!system_config.has("game_title")) {
+		system_config["game_title"] = "";
+	}
+}
+
 void ClockGearsDataManager::set_system_config(const Dictionary &p_cfg) {
 	system_config = p_cfg.duplicate(true);
 	system_config["mannequin_size"] = normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
 	normalize_arpg_system_config(system_config);
+	if (system_config.has("title_menu") && system_config["title_menu"].get_type() == Variant::DICTIONARY) {
+		title_menu_config = normalize_title_menu_config(Dictionary(system_config["title_menu"]));
+		system_config.erase("title_menu");
+	}
+	_normalize_system_and_vocabulary_config();
 	dirty = true;
 	emit_signal("data_changed", "system", 0);
 }
@@ -1147,6 +1206,12 @@ Dictionary ClockGearsDataManager::get_exported_system_config() const {
 
 void ClockGearsDataManager::set_vocabulary_config(const Dictionary &p_vocab) {
 	vocabulary_config = p_vocab.duplicate(true);
+	if (!system_config.has("currency") || String(system_config["currency"]).strip_edges().is_empty()) {
+		if (vocabulary_config.has("gold") && !String(vocabulary_config["gold"]).strip_edges().is_empty()) {
+			system_config["currency"] = String(vocabulary_config["gold"]).strip_edges();
+		}
+	}
+	vocabulary_config.erase("gold");
 	dirty = true;
 	emit_signal("data_changed", "vocabulary", 0);
 }
@@ -1164,7 +1229,10 @@ void ClockGearsDataManager::set_variables_names(const Dictionary &p_names) {
 }
 
 bool ClockGearsDataManager::save_all(const String &p_dir_path) {
-	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	Ref<DirAccess> dir = DirAccess::create_for_path(p_dir_path);
+	if (dir.is_null()) {
+		dir = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	}
 	ERR_FAIL_COND_V(dir.is_null(), false);
 	if (!dir->dir_exists(p_dir_path)) {
 		Error err = dir->make_dir_recursive(p_dir_path);
@@ -1220,7 +1288,13 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 		}
 	}
 
-	// 5c. Guardar estado de partida / equipo ARPG runtime (runtime_state.json)
+	// 5c. Guardar configuración del Menú Principal (title_menu.json)
+	title_menu_config = normalize_title_menu_config(title_menu_config);
+	if (!_write_json_atomic(p_dir_path.path_join("title_menu.json"), title_menu_config)) {
+		return false;
+	}
+
+	// 5d. Guardar estado de partida / equipo ARPG runtime (runtime_state.json)
 	if (!_write_json_atomic(p_dir_path.path_join("runtime_state.json"), export_runtime_state())) {
 		return false;
 	}
@@ -1308,6 +1382,18 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	if (_read_json_with_backup(p_dir_path.path_join("vocabulary.json"), vocab_var) && vocab_var.get_type() == Variant::DICTIONARY) {
 		vocabulary_config = vocab_var;
 	}
+
+	// Migración de title_menu.json (o fallback desde system.json / valores por defecto en proyectos antiguos)
+	Variant title_var;
+	if (_read_json_with_backup(p_dir_path.path_join("title_menu.json"), title_var) && title_var.get_type() == Variant::DICTIONARY) {
+		title_menu_config = normalize_title_menu_config(Dictionary(title_var));
+	} else if (system_config.has("title_menu") && system_config["title_menu"].get_type() == Variant::DICTIONARY) {
+		title_menu_config = normalize_title_menu_config(Dictionary(system_config["title_menu"]));
+	} else {
+		title_menu_config = get_default_title_menu_config();
+	}
+	system_config.erase("title_menu");
+	_normalize_system_and_vocabulary_config();
 
 	Variant sw_var;
 	if (_read_json_with_backup(p_dir_path.path_join("switches_vars.json"), sw_var) && sw_var.get_type() == Variant::DICTIONARY) {
@@ -2153,8 +2239,7 @@ String ClockGearsDataManager::format_text(const String &p_text) const {
 				continue;
 			}
 			if (next == 'G' || next == 'g') {
-				String cur_unit = vocabulary_config.has("gold") ? String(vocabulary_config["gold"]) : "Oro";
-				out += cur_unit;
+				out += get_currency_unit();
 				i++;
 				continue;
 			}
@@ -2197,6 +2282,646 @@ String ClockGearsDataManager::format_text(const String &p_text) const {
 	return out;
 }
 
+static String s_normalize_scale_mode(const Variant &p_val) {
+	String s = String(p_val).strip_edges().to_lower();
+	if (s == "fill" || s == "rellenar") return "fill";
+	if (s == "stretch" || s == "estirar") return "stretch";
+	return "fit";
+}
+
+static String s_normalize_texture_filter_mode(const Variant &p_val) {
+	String s = String(p_val).strip_edges().to_lower();
+	if (s == "linear" || s == "lineal") return "linear";
+	return "nearest";
+}
+
+Dictionary ClockGearsDataManager::get_default_title_menu_config() {
+	Dictionary cfg;
+	cfg["schema_version"] = 1;
+	cfg["save_slots"] = 10;
+	cfg["credits_configured"] = false;
+	cfg["credits"] = Array();
+	cfg["bgm_path"] = "";
+
+	Dictionary bg;
+	bg["type"] = "color";
+	bg["color"] = "#12151e";
+	bg["image_path"] = "";
+	bg["scale_mode"] = "fit";
+	bg["filter"] = "nearest";
+	cfg["background"] = bg;
+
+	Dictionary title;
+	title["type"] = "text";
+	title["text"] = "";
+	title["image_path"] = "";
+	title["filter"] = "nearest";
+	cfg["title"] = title;
+
+	static const char *k_ids[5] = { "new_game", "continue", "options", "credits", "quit" };
+	static const char *k_labels[5] = { "Nueva partida", "Continuar", "Opciones", "Créditos", "Salir" };
+	Array entries;
+	for (int i = 0; i < 5; i++) {
+		Dictionary e;
+		e["id"] = k_ids[i];
+		e["text"] = String::utf8(k_labels[i]);
+		e["enabled"] = true;
+		e["order"] = i;
+		entries.push_back(e);
+	}
+	cfg["entries"] = entries;
+	return cfg;
+}
+
+Dictionary ClockGearsDataManager::normalize_title_menu_config(const Dictionary &p_cfg) {
+	Dictionary def = get_default_title_menu_config();
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+	out["save_slots"] = CLAMP(int(p_cfg.get("save_slots", 10)), 1, 99);
+	out["credits_configured"] = bool(p_cfg.get("credits_configured", false));
+	out["credits"] = (p_cfg.has("credits") && p_cfg["credits"].get_type() == Variant::ARRAY) ? Array(p_cfg["credits"]).duplicate(true) : Array();
+	out["bgm_path"] = String(p_cfg.get("bgm_path", p_cfg.get("music_path", ""))).strip_edges();
+
+	Dictionary def_bg = def["background"];
+	Dictionary raw_bg = (p_cfg.has("background") && p_cfg["background"].get_type() == Variant::DICTIONARY) ? Dictionary(p_cfg["background"]) : Dictionary();
+	Dictionary bg;
+	String bg_img = String(raw_bg.get("image_path", raw_bg.get("path", ""))).strip_edges();
+	String bg_type = String(raw_bg.get("type", bg_img.is_empty() ? "color" : "image")).strip_edges().to_lower();
+	if (bg_type != "image") {
+		bg_type = "color";
+	}
+	String bg_col = String(raw_bg.get("color", def_bg["color"])).strip_edges();
+	if (bg_col.is_empty() || !Color::html_is_valid(bg_col)) {
+		bg_col = String(def_bg["color"]);
+	}
+	bg["type"] = bg_type;
+	bg["color"] = bg_col;
+	bg["image_path"] = bg_img;
+	bg["scale_mode"] = s_normalize_scale_mode(raw_bg.get("scale_mode", def_bg["scale_mode"]));
+	bg["filter"] = s_normalize_texture_filter_mode(raw_bg.get("filter", def_bg["filter"]));
+	out["background"] = bg;
+
+	Dictionary def_title = def["title"];
+	Dictionary raw_title = (p_cfg.has("title") && p_cfg["title"].get_type() == Variant::DICTIONARY) ? Dictionary(p_cfg["title"]) : Dictionary();
+	Dictionary title;
+	String t_img = String(raw_title.get("image_path", raw_title.get("path", ""))).strip_edges();
+	String t_type = String(raw_title.get("type", "text")).strip_edges().to_lower();
+	if (t_type != "image") {
+		t_type = "text";
+	}
+	title["type"] = t_type;
+	title["text"] = String(raw_title.get("text", def_title["text"]));
+	title["image_path"] = t_img;
+	title["filter"] = s_normalize_texture_filter_mode(raw_title.get("filter", def_title["filter"]));
+	out["title"] = title;
+
+	Array def_entries = def["entries"];
+	Dictionary merged_by_id;
+	for (int i = 0; i < def_entries.size(); i++) {
+		Dictionary de = Dictionary(def_entries[i]).duplicate(true);
+		merged_by_id[String(de["id"])] = de;
+	}
+
+	if (p_cfg.has("entries") && p_cfg["entries"].get_type() == Variant::ARRAY) {
+		Array raw_entries = p_cfg["entries"];
+		for (int i = 0; i < raw_entries.size(); i++) {
+			if (raw_entries[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary re = raw_entries[i];
+			String id = String(re.get("id", "")).strip_edges().to_lower();
+			if (!merged_by_id.has(id)) {
+				continue;
+			}
+			Dictionary e = Dictionary(merged_by_id[id]).duplicate(true);
+			String txt = String(re.get("text", e["text"]));
+			if (!txt.strip_edges().is_empty()) {
+				e["text"] = txt;
+			}
+			if (re.has("enabled")) {
+				e["enabled"] = bool(re["enabled"]);
+			}
+			if (re.has("order")) {
+				e["order"] = int(re["order"]);
+			} else {
+				e["order"] = i;
+			}
+			merged_by_id[id] = e;
+		}
+	}
+
+	Vector<Dictionary> sorted;
+	for (int i = 0; i < def_entries.size(); i++) {
+		String id = String(Dictionary(def_entries[i])["id"]);
+		sorted.push_back(Dictionary(merged_by_id[id]));
+	}
+	for (int i = 0; i < sorted.size(); i++) {
+		for (int j = i + 1; j < sorted.size(); j++) {
+			int oi = int(sorted[i].get("order", i));
+			int oj = int(sorted[j].get("order", j));
+			if (oj < oi) {
+				Dictionary tmp = sorted[i];
+				sorted.write[i] = sorted[j];
+				sorted.write[j] = tmp;
+			}
+		}
+	}
+	Array norm_entries;
+	for (int i = 0; i < sorted.size(); i++) {
+		Dictionary e = sorted[i].duplicate(true);
+		e["order"] = i;
+		norm_entries.push_back(e);
+	}
+	out["entries"] = norm_entries;
+	return out;
+}
+
+void ClockGearsDataManager::set_title_menu_config(const Dictionary &p_cfg) {
+	title_menu_config = normalize_title_menu_config(p_cfg);
+	dirty = true;
+	emit_signal("data_changed", "title_menu", 0);
+}
+
+Array ClockGearsDataManager::get_visible_title_entries() const {
+	Dictionary norm = normalize_title_menu_config(title_menu_config);
+	Array entries = norm.get("entries", Array());
+	bool has_saves = has_any_save();
+	bool has_credits = bool(norm.get("credits_configured", false)) && !Array(norm.get("credits", Array())).is_empty();
+
+	Array out;
+	for (int i = 0; i < entries.size(); i++) {
+		Dictionary e = entries[i];
+		if (!bool(e.get("enabled", true))) {
+			continue;
+		}
+		String id = String(e.get("id", ""));
+		if (id == "continue" && !has_saves) {
+			continue;
+		}
+		if (id == "credits" && !has_credits) {
+			continue;
+		}
+		out.push_back(e.duplicate(true));
+	}
+	return out;
+}
+
+int ClockGearsDataManager::get_save_slot_count() const {
+	return CLAMP(int(title_menu_config.get("save_slots", 10)), 1, 99);
+}
+
+void ClockGearsDataManager::set_save_slot_count(int p_count) {
+	title_menu_config["save_slots"] = CLAMP(p_count, 1, 99);
+	dirty = true;
+	emit_signal("data_changed", "title_menu", 0);
+}
+
+String ClockGearsDataManager::get_effective_game_title() const {
+	String gt = String(system_config.get("game_title", "")).strip_edges();
+	if (!gt.is_empty()) {
+		return gt;
+	}
+	if (ProjectSettings::get_singleton()) {
+		String pn = String(ProjectSettings::get_singleton()->get_setting("application/config/name", "")).strip_edges();
+		if (!pn.is_empty()) {
+			return pn;
+		}
+	}
+	return "ClockGears Game";
+}
+
+void ClockGearsDataManager::apply_game_window_title(Node *p_context) {
+	String title = get_effective_game_title();
+	applied_window_title = title;
+	if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	if (DisplayServer::get_singleton() && !DisplayServer::get_singleton()->get_window_list().is_empty()) {
+		DisplayServer::get_singleton()->window_set_title(title);
+	}
+	SceneTree *st = p_context && p_context->is_inside_tree() ? p_context->get_tree() : SceneTree::get_singleton();
+	if (st && st->get_root()) {
+		st->get_root()->set_title(title);
+	}
+}
+
+String ClockGearsDataManager::get_currency_unit() const {
+	String cur = String(system_config.get("currency", "G")).strip_edges();
+	return cur.is_empty() ? String("G") : cur;
+}
+
+void ClockGearsDataManager::set_currency_unit(const String &p_unit) {
+	String clean = p_unit.strip_edges();
+	system_config["currency"] = clean.is_empty() ? String("G") : clean;
+	system_config.erase("currency_unit");
+	system_config.erase("currency_name");
+	vocabulary_config.erase("gold");
+	dirty = true;
+	emit_signal("data_changed", "system", 0);
+}
+
+Dictionary ClockGearsDataManager::get_default_player_options() {
+	Dictionary opts;
+	opts["schema_version"] = 1;
+	opts["music_volume"] = 0.8; // Rango 0.0 .. 1.0 (80 %)
+	opts["sfx_volume"] = 0.8;   // Rango 0.0 .. 1.0 (80 %)
+	opts["brightness"] = 1.0;   // Rango 0.5 .. 1.5 (100 % neutro)
+	opts["fullscreen"] = false; // Ventana por defecto
+	return opts;
+}
+
+Dictionary ClockGearsDataManager::normalize_player_options(const Dictionary &p_opts) {
+	Dictionary out = get_default_player_options();
+	if (p_opts.has("music_volume")) {
+		out["music_volume"] = CLAMP(double(p_opts["music_volume"]), 0.0, 1.0);
+	}
+	if (p_opts.has("sfx_volume")) {
+		out["sfx_volume"] = CLAMP(double(p_opts["sfx_volume"]), 0.0, 1.0);
+	}
+	if (p_opts.has("brightness")) {
+		out["brightness"] = CLAMP(double(p_opts["brightness"]), 0.5, 1.5);
+	}
+	if (p_opts.has("fullscreen")) {
+		out["fullscreen"] = bool(p_opts["fullscreen"]);
+	}
+	return out;
+}
+
+void ClockGearsDataManager::set_player_options_path(const String &p_path) {
+	player_options_path_override = p_path.strip_edges();
+	player_options_loaded = false;
+}
+
+String ClockGearsDataManager::get_player_options_path() const {
+	return player_options_path_override.is_empty() ? String("user://clockgears_options.json") : player_options_path_override;
+}
+
+void ClockGearsDataManager::set_player_options(const Dictionary &p_opts, bool p_save_and_apply) {
+	player_options = normalize_player_options(p_opts);
+	player_options_loaded = true;
+	if (p_save_and_apply) {
+		save_player_options();
+		apply_player_options();
+	}
+	emit_signal("player_options_changed");
+}
+
+bool ClockGearsDataManager::load_player_options() {
+	String path = get_player_options_path();
+	Variant v;
+	if (_read_json_with_backup(path, v) && v.get_type() == Variant::DICTIONARY) {
+		player_options = normalize_player_options(Dictionary(v));
+		player_options_loaded = true;
+		return true;
+	}
+	player_options = get_default_player_options();
+	player_options_loaded = true;
+	return false;
+}
+
+bool ClockGearsDataManager::save_player_options() const {
+	Dictionary clean = normalize_player_options(player_options);
+	return _write_json_atomic(get_player_options_path(), clean);
+}
+
+void ClockGearsDataManager::ensure_player_options_loaded() {
+	if (!player_options_loaded) {
+		load_player_options();
+	}
+}
+
+static void s_apply_brightness_overlay(SceneTree *p_tree, Node *p_context, double p_brightness) {
+	if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	Node *host = nullptr;
+	if (p_tree && p_tree->get_root()) {
+		host = p_tree->get_root();
+	} else if (p_context && p_context->is_inside_tree() && p_context->get_tree() && p_context->get_tree()->get_root()) {
+		host = p_context->get_tree()->get_root();
+	}
+	if (!host) {
+		return;
+	}
+
+	const String overlay_name = "ClockGearsBrightnessOverlay";
+	CanvasLayer *layer = Object::cast_to<CanvasLayer>(host->get_node_or_null(NodePath(overlay_name)));
+	if (!layer) {
+		layer = memnew(CanvasLayer);
+		layer->set_name(overlay_name);
+		layer->set_layer(126);
+		host->add_child(layer);
+	}
+	ColorRect *rect = Object::cast_to<ColorRect>(layer->get_node_or_null(NodePath("BrightnessRect")));
+	if (!rect) {
+		rect = memnew(ColorRect);
+		rect->set_name("BrightnessRect");
+		rect->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		layer->add_child(rect);
+	}
+
+	if (Math::abs(p_brightness - 1.0) < 0.005) {
+		rect->set_visible(false);
+		rect->set_color(Color(0, 0, 0, 0));
+		rect->set_material(Ref<Material>());
+	} else if (p_brightness < 1.0) {
+		float alpha = CLAMP(float(1.0 - p_brightness), 0.0f, 0.85f);
+		rect->set_material(Ref<Material>());
+		rect->set_color(Color(0.0f, 0.0f, 0.0f, alpha));
+		rect->set_visible(true);
+	} else {
+		float boost = CLAMP(float(p_brightness - 1.0), 0.0f, 0.5f);
+		Ref<CanvasItemMaterial> add_mat;
+		add_mat.instantiate();
+		add_mat->set_blend_mode(CanvasItemMaterial::BLEND_MODE_ADD);
+		rect->set_material(add_mat);
+		rect->set_color(Color(boost, boost, boost, 1.0f));
+		rect->set_visible(true);
+	}
+}
+
+void ClockGearsDataManager::apply_player_options(Node *p_context) {
+	ensure_player_options_loaded();
+	Dictionary opts = normalize_player_options(player_options);
+	applied_music_volume = double(opts.get("music_volume", 0.8));
+	applied_sfx_volume = double(opts.get("sfx_volume", 0.8));
+	applied_brightness = double(opts.get("brightness", 1.0));
+	applied_fullscreen = bool(opts.get("fullscreen", false));
+
+	if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+		am->set_bus_volume(ClockGearsAudioManager::BUS_BGM, float(applied_music_volume));
+		am->set_bus_volume(ClockGearsAudioManager::BUS_ME, float(applied_music_volume));
+		am->set_bus_volume(ClockGearsAudioManager::BUS_SE, float(applied_sfx_volume));
+		am->set_bus_volume(ClockGearsAudioManager::BUS_BGS, float(applied_sfx_volume));
+		am->set_bus_volume(ClockGearsAudioManager::BUS_VOICE, float(applied_sfx_volume));
+	}
+
+	SceneTree *st = (p_context && p_context->is_inside_tree()) ? p_context->get_tree() : SceneTree::get_singleton();
+	s_apply_brightness_overlay(st, p_context, applied_brightness);
+
+	if (!(Engine::get_singleton() && Engine::get_singleton()->is_editor_hint())) {
+		DisplayServer *ds = DisplayServer::get_singleton();
+		if (ds && ds->get_name() != "headless" && !ds->get_window_list().is_empty()) {
+			DisplayServerEnums::WindowMode target = applied_fullscreen
+					? DisplayServerEnums::WINDOW_MODE_FULLSCREEN
+					: DisplayServerEnums::WINDOW_MODE_WINDOWED;
+			if (ds->window_get_mode() != target) {
+				ds->window_set_mode(target);
+			}
+		}
+	}
+}
+
+Dictionary ClockGearsDataManager::get_applied_player_options_state() const {
+	Dictionary d;
+	d["music_volume"] = applied_music_volume;
+	d["sfx_volume"] = applied_sfx_volume;
+	d["brightness"] = applied_brightness;
+	d["fullscreen"] = applied_fullscreen;
+	return d;
+}
+
+void ClockGearsDataManager::set_save_directory(const String &p_dir) {
+	save_directory_override = p_dir.strip_edges();
+}
+
+String ClockGearsDataManager::get_save_directory() const {
+	return save_directory_override.is_empty() ? String("user://saves") : save_directory_override;
+}
+
+String ClockGearsDataManager::get_save_slot_path(int p_slot) const {
+	return get_save_directory().path_join(vformat("slot_%02d.json", p_slot));
+}
+
+String ClockGearsDataManager::format_playtime_hms(double p_seconds) {
+	int total = MAX(0, int(Math::floor(p_seconds)));
+	int hrs = total / 3600;
+	int mins = (total % 3600) / 60;
+	int secs = total % 60;
+	return vformat("%02d:%02d:%02d", hrs, mins, secs);
+}
+
+bool ClockGearsDataManager::save_game_slot(int p_slot, const Dictionary &p_context) {
+	int max_slots = get_save_slot_count();
+	if (p_slot < 1 || p_slot > max_slots) {
+		return false;
+	}
+
+	Dictionary save_doc = export_runtime_state();
+	save_doc["schema_version"] = 1;
+	save_doc["slot_index"] = p_slot;
+	save_doc["saved_at"] = Time::get_singleton() ? Time::get_singleton()->get_datetime_string_from_system(false, true) : "";
+	save_doc["game_title"] = get_effective_game_title();
+	save_doc["currency_unit"] = get_currency_unit();
+
+	Array party;
+	if (p_context.has("party") && p_context["party"].get_type() == Variant::ARRAY) {
+		party = Array(p_context["party"]).duplicate(true);
+	} else {
+		party = Array(system_config.get("party", Array())).duplicate(true);
+	}
+	if (party.is_empty() && !category_data[CAT_ACTORS].is_empty() && category_data[CAT_ACTORS][0].get_type() == Variant::DICTIONARY) {
+		party.push_back(int(Dictionary(category_data[CAT_ACTORS][0]).get("id", 1)));
+	}
+	save_doc["party"] = party;
+
+	String map_path = String(p_context.get("map_path", "")).strip_edges();
+	String map_name = String(p_context.get("map_name", "")).strip_edges();
+	Vector2i p_cell(int(p_context.get("player_x", 0)), int(p_context.get("player_y", 0)));
+	Vector2 p_pos(float(p_context.get("player_px_x", 0.0f)), float(p_context.get("player_px_y", 0.0f)));
+	bool has_explicit_px = p_context.has("player_px_x") || p_context.has("player_px_y") || p_context.has("player_pos");
+	if (p_context.has("player_pos") && p_context["player_pos"].get_type() == Variant::DICTIONARY) {
+		Dictionary pd = p_context["player_pos"];
+		p_pos = Vector2(float(pd.get("x", 0.0f)), float(pd.get("y", 0.0f)));
+	} else if (p_context.has("player_pos") && p_context["player_pos"].get_type() == Variant::VECTOR2) {
+		p_pos = Vector2(p_context["player_pos"]);
+	}
+	int p_dir = int(p_context.get("player_dir", int(system_config.get("start_dir", 2))));
+
+	if (map_path.is_empty() && SceneTree::get_singleton() && SceneTree::get_singleton()->get_current_scene()) {
+		if (ClockGearsMap *cur_map = Object::cast_to<ClockGearsMap>(SceneTree::get_singleton()->get_current_scene())) {
+			map_path = cur_map->get_scene_file_path();
+			if (map_name.is_empty()) {
+				map_name = cur_map->get_map_name();
+			}
+			if (ClockGearsPlayer *pl = cur_map->get_runtime_player()) {
+				if (!p_context.has("player_x") && !p_context.has("player_y")) {
+					p_cell = pl->get_grid_cell();
+				}
+				if (!has_explicit_px) {
+					p_pos = pl->get_position();
+					has_explicit_px = true;
+				}
+				if (!p_context.has("player_dir")) {
+					p_dir = pl->get_direction();
+				}
+			}
+		}
+	}
+
+	if (map_path.is_empty()) {
+		map_path = String(system_config.get("start_map", ""));
+	}
+	if (map_name.is_empty()) {
+		map_name = map_path.get_file().get_basename();
+	}
+	if (!has_explicit_px) {
+		p_pos = Vector2(p_cell.x * 32.0f, p_cell.y * 32.0f);
+	}
+
+	save_doc["map_path"] = map_path;
+	save_doc["map_name"] = map_name;
+
+	Dictionary cell_d;
+	cell_d["x"] = p_cell.x;
+	cell_d["y"] = p_cell.y;
+	save_doc["player_cell"] = cell_d;
+
+	Dictionary pos_d;
+	pos_d["x"] = double(p_pos.x);
+	pos_d["y"] = double(p_pos.y);
+	save_doc["player_pos"] = pos_d;
+	save_doc["player_dir"] = (p_dir == 2 || p_dir == 4 || p_dir == 6 || p_dir == 8) ? p_dir : 2;
+
+	bool ok = _write_json_atomic(get_save_slot_path(p_slot), save_doc);
+	if (ok) {
+		emit_signal("save_slots_changed");
+	}
+	return ok;
+}
+
+bool ClockGearsDataManager::load_game_slot(int p_slot) {
+	int max_slots = get_save_slot_count();
+	if (p_slot < 1 || p_slot > max_slots) {
+		return false;
+	}
+	Variant v;
+	if (!_read_json_with_backup(get_save_slot_path(p_slot), v) || v.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	Dictionary data = v;
+	import_runtime_state(data);
+
+	if (data.has("party") && data["party"].get_type() == Variant::ARRAY) {
+		Array saved_party = data["party"];
+		if (!saved_party.is_empty()) {
+			system_config["party"] = saved_party.duplicate(true);
+		}
+	}
+
+	Dictionary cell_d = (data.has("player_cell") && data["player_cell"].get_type() == Variant::DICTIONARY)
+			? Dictionary(data["player_cell"])
+			: Dictionary();
+	int tx = int(cell_d.get("x", system_config.get("start_x", 0)));
+	int ty = int(cell_d.get("y", system_config.get("start_y", 0)));
+	int tdir = int(data.get("player_dir", system_config.get("start_dir", 2)));
+	if (tdir != 2 && tdir != 4 && tdir != 6 && tdir != 8) {
+		tdir = 2;
+	}
+
+	system_config["runtime_has_transfer"] = true;
+	system_config["runtime_transfer_x"] = tx;
+	system_config["runtime_transfer_y"] = ty;
+	system_config["runtime_transfer_dir"] = tdir;
+	if (data.has("player_pos") && data["player_pos"].get_type() == Variant::DICTIONARY) {
+		Dictionary pos_d = data["player_pos"];
+		system_config["runtime_has_exact_pos"] = true;
+		system_config["runtime_transfer_px_x"] = double(pos_d.get("x", double(tx * 32)));
+		system_config["runtime_transfer_px_y"] = double(pos_d.get("y", double(ty * 32)));
+	} else {
+		system_config.erase("runtime_has_exact_pos");
+	}
+
+	pending_loaded_map_path = String(data.get("map_path", system_config.get("start_map", ""))).strip_edges();
+	return true;
+}
+
+bool ClockGearsDataManager::start_game_from_save(int p_slot, Node *p_context) {
+	if (!load_game_slot(p_slot)) {
+		return false;
+	}
+	String map_path = pending_loaded_map_path;
+	if (map_path.is_empty()) {
+		map_path = String(system_config.get("start_map", ""));
+	}
+	SceneTree *st = (p_context && p_context->is_inside_tree()) ? p_context->get_tree() : SceneTree::get_singleton();
+	if (st && !map_path.is_empty() && ResourceLoader::exists(map_path)) {
+		return st->change_scene_to_file(map_path) == OK;
+	}
+	return true;
+}
+
+Dictionary ClockGearsDataManager::get_save_slot_info(int p_slot) const {
+	Dictionary info;
+	info["slot_index"] = p_slot;
+	info["exists"] = false;
+	if (p_slot < 1 || p_slot > get_save_slot_count()) {
+		return info;
+	}
+	Variant v;
+	if (!_read_json_with_backup(get_save_slot_path(p_slot), v) || v.get_type() != Variant::DICTIONARY) {
+		return info;
+	}
+	Dictionary data = v;
+	info["exists"] = true;
+	info["saved_at"] = String(data.get("saved_at", ""));
+	info["playtime_sec"] = double(data.get("playtime_sec", 0.0));
+	info["playtime_formatted"] = format_playtime_hms(double(data.get("playtime_sec", 0.0)));
+	info["map_path"] = String(data.get("map_path", ""));
+	info["map_name"] = String(data.get("map_name", ""));
+	info["party"] = (data.has("party") && data["party"].get_type() == Variant::ARRAY) ? Array(data["party"]).duplicate(true) : Array();
+	info["gold"] = int(data.get("gold", 0));
+	info["player_cell"] = data.get("player_cell", Dictionary());
+	info["player_pos"] = data.get("player_pos", Dictionary());
+	info["player_dir"] = int(data.get("player_dir", 2));
+	return info;
+}
+
+Array ClockGearsDataManager::list_save_slots() const {
+	Array out;
+	int count = get_save_slot_count();
+	for (int s = 1; s <= count; s++) {
+		out.push_back(get_save_slot_info(s));
+	}
+	return out;
+}
+
+bool ClockGearsDataManager::has_any_save() const {
+	int count = get_save_slot_count();
+	for (int s = 1; s <= count; s++) {
+		String p = get_save_slot_path(s);
+		if (FileAccess::exists(p) || FileAccess::exists(p + ".bak")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::delete_save_slot(int p_slot) {
+	if (p_slot < 1) {
+		return false;
+	}
+	String p = get_save_slot_path(p_slot);
+	Ref<DirAccess> dir = DirAccess::create_for_path(p);
+	if (dir.is_null()) {
+		return false;
+	}
+	bool removed = false;
+	const String paths[3] = { p, p + ".bak", p + ".tmp" };
+	for (int i = 0; i < 3; i++) {
+		if (FileAccess::exists(paths[i])) {
+			if (dir->remove(paths[i]) == OK) {
+				removed = true;
+			}
+		}
+	}
+	if (removed) {
+		emit_signal("save_slots_changed");
+	}
+	return removed;
+}
+
 void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("init_empty"), &ClockGearsDataManager::init_empty);
 	ClassDB::bind_method(D_METHOD("is_dirty"), &ClockGearsDataManager::is_dirty);
@@ -2223,6 +2948,41 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_exported_system_config"), &ClockGearsDataManager::get_exported_system_config);
 	ClassDB::bind_method(D_METHOD("get_vocabulary_config"), &ClockGearsDataManager::get_vocabulary_config);
 	ClassDB::bind_method(D_METHOD("set_vocabulary_config", "vocab"), &ClockGearsDataManager::set_vocabulary_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_title_menu_config"), &ClockGearsDataManager::get_default_title_menu_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_title_menu_config", "config"), &ClockGearsDataManager::normalize_title_menu_config);
+	ClassDB::bind_method(D_METHOD("get_title_menu_config"), &ClockGearsDataManager::get_title_menu_config);
+	ClassDB::bind_method(D_METHOD("set_title_menu_config", "config"), &ClockGearsDataManager::set_title_menu_config);
+	ClassDB::bind_method(D_METHOD("get_visible_title_entries"), &ClockGearsDataManager::get_visible_title_entries);
+	ClassDB::bind_method(D_METHOD("get_save_slot_count"), &ClockGearsDataManager::get_save_slot_count);
+	ClassDB::bind_method(D_METHOD("set_save_slot_count", "count"), &ClockGearsDataManager::set_save_slot_count);
+	ClassDB::bind_method(D_METHOD("get_effective_game_title"), &ClockGearsDataManager::get_effective_game_title);
+	ClassDB::bind_method(D_METHOD("apply_game_window_title", "context"), &ClockGearsDataManager::apply_game_window_title, DEFVAL(Variant()));
+	ClassDB::bind_method(D_METHOD("get_applied_window_title"), &ClockGearsDataManager::get_applied_window_title);
+	ClassDB::bind_method(D_METHOD("get_currency_unit"), &ClockGearsDataManager::get_currency_unit);
+	ClassDB::bind_method(D_METHOD("set_currency_unit", "unit"), &ClockGearsDataManager::set_currency_unit);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_player_options"), &ClockGearsDataManager::get_default_player_options);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_player_options", "options"), &ClockGearsDataManager::normalize_player_options);
+	ClassDB::bind_method(D_METHOD("set_player_options_path", "path"), &ClockGearsDataManager::set_player_options_path);
+	ClassDB::bind_method(D_METHOD("get_player_options_path"), &ClockGearsDataManager::get_player_options_path);
+	ClassDB::bind_method(D_METHOD("get_player_options"), &ClockGearsDataManager::get_player_options);
+	ClassDB::bind_method(D_METHOD("set_player_options", "options", "save_and_apply"), &ClockGearsDataManager::set_player_options, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("load_player_options"), &ClockGearsDataManager::load_player_options);
+	ClassDB::bind_method(D_METHOD("save_player_options"), &ClockGearsDataManager::save_player_options);
+	ClassDB::bind_method(D_METHOD("ensure_player_options_loaded"), &ClockGearsDataManager::ensure_player_options_loaded);
+	ClassDB::bind_method(D_METHOD("apply_player_options", "context"), &ClockGearsDataManager::apply_player_options, DEFVAL(Variant()));
+	ClassDB::bind_method(D_METHOD("get_applied_player_options_state"), &ClockGearsDataManager::get_applied_player_options_state);
+	ClassDB::bind_method(D_METHOD("set_save_directory", "dir"), &ClockGearsDataManager::set_save_directory);
+	ClassDB::bind_method(D_METHOD("get_save_directory"), &ClockGearsDataManager::get_save_directory);
+	ClassDB::bind_method(D_METHOD("get_save_slot_path", "slot"), &ClockGearsDataManager::get_save_slot_path);
+	ClassDB::bind_method(D_METHOD("save_game_slot", "slot", "context"), &ClockGearsDataManager::save_game_slot, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("load_game_slot", "slot"), &ClockGearsDataManager::load_game_slot);
+	ClassDB::bind_method(D_METHOD("start_game_from_save", "slot", "context"), &ClockGearsDataManager::start_game_from_save, DEFVAL(Variant()));
+	ClassDB::bind_method(D_METHOD("get_save_slot_info", "slot"), &ClockGearsDataManager::get_save_slot_info);
+	ClassDB::bind_method(D_METHOD("list_save_slots"), &ClockGearsDataManager::list_save_slots);
+	ClassDB::bind_method(D_METHOD("has_any_save"), &ClockGearsDataManager::has_any_save);
+	ClassDB::bind_method(D_METHOD("delete_save_slot", "slot"), &ClockGearsDataManager::delete_save_slot);
+	ClassDB::bind_method(D_METHOD("get_pending_loaded_map_path"), &ClockGearsDataManager::get_pending_loaded_map_path);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("format_playtime_hms", "seconds"), &ClockGearsDataManager::format_playtime_hms);
 	ClassDB::bind_method(D_METHOD("get_switches_names"), &ClockGearsDataManager::get_switches_names);
 	ClassDB::bind_method(D_METHOD("set_switches_names", "names"), &ClockGearsDataManager::set_switches_names);
 	ClassDB::bind_method(D_METHOD("get_variables_names"), &ClockGearsDataManager::get_variables_names);
@@ -2287,6 +3047,8 @@ void ClockGearsDataManager::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("data_changed", PropertyInfo(Variant::STRING, "category"), PropertyInfo(Variant::INT, "id")));
 	ADD_SIGNAL(MethodInfo("drop_obtained", PropertyInfo(Variant::STRING, "item_name"), PropertyInfo(Variant::INT, "amount")));
 	ADD_SIGNAL(MethodInfo("actor_leveled_up", PropertyInfo(Variant::INT, "actor_id"), PropertyInfo(Variant::INT, "new_level")));
+	ADD_SIGNAL(MethodInfo("player_options_changed"));
+	ADD_SIGNAL(MethodInfo("save_slots_changed"));
 }
 
 void ClockGearsDataManager::set_editor_map(Node *p_map) {
