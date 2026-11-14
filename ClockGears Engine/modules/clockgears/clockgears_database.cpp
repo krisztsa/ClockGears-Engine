@@ -468,8 +468,7 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 			}
 #endif
 		} break;
-		case NOTIFICATION_PROCESS:
-		case NOTIFICATION_INTERNAL_PROCESS: {
+		case NOTIFICATION_PROCESS: {
 			if (anim_preview_playing && is_visible()) {
 				_update_anim_playback(get_process_delta_time());
 			}
@@ -4768,7 +4767,6 @@ void ClockGearsDatabaseDialog::_on_spinbox_line_edit_focus_exited(SpinBox *p_spi
 ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	singleton = this;
 	set_process(true);
-	set_process_internal(true);
 	set_title(CG_DB_TR("Base de Datos - ClockGears Engine"));
 	set_wrap_controls(false);
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
@@ -6428,7 +6426,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	anim_fps_spin->set_max(60);
 	anim_fps_spin->set_value(6);
 	_bind_numeric_spinbox(anim_fps_spin);
-	anim_fps_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
+	anim_fps_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_fps_value_changed));
+	if (LineEdit *fps_le = anim_fps_spin->get_line_edit()) {
+		fps_le->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_fps_text_changed));
+		fps_le->connect("text_submitted", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_fps_submitted));
+		fps_le->connect("focus_exited", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_fps_focus_exited));
+	}
 	fps_pair->add_child(anim_fps_spin);
 
 	anim_loop_chk = memnew(CheckBox(CG_DB_TR("Bucle")));
@@ -9610,9 +9613,11 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	}
 
 	updating_ui = true;
+	anim_fps_line_edited = false;
+	float fallback_fps = s_is_anim_slot_category(current_category) ? 8.0f : 6.0f;
 	if (current_sprite_data.animations.has(anim_name)) {
 		const ClockGearsSpriteAnimation &a = current_sprite_data.animations[anim_name];
-		if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : (s_is_anim_slot_category(current_category) ? 8.0f : 6.0f));
+		if (anim_fps_spin) anim_fps_spin->set_value(a.compute_average_fps(fallback_fps));
 		if (anim_loop_chk) anim_loop_chk->set_pressed(a.loop);
 		if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
 		if (anim_behind_body_chk) anim_behind_body_chk->set_pressed(a.behind_body);
@@ -10524,10 +10529,70 @@ void ClockGearsDatabaseDialog::_on_frame_remove(int p_step_idx) {
 			a.frames.remove_at(p_step_idx);
 		}
 		_update_current_anim_slot_labels();
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		anim_fps_line_edited = false;
+		if (anim_fps_spin) {
+			float fallback_fps = s_is_anim_slot_category(current_category) ? 8.0f : 6.0f;
+			anim_fps_spin->set_value(a.compute_average_fps(fallback_fps));
+		}
+		updating_ui = prev_upd;
 		callable_mp(this, &ClockGearsDatabaseDialog::_refresh_frames_timeline).call_deferred();
 		callable_mp(this, &ClockGearsDatabaseDialog::_refresh_anim_preview).call_deferred();
 		_on_param_changed();
 	}
+}
+
+void ClockGearsDatabaseDialog::_apply_anim_fps_to_current_slot() {
+	if (updating_ui) return;
+	anim_fps_line_edited = false;
+	String cur_anim_name = _get_active_anim_name();
+	_ensure_actor_fixed_slot_exists(cur_anim_name);
+	if (!current_sprite_data.animations.has(cur_anim_name)) return;
+	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_anim_name];
+	float new_fps = CLAMP(anim_fps_spin ? float(anim_fps_spin->get_value()) : a.fps, 1.0f, 60.0f);
+	float target_dur = 1.0f / new_fps;
+	bool already_applied = (Math::abs(a.fps - new_fps) <= 0.0001f);
+	if (already_applied) {
+		for (int i = 0; i < a.frames_data.size(); i++) {
+			if (Math::abs(a.frames_data[i].duration - target_dur) > 0.0001f) {
+				already_applied = false;
+				break;
+			}
+		}
+	}
+	if (already_applied) return;
+	a.apply_fps_to_all_frames(new_fps);
+	if (a.get_frame_count() > 0) {
+		int cur_idx = CLAMP(anim_preview_frame_idx, 0, a.get_frame_count() - 1);
+		anim_preview_frame_target_dur = a.get_frame_duration(cur_idx);
+	}
+	_refresh_frames_timeline();
+	_on_param_changed();
+	if (s_is_arpg_equip_category(current_category)) {
+		_update_arpg_preview_canvas();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_anim_fps_value_changed(double p_val) {
+	if (updating_ui) return;
+	_apply_anim_fps_to_current_slot();
+}
+
+void ClockGearsDatabaseDialog::_on_anim_fps_text_changed(const String &p_text) {
+	if (!updating_ui) {
+		anim_fps_line_edited = true;
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_anim_fps_submitted(const String &p_text) {
+	if (updating_ui) return;
+	_apply_anim_fps_to_current_slot();
+}
+
+void ClockGearsDatabaseDialog::_on_anim_fps_focus_exited() {
+	if (updating_ui || !anim_fps_line_edited) return;
+	_apply_anim_fps_to_current_slot();
 }
 
 void ClockGearsDatabaseDialog::_on_anim_playback_settings_changed() {
@@ -10536,7 +10601,6 @@ void ClockGearsDatabaseDialog::_on_anim_playback_settings_changed() {
 	_ensure_actor_fixed_slot_exists(cur_anim_name);
 	if (!current_sprite_data.animations.has(cur_anim_name)) return;
 	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_anim_name];
-	if (anim_fps_spin) a.fps = float(anim_fps_spin->get_value());
 	if (anim_loop_chk) a.loop = anim_loop_chk->is_pressed();
 	if (anim_random_order_chk) a.random_order = anim_random_order_chk->is_pressed();
 	if (anim_behind_body_chk) a.behind_body = anim_behind_body_chk->is_pressed();
@@ -10554,7 +10618,7 @@ void ClockGearsDatabaseDialog::_on_anim_play_pressed() {
 	if (current_sprite_data.animations.has(cur_name)) {
 		const ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
 		if (a.get_frame_count() > 0) {
-			anim_preview_frame_target_dur = a.get_frame(0, 0, 0).get_duration();
+			anim_preview_frame_target_dur = a.get_frame_duration(0);
 		}
 	} else {
 		anim_preview_frame_target_dur = 0.125f;
@@ -10597,8 +10661,7 @@ void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 	}
 
 	if (anim_preview_frame_target_dur <= 0.001f) {
-		float speed = MAX(0.5f, a.fps);
-		anim_preview_frame_target_dur = 1.0f / speed;
+		anim_preview_frame_target_dur = a.get_frame_duration(CLAMP(anim_preview_frame_idx, 0, total - 1));
 	}
 
 	anim_preview_timer += p_delta;
@@ -10621,8 +10684,7 @@ void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 				}
 			}
 		}
-		ClockGearsAnimationFrame next_f = a.get_frame(anim_preview_frame_idx, 0, 0);
-		anim_preview_frame_target_dur = next_f.get_duration();
+		anim_preview_frame_target_dur = a.get_frame_duration(anim_preview_frame_idx);
 	}
 
 	ClockGearsAnimationFrame raw_f = a.get_frame(anim_preview_frame_idx, 0, 0);
@@ -11060,6 +11122,17 @@ void ClockGearsDatabaseDialog::_on_frame_duration_changed(double p_val, int p_id
 	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
 	if (p_idx >= 0 && p_idx < a.frames_data.size()) {
 		a.frames_data.write[p_idx].duration = (float)p_val;
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		anim_fps_line_edited = false;
+		if (anim_fps_spin) {
+			float fallback_fps = s_is_anim_slot_category(current_category) ? 8.0f : 6.0f;
+			anim_fps_spin->set_value(a.compute_average_fps(fallback_fps));
+		}
+		updating_ui = prev_upd;
+		if (anim_preview_playing && anim_preview_frame_idx == p_idx) {
+			anim_preview_frame_target_dur = a.get_frame_duration(p_idx);
+		}
 		_on_param_changed();
 	}
 }

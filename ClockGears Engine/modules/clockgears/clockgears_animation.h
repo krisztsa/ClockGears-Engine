@@ -98,6 +98,18 @@ struct ClockGearsAnimationFrame {
 		return 1.0f / MAX(0.1f, p_default_fps);
 	}
 
+	float get_nominal_duration(float p_default_fps = 6.0f) const {
+		if (is_random_duration) {
+			float dmin = MAX(0.01f, duration_min);
+			float dmax = MAX(dmin, duration_max);
+			return 0.5f * (dmin + dmax);
+		}
+		if (duration > 0.0f) {
+			return duration;
+		}
+		return 1.0f / MAX(0.1f, p_default_fps);
+	}
+
 	Dictionary to_dict() const {
 		Dictionary d;
 		d["sheet"] = sheet_path;
@@ -150,6 +162,37 @@ struct ClockGearsSpriteAnimation {
 
 	int get_frame_count() const {
 		return !frames_data.is_empty() ? frames_data.size() : frames.size();
+	}
+
+	float get_frame_duration(int p_idx) const {
+		float base_fps = fps > 0.0f ? fps : 6.0f;
+		return get_frame(p_idx, 0, 0).get_duration(base_fps);
+	}
+
+	void apply_fps_to_all_frames(float p_fps) {
+		float safe_fps = CLAMP(p_fps, 0.1f, 120.0f);
+		fps = safe_fps;
+		float dur = 1.0f / safe_fps;
+		for (int i = 0; i < frames_data.size(); i++) {
+			frames_data.write[i].duration = dur;
+		}
+	}
+
+	float compute_average_fps(float p_fallback_fps = 6.0f) const {
+		float base_fps = fps > 0.0f ? fps : p_fallback_fps;
+		int total = get_frame_count();
+		if (total <= 0) {
+			return base_fps;
+		}
+		double sum_dur = 0.0;
+		for (int i = 0; i < total; i++) {
+			sum_dur += double(get_frame(i, 0, 0).get_nominal_duration(base_fps));
+		}
+		double avg_dur = sum_dur / double(total);
+		if (avg_dur <= 0.0001) {
+			return base_fps;
+		}
+		return CLAMP(float(1.0 / avg_dur), 1.0f, 60.0f);
 	}
 
 	ClockGearsAnimationFrame get_frame(int p_idx, int p_tex_w = 0, int p_tex_h = 0) const {

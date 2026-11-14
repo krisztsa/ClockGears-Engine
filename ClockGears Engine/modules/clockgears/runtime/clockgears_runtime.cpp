@@ -287,15 +287,11 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 		return;
 	}
 	int cur_idx = CLAMP(slot_anim_frame_idx, 0, total - 1);
-	ClockGearsAnimationFrame cur_f = anim.get_frame(cur_idx, 0, 0);
-	float target_dur = cur_f.get_duration();
-	if (target_dur <= 0.001f) {
-		target_dur = 1.0f / MAX(0.5f, anim.fps);
-	}
+	float target_dur = anim.get_frame_duration(cur_idx);
 	slot_anim_timer += p_delta;
 	bool changed = false;
 	const bool allow_loop = is_attack ? false : anim.loop;
-	while (slot_anim_timer >= target_dur) {
+	while (slot_anim_timer >= target_dur && target_dur > 0.0f) {
 		slot_anim_timer -= target_dur;
 		if (slot_anim_frame_idx + 1 < total) {
 			slot_anim_frame_idx++;
@@ -310,11 +306,7 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 			break;
 		}
 		changed = true;
-		ClockGearsAnimationFrame nf = anim.get_frame(slot_anim_frame_idx, 0, 0);
-		target_dur = nf.get_duration();
-		if (target_dur <= 0.001f) {
-			target_dur = 1.0f / MAX(0.5f, anim.fps);
-		}
+		target_dur = anim.get_frame_duration(slot_anim_frame_idx);
 	}
 	if (changed) {
 		_update_sprite_frame();

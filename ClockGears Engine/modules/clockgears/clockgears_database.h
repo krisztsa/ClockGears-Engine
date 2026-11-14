@@ -367,6 +367,7 @@ private:
 
 	// 4. Reproducción y Ajustes
 	SpinBox *anim_fps_spin = nullptr;
+	bool anim_fps_line_edited = false;
 	CheckBox *anim_loop_chk = nullptr;
 	CheckBox *anim_random_order_chk = nullptr;
 	Button *btn_anim_play = nullptr;
@@ -708,6 +709,11 @@ private:
 	void _on_frame_move_left(int p_step_idx);
 	void _on_frame_move_right(int p_step_idx);
 	void _on_frame_remove(int p_step_idx);
+	void _apply_anim_fps_to_current_slot();
+	void _on_anim_fps_value_changed(double p_val);
+	void _on_anim_fps_text_changed(const String &p_text);
+	void _on_anim_fps_submitted(const String &p_text);
+	void _on_anim_fps_focus_exited();
 	void _on_anim_playback_settings_changed();
 	void _on_anim_play_pressed();
 	void _update_anim_playback(float p_delta);
