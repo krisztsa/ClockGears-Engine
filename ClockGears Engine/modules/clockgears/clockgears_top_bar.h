@@ -3,10 +3,10 @@
 #include "clockgears_types.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
-#include "scene/gui/flow_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
+#include "scene/gui/scroll_container.h"
 
 class ClockGearsDatabaseDialog;
 class ClockGearsEventEditorDialog;
@@ -14,17 +14,20 @@ class ClockGearsSimplifiedExportDialog;
 class ButtonGroup;
 class Theme;
 
-// ClockGears command bar with 32px pixel-art icons and short Spanish labels.
-// Uses 1 row when everything fits, or 2 grouped rows (file+edit & modes+layers / tools & zoom+play).
+// ClockGears icon-only command bar with 32px pixel-art icons and tooltips.
+// Fits on 1 row when space allows, wraps between groups to 2 rows, and scrolls horizontally when very narrow.
 class ClockGearsTopBar : public PanelContainer {
 	GDCLASS(ClockGearsTopBar, PanelContainer);
 
+	ScrollContainer *scroll_container = nullptr;
 	VBoxContainer *rows_vbox = nullptr;
-	HFlowContainer *row1_flow = nullptr;
-	HFlowContainer *row2_flow = nullptr;
+	HBoxContainer *row1_box = nullptr;
+	HBoxContainer *row2_box = nullptr;
 	Vector<HBoxContainer *> all_groups;
+	Vector<Control *> all_separators;
 	int split_group_index = 4;
-	bool two_row_mode = true;
+	int last_two_row_state = -1;
+	float bar_h_padding = 14.0f;
 	float last_layout_width = -1.0f;
 
 	Button *database_btn = nullptr;
@@ -47,10 +50,10 @@ class ClockGearsTopBar : public PanelContainer {
 	Ref<Texture2D> _make_svg_icon(const String &p_svg, int p_int_scale) const;
 	Ref<Texture2D> _get_png_icon(const String &p_name, int p_int_scale) const;
 	void _apply_toolbar_button_style(Button *p_button, const Ref<Theme> &p_editor_theme, int p_int_scale) const;
-	Button *_make_labeled_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_label, const String &p_tooltip, const Callable &p_action, const Ref<Theme> &p_editor_theme, int p_int_scale);
-	Button *_make_labeled_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_label, const String &p_tooltip, const Ref<ButtonGroup> &p_group, const Ref<Theme> &p_editor_theme, int p_int_scale);
+	Button *_make_icon_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Callable &p_action, const Ref<Theme> &p_editor_theme, int p_int_scale);
+	Button *_make_icon_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Ref<ButtonGroup> &p_group, const Ref<Theme> &p_editor_theme, int p_int_scale);
+	Control *_make_group_separator(int p_int_scale) const;
 	void _relayout_rows();
-	void _draw_flow_separators(HFlowContainer *p_flow, int p_int_scale);
 
 	void _on_undo_pressed();
 	void _on_redo_pressed();

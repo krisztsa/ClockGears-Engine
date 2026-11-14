@@ -1828,7 +1828,7 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "gui/timers/incremental_search_max_interval_msec", PROPERTY_HINT_RANGE, "0,10000,1,or_greater"), 2000);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "gui/timers/tooltip_delay_sec", PROPERTY_HINT_RANGE, "0,5,0.01,or_greater"), 0.5);
 #ifdef TOOLS_ENABLED
-	GLOBAL_DEF("gui/timers/tooltip_delay_sec.editor_hint", 0.5);
+	GLOBAL_DEF("gui/timers/tooltip_delay_sec.editor_hint", 0.4);
 #endif
 
 	GLOBAL_DEF("gui/common/drag_threshold", 10);
