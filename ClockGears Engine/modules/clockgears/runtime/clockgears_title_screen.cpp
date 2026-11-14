@@ -47,7 +47,7 @@ bool ClockGearsTitleScreen::ensure_title_screen_scene(const String &p_scene_path
 	return true;
 }
 
-Ref<Texture2D> ClockGearsTitleScreen::_load_texture(const String &p_path) const {
+Ref<Texture2D> ClockGearsTitleScreen::load_runtime_texture(const String &p_path) {
 	if (p_path.strip_edges().is_empty()) {
 		return Ref<Texture2D>();
 	}
@@ -64,6 +64,302 @@ Ref<Texture2D> ClockGearsTitleScreen::_load_texture(const String &p_path) const 
 		}
 	}
 	return Ref<Texture2D>();
+}
+
+void ClockGearsTitleScreen::apply_screen_background(ColorRect *p_color_rect, TextureRect *p_tex_rect, const Dictionary &p_bg_cfg, const String &p_default_color) {
+	String bg_col = String(p_bg_cfg.get("color", p_default_color));
+	if (p_color_rect) {
+		p_color_rect->set_color(Color::html_is_valid(bg_col) ? Color::html(bg_col) : Color::html(p_default_color));
+	}
+	if (!p_tex_rect) {
+		return;
+	}
+	String bg_filter = String(p_bg_cfg.get("filter", "nearest"));
+	p_tex_rect->set_texture_filter(bg_filter == "linear" ? TEXTURE_FILTER_LINEAR : TEXTURE_FILTER_NEAREST);
+
+	String bg_scale = String(p_bg_cfg.get("scale_mode", "fit"));
+	if (bg_scale == "fill") {
+		p_tex_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
+	} else if (bg_scale == "stretch") {
+		p_tex_rect->set_stretch_mode(TextureRect::STRETCH_SCALE);
+	} else {
+		p_tex_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	}
+
+	Ref<Texture2D> bg_tex;
+	if (String(p_bg_cfg.get("type", "color")) == "image") {
+		bg_tex = load_runtime_texture(String(p_bg_cfg.get("image_path", "")));
+	}
+	if (bg_tex.is_valid()) {
+		p_tex_rect->set_texture(bg_tex);
+		p_tex_rect->show();
+	} else {
+		p_tex_rect->set_texture(Ref<Texture2D>());
+		p_tex_rect->hide();
+	}
+}
+
+Vector<Button *> ClockGearsTitleScreen::populate_save_slots_into(VBoxContainer *p_slots_box, Button *p_back_btn, bool p_allow_empty, const Callable &p_on_slot_pressed) {
+	Vector<Button *> nav_buttons;
+	if (!p_slots_box) {
+		return nav_buttons;
+	}
+	for (int i = p_slots_box->get_child_count() - 1; i >= 0; i--) {
+		Node *ch = p_slots_box->get_child(i);
+		p_slots_box->remove_child(ch);
+		memdelete(ch);
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return nav_buttons;
+	}
+	Array slots = dm->list_save_slots();
+	for (int i = 0; i < slots.size(); i++) {
+		Dictionary info = slots[i];
+		int slot_idx = int(info.get("slot_index", i + 1));
+		bool exists = bool(info.get("exists", false));
+		String text;
+		if (exists) {
+			String mname = String(info.get("map_name", ""));
+			String sdate = String(info.get("saved_at", ""));
+			String ptime = String(info.get("playtime_formatted", "00:00:00"));
+			text = vformat(String::utf8("Ranura %02d — %s | %s | %s"), slot_idx, mname, sdate, ptime);
+		} else {
+			text = vformat(String::utf8("Ranura %02d — Vacío"), slot_idx);
+		}
+		bool selectable = exists || p_allow_empty;
+		Button *btn = memnew(Button(text));
+		btn->set_h_size_flags(SIZE_EXPAND_FILL);
+		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		btn->set_custom_minimum_size(Size2(220, 36));
+		ClockGearsWindowStyleManager::apply_button_style(btn, "save_list");
+		btn->set_disabled(!selectable);
+		btn->set_focus_mode(selectable ? FOCUS_ALL : FOCUS_NONE);
+		btn->set_modulate(exists ? Color(1.0f, 1.0f, 1.0f, 1.0f) : Color(0.75f, 0.78f, 0.86f, p_allow_empty ? 0.82f : 0.55f));
+		if (selectable) {
+			if (p_on_slot_pressed.is_valid()) {
+				btn->connect("pressed", p_on_slot_pressed.bind(slot_idx));
+			}
+			nav_buttons.push_back(btn);
+		}
+		p_slots_box->add_child(btn);
+	}
+	if (p_back_btn) {
+		nav_buttons.push_back(p_back_btn);
+	}
+	for (int i = 0; i < nav_buttons.size(); i++) {
+		Button *b = nav_buttons[i];
+		Button *prev = nav_buttons[(i - 1 + nav_buttons.size()) % nav_buttons.size()];
+		Button *next = nav_buttons[(i + 1) % nav_buttons.size()];
+		b->set_focus_neighbor(SIDE_TOP, b->get_path_to(prev));
+		b->set_focus_neighbor(SIDE_BOTTOM, b->get_path_to(next));
+	}
+	return nav_buttons;
+}
+
+// --- ClockGearsOptionsBox ---
+
+void ClockGearsOptionsBox::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("sync_from_dm"), &ClockGearsOptionsBox::sync_from_dm);
+	ClassDB::bind_method(D_METHOD("apply_values", "music", "sfx", "brightness", "fullscreen", "ctx"), &ClockGearsOptionsBox::apply_values, DEFVAL(Variant()));
+	ADD_SIGNAL(MethodInfo("back_requested"));
+}
+
+void ClockGearsOptionsBox::sync_from_dm() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !music_slider || !sfx_slider || !brightness_slider || !fullscreen_check) {
+		return;
+	}
+	syncing = true;
+	dm->ensure_player_options_loaded();
+	Dictionary opts = dm->get_player_options();
+	double mv = double(opts.get("music_volume", 0.8)) * 100.0;
+	double sv = double(opts.get("sfx_volume", 0.8)) * 100.0;
+	double bv = double(opts.get("brightness", 1.0)) * 100.0;
+	bool fs = bool(opts.get("fullscreen", false));
+
+	music_slider->set_value(mv);
+	music_val_label->set_text(vformat("%d%%", int(Math::round(mv))));
+	sfx_slider->set_value(sv);
+	sfx_val_label->set_text(vformat("%d%%", int(Math::round(sv))));
+	brightness_slider->set_value(bv);
+	brightness_val_label->set_text(vformat("%d%%", int(Math::round(bv))));
+	fullscreen_check->set_pressed(fs);
+	syncing = false;
+}
+
+void ClockGearsOptionsBox::apply_values(double p_music, double p_sfx, double p_brightness, bool p_fullscreen, Node *p_ctx) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	Dictionary opts;
+	opts["music_volume"] = p_music;
+	opts["sfx_volume"] = p_sfx;
+	opts["brightness"] = p_brightness;
+	opts["fullscreen"] = p_fullscreen;
+	Node *ctx = p_ctx ? p_ctx : this;
+	if (!persist_on_change) {
+		Dictionary safe_opts = opts.duplicate(true);
+		safe_opts["fullscreen"] = false;
+		dm->set_player_options(safe_opts, false);
+		dm->apply_player_options(ctx);
+		syncing = true;
+		if (music_slider) music_slider->set_value(p_music * 100.0);
+		if (music_val_label) music_val_label->set_text(vformat("%d%%", int(Math::round(p_music * 100.0))));
+		if (sfx_slider) sfx_slider->set_value(p_sfx * 100.0);
+		if (sfx_val_label) sfx_val_label->set_text(vformat("%d%%", int(Math::round(p_sfx * 100.0))));
+		if (brightness_slider) brightness_slider->set_value(p_brightness * 100.0);
+		if (brightness_val_label) brightness_val_label->set_text(vformat("%d%%", int(Math::round(p_brightness * 100.0))));
+		if (fullscreen_check) fullscreen_check->set_pressed(p_fullscreen);
+		syncing = false;
+		return;
+	}
+	dm->set_player_options(opts, true);
+	dm->apply_player_options(ctx);
+	sync_from_dm();
+}
+
+void ClockGearsOptionsBox::_commit_from_controls() {
+	if (syncing || !music_slider || !sfx_slider || !brightness_slider || !fullscreen_check) {
+		return;
+	}
+	apply_values(
+			music_slider->get_value() / 100.0,
+			sfx_slider->get_value() / 100.0,
+			brightness_slider->get_value() / 100.0,
+			fullscreen_check->is_pressed(),
+			this);
+}
+
+void ClockGearsOptionsBox::_on_music_changed(double p_val) {
+	if (music_val_label) {
+		music_val_label->set_text(vformat("%d%%", int(Math::round(p_val))));
+	}
+	_commit_from_controls();
+}
+
+void ClockGearsOptionsBox::_on_sfx_changed(double p_val) {
+	if (sfx_val_label) {
+		sfx_val_label->set_text(vformat("%d%%", int(Math::round(p_val))));
+	}
+	_commit_from_controls();
+}
+
+void ClockGearsOptionsBox::_on_brightness_changed(double p_val) {
+	if (brightness_val_label) {
+		brightness_val_label->set_text(vformat("%d%%", int(Math::round(p_val))));
+	}
+	_commit_from_controls();
+}
+
+void ClockGearsOptionsBox::_on_fullscreen_toggled(bool p_pressed) {
+	_commit_from_controls();
+}
+
+void ClockGearsOptionsBox::_on_reset_pressed() {
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		dm->set_player_options(ClockGearsDataManager::get_default_player_options(), persist_on_change);
+		dm->apply_player_options(this);
+		sync_from_dm();
+	}
+}
+
+void ClockGearsOptionsBox::_on_back_pressed() {
+	emit_signal("back_requested");
+}
+
+void ClockGearsOptionsBox::apply_button_theme() {
+	if (btn_reset) {
+		ClockGearsWindowStyleManager::apply_button_style(btn_reset, "options");
+		btn_reset->set_custom_minimum_size(Size2(150, 34));
+	}
+	if (btn_back) {
+		ClockGearsWindowStyleManager::apply_button_style(btn_back, "options");
+		btn_back->set_custom_minimum_size(Size2(150, 34));
+	}
+}
+
+ClockGearsOptionsBox::ClockGearsOptionsBox() {
+	add_theme_constant_override("separation", 12);
+
+	Label *opt_title = memnew(Label(String::utf8("Opciones")));
+	opt_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	opt_title->add_theme_font_size_override("font_size", 20);
+	add_child(opt_title);
+
+	auto make_slider_row = [&](const String &p_label_txt, double p_min, double p_max, double p_step, HSlider *&r_slider, Label *&r_val_lbl) {
+		HBoxContainer *row = memnew(HBoxContainer);
+		row->add_theme_constant_override("separation", 10);
+		add_child(row);
+
+		Label *lbl = memnew(Label(p_label_txt));
+		lbl->set_custom_minimum_size(Size2(180, 0));
+		row->add_child(lbl);
+
+		r_slider = memnew(HSlider);
+		r_slider->set_min(p_min);
+		r_slider->set_max(p_max);
+		r_slider->set_step(p_step);
+		r_slider->set_h_size_flags(SIZE_EXPAND_FILL);
+		r_slider->set_v_size_flags(SIZE_SHRINK_CENTER);
+		row->add_child(r_slider);
+
+		r_val_lbl = memnew(Label("100%"));
+		r_val_lbl->set_custom_minimum_size(Size2(52, 0));
+		r_val_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+		row->add_child(r_val_lbl);
+	};
+
+	make_slider_row(String::utf8("Volumen música"), 0.0, 100.0, 1.0, music_slider, music_val_label);
+	music_slider->connect("value_changed", callable_mp(this, &ClockGearsOptionsBox::_on_music_changed));
+
+	make_slider_row(String::utf8("Volumen efectos"), 0.0, 100.0, 1.0, sfx_slider, sfx_val_label);
+	sfx_slider->connect("value_changed", callable_mp(this, &ClockGearsOptionsBox::_on_sfx_changed));
+
+	make_slider_row(String::utf8("Brillo"), 50.0, 150.0, 5.0, brightness_slider, brightness_val_label);
+	brightness_slider->connect("value_changed", callable_mp(this, &ClockGearsOptionsBox::_on_brightness_changed));
+
+	HBoxContainer *fs_row = memnew(HBoxContainer);
+	fs_row->add_theme_constant_override("separation", 10);
+	add_child(fs_row);
+	Label *fs_lbl = memnew(Label(String::utf8("Pantalla completa")));
+	fs_lbl->set_custom_minimum_size(Size2(180, 0));
+	fs_row->add_child(fs_lbl);
+	fullscreen_check = memnew(CheckBox);
+	fullscreen_check->set_text(String::utf8("Activar"));
+	fullscreen_check->connect("toggled", callable_mp(this, &ClockGearsOptionsBox::_on_fullscreen_toggled));
+	fs_row->add_child(fullscreen_check);
+
+	HBoxContainer *opt_btns = memnew(HBoxContainer);
+	opt_btns->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	opt_btns->add_theme_constant_override("separation", 12);
+	add_child(opt_btns);
+
+	btn_reset = memnew(Button(String::utf8("Predeterminados")));
+	btn_reset->connect("pressed", callable_mp(this, &ClockGearsOptionsBox::_on_reset_pressed));
+	opt_btns->add_child(btn_reset);
+
+	btn_back = memnew(Button(String::utf8("Volver")));
+	btn_back->connect("pressed", callable_mp(this, &ClockGearsOptionsBox::_on_back_pressed));
+	opt_btns->add_child(btn_back);
+
+	music_slider->set_focus_neighbor(SIDE_BOTTOM, music_slider->get_path_to(sfx_slider));
+	sfx_slider->set_focus_neighbor(SIDE_TOP, sfx_slider->get_path_to(music_slider));
+	sfx_slider->set_focus_neighbor(SIDE_BOTTOM, sfx_slider->get_path_to(brightness_slider));
+	brightness_slider->set_focus_neighbor(SIDE_TOP, brightness_slider->get_path_to(sfx_slider));
+	brightness_slider->set_focus_neighbor(SIDE_BOTTOM, brightness_slider->get_path_to(fullscreen_check));
+	fullscreen_check->set_focus_neighbor(SIDE_TOP, fullscreen_check->get_path_to(brightness_slider));
+	fullscreen_check->set_focus_neighbor(SIDE_BOTTOM, fullscreen_check->get_path_to(btn_back));
+	btn_reset->set_focus_neighbor(SIDE_TOP, btn_reset->get_path_to(fullscreen_check));
+	btn_reset->set_focus_neighbor(SIDE_RIGHT, btn_reset->get_path_to(btn_back));
+	btn_back->set_focus_neighbor(SIDE_TOP, btn_back->get_path_to(fullscreen_check));
+	btn_back->set_focus_neighbor(SIDE_LEFT, btn_back->get_path_to(btn_reset));
+	apply_button_theme();
+}
+
+Ref<Texture2D> ClockGearsTitleScreen::_load_texture(const String &p_path) const {
+	return load_runtime_texture(p_path);
 }
 
 void ClockGearsTitleScreen::_apply_theme_styling() {
@@ -237,83 +533,18 @@ void ClockGearsTitleScreen::_build_base_ui() {
 	options_panel->set_custom_minimum_size(Size2(480, 320));
 	opt_center->add_child(options_panel);
 
-	VBoxContainer *opt_vb = memnew(VBoxContainer);
-	opt_vb->add_theme_constant_override("separation", 12);
-	options_panel->add_child(opt_vb);
-
-	Label *opt_title = memnew(Label(String::utf8("Opciones")));
-	opt_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	opt_title->add_theme_font_size_override("font_size", 20);
-	opt_vb->add_child(opt_title);
-
-	auto make_slider_row = [&](const String &p_label_txt, double p_min, double p_max, double p_step, HSlider *&r_slider, Label *&r_val_lbl) {
-		HBoxContainer *row = memnew(HBoxContainer);
-		row->add_theme_constant_override("separation", 10);
-		opt_vb->add_child(row);
-
-		Label *lbl = memnew(Label(p_label_txt));
-		lbl->set_custom_minimum_size(Size2(180, 0));
-		row->add_child(lbl);
-
-		r_slider = memnew(HSlider);
-		r_slider->set_min(p_min);
-		r_slider->set_max(p_max);
-		r_slider->set_step(p_step);
-		r_slider->set_h_size_flags(SIZE_EXPAND_FILL);
-		r_slider->set_v_size_flags(SIZE_SHRINK_CENTER);
-		row->add_child(r_slider);
-
-		r_val_lbl = memnew(Label("100%"));
-		r_val_lbl->set_custom_minimum_size(Size2(52, 0));
-		r_val_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
-		row->add_child(r_val_lbl);
-	};
-
-	make_slider_row(String::utf8("Volumen música"), 0.0, 100.0, 1.0, music_slider, music_val_label);
-	music_slider->connect("value_changed", callable_mp(this, &ClockGearsTitleScreen::_on_music_slider_changed));
-
-	make_slider_row(String::utf8("Volumen efectos"), 0.0, 100.0, 1.0, sfx_slider, sfx_val_label);
-	sfx_slider->connect("value_changed", callable_mp(this, &ClockGearsTitleScreen::_on_sfx_slider_changed));
-
-	make_slider_row(String::utf8("Brillo"), 50.0, 150.0, 5.0, brightness_slider, brightness_val_label);
-	brightness_slider->connect("value_changed", callable_mp(this, &ClockGearsTitleScreen::_on_brightness_slider_changed));
-
-	HBoxContainer *fs_row = memnew(HBoxContainer);
-	fs_row->add_theme_constant_override("separation", 10);
-	opt_vb->add_child(fs_row);
-	Label *fs_lbl = memnew(Label(String::utf8("Pantalla completa")));
-	fs_lbl->set_custom_minimum_size(Size2(180, 0));
-	fs_row->add_child(fs_lbl);
-	fullscreen_check = memnew(CheckBox);
-	fullscreen_check->set_text(String::utf8("Activar"));
-	fullscreen_check->connect("toggled", callable_mp(this, &ClockGearsTitleScreen::_on_fullscreen_toggled));
-	fs_row->add_child(fullscreen_check);
-
-	HBoxContainer *opt_btns = memnew(HBoxContainer);
-	opt_btns->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-	opt_btns->add_theme_constant_override("separation", 12);
-	opt_vb->add_child(opt_btns);
-
-	btn_options_reset = memnew(Button(String::utf8("Predeterminados")));
-	btn_options_reset->connect("pressed", callable_mp(this, &ClockGearsTitleScreen::_on_reset_options_pressed));
-	opt_btns->add_child(btn_options_reset);
-
-	btn_options_back = memnew(Button(String::utf8("Volver")));
-	btn_options_back->connect("pressed", callable_mp(this, &ClockGearsTitleScreen::close_submenus));
-	opt_btns->add_child(btn_options_back);
-
-	// Focus neighbor links for Options panel
-	music_slider->set_focus_neighbor(SIDE_BOTTOM, music_slider->get_path_to(sfx_slider));
-	sfx_slider->set_focus_neighbor(SIDE_TOP, sfx_slider->get_path_to(music_slider));
-	sfx_slider->set_focus_neighbor(SIDE_BOTTOM, sfx_slider->get_path_to(brightness_slider));
-	brightness_slider->set_focus_neighbor(SIDE_TOP, brightness_slider->get_path_to(sfx_slider));
-	brightness_slider->set_focus_neighbor(SIDE_BOTTOM, brightness_slider->get_path_to(fullscreen_check));
-	fullscreen_check->set_focus_neighbor(SIDE_TOP, fullscreen_check->get_path_to(brightness_slider));
-	fullscreen_check->set_focus_neighbor(SIDE_BOTTOM, fullscreen_check->get_path_to(btn_options_back));
-	btn_options_reset->set_focus_neighbor(SIDE_TOP, btn_options_reset->get_path_to(fullscreen_check));
-	btn_options_reset->set_focus_neighbor(SIDE_RIGHT, btn_options_reset->get_path_to(btn_options_back));
-	btn_options_back->set_focus_neighbor(SIDE_TOP, btn_options_back->get_path_to(fullscreen_check));
-	btn_options_back->set_focus_neighbor(SIDE_LEFT, btn_options_back->get_path_to(btn_options_reset));
+	options_box = memnew(ClockGearsOptionsBox);
+	options_panel->add_child(options_box);
+	options_box->connect("back_requested", callable_mp(this, &ClockGearsTitleScreen::close_submenus));
+	music_slider = options_box->get_music_slider();
+	music_val_label = options_box->get_music_val_label();
+	sfx_slider = options_box->get_sfx_slider();
+	sfx_val_label = options_box->get_sfx_val_label();
+	brightness_slider = options_box->get_brightness_slider();
+	brightness_val_label = options_box->get_brightness_val_label();
+	fullscreen_check = options_box->get_fullscreen_check();
+	btn_options_reset = options_box->get_reset_button();
+	btn_options_back = options_box->get_back_button();
 
 	_apply_theme_styling();
 }
@@ -324,32 +555,7 @@ void ClockGearsTitleScreen::_apply_title_config(const Dictionary &p_cfg, const D
 
 	Dictionary cfg = ClockGearsDataManager::normalize_title_menu_config(p_cfg);
 	Dictionary bg = cfg.get("background", Dictionary());
-	String bg_col = String(bg.get("color", "#12151e"));
-	bg_color_rect->set_color(Color::html_is_valid(bg_col) ? Color::html(bg_col) : Color::html("#12151e"));
-
-	String bg_filter = String(bg.get("filter", "nearest"));
-	bg_texture_rect->set_texture_filter(bg_filter == "linear" ? TEXTURE_FILTER_LINEAR : TEXTURE_FILTER_NEAREST);
-
-	String bg_scale = String(bg.get("scale_mode", "fit"));
-	if (bg_scale == "fill") {
-		bg_texture_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
-	} else if (bg_scale == "stretch") {
-		bg_texture_rect->set_stretch_mode(TextureRect::STRETCH_SCALE);
-	} else {
-		bg_texture_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
-	}
-
-	Ref<Texture2D> bg_tex;
-	if (String(bg.get("type", "color")) == "image") {
-		bg_tex = _load_texture(String(bg.get("image_path", "")));
-	}
-	if (bg_tex.is_valid()) {
-		bg_texture_rect->set_texture(bg_tex);
-		bg_texture_rect->show();
-	} else {
-		bg_texture_rect->set_texture(Ref<Texture2D>());
-		bg_texture_rect->hide();
-	}
+	apply_screen_background(bg_color_rect, bg_texture_rect, bg, "#12151e");
 
 	Dictionary title_cfg = cfg.get("title", Dictionary());
 	String t_type = String(title_cfg.get("type", "text"));
@@ -493,6 +699,9 @@ void ClockGearsTitleScreen::set_preview_mode(bool p_enable) {
 
 void ClockGearsTitleScreen::set_editor_test_popup_mode(bool p_enable) {
 	editor_test_popup_mode = p_enable;
+	if (options_box) {
+		options_box->set_persist_on_change(!p_enable);
+	}
 	if (p_enable) {
 		preview_mode = false;
 		auto_quit_tree = false;
@@ -506,123 +715,33 @@ void ClockGearsTitleScreen::apply_title_config_preview(const Dictionary &p_title
 }
 
 void ClockGearsTitleScreen::_populate_save_slots() {
-	if (!slots_box) {
-		return;
-	}
-	for (int i = slots_box->get_child_count() - 1; i >= 0; i--) {
-		Node *ch = slots_box->get_child(i);
-		slots_box->remove_child(ch);
-		memdelete(ch);
-	}
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm) {
-		return;
-	}
-	Array slots = dm->list_save_slots();
-	Vector<Button *> nav_buttons;
-	for (int i = 0; i < slots.size(); i++) {
-		Dictionary info = slots[i];
-		int slot_idx = int(info.get("slot_index", i + 1));
-		bool exists = bool(info.get("exists", false));
-		String text;
-		if (exists) {
-			String mname = String(info.get("map_name", ""));
-			String sdate = String(info.get("saved_at", ""));
-			String ptime = String(info.get("playtime_formatted", "00:00:00"));
-			text = vformat(String::utf8("Ranura %02d — %s | %s | %s"), slot_idx, mname, sdate, ptime);
-		} else {
-			text = vformat(String::utf8("Ranura %02d — Vacío"), slot_idx);
-		}
-		Button *btn = memnew(Button(text));
-		btn->set_h_size_flags(SIZE_EXPAND_FILL);
-		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
-		btn->set_custom_minimum_size(Size2(220, 36));
-		ClockGearsWindowStyleManager::apply_button_style(btn, "save_list");
-		btn->set_disabled(!exists);
-		btn->set_focus_mode(exists ? FOCUS_ALL : FOCUS_NONE);
-		btn->set_modulate(exists ? Color(1.0f, 1.0f, 1.0f, 1.0f) : Color(0.75f, 0.78f, 0.86f, 0.55f));
-		if (exists) {
-			btn->connect("pressed", callable_mp(this, &ClockGearsTitleScreen::_on_save_slot_pressed).bind(slot_idx));
-			nav_buttons.push_back(btn);
-		}
-		slots_box->add_child(btn);
-	}
-	if (btn_continue_back) {
-		nav_buttons.push_back(btn_continue_back);
-	}
-	for (int i = 0; i < nav_buttons.size(); i++) {
-		Button *b = nav_buttons[i];
-		Button *prev = nav_buttons[(i - 1 + nav_buttons.size()) % nav_buttons.size()];
-		Button *next = nav_buttons[(i + 1) % nav_buttons.size()];
-		b->set_focus_neighbor(SIDE_TOP, b->get_path_to(prev));
-		b->set_focus_neighbor(SIDE_BOTTOM, b->get_path_to(next));
-	}
+	populate_save_slots_into(slots_box, btn_continue_back, false, callable_mp(this, &ClockGearsTitleScreen::_on_save_slot_pressed));
 }
 
 void ClockGearsTitleScreen::_sync_options_controls_from_dm() {
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm || !music_slider || !sfx_slider || !brightness_slider || !fullscreen_check) {
-		return;
+	if (options_box) {
+		options_box->sync_from_dm();
 	}
-	syncing_options_ui = true;
-	dm->ensure_player_options_loaded();
-	Dictionary opts = dm->get_player_options();
-	double mv = double(opts.get("music_volume", 0.8)) * 100.0;
-	double sv = double(opts.get("sfx_volume", 0.8)) * 100.0;
-	double bv = double(opts.get("brightness", 1.0)) * 100.0;
-	bool fs = bool(opts.get("fullscreen", false));
-
-	music_slider->set_value(mv);
-	music_val_label->set_text(vformat("%d%%", int(Math::round(mv))));
-	sfx_slider->set_value(sv);
-	sfx_val_label->set_text(vformat("%d%%", int(Math::round(sv))));
-	brightness_slider->set_value(bv);
-	brightness_val_label->set_text(vformat("%d%%", int(Math::round(bv))));
-	fullscreen_check->set_pressed(fs);
-	syncing_options_ui = false;
 }
 
 void ClockGearsTitleScreen::_commit_options_from_controls() {
-	if (syncing_options_ui || !music_slider || !sfx_slider || !brightness_slider || !fullscreen_check) {
-		return;
-	}
-	apply_options_values(
-			music_slider->get_value() / 100.0,
-			sfx_slider->get_value() / 100.0,
-			brightness_slider->get_value() / 100.0,
-			fullscreen_check->is_pressed());
 }
 
 void ClockGearsTitleScreen::_on_music_slider_changed(double p_val) {
-	if (music_val_label) {
-		music_val_label->set_text(vformat("%d%%", int(Math::round(p_val))));
-	}
-	_commit_options_from_controls();
 }
 
 void ClockGearsTitleScreen::_on_sfx_slider_changed(double p_val) {
-	if (sfx_val_label) {
-		sfx_val_label->set_text(vformat("%d%%", int(Math::round(p_val))));
-	}
-	_commit_options_from_controls();
 }
 
 void ClockGearsTitleScreen::_on_brightness_slider_changed(double p_val) {
-	if (brightness_val_label) {
-		brightness_val_label->set_text(vformat("%d%%", int(Math::round(p_val))));
-	}
-	_commit_options_from_controls();
 }
 
 void ClockGearsTitleScreen::_on_fullscreen_toggled(bool p_pressed) {
-	_commit_options_from_controls();
 }
 
 void ClockGearsTitleScreen::_on_reset_options_pressed() {
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (dm) {
-		dm->set_player_options(ClockGearsDataManager::get_default_player_options(), true);
-		_sync_options_controls_from_dm();
+	if (options_box) {
+		options_box->apply_values(0.8, 0.8, 1.0, false, this);
 	}
 }
 
@@ -791,6 +910,11 @@ bool ClockGearsTitleScreen::is_options_menu_open() const {
 }
 
 void ClockGearsTitleScreen::apply_options_values(double p_music, double p_sfx, double p_brightness, bool p_fullscreen) {
+	if (options_box) {
+		options_box->set_persist_on_change(!editor_test_popup_mode);
+		options_box->apply_values(p_music, p_sfx, p_brightness, p_fullscreen, this);
+		return;
+	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (!dm) {
 		return;
@@ -805,20 +929,10 @@ void ClockGearsTitleScreen::apply_options_values(double p_music, double p_sfx, d
 		safe_opts["fullscreen"] = false;
 		dm->set_player_options(safe_opts, false);
 		dm->apply_player_options(this);
-		syncing_options_ui = true;
-		if (music_slider) music_slider->set_value(p_music * 100.0);
-		if (music_val_label) music_val_label->set_text(vformat("%d%%", int(Math::round(p_music * 100.0))));
-		if (sfx_slider) sfx_slider->set_value(p_sfx * 100.0);
-		if (sfx_val_label) sfx_val_label->set_text(vformat("%d%%", int(Math::round(p_sfx * 100.0))));
-		if (brightness_slider) brightness_slider->set_value(p_brightness * 100.0);
-		if (brightness_val_label) brightness_val_label->set_text(vformat("%d%%", int(Math::round(p_brightness * 100.0))));
-		if (fullscreen_check) fullscreen_check->set_pressed(p_fullscreen);
-		syncing_options_ui = false;
 		return;
 	}
 	dm->set_player_options(opts, true);
 	dm->apply_player_options(this);
-	_sync_options_controls_from_dm();
 }
 
 void ClockGearsTitleScreen::trigger_quit() {

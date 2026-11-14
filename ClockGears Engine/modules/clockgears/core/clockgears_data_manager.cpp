@@ -107,6 +107,7 @@ void ClockGearsDataManager::init_empty() {
 	system_config["max_followers"] = 3;
 	system_config["sell_price_ratio"] = 0.5;
 	system_config["autosave_minutes"] = 5;
+	system_config["default_max_item_stack"] = 99;
 	system_config["camera_zoom"] = 2;
 	system_config["camera_smooth"] = true;
 	system_config["camera_clamp"] = true;
@@ -130,6 +131,7 @@ void ClockGearsDataManager::init_empty() {
 	vocabulary_config["game_end"] = "Salir";
 
 	title_menu_config = get_default_title_menu_config();
+	game_menu_config = get_default_game_menu_config();
 	ensure_default_window_types_registered();
 	window_styles_config = get_default_window_styles_config();
 	if (!player_options_loaded) {
@@ -142,6 +144,7 @@ void ClockGearsDataManager::init_empty() {
 	runtime_switches.clear();
 	runtime_variables.clear();
 	runtime_inventory.clear();
+	runtime_equips.clear();
 	runtime_arpg_equips.clear();
 	runtime_actor_states.clear();
 	runtime_defeated_enemies.clear();
@@ -1290,9 +1293,13 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 		}
 	}
 
-	// 5c. Guardar configuración del Menú Principal (title_menu.json)
+	// 5c. Guardar configuración del Menú Principal (title_menu.json) y Menú del Juego (game_menu.json)
 	title_menu_config = normalize_title_menu_config(title_menu_config);
 	if (!_write_json_atomic(p_dir_path.path_join("title_menu.json"), title_menu_config)) {
+		return false;
+	}
+	game_menu_config = normalize_game_menu_config(game_menu_config);
+	if (!_write_json_atomic(p_dir_path.path_join("game_menu.json"), game_menu_config)) {
 		return false;
 	}
 
@@ -1373,6 +1380,7 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	int loaded_dirs = int(system_config.get("movement_directions", 4));
 	system_config["movement_directions"] = (loaded_dirs == 8) ? 8 : 4;
 	system_config["mannequin_size"] = normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
+	system_config["default_max_item_stack"] = CLAMP(int(system_config.get("default_max_item_stack", 99)), 1, 9999);
 	normalize_arpg_system_config(system_config);
 
 	Variant types_var;
@@ -1402,6 +1410,14 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 	system_config.erase("title_menu");
 	_normalize_system_and_vocabulary_config();
+
+	// Migración de game_menu.json (proyectos antiguos heredan valores por defecto)
+	Variant gmenu_var;
+	if (_read_json_with_backup(p_dir_path.path_join("game_menu.json"), gmenu_var) && gmenu_var.get_type() == Variant::DICTIONARY) {
+		game_menu_config = normalize_game_menu_config(Dictionary(gmenu_var));
+	} else {
+		game_menu_config = get_default_game_menu_config();
+	}
 
 	// Migración de estilos de ventana (window_styles.json; proyectos antiguos heredan "Redondeado")
 	ensure_default_window_types_registered();
@@ -1501,9 +1517,113 @@ int ClockGearsDataManager::get_item_qty(const String &p_name) const {
 	return runtime_inventory.has(p_name) ? MAX(0, int(runtime_inventory[p_name])) : 0;
 }
 
+int ClockGearsDataManager::get_default_max_item_stack() const {
+	return CLAMP(int(system_config.get("default_max_item_stack", 99)), 1, 9999);
+}
+
+void ClockGearsDataManager::set_default_max_item_stack(int p_max_stack) {
+	system_config["default_max_item_stack"] = CLAMP(p_max_stack, 1, 9999);
+	dirty = true;
+}
+
+String ClockGearsDataManager::get_record_inventory_key(int p_category, int p_id) const {
+	if (p_category < 0 || p_category >= CAT_MAX || p_id <= 0) {
+		return String();
+	}
+	String cat_key = get_category_key(p_category);
+	String sc_key = cat_key + ":" + itos(p_id);
+	if (runtime_inventory.has(sc_key)) {
+		return sc_key;
+	}
+	Dictionary rec = get_record_by_id(p_category, p_id);
+	String rname = String(rec.get("name", "")).strip_edges();
+	if (!rname.is_empty()) {
+		return rname;
+	}
+	return sc_key;
+}
+
+Dictionary ClockGearsDataManager::find_inventory_record(const String &p_item_key) const {
+	Dictionary out;
+	out["found"] = false;
+	out["category"] = -1;
+	out["category_key"] = "";
+	out["id"] = 0;
+	out["key"] = p_item_key;
+	out["record"] = Dictionary();
+
+	String k = p_item_key.strip_edges();
+	if (k.is_empty()) {
+		return out;
+	}
+
+	static const int k_cats[8] = {
+		CAT_ITEMS, CAT_WEAPONS, CAT_ARMORS, CAT_ACCESSORIES,
+		CAT_ARPG_WEAPONS, CAT_ARPG_ARMORS, CAT_ARPG_SHIELDS, CAT_ARPG_ACCESSORIES
+	};
+
+	int colon = k.find(":");
+	if (colon > 0) {
+		String cpart = k.substr(0, colon);
+		int id_part = k.substr(colon + 1).to_int();
+		int cidx = get_category_from_key(cpart);
+		if (cidx >= 0 && id_part > 0) {
+			Dictionary rec = get_record_by_id(cidx, id_part);
+			if (!rec.is_empty()) {
+				out["found"] = true;
+				out["category"] = cidx;
+				out["category_key"] = get_category_key(cidx);
+				out["id"] = id_part;
+				out["record"] = rec;
+				return out;
+			}
+		}
+	}
+
+	String k_low = k.to_lower();
+	for (int ci = 0; ci < 8; ci++) {
+		int cat = k_cats[ci];
+		const Array &arr = category_data[cat];
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary rec = arr[i];
+			String rname = String(rec.get("name", "")).strip_edges();
+			if (!rname.is_empty() && (rname == k || rname.to_lower() == k_low)) {
+				out["found"] = true;
+				out["category"] = cat;
+				out["category_key"] = get_category_key(cat);
+				out["id"] = int(rec.get("id", i + 1));
+				out["record"] = rec.duplicate(true);
+				return out;
+			}
+		}
+	}
+	return out;
+}
+
+int ClockGearsDataManager::get_item_max_stack(const String &p_item_key) const {
+	Dictionary info = find_inventory_record(p_item_key);
+	if (bool(info.get("found", false))) {
+		Dictionary rec = info.get("record", Dictionary());
+		if (rec.has("max_stack")) {
+			int ms = int(rec["max_stack"]);
+			if (ms > 0) {
+				return CLAMP(ms, 1, 9999);
+			}
+		}
+	}
+	return get_default_max_item_stack();
+}
+
 void ClockGearsDataManager::change_item(const String &p_name, int p_amount) {
 	int cur = runtime_inventory.has(p_name) ? int(runtime_inventory[p_name]) : 0;
 	int next = MAX(0, cur + p_amount);
+	if (p_amount > 0) {
+		int max_stack = get_item_max_stack(p_name);
+		next = MIN(MAX(cur, max_stack), next);
+	}
 	if (next == 0) {
 		runtime_inventory.erase(p_name);
 	} else {
@@ -1511,15 +1631,257 @@ void ClockGearsDataManager::change_item(const String &p_name, int p_amount) {
 	}
 }
 
+bool ClockGearsDataManager::is_key_item(const String &p_item_key) const {
+	Dictionary info = find_inventory_record(p_item_key);
+	if (!bool(info.get("found", false))) {
+		return false;
+	}
+	if (int(info.get("category", -1)) != CAT_ITEMS) {
+		return false;
+	}
+	Dictionary rec = info.get("record", Dictionary());
+	return int(rec.get("type", 0)) == 1;
+}
+
+bool ClockGearsDataManager::can_discard_item(const String &p_item_key) const {
+	if (get_item_qty(p_item_key) <= 0) {
+		return false;
+	}
+	return !is_key_item(p_item_key);
+}
+
+bool ClockGearsDataManager::discard_item(const String &p_item_key, int p_amount) {
+	if (p_amount <= 0 || !can_discard_item(p_item_key)) {
+		return false;
+	}
+	int cur = get_item_qty(p_item_key);
+	if (cur <= 0) {
+		return false;
+	}
+	change_item(p_item_key, -MIN(cur, p_amount));
+	return true;
+}
+
+Array ClockGearsDataManager::get_party_actor_ids() const {
+	Array party = system_config.get("party", Array());
+	Array out;
+	for (int i = 0; i < party.size(); i++) {
+		int aid = int(party[i]);
+		if (aid > 0 && !out.has(aid)) {
+			out.push_back(aid);
+		}
+	}
+	if (out.is_empty() && !category_data[CAT_ACTORS].is_empty() && category_data[CAT_ACTORS][0].get_type() == Variant::DICTIONARY) {
+		int first_id = int(Dictionary(category_data[CAT_ACTORS][0]).get("id", 1));
+		if (first_id > 0) {
+			out.push_back(first_id);
+		}
+	}
+	return out;
+}
+
+Array ClockGearsDataManager::get_inventory_entries() const {
+	Array out;
+	Array keys = runtime_inventory.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		String key = String(keys[i]);
+		int qty = MAX(0, int(runtime_inventory[keys[i]]));
+		if (qty <= 0) {
+			continue;
+		}
+		Dictionary info = find_inventory_record(key);
+		bool found = bool(info.get("found", false));
+		int cat = int(info.get("category", -1));
+		int rec_id = int(info.get("id", 0));
+		Dictionary rec = info.get("record", Dictionary());
+
+		String name = found ? String(rec.get("name", key)).strip_edges() : key;
+		if (name.is_empty()) {
+			name = key;
+		}
+		int item_type = (cat == CAT_ITEMS) ? int(rec.get("type", 0)) : -1;
+		int scope = (cat == CAT_ITEMS) ? int(rec.get("secondary_type", rec.get("scope", 7))) : 0;
+		int occasion = (cat == CAT_ITEMS) ? int(rec.get("tertiary_type", rec.get("occasion", 0))) : 3;
+		bool key_item = (cat == CAT_ITEMS && item_type == 1);
+		bool usable_menu = (cat == CAT_ITEMS && (occasion == 0 || occasion == 2));
+
+		Dictionary row;
+		row["key"] = key;
+		row["category"] = cat;
+		row["category_key"] = found ? String(info.get("category_key", "")) : "";
+		row["id"] = rec_id;
+		row["name"] = name;
+		row["desc"] = found ? String(rec.get("desc", "")) : "";
+		row["icon_path"] = found ? String(rec.get("icon_path", rec.get("graphic_path", ""))) : "";
+		row["qty"] = qty;
+		row["max_stack"] = get_item_max_stack(key);
+		row["is_key_item"] = key_item;
+		row["can_discard"] = !key_item;
+		row["consumable"] = found ? bool(rec.get("consumable", true)) : true;
+		row["item_type"] = item_type;
+		row["scope"] = scope;
+		row["occasion"] = occasion;
+		row["usable_in_menu"] = usable_menu;
+		row["record"] = rec;
+		out.push_back(row);
+	}
+	return out;
+}
+
+bool ClockGearsDataManager::use_item_on_actor(const String &p_item_key, int p_target_actor_id) {
+	if (get_item_qty(p_item_key) <= 0) {
+		return false;
+	}
+	Dictionary info = find_inventory_record(p_item_key);
+	if (!bool(info.get("found", false)) || int(info.get("category", -1)) != CAT_ITEMS) {
+		return false;
+	}
+	Dictionary rec = info.get("record", Dictionary());
+	int occasion = int(rec.get("tertiary_type", rec.get("occasion", 0)));
+	// 0 = Siempre, 1 = Solo en Batalla, 2 = Solo en el Menú, 3 = Nunca
+	if (occasion != 0 && occasion != 2) {
+		return false;
+	}
+	int scope = int(rec.get("secondary_type", rec.get("scope", 7)));
+	// Ámbitos enemigos (1..6, 12) o Ninguno (0) no se usan sobre actores en el menú
+	if (scope >= 1 && scope <= 6) {
+		return false;
+	}
+
+	Array targets;
+	if (scope == 8 || scope == 10) {
+		targets = get_party_actor_ids();
+	}
+	if (targets.is_empty() && p_target_actor_id > 0) {
+		targets.push_back(p_target_actor_id);
+	}
+	if (targets.is_empty()) {
+		return false;
+	}
+
+	Array effects = (rec.has("effects") && rec["effects"].get_type() == Variant::ARRAY) ? Array(rec["effects"]) : Array();
+	bool any_applied = false;
+	ClockGearsFormulas *fm = ClockGearsFormulas::get_singleton();
+
+	for (int ti = 0; ti < targets.size(); ti++) {
+		int aid = int(targets[ti]);
+		if (aid <= 0 || get_record_by_id(CAT_ACTORS, aid).is_empty()) {
+			continue;
+		}
+		Dictionary st = get_actor_runtime_state(aid);
+		int cur_hp = int(st.get("hp", 0));
+		int max_hp = MAX(1, int(st.get("max_hp", 100)));
+		int cur_mp = int(st.get("mp", 0));
+		int max_mp = MAX(0, int(st.get("max_mp", 0)));
+
+		// Scopes KO (9, 10) solo aplican a K.O.; aliados vivos (7, 8, 11) requieren hp > 0 salvo al remover estado
+		bool is_ko_scope = (scope == 9 || scope == 10);
+		if (is_ko_scope && cur_hp > 0) {
+			continue;
+		}
+
+		for (int ei = 0; ei < effects.size(); ei++) {
+			if (effects[ei].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary ef = effects[ei];
+			int code = int(ef.get("code", 0));
+			int data_id = int(ef.get("data_id", 0));
+			double val1 = double(ef.get("value1", 0.0));
+			double val2 = double(ef.get("value2", 0.0));
+
+			if (code == CG_EFFECT_RECOVER_HP) {
+				if (!is_ko_scope && cur_hp <= 0) {
+					continue;
+				}
+				int delta = int(Math::round(double(max_hp) * (val1 / 100.0))) + int(Math::round(val2));
+				if (delta != 0) {
+					int next_hp = CLAMP(cur_hp + delta, is_ko_scope ? 1 : 0, max_hp);
+					if (next_hp != cur_hp) {
+						set_actor_runtime_hp(aid, next_hp);
+						cur_hp = next_hp;
+						any_applied = true;
+					}
+				}
+			} else if (code == CG_EFFECT_RECOVER_MP) {
+				if (!is_ko_scope && cur_hp <= 0) {
+					continue;
+				}
+				int delta = int(Math::round(double(max_mp) * (val1 / 100.0))) + int(Math::round(val2));
+				if (delta != 0 && max_mp > 0) {
+					int next_mp = CLAMP(cur_mp + delta, 0, max_mp);
+					if (next_mp != cur_mp) {
+						set_actor_runtime_mp(aid, next_mp);
+						cur_mp = next_mp;
+						any_applied = true;
+					}
+				}
+			} else if (code == CG_EFFECT_ADD_STATE && data_id > 0) {
+				double rate = (val1 <= 0.0) ? 1.0 : ((val1 <= 1.0) ? val1 : (val1 / 100.0));
+				bool hit = !fm || (fm->rand_float() <= rate);
+				if (hit) {
+					add_actor_runtime_state(aid, data_id);
+					any_applied = true;
+				}
+			} else if (code == CG_EFFECT_REMOVE_STATE && data_id > 0) {
+				Array cur_states = get_actor_runtime_states(aid);
+				if (cur_states.has(data_id)) {
+					double rate = (val1 <= 0.0) ? 1.0 : ((val1 <= 1.0) ? val1 : (val1 / 100.0));
+					bool hit = !fm || (fm->rand_float() <= rate);
+					if (hit) {
+						remove_actor_runtime_state(aid, data_id);
+						any_applied = true;
+					}
+				}
+			} else if (code == CG_EFFECT_GROW_PARAM) {
+				int delta = int(Math::round(val1 + val2));
+				if (delta != 0 && data_id >= 0 && data_id < 8) {
+					static const char *bonus_keys[8] = {
+						"max_hp_bonus", "max_mp_bonus", "atk_bonus", "def_bonus",
+						"mat_bonus", "mdf_bonus", "agi_bonus", "luk_bonus"
+					};
+					Dictionary st_edit = get_actor_runtime_state(aid);
+					st_edit[bonus_keys[data_id]] = int(st_edit.get(bonus_keys[data_id], 0)) + delta;
+					st_edit.erase("max_hp");
+					st_edit.erase("max_mp");
+					runtime_actor_states[String::num_int64(aid)] = st_edit;
+					any_applied = true;
+				}
+			} else if (code == CG_EFFECT_LEARN_SKILL && data_id > 0) {
+				Dictionary st_edit = get_actor_runtime_state(aid);
+				Array skills = st_edit.has("learned_skills") && st_edit["learned_skills"].get_type() == Variant::ARRAY
+						? Array(st_edit["learned_skills"]).duplicate(true)
+						: Array();
+				if (!skills.has(data_id)) {
+					skills.push_back(data_id);
+					st_edit["learned_skills"] = skills;
+					st_edit.erase("max_hp");
+					st_edit.erase("max_mp");
+					runtime_actor_states[String::num_int64(aid)] = st_edit;
+					any_applied = true;
+				}
+			}
+		}
+	}
+
+	if (any_applied && bool(rec.get("consumable", true))) {
+		change_item(p_item_key, -1);
+	}
+	return any_applied;
+}
+
 void ClockGearsDataManager::reset_runtime_state() {
 	runtime_switches.clear();
 	runtime_variables.clear();
 	runtime_inventory.clear();
 	runtime_gold = 0;
+	runtime_equips.clear();
 	runtime_arpg_equips.clear();
 	runtime_actor_states.clear();
 	runtime_defeated_enemies.clear();
 	runtime_playtime_sec = 0.0;
+	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
+	PackedStringArray sys_slots = cat ? cat->get_equip_slots() : PackedStringArray();
 	for (int i = 0; i < category_data[CAT_ACTORS].size(); i++) {
 		if (category_data[CAT_ACTORS][i].get_type() != Variant::DICTIONARY) {
 			continue;
@@ -1531,6 +1893,25 @@ void ClockGearsDataManager::reset_runtime_state() {
 					? normalize_arpg_equip_slots(Array(act["arpg_equip_slots"]))
 					: get_default_arpg_equip_slots();
 			runtime_arpg_equips[String::num_int64(aid)] = init_slots;
+
+			Array norm_slots;
+			Array raw_eq = (act.has("equips") && act["equips"].get_type() == Variant::ARRAY) ? Array(act["equips"]) : Array();
+			for (int s = 0; s < sys_slots.size(); s++) {
+				Dictionary sd;
+				sd["slot_idx"] = s;
+				sd["name"] = sys_slots[s];
+				int pid = (s < raw_eq.size()) ? int(raw_eq[s]) : 0;
+				String dcat = (s == 0) ? String("weapons") : ((s == 4) ? String("accessories") : String("armors"));
+				if (s < raw_eq.size() && raw_eq[s].get_type() == Variant::DICTIONARY) {
+					Dictionary rd = raw_eq[s];
+					pid = int(rd.get("piece_id", 0));
+					dcat = String(rd.get("category", dcat));
+				}
+				sd["category"] = dcat;
+				sd["piece_id"] = MAX(0, pid);
+				norm_slots.push_back(sd);
+			}
+			runtime_equips[String::num_int64(aid)] = norm_slots;
 		}
 	}
 }
@@ -1691,7 +2072,7 @@ float ClockGearsDataManager::get_actor_element_rate(int p_actor_id, int p_elemen
 			rate *= evaluate_traits_element_rate(Array(ctv), p_element_id, p_element_key);
 		}
 	}
-	Array slots = get_actor_arpg_equip_slots(p_actor_id);
+	Array slots = get_actor_equip_slots(p_actor_id);
 	for (int i = 0; i < slots.size(); i++) {
 		if (slots[i].get_type() != Variant::DICTIONARY) {
 			continue;
@@ -1709,6 +2090,18 @@ float ClockGearsDataManager::get_actor_element_rate(int p_actor_id, int p_elemen
 		Variant ptv = piece.get("traits", Array());
 		if (ptv.get_type() == Variant::ARRAY) {
 			rate *= evaluate_traits_element_rate(Array(ptv), p_element_id, p_element_key);
+		}
+	}
+	String rt_key = String::num_int64(p_actor_id);
+	if (runtime_actor_states.has(rt_key) && runtime_actor_states[rt_key].get_type() == Variant::DICTIONARY) {
+		Dictionary rt = runtime_actor_states[rt_key];
+		Array st_ids = rt.has("states") && rt["states"].get_type() == Variant::ARRAY ? Array(rt["states"]) : Array();
+		for (int i = 0; i < st_ids.size(); i++) {
+			Dictionary srec = get_record_by_id(CAT_STATES, int(st_ids[i]));
+			Variant stv = srec.get("traits", Array());
+			if (stv.get_type() == Variant::ARRAY) {
+				rate *= evaluate_traits_element_rate(Array(stv), p_element_id, p_element_key);
+			}
 		}
 	}
 	return MAX(0.0f, rate);
@@ -1748,7 +2141,7 @@ Dictionary ClockGearsDataManager::get_actor_runtime_state(int p_actor_id) {
 	}
 	String key = String::num_int64(p_actor_id);
 	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
-	Dictionary bonuses = get_actor_arpg_equip_bonuses(p_actor_id);
+	Dictionary bonuses = get_actor_equip_bonuses(p_actor_id);
 
 	if (!runtime_actor_states.has(key) || runtime_actor_states[key].get_type() != Variant::DICTIONARY) {
 		int lv = MAX(1, int(act.get("level", act.get("initial_level", 1))));
@@ -1767,19 +2160,34 @@ Dictionary ClockGearsDataManager::get_actor_runtime_state(int p_actor_id) {
 			init_exp = fm->calculate_exp_for_level(lv, exp_base, exp_extra, exp_a, exp_b);
 		}
 		int base_mhp = MAX(1, int(act.get("hp", 100)) + int(bonuses.get("hp", 0)));
+		int base_mmp = MAX(0, int(act.get("mp", 20)) + int(bonuses.get("mp", 0)));
 		Dictionary st;
 		st["level"] = lv;
 		st["exp"] = init_exp;
 		st["hp"] = base_mhp;
+		st["mp"] = base_mmp;
 		st["max_hp_bonus"] = 0;
+		st["max_mp_bonus"] = 0;
 		st["atk_bonus"] = 0;
 		st["def_bonus"] = 0;
+		st["mat_bonus"] = 0;
+		st["mdf_bonus"] = 0;
+		st["agi_bonus"] = 0;
+		st["luk_bonus"] = 0;
+		st["states"] = Array();
+		st["learned_skills"] = Array();
 		runtime_actor_states[key] = st;
 	}
 	Dictionary st = Dictionary(runtime_actor_states[key]).duplicate(true);
 	int eff_mhp = MAX(1, int(act.get("hp", 100)) + int(bonuses.get("hp", 0)) + int(st.get("max_hp_bonus", 0)));
+	int eff_mmp = MAX(0, int(act.get("mp", 20)) + int(bonuses.get("mp", 0)) + int(st.get("max_mp_bonus", 0)));
 	st["max_hp"] = eff_mhp;
 	st["hp"] = CLAMP(int(st.get("hp", eff_mhp)), 0, eff_mhp);
+	st["max_mp"] = eff_mmp;
+	st["mp"] = CLAMP(int(st.get("mp", eff_mmp)), 0, eff_mmp);
+	if (!st.has("states") || st["states"].get_type() != Variant::ARRAY) {
+		st["states"] = Array();
+	}
 	return st;
 }
 
@@ -1791,6 +2199,7 @@ void ClockGearsDataManager::set_actor_runtime_hp(int p_actor_id, int p_hp) {
 	int eff_mhp = MAX(1, int(st.get("max_hp", 100)));
 	st["hp"] = CLAMP(p_hp, 0, eff_mhp);
 	st.erase("max_hp");
+	st.erase("max_mp");
 	runtime_actor_states[String::num_int64(p_actor_id)] = st;
 }
 
@@ -1800,6 +2209,61 @@ int ClockGearsDataManager::get_actor_runtime_hp(int p_actor_id) {
 
 int ClockGearsDataManager::get_actor_runtime_max_hp(int p_actor_id) {
 	return MAX(1, int(get_actor_runtime_state(p_actor_id).get("max_hp", 100)));
+}
+
+void ClockGearsDataManager::set_actor_runtime_mp(int p_actor_id, int p_mp) {
+	if (p_actor_id <= 0) {
+		return;
+	}
+	Dictionary st = get_actor_runtime_state(p_actor_id);
+	int eff_mmp = MAX(0, int(st.get("max_mp", 20)));
+	st["mp"] = CLAMP(p_mp, 0, eff_mmp);
+	st.erase("max_hp");
+	st.erase("max_mp");
+	runtime_actor_states[String::num_int64(p_actor_id)] = st;
+}
+
+int ClockGearsDataManager::get_actor_runtime_mp(int p_actor_id) {
+	return MAX(0, int(get_actor_runtime_state(p_actor_id).get("mp", 0)));
+}
+
+int ClockGearsDataManager::get_actor_runtime_max_mp(int p_actor_id) {
+	return MAX(0, int(get_actor_runtime_state(p_actor_id).get("max_mp", 0)));
+}
+
+void ClockGearsDataManager::add_actor_runtime_state(int p_actor_id, int p_state_id) {
+	if (p_actor_id <= 0 || p_state_id <= 0) {
+		return;
+	}
+	Dictionary st = get_actor_runtime_state(p_actor_id);
+	Array arr = Array(st.get("states", Array())).duplicate(true);
+	if (!arr.has(p_state_id)) {
+		arr.push_back(p_state_id);
+	}
+	st["states"] = arr;
+	st.erase("max_hp");
+	st.erase("max_mp");
+	runtime_actor_states[String::num_int64(p_actor_id)] = st;
+}
+
+void ClockGearsDataManager::remove_actor_runtime_state(int p_actor_id, int p_state_id) {
+	if (p_actor_id <= 0 || p_state_id <= 0) {
+		return;
+	}
+	Dictionary st = get_actor_runtime_state(p_actor_id);
+	Array arr = Array(st.get("states", Array())).duplicate(true);
+	int idx = arr.find(p_state_id);
+	if (idx >= 0) {
+		arr.remove_at(idx);
+	}
+	st["states"] = arr;
+	st.erase("max_hp");
+	st.erase("max_mp");
+	runtime_actor_states[String::num_int64(p_actor_id)] = st;
+}
+
+Array ClockGearsDataManager::get_actor_runtime_states(int p_actor_id) {
+	return Array(get_actor_runtime_state(p_actor_id).get("states", Array())).duplicate(true);
 }
 
 int ClockGearsDataManager::get_actor_runtime_level(int p_actor_id) {
@@ -2139,12 +2603,403 @@ int ClockGearsDataManager::get_actor_arpg_equip(int p_actor_id, const String &p_
 }
 
 Dictionary ClockGearsDataManager::get_actor_arpg_equip_bonuses(int p_actor_id) const {
+	return get_actor_equip_bonuses(p_actor_id, 1);
+}
+
+bool ClockGearsDataManager::is_arpg_mode_active(int p_mode_override) const {
+	if (p_mode_override == COMBAT_MODE_ACTION_RPG) {
+		return true;
+	}
+	if (p_mode_override == COMBAT_MODE_TURN_BASED) {
+		return false;
+	}
+	return int(system_config.get("combat_mode", COMBAT_MODE_TURN_BASED)) == COMBAT_MODE_ACTION_RPG;
+}
+
+static Array _cg_normalize_normal_equips(ClockGearsDataManager *p_dm, int p_actor_id, const Array &p_raw) {
+	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
+	PackedStringArray sys_slots = cat ? cat->get_equip_slots() : PackedStringArray();
+	if (sys_slots.is_empty()) {
+		sys_slots.push_back("Mano Derecha (Arma)");
+		sys_slots.push_back("Mano Izquierda (Escudo)");
+		sys_slots.push_back("Cabeza (Casco)");
+		sys_slots.push_back("Cuerpo (Pechera)");
+		sys_slots.push_back("Accesorio");
+	}
+	Array raw = p_raw;
+	if (raw.is_empty() && p_dm) {
+		Dictionary act = p_dm->get_record_by_id(CAT_ACTORS, p_actor_id);
+		if (act.has("equips") && act["equips"].get_type() == Variant::ARRAY) {
+			raw = act["equips"];
+		}
+	}
+	Array out;
+	for (int s = 0; s < sys_slots.size(); s++) {
+		String dcat = (s == 0) ? String("weapons") : ((s == 4) ? String("accessories") : String("armors"));
+		int pid = 0;
+		String cat_key = dcat;
+		if (s < raw.size()) {
+			if (raw[s].get_type() == Variant::DICTIONARY) {
+				Dictionary rd = raw[s];
+				pid = MAX(0, int(rd.get("piece_id", 0)));
+				cat_key = String(rd.get("category", dcat));
+			} else {
+				pid = MAX(0, int(raw[s]));
+			}
+		}
+		Dictionary sd;
+		sd["slot_idx"] = s;
+		sd["slot"] = vformat("slot_%d", s);
+		sd["name"] = sys_slots[s];
+		sd["label"] = sys_slots[s];
+		sd["default_category"] = dcat;
+		sd["category"] = cat_key;
+		sd["piece_id"] = pid;
+		out.push_back(sd);
+	}
+	return out;
+}
+
+Array ClockGearsDataManager::get_actor_equip_slots(int p_actor_id, int p_mode_override) const {
+	if (is_arpg_mode_active(p_mode_override)) {
+		Array arpg = get_actor_arpg_equip_slots(p_actor_id);
+		for (int i = 0; i < arpg.size(); i++) {
+			if (arpg[i].get_type() == Variant::DICTIONARY) {
+				Dictionary sd = Dictionary(arpg[i]).duplicate(true);
+				sd["slot_idx"] = i;
+				sd["name"] = String(sd.get("label", sd.get("slot", vformat("Slot %d", i + 1))));
+				arpg[i] = sd;
+			}
+		}
+		return arpg;
+	}
+	String key = String::num_int64(p_actor_id);
+	Array raw;
+	if (runtime_equips.has(key) && runtime_equips[key].get_type() == Variant::ARRAY) {
+		raw = runtime_equips[key];
+	}
+	return _cg_normalize_normal_equips(const_cast<ClockGearsDataManager *>(this), p_actor_id, raw);
+}
+
+static Array _cg_collect_actor_traits(ClockGearsDataManager *p_dm, int p_actor_id, int p_exclude_slot, int p_mode_override) {
+	Array combined;
+	if (!p_dm || p_actor_id <= 0) {
+		return combined;
+	}
+	auto append_traits = [&](const Variant &p_arr) {
+		if (p_arr.get_type() != Variant::ARRAY) {
+			return;
+		}
+		Array arr = p_arr;
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() == Variant::DICTIONARY) {
+				combined.push_back(arr[i]);
+			}
+		}
+	};
+	Dictionary act = p_dm->get_record_by_id(CAT_ACTORS, p_actor_id);
+	append_traits(act.get("traits", Array()));
+	int class_id = int(act.get("class_id", 0));
+	if (class_id > 0) {
+		Dictionary cls = p_dm->get_record_by_id(CAT_CLASSES, class_id);
+		append_traits(cls.get("traits", Array()));
+	}
+	Array slots = p_dm->get_actor_equip_slots(p_actor_id, p_mode_override);
+	for (int i = 0; i < slots.size(); i++) {
+		if (i == p_exclude_slot || slots[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sd = slots[i];
+		int pid = int(sd.get("piece_id", 0));
+		int cat = p_dm->get_category_from_key(String(sd.get("category", "")));
+		if (pid > 0 && cat >= 0) {
+			Dictionary piece = p_dm->get_record_by_id(cat, pid);
+			append_traits(piece.get("traits", Array()));
+		}
+	}
+	Array states = p_dm->get_actor_runtime_states(p_actor_id);
+	for (int i = 0; i < states.size(); i++) {
+		Dictionary srec = p_dm->get_record_by_id(CAT_STATES, int(states[i]));
+		append_traits(srec.get("traits", Array()));
+	}
+	return combined;
+}
+
+bool ClockGearsDataManager::is_actor_equip_slot_locked(int p_actor_id, int p_slot_idx, int p_mode_override) const {
+	Array traits = _cg_collect_actor_traits(const_cast<ClockGearsDataManager *>(this), p_actor_id, -1, p_mode_override);
+	for (int i = 0; i < traits.size(); i++) {
+		Dictionary tr = traits[i];
+		if (int(tr.get("code", 0)) == CG_TRAIT_EQUIP_LOCK && int(tr.get("data_id", -1)) == p_slot_idx) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::is_actor_equip_slot_sealed(int p_actor_id, int p_slot_idx, int p_mode_override) const {
+	Array traits = _cg_collect_actor_traits(const_cast<ClockGearsDataManager *>(this), p_actor_id, -1, p_mode_override);
+	for (int i = 0; i < traits.size(); i++) {
+		Dictionary tr = traits[i];
+		if (int(tr.get("code", 0)) == CG_TRAIT_EQUIP_SEAL && int(tr.get("data_id", -1)) == p_slot_idx) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::can_actor_equip_piece(int p_actor_id, int p_slot_idx, int p_category, int p_piece_id, int p_mode_override) const {
+	if (p_actor_id <= 0 || p_piece_id <= 0) {
+		return false;
+	}
+	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
+	if (act.is_empty()) {
+		return false;
+	}
+	Array slots = get_actor_equip_slots(p_actor_id, p_mode_override);
+	if (p_slot_idx < 0 || p_slot_idx >= slots.size()) {
+		return false;
+	}
+	if (is_actor_equip_slot_locked(p_actor_id, p_slot_idx, p_mode_override) || is_actor_equip_slot_sealed(p_actor_id, p_slot_idx, p_mode_override)) {
+		return false;
+	}
+	Dictionary piece = get_record_by_id(p_category, p_piece_id);
+	if (piece.is_empty()) {
+		return false;
+	}
+	Dictionary sd = slots[p_slot_idx];
+	bool arpg = is_arpg_mode_active(p_mode_override);
+	if (arpg) {
+		if (get_category_key(p_category) != String(sd.get("category", ""))) {
+			return false;
+		}
+	} else {
+		if (p_category == CAT_WEAPONS) {
+			if (int(piece.get("secondary_type", 0)) != p_slot_idx) {
+				return false;
+			}
+		} else if (p_category == CAT_ARMORS) {
+			if (int(piece.get("secondary_type", 3)) != p_slot_idx) {
+				return false;
+			}
+		} else if (p_category == CAT_ACCESSORIES) {
+			if (int(piece.get("type", 4)) != p_slot_idx) {
+				return false;
+			}
+		} else {
+			return false;
+		}
+	}
+
+	Array traits = _cg_collect_actor_traits(const_cast<ClockGearsDataManager *>(this), p_actor_id, p_slot_idx, p_mode_override);
+	Vector<int> allowed_wtypes;
+	Vector<int> allowed_atypes;
+	for (int i = 0; i < traits.size(); i++) {
+		Dictionary tr = traits[i];
+		int code = int(tr.get("code", 0));
+		int did = int(tr.get("data_id", 0));
+		if (code == CG_TRAIT_EQUIP_WTYPE && !allowed_wtypes.has(did)) {
+			allowed_wtypes.push_back(did);
+		} else if (code == CG_TRAIT_EQUIP_ATYPE && !allowed_atypes.has(did)) {
+			allowed_atypes.push_back(did);
+		}
+	}
+	if ((p_category == CAT_WEAPONS || (p_category == CAT_ARPG_WEAPONS && piece.has("weapon_type"))) && !allowed_wtypes.is_empty()) {
+		int wt = piece.has("weapon_type") ? int(piece.get("weapon_type", 0)) : int(piece.get("type", 0));
+		if (!allowed_wtypes.has(wt)) {
+			return false;
+		}
+	}
+	if ((p_category == CAT_ARMORS || ((p_category == CAT_ARPG_ARMORS || p_category == CAT_ARPG_SHIELDS) && piece.has("armor_type"))) && !allowed_atypes.is_empty()) {
+		int at = piece.has("armor_type") ? int(piece.get("armor_type", 0)) : int(piece.get("type", 0));
+		if (!allowed_atypes.has(at)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool _cg_find_matching_piece_in_cats(ClockGearsDataManager *p_dm, const String &p_key, const Vector<int> &p_cats, int p_actor_id, int p_slot_idx, int p_mode_override, int &r_cat, int &r_id, Dictionary &r_rec) {
+	Dictionary direct = p_dm->find_inventory_record(p_key);
+	if (bool(direct.get("found", false))) {
+		int dcat = int(direct.get("category", -1));
+		int did = int(direct.get("id", 0));
+		if (p_cats.has(dcat) && p_dm->can_actor_equip_piece(p_actor_id, p_slot_idx, dcat, did, p_mode_override)) {
+			r_cat = dcat;
+			r_id = did;
+			r_rec = direct.get("record", Dictionary());
+			return true;
+		}
+	}
+	if (p_key.find(":") != -1) {
+		return false;
+	}
+	String k_low = p_key.strip_edges().to_lower();
+	for (int ci = 0; ci < p_cats.size(); ci++) {
+		int cat = p_cats[ci];
+		Array arr = p_dm->get_category_array(cat);
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary rec = arr[i];
+			String rname = String(rec.get("name", "")).strip_edges();
+			if (!rname.is_empty() && (rname == p_key.strip_edges() || rname.to_lower() == k_low)) {
+				int rid = int(rec.get("id", i + 1));
+				if (p_dm->can_actor_equip_piece(p_actor_id, p_slot_idx, cat, rid, p_mode_override)) {
+					r_cat = cat;
+					r_id = rid;
+					r_rec = rec;
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+Array ClockGearsDataManager::get_equippable_pieces_for_slot(int p_actor_id, int p_slot_idx, int p_mode_override) const {
+	Array out;
+	Array slots = get_actor_equip_slots(p_actor_id, p_mode_override);
+	if (p_slot_idx < 0 || p_slot_idx >= slots.size()) {
+		return out;
+	}
+	if (is_actor_equip_slot_locked(p_actor_id, p_slot_idx, p_mode_override) || is_actor_equip_slot_sealed(p_actor_id, p_slot_idx, p_mode_override)) {
+		return out;
+	}
+	Vector<int> candidate_cats;
+	if (is_arpg_mode_active(p_mode_override)) {
+		int scat = get_category_from_key(String(Dictionary(slots[p_slot_idx]).get("category", "")));
+		if (scat >= 0) {
+			candidate_cats.push_back(scat);
+		}
+	} else {
+		candidate_cats.push_back(CAT_WEAPONS);
+		candidate_cats.push_back(CAT_ARMORS);
+		candidate_cats.push_back(CAT_ACCESSORIES);
+	}
+
+	Array keys = runtime_inventory.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		String key = String(keys[i]);
+		int qty = MAX(0, int(runtime_inventory[keys[i]]));
+		if (qty <= 0) {
+			continue;
+		}
+		int matched_cat = -1;
+		int matched_id = 0;
+		Dictionary rec;
+		if (_cg_find_matching_piece_in_cats(const_cast<ClockGearsDataManager *>(this), key, candidate_cats, p_actor_id, p_slot_idx, p_mode_override, matched_cat, matched_id, rec)) {
+			Dictionary row;
+			row["key"] = key;
+			row["category"] = matched_cat;
+			row["category_key"] = get_category_key(matched_cat);
+			row["id"] = matched_id;
+			row["name"] = String(rec.get("name", key));
+			row["desc"] = String(rec.get("desc", ""));
+			row["icon_path"] = String(rec.get("icon_path", rec.get("graphic_path", "")));
+			row["qty"] = qty;
+			row["record"] = rec;
+			out.push_back(row);
+		}
+	}
+	return out;
+}
+
+bool ClockGearsDataManager::equip_actor_piece(int p_actor_id, int p_slot_idx, const String &p_inventory_key, int p_mode_override) {
+	if (get_item_qty(p_inventory_key) <= 0) {
+		return false;
+	}
+	Array slots = get_actor_equip_slots(p_actor_id, p_mode_override);
+	if (p_slot_idx < 0 || p_slot_idx >= slots.size()) {
+		return false;
+	}
+	Vector<int> candidate_cats;
+	bool arpg = is_arpg_mode_active(p_mode_override);
+	if (arpg) {
+		int scat = get_category_from_key(String(Dictionary(slots[p_slot_idx]).get("category", "")));
+		if (scat >= 0) {
+			candidate_cats.push_back(scat);
+		}
+	} else {
+		candidate_cats.push_back(CAT_WEAPONS);
+		candidate_cats.push_back(CAT_ARMORS);
+		candidate_cats.push_back(CAT_ACCESSORIES);
+	}
+	int new_cat = -1;
+	int new_id = 0;
+	Dictionary new_rec;
+	if (!_cg_find_matching_piece_in_cats(this, p_inventory_key, candidate_cats, p_actor_id, p_slot_idx, p_mode_override, new_cat, new_id, new_rec)) {
+		return false;
+	}
+
+	Dictionary cur_slot = slots[p_slot_idx];
+	int old_id = int(cur_slot.get("piece_id", 0));
+	int old_cat = get_category_from_key(String(cur_slot.get("category", "")));
+
+	change_item(p_inventory_key, -1);
+	if (old_id > 0 && old_cat >= 0) {
+		String old_key = get_record_inventory_key(old_cat, old_id);
+		if (!old_key.is_empty()) {
+			change_item(old_key, 1);
+		}
+	}
+
+	cur_slot["category"] = get_category_key(new_cat);
+	cur_slot["piece_id"] = new_id;
+	slots[p_slot_idx] = cur_slot;
+
+	if (arpg) {
+		runtime_arpg_equips[String::num_int64(p_actor_id)] = normalize_arpg_equip_slots(slots);
+		emit_signal("data_changed", "arpg_equip", p_actor_id);
+	} else {
+		runtime_equips[String::num_int64(p_actor_id)] = slots;
+		emit_signal("data_changed", "equip", p_actor_id);
+	}
+	return true;
+}
+
+bool ClockGearsDataManager::unequip_actor_slot(int p_actor_id, int p_slot_idx, int p_mode_override) {
+	if (p_actor_id <= 0 || is_actor_equip_slot_locked(p_actor_id, p_slot_idx, p_mode_override)) {
+		return false;
+	}
+	Array slots = get_actor_equip_slots(p_actor_id, p_mode_override);
+	if (p_slot_idx < 0 || p_slot_idx >= slots.size()) {
+		return false;
+	}
+	Dictionary sd = slots[p_slot_idx];
+	int old_id = int(sd.get("piece_id", 0));
+	if (old_id <= 0) {
+		return false;
+	}
+	int old_cat = get_category_from_key(String(sd.get("category", "")));
+	if (old_cat >= 0) {
+		String old_key = get_record_inventory_key(old_cat, old_id);
+		if (!old_key.is_empty()) {
+			change_item(old_key, 1);
+		}
+	}
+	sd["piece_id"] = 0;
+	if (!is_arpg_mode_active(p_mode_override) && sd.has("default_category")) {
+		sd["category"] = sd["default_category"];
+	}
+	slots[p_slot_idx] = sd;
+	if (is_arpg_mode_active(p_mode_override)) {
+		runtime_arpg_equips[String::num_int64(p_actor_id)] = normalize_arpg_equip_slots(slots);
+		emit_signal("data_changed", "arpg_equip", p_actor_id);
+	} else {
+		runtime_equips[String::num_int64(p_actor_id)] = slots;
+		emit_signal("data_changed", "equip", p_actor_id);
+	}
+	return true;
+}
+
+Dictionary ClockGearsDataManager::get_actor_equip_bonuses(int p_actor_id, int p_mode_override) const {
 	static const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
 	Dictionary sum;
 	for (int k = 0; k < 8; k++) {
 		sum[stat_keys[k]] = 0;
 	}
-	Array slots = get_actor_arpg_equip_slots(p_actor_id);
+	Array slots = get_actor_equip_slots(p_actor_id, p_mode_override);
 	for (int i = 0; i < slots.size(); i++) {
 		if (slots[i].get_type() != Variant::DICTIONARY) {
 			continue;
@@ -2169,10 +3024,14 @@ Dictionary ClockGearsDataManager::get_actor_arpg_equip_bonuses(int p_actor_id) c
 	return sum;
 }
 
-Dictionary ClockGearsDataManager::get_actor_effective_stats(int p_actor_id) const {
+Dictionary ClockGearsDataManager::get_actor_effective_stats(int p_actor_id, int p_mode_override) const {
 	static const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+	static const char *bonus_keys[8] = {
+		"max_hp_bonus", "max_mp_bonus", "atk_bonus", "def_bonus",
+		"mat_bonus", "mdf_bonus", "agi_bonus", "luk_bonus"
+	};
 	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
-	Dictionary bonuses = get_actor_arpg_equip_bonuses(p_actor_id);
+	Dictionary bonuses = get_actor_equip_bonuses(p_actor_id, p_mode_override);
 	Dictionary rt;
 	String rt_key = String::num_int64(p_actor_id);
 	if (runtime_actor_states.has(rt_key) && runtime_actor_states[rt_key].get_type() == Variant::DICTIONARY) {
@@ -2180,17 +3039,110 @@ Dictionary ClockGearsDataManager::get_actor_effective_stats(int p_actor_id) cons
 	}
 	Dictionary res;
 	for (int k = 0; k < 8; k++) {
-		int val = int(act.get(stat_keys[k], 0)) + int(bonuses.get(stat_keys[k], 0));
-		if (k == 0) {
-			val += int(rt.get("max_hp_bonus", 0));
-		} else if (k == 2) {
-			val += int(rt.get("atk_bonus", 0));
-		} else if (k == 3) {
-			val += int(rt.get("def_bonus", 0));
-		}
-		res[stat_keys[k]] = val;
+		int val = int(act.get(stat_keys[k], 0)) + int(bonuses.get(stat_keys[k], 0)) + int(rt.get(bonus_keys[k], 0));
+		res[stat_keys[k]] = MAX(0, val);
 	}
 	return res;
+}
+
+Dictionary ClockGearsDataManager::preview_equip_actor_stats(int p_actor_id, int p_slot_idx, int p_candidate_category, int p_candidate_piece_id, int p_mode_override) const {
+	static const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+	Dictionary before = get_actor_effective_stats(p_actor_id, p_mode_override);
+	Dictionary after = before.duplicate(true);
+	Array slots = get_actor_equip_slots(p_actor_id, p_mode_override);
+	if (p_slot_idx >= 0 && p_slot_idx < slots.size()) {
+		Dictionary cur_sd = slots[p_slot_idx];
+		int cur_pid = int(cur_sd.get("piece_id", 0));
+		int cur_cat = get_category_from_key(String(cur_sd.get("category", "")));
+		Dictionary old_piece = (cur_pid > 0 && cur_cat >= 0) ? get_record_by_id(cur_cat, cur_pid) : Dictionary();
+		Dictionary new_piece = (p_candidate_piece_id > 0 && p_candidate_category >= 0) ? get_record_by_id(p_candidate_category, p_candidate_piece_id) : Dictionary();
+		for (int k = 0; k < 8; k++) {
+			int cur_v = int(before.get(stat_keys[k], 0));
+			int next_v = cur_v - int(old_piece.get(stat_keys[k], 0)) + int(new_piece.get(stat_keys[k], 0));
+			after[stat_keys[k]] = MAX(0, next_v);
+		}
+	}
+	Dictionary diff;
+	for (int k = 0; k < 8; k++) {
+		diff[stat_keys[k]] = int(after.get(stat_keys[k], 0)) - int(before.get(stat_keys[k], 0));
+	}
+	Dictionary out;
+	out["before"] = before;
+	out["after"] = after;
+	out["diff"] = diff;
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_actor_status_sheet(int p_actor_id, int p_mode_override) {
+	Dictionary out;
+	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
+	Dictionary st = get_actor_runtime_state(p_actor_id);
+	Dictionary stats = get_actor_effective_stats(p_actor_id, p_mode_override);
+
+	int class_id = int(act.get("class_id", 0));
+	Dictionary cls = (class_id > 0) ? get_record_by_id(CAT_CLASSES, class_id) : Dictionary();
+	int lv = MAX(1, int(st.get("level", 1)));
+	int64_t exp = int64_t(st.get("exp", 0));
+	int64_t next_exp = 0;
+	if (ClockGearsFormulas *fm = ClockGearsFormulas::get_singleton()) {
+		int eb = cls.is_empty() ? 30 : int(cls.get("exp_base", 30));
+		int ee = cls.is_empty() ? 20 : int(cls.get("exp_extra", 20));
+		int ea = cls.is_empty() ? 30 : int(cls.get("exp_acc_a", 30));
+		int ebp = cls.is_empty() ? 30 : int(cls.get("exp_acc_b", 30));
+		next_exp = fm->calculate_exp_for_level(lv + 1, eb, ee, ea, ebp);
+	}
+
+	int max_hp = MAX(1, int(stats.get("hp", st.get("max_hp", 100))));
+	int max_mp = MAX(0, int(stats.get("mp", st.get("max_mp", 20))));
+
+	out["actor_id"] = p_actor_id;
+	out["name"] = String(act.get("name", vformat("Actor %d", p_actor_id)));
+	out["class_id"] = class_id;
+	out["class_name"] = cls.is_empty() ? String("") : String(cls.get("name", ""));
+	out["level"] = lv;
+	out["exp"] = exp;
+	out["next_level_exp"] = next_exp;
+	out["remaining_exp"] = MAX(int64_t(0), next_exp - exp);
+	out["hp"] = CLAMP(int(st.get("hp", max_hp)), 0, max_hp);
+	out["max_hp"] = max_hp;
+	out["mp"] = CLAMP(int(st.get("mp", max_mp)), 0, max_mp);
+	out["max_mp"] = max_mp;
+	out["stats"] = stats;
+
+	Array states_out;
+	Array st_ids = get_actor_runtime_states(p_actor_id);
+	for (int i = 0; i < st_ids.size(); i++) {
+		int sid = int(st_ids[i]);
+		Dictionary srec = get_record_by_id(CAT_STATES, sid);
+		Dictionary srow;
+		srow["id"] = sid;
+		srow["name"] = srec.is_empty() ? vformat("Estado %d", sid) : String(srec.get("name", vformat("Estado %d", sid)));
+		srow["icon_path"] = srec.is_empty() ? String("") : String(srec.get("icon_path", srec.get("graphic_path", "")));
+		states_out.push_back(srow);
+	}
+	out["states"] = states_out;
+
+	Array elem_rates;
+	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
+	if (cat) {
+		PackedStringArray elems = cat->get_elements();
+		PackedStringArray ekeys = cat->get_element_keys();
+		for (int i = 0; i < elems.size(); i++) {
+			int eid = i + 1;
+			String ekey = (i < ekeys.size()) ? ekeys[i] : String();
+			float rate = get_actor_element_rate(p_actor_id, eid, ekey);
+			Dictionary erow;
+			erow["id"] = eid;
+			erow["key"] = ekey;
+			erow["name"] = elems[i];
+			erow["rate"] = rate;
+			erow["pct"] = int(Math::round(rate * 100.0f));
+			elem_rates.push_back(erow);
+		}
+	}
+	out["element_rates"] = elem_rates;
+	out["equips"] = get_actor_equip_slots(p_actor_id, p_mode_override);
+	return out;
 }
 
 Dictionary ClockGearsDataManager::export_runtime_state() const {
@@ -2199,6 +3151,7 @@ Dictionary ClockGearsDataManager::export_runtime_state() const {
 	d["variables"] = runtime_variables.duplicate(true);
 	d["inventory"] = runtime_inventory.duplicate(true);
 	d["gold"] = runtime_gold;
+	d["equips"] = runtime_equips.duplicate(true);
 	d["arpg_equips"] = runtime_arpg_equips.duplicate(true);
 	d["actor_states"] = runtime_actor_states.duplicate(true);
 	d["defeated_enemies"] = runtime_defeated_enemies.duplicate(true);
@@ -2223,6 +3176,16 @@ void ClockGearsDataManager::import_runtime_state(const Dictionary &p_state) {
 		runtime_inventory.clear();
 	}
 	runtime_gold = MAX(0, int(p_state.get("gold", 0)));
+	runtime_equips.clear();
+	if (p_state.has("equips") && p_state["equips"].get_type() == Variant::DICTIONARY) {
+		Dictionary neq = p_state["equips"];
+		for (const Variant &k : neq.keys()) {
+			if (neq[k].get_type() == Variant::ARRAY) {
+				int aid = String(k).to_int();
+				runtime_equips[String(k)] = _cg_normalize_normal_equips(this, aid, Array(neq[k]));
+			}
+		}
+	}
 	runtime_arpg_equips.clear();
 	if (p_state.has("arpg_equips") && p_state["arpg_equips"].get_type() == Variant::DICTIONARY) {
 		Dictionary eq = p_state["arpg_equips"];
@@ -2491,6 +3454,176 @@ void ClockGearsDataManager::set_save_slot_count(int p_count) {
 	title_menu_config["save_slots"] = CLAMP(p_count, 1, 99);
 	dirty = true;
 	emit_signal("data_changed", "title_menu", 0);
+}
+
+// --- Menú dentro del juego (9B Tanda 3) ---
+
+static Dictionary _cg_default_menu_bg(const String &p_col = "#0c101ccc") {
+	Dictionary bg;
+	bg["type"] = "color";
+	bg["color"] = p_col;
+	bg["image_path"] = "";
+	bg["scale_mode"] = "fit";
+	bg["filter"] = "nearest";
+	return bg;
+}
+
+static Dictionary _cg_normalize_menu_bg(const Variant &p_raw, const Dictionary &p_fallback) {
+	Dictionary raw = (p_raw.get_type() == Variant::DICTIONARY) ? Dictionary(p_raw) : Dictionary();
+	Dictionary bg;
+	String img = String(raw.get("image_path", raw.get("path", ""))).strip_edges();
+	String btype = String(raw.get("type", img.is_empty() ? "color" : "image")).strip_edges().to_lower();
+	if (btype != "image") {
+		btype = "color";
+	}
+	String col = String(raw.get("color", p_fallback.get("color", "#0c101ccc"))).strip_edges();
+	if (col.is_empty() || !Color::html_is_valid(col)) {
+		col = String(p_fallback.get("color", "#0c101ccc"));
+	}
+	bg["type"] = btype;
+	bg["color"] = col;
+	bg["image_path"] = img;
+	bg["scale_mode"] = s_normalize_scale_mode(raw.get("scale_mode", p_fallback.get("scale_mode", "fit")));
+	bg["filter"] = s_normalize_texture_filter_mode(raw.get("filter", p_fallback.get("filter", "nearest")));
+	return bg;
+}
+
+Dictionary ClockGearsDataManager::get_default_game_menu_config() {
+	Dictionary cfg;
+	cfg["schema_version"] = 1;
+
+	Dictionary bgs;
+	bgs["menu"] = _cg_default_menu_bg("#0c101ccc");
+	bgs["items"] = _cg_default_menu_bg("#0c101ccc");
+	bgs["equip"] = _cg_default_menu_bg("#0c101ccc");
+	bgs["status"] = _cg_default_menu_bg("#0c101ccc");
+	cfg["backgrounds"] = bgs;
+
+	struct EntrySpec {
+		const char *id;
+		const char *label;
+		bool enabled;
+		bool reserved;
+	};
+	static const EntrySpec k_specs[7] = {
+		{ "items", "Objetos", true, false },
+		{ "equip", "Equipo", true, false },
+		{ "status", "Estado", true, false },
+		{ "save", "Guardar", true, false },
+		{ "options", "Opciones", true, false },
+		{ "to_title", "Salir al título", true, false },
+		{ "magic", "Magia", false, true }
+	};
+	Array entries;
+	for (int i = 0; i < 7; i++) {
+		Dictionary e;
+		e["id"] = String(k_specs[i].id);
+		e["text"] = String::utf8(k_specs[i].label);
+		e["enabled"] = k_specs[i].enabled;
+		e["reserved"] = k_specs[i].reserved;
+		e["order"] = i;
+		entries.push_back(e);
+	}
+	cfg["entries"] = entries;
+	return cfg;
+}
+
+Dictionary ClockGearsDataManager::normalize_game_menu_config(const Dictionary &p_cfg) {
+	Dictionary def = get_default_game_menu_config();
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+
+	Dictionary def_bgs = def["backgrounds"];
+	Dictionary raw_bgs = (p_cfg.has("backgrounds") && p_cfg["backgrounds"].get_type() == Variant::DICTIONARY) ? Dictionary(p_cfg["backgrounds"]) : Dictionary();
+	Dictionary norm_bgs;
+	static const char *k_bg_keys[4] = { "menu", "items", "equip", "status" };
+	for (int i = 0; i < 4; i++) {
+		String bk = k_bg_keys[i];
+		norm_bgs[bk] = _cg_normalize_menu_bg(raw_bgs.get(bk, Dictionary()), def_bgs[bk]);
+	}
+	out["backgrounds"] = norm_bgs;
+
+	Array def_entries = def["entries"];
+	Dictionary merged_by_id;
+	for (int i = 0; i < def_entries.size(); i++) {
+		Dictionary de = Dictionary(def_entries[i]).duplicate(true);
+		merged_by_id[String(de["id"])] = de;
+	}
+	Vector<String> seen_in_raw;
+	if (p_cfg.has("entries") && p_cfg["entries"].get_type() == Variant::ARRAY) {
+		Array raw_entries = p_cfg["entries"];
+		for (int i = 0; i < raw_entries.size(); i++) {
+			if (raw_entries[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary re = raw_entries[i];
+			String id = String(re.get("id", "")).strip_edges().to_lower();
+			if (!merged_by_id.has(id) || seen_in_raw.has(id)) {
+				continue;
+			}
+			Dictionary e = Dictionary(merged_by_id[id]).duplicate(true);
+			String txt = String(re.get("text", e["text"]));
+			if (!txt.strip_edges().is_empty()) {
+				e["text"] = txt;
+			}
+			if (re.has("enabled")) {
+				e["enabled"] = (id == "magic") ? false : bool(re["enabled"]);
+			}
+			e["order"] = int(seen_in_raw.size());
+			seen_in_raw.push_back(id);
+			merged_by_id[id] = e;
+		}
+	}
+
+	Vector<Dictionary> sorted;
+	for (int i = 0; i < seen_in_raw.size(); i++) {
+		sorted.push_back(Dictionary(merged_by_id[seen_in_raw[i]]));
+	}
+	for (int i = 0; i < def_entries.size(); i++) {
+		String id = String(Dictionary(def_entries[i])["id"]);
+		if (!seen_in_raw.has(id)) {
+			sorted.push_back(Dictionary(merged_by_id[id]));
+		}
+	}
+	Array norm_entries;
+	for (int i = 0; i < sorted.size(); i++) {
+		Dictionary e = sorted[i].duplicate(true);
+		e["order"] = i;
+		norm_entries.push_back(e);
+	}
+	out["entries"] = norm_entries;
+	return out;
+}
+
+void ClockGearsDataManager::set_game_menu_config(const Dictionary &p_cfg) {
+	game_menu_config = normalize_game_menu_config(p_cfg);
+	dirty = true;
+	emit_signal("data_changed", "game_menu", 0);
+}
+
+Array ClockGearsDataManager::get_visible_game_menu_entries() const {
+	Dictionary norm = normalize_game_menu_config(game_menu_config);
+	Array entries = norm.get("entries", Array());
+	Array out;
+	for (int i = 0; i < entries.size(); i++) {
+		Dictionary e = entries[i];
+		String id = String(e.get("id", ""));
+		if (id == "magic" || bool(e.get("reserved", false)) || !bool(e.get("enabled", true))) {
+			continue;
+		}
+		out.push_back(e.duplicate(true));
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_game_menu_screen_background(const String &p_screen_id) const {
+	Dictionary norm = normalize_game_menu_config(game_menu_config);
+	Dictionary bgs = norm.get("backgrounds", Dictionary());
+	String k = p_screen_id.strip_edges().to_lower();
+	if (bgs.has(k) && bgs[k].get_type() == Variant::DICTIONARY) {
+		return Dictionary(bgs[k]).duplicate(true);
+	}
+	return _cg_default_menu_bg("#0c101ccc");
 }
 
 // --- Estilos de Ventana y Botones (9B Tanda 2) ---
@@ -2762,6 +3895,7 @@ void ClockGearsDataManager::ensure_default_window_types_registered() {
 	register_window_type("title_buttons", String::utf8("Botones del título"));
 	register_window_type("options", "Opciones");
 	register_window_type("save_list", "Lista de partidas");
+	register_window_type("game_menu", String::utf8("Menú del juego"));
 }
 
 void ClockGearsDataManager::register_window_type(const String &p_id, const String &p_label) {
@@ -3189,7 +4323,7 @@ void ClockGearsDataManager::apply_game_window_title(Node *p_context) {
 }
 
 String ClockGearsDataManager::get_currency_unit() const {
-	String cur = String(system_config.get("currency", "G")).strip_edges();
+	String cur = String(system_config.get("currency", system_config.get("currency_unit", "G"))).strip_edges();
 	return cur.is_empty() ? String("G") : cur;
 }
 
@@ -3703,6 +4837,23 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_item_qty", "name"), &ClockGearsDataManager::get_item_qty);
 	ClassDB::bind_method(D_METHOD("get_runtime_inventory"), &ClockGearsDataManager::get_runtime_inventory);
 	ClassDB::bind_method(D_METHOD("change_item", "name", "amount"), &ClockGearsDataManager::change_item);
+	ClassDB::bind_method(D_METHOD("get_default_max_item_stack"), &ClockGearsDataManager::get_default_max_item_stack);
+	ClassDB::bind_method(D_METHOD("set_default_max_item_stack", "max_stack"), &ClockGearsDataManager::set_default_max_item_stack);
+	ClassDB::bind_method(D_METHOD("get_item_max_stack", "item_key"), &ClockGearsDataManager::get_item_max_stack);
+	ClassDB::bind_method(D_METHOD("get_record_inventory_key", "category", "id"), &ClockGearsDataManager::get_record_inventory_key);
+	ClassDB::bind_method(D_METHOD("find_inventory_record", "item_key"), &ClockGearsDataManager::find_inventory_record);
+	ClassDB::bind_method(D_METHOD("is_key_item", "item_key"), &ClockGearsDataManager::is_key_item);
+	ClassDB::bind_method(D_METHOD("can_discard_item", "item_key"), &ClockGearsDataManager::can_discard_item);
+	ClassDB::bind_method(D_METHOD("discard_item", "item_key", "amount"), &ClockGearsDataManager::discard_item, DEFVAL(1));
+	ClassDB::bind_method(D_METHOD("get_inventory_entries"), &ClockGearsDataManager::get_inventory_entries);
+	ClassDB::bind_method(D_METHOD("use_item_on_actor", "item_key", "target_actor_id"), &ClockGearsDataManager::use_item_on_actor);
+	ClassDB::bind_method(D_METHOD("get_party_actor_ids"), &ClockGearsDataManager::get_party_actor_ids);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_game_menu_config"), &ClockGearsDataManager::get_default_game_menu_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_game_menu_config", "cfg"), &ClockGearsDataManager::normalize_game_menu_config);
+	ClassDB::bind_method(D_METHOD("get_game_menu_config"), &ClockGearsDataManager::get_game_menu_config);
+	ClassDB::bind_method(D_METHOD("set_game_menu_config", "cfg"), &ClockGearsDataManager::set_game_menu_config);
+	ClassDB::bind_method(D_METHOD("get_visible_game_menu_entries"), &ClockGearsDataManager::get_visible_game_menu_entries);
+	ClassDB::bind_method(D_METHOD("get_game_menu_screen_background", "screen_id"), &ClockGearsDataManager::get_game_menu_screen_background);
 	ClassDB::bind_method(D_METHOD("get_gold"), &ClockGearsDataManager::get_gold);
 	ClassDB::bind_method(D_METHOD("set_gold", "gold"), &ClockGearsDataManager::set_gold);
 	ClassDB::bind_method(D_METHOD("change_gold", "amount"), &ClockGearsDataManager::change_gold);
@@ -3712,6 +4863,12 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_actor_runtime_hp", "actor_id", "hp"), &ClockGearsDataManager::set_actor_runtime_hp);
 	ClassDB::bind_method(D_METHOD("get_actor_runtime_hp", "actor_id"), &ClockGearsDataManager::get_actor_runtime_hp);
 	ClassDB::bind_method(D_METHOD("get_actor_runtime_max_hp", "actor_id"), &ClockGearsDataManager::get_actor_runtime_max_hp);
+	ClassDB::bind_method(D_METHOD("set_actor_runtime_mp", "actor_id", "mp"), &ClockGearsDataManager::set_actor_runtime_mp);
+	ClassDB::bind_method(D_METHOD("get_actor_runtime_mp", "actor_id"), &ClockGearsDataManager::get_actor_runtime_mp);
+	ClassDB::bind_method(D_METHOD("get_actor_runtime_max_mp", "actor_id"), &ClockGearsDataManager::get_actor_runtime_max_mp);
+	ClassDB::bind_method(D_METHOD("add_actor_runtime_state", "actor_id", "state_id"), &ClockGearsDataManager::add_actor_runtime_state);
+	ClassDB::bind_method(D_METHOD("remove_actor_runtime_state", "actor_id", "state_id"), &ClockGearsDataManager::remove_actor_runtime_state);
+	ClassDB::bind_method(D_METHOD("get_actor_runtime_states", "actor_id"), &ClockGearsDataManager::get_actor_runtime_states);
 	ClassDB::bind_method(D_METHOD("get_actor_runtime_level", "actor_id"), &ClockGearsDataManager::get_actor_runtime_level);
 	ClassDB::bind_method(D_METHOD("get_actor_runtime_exp", "actor_id"), &ClockGearsDataManager::get_actor_runtime_exp);
 	ClassDB::bind_method(D_METHOD("grant_party_exp", "exp_amount"), &ClockGearsDataManager::grant_party_exp);
@@ -3727,7 +4884,18 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_actor_arpg_equip", "actor_id", "slot_id", "piece_id"), &ClockGearsDataManager::set_actor_arpg_equip);
 	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip", "actor_id", "slot_id"), &ClockGearsDataManager::get_actor_arpg_equip);
 	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip_bonuses", "actor_id"), &ClockGearsDataManager::get_actor_arpg_equip_bonuses);
-	ClassDB::bind_method(D_METHOD("get_actor_effective_stats", "actor_id"), &ClockGearsDataManager::get_actor_effective_stats);
+	ClassDB::bind_method(D_METHOD("is_arpg_mode_active", "mode_override"), &ClockGearsDataManager::is_arpg_mode_active, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_actor_equip_slots", "actor_id", "mode_override"), &ClockGearsDataManager::get_actor_equip_slots, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("is_actor_equip_slot_locked", "actor_id", "slot_idx", "mode_override"), &ClockGearsDataManager::is_actor_equip_slot_locked, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("is_actor_equip_slot_sealed", "actor_id", "slot_idx", "mode_override"), &ClockGearsDataManager::is_actor_equip_slot_sealed, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("can_actor_equip_piece", "actor_id", "slot_idx", "category", "piece_id", "mode_override"), &ClockGearsDataManager::can_actor_equip_piece, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_equippable_pieces_for_slot", "actor_id", "slot_idx", "mode_override"), &ClockGearsDataManager::get_equippable_pieces_for_slot, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("equip_actor_piece", "actor_id", "slot_idx", "inventory_key", "mode_override"), &ClockGearsDataManager::equip_actor_piece, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("unequip_actor_slot", "actor_id", "slot_idx", "mode_override"), &ClockGearsDataManager::unequip_actor_slot, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("preview_equip_actor_stats", "actor_id", "slot_idx", "candidate_category", "candidate_piece_id", "mode_override"), &ClockGearsDataManager::preview_equip_actor_stats, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_actor_equip_bonuses", "actor_id", "mode_override"), &ClockGearsDataManager::get_actor_equip_bonuses, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_actor_effective_stats", "actor_id", "mode_override"), &ClockGearsDataManager::get_actor_effective_stats, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_actor_status_sheet", "actor_id", "mode_override"), &ClockGearsDataManager::get_actor_status_sheet, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("get_actor_element_rate", "actor_id", "element_id", "element_key"), &ClockGearsDataManager::get_actor_element_rate, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("export_runtime_state"), &ClockGearsDataManager::export_runtime_state);
 	ClassDB::bind_method(D_METHOD("import_runtime_state", "state"), &ClockGearsDataManager::import_runtime_state);

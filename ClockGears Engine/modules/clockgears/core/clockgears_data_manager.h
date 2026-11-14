@@ -57,6 +57,7 @@ private:
 	Dictionary system_config;
 	Dictionary vocabulary_config;
 	Dictionary title_menu_config;
+	Dictionary game_menu_config;
 	Dictionary window_styles_config;
 	Dictionary player_options;
 	bool player_options_loaded = false;
@@ -73,6 +74,7 @@ private:
 	Dictionary runtime_switches;
 	Dictionary runtime_variables;
 	Dictionary runtime_inventory;
+	Dictionary runtime_equips;
 	Dictionary runtime_arpg_equips;
 	Dictionary runtime_actor_states;
 	Dictionary runtime_defeated_enemies;
@@ -134,6 +136,14 @@ public:
 	Array get_visible_title_entries() const;
 	int get_save_slot_count() const;
 	void set_save_slot_count(int p_count);
+
+	// Menú dentro del juego (9B Tanda 3)
+	static Dictionary get_default_game_menu_config();
+	static Dictionary normalize_game_menu_config(const Dictionary &p_cfg);
+	Dictionary get_game_menu_config() const { return game_menu_config.duplicate(true); }
+	void set_game_menu_config(const Dictionary &p_cfg);
+	Array get_visible_game_menu_entries() const;
+	Dictionary get_game_menu_screen_background(const String &p_screen_id) const;
 
 	// Estilos de ventana y botones (9B Tanda 2)
 	static void ensure_default_window_types_registered();
@@ -206,6 +216,17 @@ public:
 	int get_item_qty(const String &p_name) const;
 	Dictionary get_runtime_inventory() const { return runtime_inventory.duplicate(true); }
 	void change_item(const String &p_name, int p_amount);
+	int get_default_max_item_stack() const;
+	void set_default_max_item_stack(int p_max_stack);
+	int get_item_max_stack(const String &p_item_key) const;
+	String get_record_inventory_key(int p_category, int p_id) const;
+	Dictionary find_inventory_record(const String &p_item_key) const;
+	bool is_key_item(const String &p_item_key) const;
+	bool can_discard_item(const String &p_item_key) const;
+	bool discard_item(const String &p_item_key, int p_amount = 1);
+	Array get_inventory_entries() const;
+	bool use_item_on_actor(const String &p_item_key, int p_target_actor_id);
+	Array get_party_actor_ids() const;
 	int get_gold() const { return runtime_gold; }
 	void set_gold(int p_gold) { runtime_gold = MAX(0, p_gold); }
 	void change_gold(int p_amount) { runtime_gold = MAX(0, runtime_gold + p_amount); }
@@ -222,6 +243,12 @@ public:
 	void set_actor_runtime_hp(int p_actor_id, int p_hp);
 	int get_actor_runtime_hp(int p_actor_id);
 	int get_actor_runtime_max_hp(int p_actor_id);
+	void set_actor_runtime_mp(int p_actor_id, int p_mp);
+	int get_actor_runtime_mp(int p_actor_id);
+	int get_actor_runtime_max_mp(int p_actor_id);
+	void add_actor_runtime_state(int p_actor_id, int p_state_id);
+	void remove_actor_runtime_state(int p_actor_id, int p_state_id);
+	Array get_actor_runtime_states(int p_actor_id);
 	int get_actor_runtime_level(int p_actor_id);
 	int64_t get_actor_runtime_exp(int p_actor_id);
 	Array grant_party_exp(int64_t p_exp_amount);
@@ -234,14 +261,25 @@ public:
 	bool is_arpg_enemy_defeated(const String &p_map_key, int p_event_id) const;
 	Array process_map_respawns(const String &p_map_key, int p_respawn_mode, double p_respawn_minutes, bool p_is_entering_map);
 
-	// Equipo ARPG por actor (Tanda 1C)
+	// Equipo normal y ARPG por actor (Tanda 1C & 9B Tanda 3)
 	static Array get_default_arpg_equip_slots();
 	static Array normalize_arpg_equip_slots(const Array &p_raw_slots);
 	Array get_actor_arpg_equip_slots(int p_actor_id) const;
 	bool set_actor_arpg_equip(int p_actor_id, const String &p_slot_id, int p_piece_id);
 	int get_actor_arpg_equip(int p_actor_id, const String &p_slot_id) const;
 	Dictionary get_actor_arpg_equip_bonuses(int p_actor_id) const;
-	Dictionary get_actor_effective_stats(int p_actor_id) const;
+	bool is_arpg_mode_active(int p_mode_override = -1) const;
+	Array get_actor_equip_slots(int p_actor_id, int p_mode_override = -1) const;
+	bool is_actor_equip_slot_locked(int p_actor_id, int p_slot_idx, int p_mode_override = -1) const;
+	bool is_actor_equip_slot_sealed(int p_actor_id, int p_slot_idx, int p_mode_override = -1) const;
+	bool can_actor_equip_piece(int p_actor_id, int p_slot_idx, int p_category, int p_piece_id, int p_mode_override = -1) const;
+	Array get_equippable_pieces_for_slot(int p_actor_id, int p_slot_idx, int p_mode_override = -1) const;
+	bool equip_actor_piece(int p_actor_id, int p_slot_idx, const String &p_inventory_key, int p_mode_override = -1);
+	bool unequip_actor_slot(int p_actor_id, int p_slot_idx, int p_mode_override = -1);
+	Dictionary preview_equip_actor_stats(int p_actor_id, int p_slot_idx, int p_candidate_category, int p_candidate_piece_id, int p_mode_override = -1) const;
+	Dictionary get_actor_equip_bonuses(int p_actor_id, int p_mode_override = -1) const;
+	Dictionary get_actor_effective_stats(int p_actor_id, int p_mode_override = -1) const;
+	Dictionary get_actor_status_sheet(int p_actor_id, int p_mode_override = -1);
 	Dictionary export_runtime_state() const;
 	void import_runtime_state(const Dictionary &p_state);
 

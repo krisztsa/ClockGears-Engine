@@ -1,5 +1,6 @@
 #include "clockgears_runtime.h"
 #include "clockgears_entity_ai.h"
+#include "clockgears_game_menu.h"
 #include "clockgears_title_screen.h"
 #include "../clockgears_battle_window.h"
 #include "../clockgears_debug_panel.h"
@@ -2442,6 +2443,8 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("step_frame"), &ClockGearsEventInterpreter::step_frame);
 	ClassDB::bind_method(D_METHOD("get_picture_manager"), &ClockGearsEventInterpreter::get_picture_manager);
 	ClassDB::bind_method(D_METHOD("get_cutscene_player"), &ClockGearsEventInterpreter::get_cutscene_player);
+	ClassDB::bind_method(D_METHOD("get_game_menu"), &ClockGearsEventInterpreter::get_game_menu);
+	ClassDB::bind_method(D_METHOD("has_active_battle"), &ClockGearsEventInterpreter::has_active_battle);
 	ClassDB::bind_method(D_METHOD("get_screen_tint_color"), &ClockGearsEventInterpreter::get_screen_tint_color);
 	ClassDB::bind_method(D_METHOD("get_screen_tint_rect"), &ClockGearsEventInterpreter::get_screen_tint_rect);
 	ClassDB::bind_method(D_METHOD("get_screen_tint_layer"), &ClockGearsEventInterpreter::get_screen_tint_layer);
@@ -2537,6 +2540,16 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 		cutscene_player->set_name("ClockGearsCutscenePlayer");
 		ui_layer->add_child(cutscene_player);
 	}
+
+	// 6. Menú del Juego en Runtime (9B Tanda 3)
+	if (!game_menu) {
+		game_menu = memnew(ClockGearsGameMenu);
+		add_child(game_menu);
+	}
+}
+
+bool ClockGearsEventInterpreter::is_blocking_player() const {
+	return state != STATE_IDLE || (game_menu && game_menu->is_menu_open());
 }
 
 void ClockGearsEventInterpreter::setup_interpreter(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsFollowerManager *p_followers) {
@@ -2544,6 +2557,9 @@ void ClockGearsEventInterpreter::setup_interpreter(ClockGearsMap *p_map, ClockGe
 	player = p_player;
 	follower_manager = p_followers;
 	_build_runtime_ui();
+	if (game_menu) {
+		game_menu->setup_game_menu(this, current_map, player);
+	}
 	_refresh_all_map_events();
 }
 
@@ -3352,8 +3368,19 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		bs->connect("battle_finished", callable_mp(this, &ClockGearsEventInterpreter::_on_battle_scene_finished));
 		add_child(bs);
 
+		if (game_menu && game_menu->is_menu_open()) {
+			game_menu->close_menu();
+		}
 		state = STATE_WAITING_BATTLE;
 		return false;
+	}
+
+	// --- Abrir Menú del Juego ---
+	if (type == "open_menu" || code == CG_CMD_OPEN_MENU) {
+		if (game_menu) {
+			game_menu->open_menu();
+		}
+		return true;
 	}
 
 	// --- Volver al Título ---

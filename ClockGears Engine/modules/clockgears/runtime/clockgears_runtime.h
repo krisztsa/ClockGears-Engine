@@ -22,6 +22,7 @@
 
 class ClockGearsFollowerManager;
 class ClockGearsEventInterpreter;
+class ClockGearsGameMenu;
 
 // ============================================================================
 // ClockGearsPlayer — Controlador de Jugador en Rejilla 32x32 (Fase 6 / Sección 7.1)
@@ -374,6 +375,7 @@ private:
 	ClockGearsMessageWindow *message_window = nullptr;
 	ClockGearsPictureManager *picture_manager = nullptr;
 	ClockGearsCutscenePlayer *cutscene_player = nullptr;
+	ClockGearsGameMenu *game_menu = nullptr;
 	Node *active_battle_scene = nullptr;
 	bool battle_can_lose_flag = false;
 
@@ -424,12 +426,14 @@ public:
 	void setup_interpreter(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsFollowerManager *p_followers);
 
 	bool is_running() const { return state != STATE_IDLE; }
-	bool is_blocking_player() const { return state != STATE_IDLE; }
+	bool is_blocking_player() const;
+	bool has_active_battle() const { return active_battle_scene != nullptr || state == STATE_WAITING_BATTLE; }
 	ClockGearsEvent *get_active_event() const { return active_event; }
 	int get_state() const { return int(state); }
 	int get_last_choice_index() const { return last_choice_index; }
 	ClockGearsPictureManager *get_picture_manager() const { return picture_manager; }
 	ClockGearsCutscenePlayer *get_cutscene_player() const { return cutscene_player; }
+	ClockGearsGameMenu *get_game_menu() const { return game_menu; }
 	Color get_screen_tint_color() const { return current_tint_color; }
 	ColorRect *get_screen_tint_rect() const { return screen_tint_rect; }
 	CanvasLayer *get_screen_tint_layer() const { return screen_tint_layer; }
