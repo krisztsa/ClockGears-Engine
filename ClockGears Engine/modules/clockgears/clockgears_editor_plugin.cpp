@@ -1,11 +1,14 @@
 #include "clockgears_editor_plugin.h"
+#include "clockgears_battle_window.h"
 #include "clockgears_map.h"
+#include "clockgears_animation.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_system_catalog.h"
 #include "core/config/project_settings.h"
 #include "core/input/input_event.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "editor/clockgears_theme.h"
 #include "editor/docks/editor_dock_manager.h"
@@ -15,9 +18,495 @@
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/margin_container.h"
+#include "scene/gui/separator.h"
 #include "scene/gui/split_container.h"
 #include "scene/main/viewport.h"
+#include "scene/resources/atlas_texture.h"
+#include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
+
+// ============================================================================
+// ClockGearsGenerateEntityDialog
+// ============================================================================
+
+void ClockGearsGenerateEntityDialog::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("open_for_cell", "x", "y"), &ClockGearsGenerateEntityDialog::open_for_cell);
+	ClassDB::bind_method(D_METHOD("select_tab", "tab"), &ClockGearsGenerateEntityDialog::select_tab);
+	ClassDB::bind_method(D_METHOD("get_selected_tab"), &ClockGearsGenerateEntityDialog::get_selected_tab);
+	ClassDB::bind_method(D_METHOD("get_listed_count"), &ClockGearsGenerateEntityDialog::get_listed_count);
+	ClassDB::bind_method(D_METHOD("select_list_index", "index"), &ClockGearsGenerateEntityDialog::select_list_index);
+	ClassDB::bind_method(D_METHOD("check_layout_fits_window", "window_size"), &ClockGearsGenerateEntityDialog::check_layout_fits_window, DEFVAL(Vector2i(1366, 768)));
+	ClassDB::bind_method(D_METHOD("get_target_cell"), &ClockGearsGenerateEntityDialog::get_target_cell);
+
+	ClassDB::bind_static_method("ClockGearsGenerateEntityDialog", D_METHOD("populate_event_context_menu", "menu", "quick_menu", "has_event", "clipboard_empty"), &ClockGearsGenerateEntityDialog::populate_event_context_menu);
+	ClassDB::bind_static_method("ClockGearsGenerateEntityDialog", D_METHOD("create_entity_event_on_map", "scene", "tab", "record_id", "x", "y", "grid_size", "use_undo_redo", "undo_redo"), &ClockGearsGenerateEntityDialog::create_entity_event_on_map, DEFVAL(32), DEFVAL(true), DEFVAL(Variant()));
+
+	BIND_CONSTANT(TAB_NPC);
+	BIND_CONSTANT(TAB_ARPG_NPC);
+	BIND_CONSTANT(TAB_ENEMIGO);
+	BIND_CONSTANT(TAB_ARPG_ENEMIGO);
+	BIND_CONSTANT(TAB_FLORA);
+	BIND_CONSTANT(TAB_FAUNA);
+
+	ADD_SIGNAL(MethodInfo("entity_chosen",
+			PropertyInfo(Variant::INT, "tab"),
+			PropertyInfo(Variant::INT, "record_id"),
+			PropertyInfo(Variant::STRING, "record_name"),
+			PropertyInfo(Variant::INT, "cell_x"),
+			PropertyInfo(Variant::INT, "cell_y")));
+}
+
+void ClockGearsGenerateEntityDialog::_notification(int p_what) {
+	if (p_what == NOTIFICATION_READY) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(this);
+		}
+	}
+}
+
+int ClockGearsGenerateEntityDialog::_tab_to_category(int p_tab) {
+	switch (p_tab) {
+		case TAB_NPC:
+			return CAT_NPCS;
+		case TAB_ARPG_NPC:
+			return CAT_ARPG_NPCS;
+		case TAB_ENEMIGO:
+			return CAT_TROOPS;
+		case TAB_ARPG_ENEMIGO:
+			return CAT_ARPG_ENEMIES;
+		default:
+			return -1; // FLORA y FAUNA no tienen categoría ni datos en BD
+	}
+}
+
+static Ref<Texture2D> s_extract_sheet_first_frame(const Dictionary &p_rec, String &r_desc) {
+	Dictionary sp_dict = p_rec.get("sprite_data", Dictionary());
+	if (sp_dict.is_empty()) {
+		return Ref<Texture2D>();
+	}
+	ClockGearsSpriteSheetData sheet;
+	sheet.from_dict(sp_dict);
+	bool dir_idle = bool(p_rec.get("directional_idle", false));
+	ClockGearsSpriteAnimation resolved;
+	bool freeze_f0 = false;
+	String res_slot;
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	bool ok = reg && reg->resolve_actor_animation(sheet, dir_idle, "quieto", 2, resolved, freeze_f0, res_slot) && resolved.get_frame_count() > 0;
+	if (!ok) {
+		const char *fallbacks[4] = { "mover_abajo", "idle", "atacar_abajo", "attack" };
+		for (int i = 0; i < 4; i++) {
+			if (sheet.animations.has(fallbacks[i]) && sheet.animations[fallbacks[i]].get_frame_count() > 0) {
+				resolved = sheet.animations[fallbacks[i]];
+				res_slot = fallbacks[i];
+				ok = true;
+				break;
+			}
+		}
+	}
+	if (!ok || resolved.get_frame_count() <= 0) {
+		return Ref<Texture2D>();
+	}
+
+	ClockGearsAnimationFrame raw_f = resolved.get_frame(0, 0, 0);
+	String sp_path = raw_f.sheet_path.is_empty() ? resolved.spritesheet_path : raw_f.sheet_path;
+	if (sp_path.is_empty()) {
+		sp_path = String(p_rec.get("graphic_path", ""));
+	}
+	if (sp_path.is_empty() || !FileAccess::exists(sp_path)) {
+		return Ref<Texture2D>();
+	}
+	Ref<Texture2D> tex = ResourceLoader::load(sp_path, "Texture2D");
+	if (tex.is_null()) {
+		Ref<Image> img = Image::load_from_file(sp_path);
+		if (img.is_valid() && !img->is_empty()) {
+			tex = ImageTexture::create_from_image(img);
+		}
+	}
+	if (tex.is_null() || tex->get_width() <= 0 || tex->get_height() <= 0) {
+		return Ref<Texture2D>();
+	}
+
+	ClockGearsAnimationFrame f0 = resolved.get_frame(0, tex->get_width(), tex->get_height());
+	Rect2i r = f0.region;
+	if (r.size.x <= 0 || r.size.y <= 0) {
+		int cols = MAX(1, resolved.cols > 0 ? resolved.cols : sheet.cols);
+		int rows = MAX(1, resolved.rows > 0 ? resolved.rows : sheet.rows);
+		r = Rect2i(0, 0, MAX(1, tex->get_width() / cols), MAX(1, tex->get_height() / rows));
+	}
+	r = r.intersection(Rect2i(0, 0, tex->get_width(), tex->get_height()));
+	if (r.size.x <= 0 || r.size.y <= 0) {
+		return tex;
+	}
+	Ref<AtlasTexture> at;
+	at.instantiate();
+	at->set_atlas(tex);
+	at->set_region(Rect2(r));
+	r_desc = vformat("%dx%d px (%s)", r.size.x, r.size.y, res_slot);
+	return at;
+}
+
+void ClockGearsGenerateEntityDialog::_resolve_preview_sprite(int p_tab, const Dictionary &p_rec, Ref<Texture2D> &r_tex, String &r_detail) const {
+	r_tex = Ref<Texture2D>();
+	r_detail = CG_TR("Sin sprite asignado");
+
+	if (p_tab == TAB_NPC || p_tab == TAB_ARPG_NPC) {
+		String desc;
+		r_tex = s_extract_sheet_first_frame(p_rec, desc);
+		if (r_tex.is_valid()) {
+			r_detail = desc;
+		}
+	} else if (p_tab == TAB_ARPG_ENEMIGO) {
+		String desc;
+		r_tex = s_extract_sheet_first_frame(p_rec, desc);
+		if (r_tex.is_valid()) {
+			r_detail = desc;
+		} else {
+			Ref<Texture2D> sp_tex;
+			Rect2 sp_reg;
+			String sp_src;
+			ClockGearsBattleScene::resolve_enemy_preview_sprite(p_rec, sp_tex, sp_reg, sp_src);
+			if (sp_src != "placeholder" && sp_tex.is_valid()) {
+				if (sp_reg.size.x > 0 && sp_reg.size.y > 0) {
+					Ref<AtlasTexture> at;
+					at.instantiate();
+					at->set_atlas(sp_tex);
+					at->set_region(sp_reg);
+					r_tex = at;
+					r_detail = vformat("%dx%d px", int(sp_reg.size.x), int(sp_reg.size.y));
+				} else {
+					r_tex = sp_tex;
+					r_detail = vformat("%dx%d px", sp_tex->get_width(), sp_tex->get_height());
+				}
+			}
+		}
+	} else if (p_tab == TAB_ENEMIGO) {
+		Array mems = p_rec.get("members", Array());
+		int mem_count = mems.size();
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		if (mem_count > 0 && dm && mems[0].get_type() == Variant::DICTIONARY) {
+			int eid = int(Dictionary(mems[0]).get("enemy_id", 1));
+			Dictionary ed = dm->get_record_by_id(CAT_ENEMIES, eid);
+			if (!ed.is_empty()) {
+				String ename = String(ed.get("name", ""));
+				Ref<Texture2D> sp_tex;
+				Rect2 sp_reg;
+				String sp_src;
+				ClockGearsBattleScene::resolve_enemy_preview_sprite(ed, sp_tex, sp_reg, sp_src);
+				if (sp_src != "placeholder" && sp_tex.is_valid()) {
+					if (sp_reg.size.x > 0 && sp_reg.size.y > 0) {
+						Ref<AtlasTexture> at;
+						at.instantiate();
+						at->set_atlas(sp_tex);
+						at->set_region(sp_reg);
+						r_tex = at;
+					} else {
+						r_tex = sp_tex;
+					}
+				}
+				r_detail = mem_count == 1
+						? vformat(String::utf8("%s (1 enemigo · Contacto)"), ename)
+						: vformat(String::utf8("%s (+%d más · Contacto)"), ename, mem_count - 1);
+			} else {
+				r_detail = vformat(CG_TR("Tropa (%d miembros)"), mem_count);
+			}
+		} else {
+			r_detail = CG_TR("Tropa sin miembros (Contacto)");
+		}
+	}
+
+	if (r_tex.is_null()) {
+		r_tex = ClockGearsCharacterStateRegistry::get_missing_question_marker_texture();
+	}
+}
+
+void ClockGearsGenerateEntityDialog::_populate_list_for_tab(int p_tab) {
+	current_tab_idx = CLAMP(p_tab, 0, TAB_MAX - 1);
+	current_records.clear();
+	if (entity_list) {
+		entity_list->clear();
+	}
+
+	static const char *tab_titles[TAB_MAX] = {
+		"NPC", "ARPG NPC", "Tropas (Enemigo)", "Enemigo ARPG", "Flora", "Fauna"
+	};
+
+	int cat = _tab_to_category(current_tab_idx);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (cat >= 0 && dm) {
+		Array arr = dm->get_category_array(cat);
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary d = arr[i];
+			int rid = int(d.get("id", i + 1));
+			String rname = String(d.get("name", ""));
+			current_records.push_back(d);
+			if (entity_list) {
+				String label = rname.is_empty() ? vformat("%03d: (Sin nombre)", rid) : vformat("%03d: %s", rid, rname);
+				Ref<Texture2D> item_tex;
+				String dummy_detail;
+				_resolve_preview_sprite(current_tab_idx, d, item_tex, dummy_detail);
+				entity_list->add_item(label, item_tex);
+			}
+		}
+	}
+
+	if (list_header_label) {
+		list_header_label->set_text(vformat("%s (%d)", CG_TR(tab_titles[current_tab_idx]), current_records.size()));
+	}
+
+	bool has_items = !current_records.is_empty();
+	if (empty_list_label) {
+		empty_list_label->set_visible(!has_items);
+	}
+	if (has_items && entity_list) {
+		entity_list->select(0);
+		_update_preview_for_index(0);
+	} else {
+		_update_preview_for_index(-1);
+	}
+}
+
+void ClockGearsGenerateEntityDialog::_update_preview_for_index(int p_list_idx) {
+	bool valid = (p_list_idx >= 0 && p_list_idx < current_records.size() && current_tab_idx != TAB_FLORA && current_tab_idx != TAB_FAUNA);
+	if (get_ok_button()) {
+		get_ok_button()->set_disabled(!valid);
+	}
+	if (!valid) {
+		if (preview_texture_rect) {
+			preview_texture_rect->set_texture(Ref<Texture2D>());
+		}
+		if (preview_name_label) {
+			preview_name_label->set_text(CG_TR("Sin selección"));
+		}
+		if (preview_detail_label) {
+			preview_detail_label->set_text((current_tab_idx == TAB_FLORA || current_tab_idx == TAB_FAUNA)
+							? CG_TR("Categoría sin entradas disponibles.")
+							: CG_TR("No hay entradas en esta categoría."));
+		}
+		return;
+	}
+
+	Dictionary d = current_records[p_list_idx];
+	int rid = int(d.get("id", p_list_idx + 1));
+	String rname = String(d.get("name", ""));
+	if (preview_name_label) {
+		preview_name_label->set_text(rname.is_empty() ? vformat("%03d: (Sin nombre)", rid) : vformat("%03d: %s", rid, rname));
+	}
+	Ref<Texture2D> ptex;
+	String pdetail;
+	_resolve_preview_sprite(current_tab_idx, d, ptex, pdetail);
+	if (preview_texture_rect) {
+		preview_texture_rect->set_texture(ptex);
+	}
+	if (preview_detail_label) {
+		preview_detail_label->set_text(pdetail);
+	}
+}
+
+void ClockGearsGenerateEntityDialog::_on_tab_changed(int p_tab) {
+	_populate_list_for_tab(p_tab);
+}
+
+void ClockGearsGenerateEntityDialog::_on_entity_selected(int p_idx) {
+	_update_preview_for_index(p_idx);
+}
+
+void ClockGearsGenerateEntityDialog::_on_entity_activated(int p_idx) {
+	if (p_idx < 0 || p_idx >= current_records.size() || current_tab_idx == TAB_FLORA || current_tab_idx == TAB_FAUNA) {
+		return;
+	}
+	_on_confirmed_generate();
+	hide();
+}
+
+void ClockGearsGenerateEntityDialog::_on_confirmed_generate() {
+	if (!entity_list || current_tab_idx == TAB_FLORA || current_tab_idx == TAB_FAUNA) {
+		return;
+	}
+	Vector<int> sel = entity_list->get_selected_items();
+	if (sel.is_empty()) {
+		return;
+	}
+	int idx = sel[0];
+	if (idx < 0 || idx >= current_records.size()) {
+		return;
+	}
+	Dictionary d = current_records[idx];
+	int rid = int(d.get("id", idx + 1));
+	String rname = String(d.get("name", ""));
+	emit_signal("entity_chosen", current_tab_idx, rid, rname, target_cell.x, target_cell.y);
+}
+
+void ClockGearsGenerateEntityDialog::open_for_cell(int p_x, int p_y) {
+	target_cell = Point2i(p_x, p_y);
+	set_title(vformat(CG_TR("Generar entidad (%d, %d) - ClockGears Engine"), p_x, p_y));
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
+	if (entity_tabs) {
+		entity_tabs->set_current_tab(current_tab_idx);
+	}
+	_populate_list_for_tab(current_tab_idx);
+	popup_centered(Size2i(int(760 * EDSCALE), int(480 * EDSCALE)));
+}
+
+void ClockGearsGenerateEntityDialog::select_tab(int p_tab) {
+	int clamped = CLAMP(p_tab, 0, TAB_MAX - 1);
+	if (entity_tabs) {
+		entity_tabs->set_current_tab(clamped);
+	}
+	_populate_list_for_tab(clamped);
+}
+
+int ClockGearsGenerateEntityDialog::get_listed_count() const {
+	return entity_list ? entity_list->get_item_count() : 0;
+}
+
+void ClockGearsGenerateEntityDialog::select_list_index(int p_idx) {
+	if (!entity_list || p_idx < 0 || p_idx >= entity_list->get_item_count()) {
+		return;
+	}
+	entity_list->select(p_idx);
+	_update_preview_for_index(p_idx);
+}
+
+Dictionary ClockGearsGenerateEntityDialog::check_layout_fits_window(const Vector2i &p_window_size) const {
+	Dictionary res;
+	Size2 min_sz = get_min_size();
+	if (get_child_count() > 0) {
+		Control *root_ctrl = Object::cast_to<Control>(get_child(0));
+		if (root_ctrl) {
+			min_sz = min_sz.max(root_ctrl->get_combined_minimum_size());
+		}
+	}
+	res["window_size"] = p_window_size;
+	res["min_w"] = int(min_sz.x);
+	res["min_h"] = int(min_sz.y);
+	res["fits_horizontally"] = (min_sz.x <= float(p_window_size.x));
+	res["fits_vertically"] = (min_sz.y <= float(p_window_size.y));
+	return res;
+}
+
+ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
+	set_title(CG_TR("Generar entidad - ClockGears Engine"));
+	set_ok_button_text(CG_TR("Generar"));
+	set_cancel_button_text(CG_TR("Cancelar"));
+	set_min_size(Size2i(int(620 * EDSCALE), int(400 * EDSCALE)));
+
+	MarginContainer *margin = memnew(MarginContainer);
+	margin->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	margin->add_theme_constant_override("margin_left", int(14 * EDSCALE));
+	margin->add_theme_constant_override("margin_right", int(14 * EDSCALE));
+	margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	margin->add_theme_constant_override("margin_bottom", int(10 * EDSCALE));
+	add_child(margin);
+
+	VBoxContainer *root_vbox = memnew(VBoxContainer);
+	root_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	root_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	root_vbox->add_theme_constant_override("separation", int(12 * EDSCALE));
+	margin->add_child(root_vbox);
+
+	entity_tabs = memnew(TabBar);
+	entity_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	entity_tabs->set_tab_alignment(TabBar::ALIGNMENT_LEFT);
+	entity_tabs->add_tab(CG_TR("NPC"));
+	entity_tabs->add_tab(CG_TR("ARPG NPC"));
+	entity_tabs->add_tab(CG_TR("ENEMIGO"));
+	entity_tabs->add_tab(CG_TR("ARPG ENEMIGO"));
+	entity_tabs->add_tab(CG_TR("FLORA"));
+	entity_tabs->add_tab(CG_TR("FAUNA"));
+	entity_tabs->connect("tab_changed", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_tab_changed));
+	root_vbox->add_child(entity_tabs);
+
+	HBoxContainer *split_hb = memnew(HBoxContainer);
+	split_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	split_hb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	split_hb->add_theme_constant_override("separation", int(16 * EDSCALE));
+	root_vbox->add_child(split_hb);
+
+	VBoxContainer *left_col = memnew(VBoxContainer);
+	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	left_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	left_col->set_stretch_ratio(1.0f);
+	left_col->set_custom_minimum_size(Size2(int(240 * EDSCALE), int(240 * EDSCALE)));
+	left_col->add_theme_constant_override("separation", int(6 * EDSCALE));
+	split_hb->add_child(left_col);
+
+	list_header_label = memnew(Label(CG_TR("NPC (0)")));
+	list_header_label->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	left_col->add_child(list_header_label);
+	left_col->add_child(memnew(HSeparator));
+
+	entity_list = memnew(ItemList);
+	entity_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	entity_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	entity_list->set_fixed_icon_size(Size2i(int(28 * EDSCALE), int(28 * EDSCALE)));
+	entity_list->set_allow_rmb_select(false);
+	entity_list->connect("item_selected", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_entity_selected));
+	entity_list->connect("item_activated", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_entity_activated));
+	left_col->add_child(entity_list);
+
+	empty_list_label = memnew(Label(CG_TR("No hay entradas en esta categoría.")));
+	empty_list_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	empty_list_label->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
+	empty_list_label->hide();
+	left_col->add_child(empty_list_label);
+
+	VBoxContainer *right_col = memnew(VBoxContainer);
+	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	right_col->set_stretch_ratio(1.1f);
+	right_col->set_custom_minimum_size(Size2(int(260 * EDSCALE), int(240 * EDSCALE)));
+	right_col->add_theme_constant_override("separation", int(8 * EDSCALE));
+	split_hb->add_child(right_col);
+
+	Label *lbl_prev = memnew(Label(CG_TR("Vista previa del sprite")));
+	lbl_prev->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	right_col->add_child(lbl_prev);
+	right_col->add_child(memnew(HSeparator));
+
+	preview_frame_panel = memnew(PanelContainer);
+	preview_frame_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	preview_frame_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	preview_frame_panel->set_custom_minimum_size(Size2(int(220 * EDSCALE), int(180 * EDSCALE)));
+	right_col->add_child(preview_frame_panel);
+
+	MarginContainer *prev_margin = memnew(MarginContainer);
+	prev_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	preview_frame_panel->add_child(prev_margin);
+
+	preview_texture_rect = memnew(TextureRect);
+	preview_texture_rect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	preview_texture_rect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	preview_texture_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	preview_texture_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	preview_texture_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	prev_margin->add_child(preview_texture_rect);
+
+	preview_name_label = memnew(Label(CG_TR("Sin selección")));
+	preview_name_label->set_clip_text(true);
+	preview_name_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	right_col->add_child(preview_name_label);
+
+	preview_detail_label = memnew(Label(""));
+	preview_detail_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	preview_detail_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	preview_detail_label->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
+	right_col->add_child(preview_detail_label);
+
+	connect("confirmed", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_confirmed_generate));
+}
+
+// ============================================================================
+// ClockGearsEditorPlugin
+// ============================================================================
 
 ClockGearsEditorPlugin *ClockGearsEditorPlugin::singleton = nullptr;
 
@@ -31,7 +520,11 @@ void ClockGearsEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("validate_playtest_conditions"), &ClockGearsEditorPlugin::validate_playtest_conditions);
 	ClassDB::bind_method(D_METHOD("start_playtest"), &ClockGearsEditorPlugin::start_playtest);
 	ClassDB::bind_method(D_METHOD("open_event_editor_at_cell", "x", "y"), &ClockGearsEditorPlugin::open_event_editor_at_cell);
+	ClassDB::bind_method(D_METHOD("open_generate_entity_dialog_at_cell", "x", "y"), &ClockGearsEditorPlugin::open_generate_entity_dialog_at_cell);
+	ClassDB::bind_method(D_METHOD("generate_entity_at_cell", "tab", "record_id", "x", "y", "use_undo_redo"), &ClockGearsEditorPlugin::generate_entity_at_cell, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("show_event_context_menu", "x", "y", "screen_pos"), &ClockGearsEditorPlugin::show_event_context_menu);
+	ClassDB::bind_method(D_METHOD("get_event_context_menu"), &ClockGearsEditorPlugin::get_event_context_menu);
+	ClassDB::bind_method(D_METHOD("get_generate_entity_dialog"), &ClockGearsEditorPlugin::get_generate_entity_dialog);
 }
 
 void ClockGearsEditorPlugin::_notification(int p_what) {
@@ -214,6 +707,70 @@ void ClockGearsEditorPlugin::open_event_editor_at_cell(int p_x, int p_y) {
 	event_editor_dialog->edit_event(found_ev);
 }
 
+void ClockGearsGenerateEntityDialog::populate_event_context_menu(Node *p_menu, Node *p_quick_menu, bool p_has_event, bool p_clipboard_empty) {
+	PopupMenu *menu = Object::cast_to<PopupMenu>(p_menu);
+	if (!menu) {
+		return;
+	}
+	PopupMenu *quick_menu = Object::cast_to<PopupMenu>(p_quick_menu);
+
+	// Keep IDs synchronized with ClockGearsEditorPlugin context menu enums.
+	constexpr int ID_EDIT_OR_CREATE = 0;
+	constexpr int ID_COPY = 1;
+	constexpr int ID_PASTE = 2;
+	constexpr int ID_DELETE = 3;
+	constexpr int ID_SET_START_POS = 4;
+	constexpr int ID_GENERATE_ENTITY = 5;
+	constexpr int ID_QUICK_EVENTS_SUBMENU = 100;
+	constexpr int ID_QUICK_TRANSFER = 10;
+	constexpr int ID_QUICK_INN = 11;
+	constexpr int ID_QUICK_CHEST = 12;
+	constexpr int ID_QUICK_DOOR = 13;
+	constexpr int ID_QUICK_SAVE = 14;
+
+	menu->clear(false);
+	if (p_has_event) {
+		menu->add_item(CG_TR("Editar Evento..."), ID_EDIT_OR_CREATE);
+	} else {
+		menu->add_item(CG_TR("Crear Nuevo Evento..."), ID_EDIT_OR_CREATE);
+		if (quick_menu) {
+			quick_menu->clear();
+			quick_menu->add_item(CG_TR("Cofre del Tesoro..."), ID_QUICK_CHEST);
+			quick_menu->add_item(CG_TR("Puerta..."), ID_QUICK_DOOR);
+			quick_menu->add_item(CG_TR("Transferir..."), ID_QUICK_TRANSFER);
+			quick_menu->add_item(CG_TR("Posada..."), ID_QUICK_INN);
+			quick_menu->add_item(CG_TR("Punto de Guardado..."), ID_QUICK_SAVE);
+			menu->add_submenu_node_item(CG_TR("Creación Rápida de Eventos"), quick_menu, ID_QUICK_EVENTS_SUBMENU);
+			int q_idx = menu->get_item_index(ID_QUICK_EVENTS_SUBMENU);
+			if (q_idx >= 0) {
+				menu->set_item_disabled(q_idx, false);
+			}
+		}
+		menu->add_item(CG_TR("Generar entidad..."), ID_GENERATE_ENTITY);
+	}
+	menu->add_separator();
+	menu->add_item(CG_TR("Fijar Posición Inicial del Jugador aquí"), ID_SET_START_POS);
+	menu->add_separator();
+	menu->add_item(CG_TR("Copiar"), ID_COPY);
+	int copy_idx = menu->get_item_index(ID_COPY);
+	if (copy_idx >= 0) {
+		menu->set_item_disabled(copy_idx, !p_has_event);
+	}
+
+	menu->add_item(CG_TR("Pegar"), ID_PASTE);
+	int paste_idx = menu->get_item_index(ID_PASTE);
+	if (paste_idx >= 0) {
+		menu->set_item_disabled(paste_idx, p_clipboard_empty);
+	}
+
+	menu->add_separator();
+	menu->add_item(CG_TR("Eliminar"), ID_DELETE);
+	int del_idx = menu->get_item_index(ID_DELETE);
+	if (del_idx >= 0) {
+		menu->set_item_disabled(del_idx, !p_has_event);
+	}
+}
+
 void ClockGearsEditorPlugin::show_event_context_menu(int p_x, int p_y, const Vector2 &p_screen_pos) {
 	if (!event_context_menu) {
 		return;
@@ -221,46 +778,7 @@ void ClockGearsEditorPlugin::show_event_context_menu(int p_x, int p_y, const Vec
 	context_menu_cell = Point2i(p_x, p_y);
 	ClockGearsEvent *ev = get_event_at_cell(p_x, p_y);
 
-	event_context_menu->clear(false);
-	if (ev) {
-		event_context_menu->add_item(CG_TR("Editar Evento..."), ACTION_EDIT_OR_CREATE);
-	} else {
-		event_context_menu->add_item(CG_TR("Crear Nuevo Evento..."), ACTION_EDIT_OR_CREATE);
-		if (quick_events_menu) {
-			quick_events_menu->clear();
-			quick_events_menu->add_item(CG_TR("Cofre del Tesoro..."), QUICK_EV_CHEST);
-			quick_events_menu->add_item(CG_TR("Puerta..."), QUICK_EV_DOOR);
-			quick_events_menu->add_item(CG_TR("Transferir..."), QUICK_EV_TRANSFER);
-			quick_events_menu->add_item(CG_TR("Posada..."), QUICK_EV_INN);
-			quick_events_menu->add_item(CG_TR("Punto de Guardado..."), QUICK_EV_SAVE);
-			event_context_menu->add_submenu_node_item(CG_TR("Creación Rápida de Eventos"), quick_events_menu, ACTION_QUICK_EVENTS_SUBMENU);
-			int q_idx = event_context_menu->get_item_index(ACTION_QUICK_EVENTS_SUBMENU);
-			if (q_idx >= 0) {
-				event_context_menu->set_item_disabled(q_idx, false);
-			}
-		}
-	}
-	event_context_menu->add_separator();
-	event_context_menu->add_item(CG_TR("Fijar Posición Inicial del Jugador aquí"), ACTION_SET_START_POS);
-	event_context_menu->add_separator();
-	event_context_menu->add_item(CG_TR("Copiar"), ACTION_COPY);
-	int copy_idx = event_context_menu->get_item_index(ACTION_COPY);
-	if (copy_idx >= 0) {
-		event_context_menu->set_item_disabled(copy_idx, ev == nullptr);
-	}
-
-	event_context_menu->add_item(CG_TR("Pegar"), ACTION_PASTE);
-	int paste_idx = event_context_menu->get_item_index(ACTION_PASTE);
-	if (paste_idx >= 0) {
-		event_context_menu->set_item_disabled(paste_idx, clipboard_event_data.is_empty());
-	}
-
-	event_context_menu->add_separator();
-	event_context_menu->add_item(CG_TR("Eliminar"), ACTION_DELETE);
-	int del_idx = event_context_menu->get_item_index(ACTION_DELETE);
-	if (del_idx >= 0) {
-		event_context_menu->set_item_disabled(del_idx, ev == nullptr);
-	}
+	ClockGearsGenerateEntityDialog::populate_event_context_menu(event_context_menu, quick_events_menu, ev != nullptr, clipboard_event_data.is_empty());
 
 	event_context_menu->set_position(p_screen_pos);
 	event_context_menu->reset_size();
@@ -292,6 +810,10 @@ void ClockGearsEditorPlugin::_on_event_context_menu_id_pressed(int p_id) {
 				quick_events_menu->reset_size();
 				quick_events_menu->popup();
 			}
+		} break;
+
+		case ACTION_GENERATE_ENTITY: {
+			open_generate_entity_dialog_at_cell(context_menu_cell.x, context_menu_cell.y);
 		} break;
 
 		case ACTION_COPY: { // Copiar
@@ -801,6 +1323,188 @@ void ClockGearsEditorPlugin::open_database() {
 	}
 }
 
+void ClockGearsEditorPlugin::open_generate_entity_dialog_at_cell(int p_x, int p_y) {
+	if (!generate_entity_dialog) {
+		return;
+	}
+	generate_entity_dialog->open_for_cell(p_x, p_y);
+}
+
+void ClockGearsEditorPlugin::_on_generate_entity_chosen(int p_tab, int p_record_id, const String &p_record_name, int p_cell_x, int p_cell_y) {
+	generate_entity_at_cell(p_tab, p_record_id, p_cell_x, p_cell_y, true);
+}
+
+Node *ClockGearsGenerateEntityDialog::create_entity_event_on_map(Node *p_scene, int p_tab, int p_record_id, int p_x, int p_y, int p_grid_size, bool p_use_undo_redo, Object *p_undo_redo) {
+	if (!p_scene || p_tab == TAB_FLORA || p_tab == TAB_FAUNA || p_record_id <= 0) {
+		return nullptr;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return nullptr;
+	}
+
+	int grid_size = p_grid_size > 0 ? p_grid_size : 32;
+	ClockGearsMap *map = Object::cast_to<ClockGearsMap>(p_scene);
+	Node *parent_container = (map && map->get_events_container()) ? (Node *)map->get_events_container() : p_scene;
+
+	ClockGearsEvent *ev = memnew(ClockGearsEvent);
+	ev->set_position(Vector2(p_x * grid_size, p_y * grid_size));
+
+	String base_node_name = vformat("EV_%03d_%03d", p_x, p_y);
+	String unique_name = base_node_name;
+	int suffix = 1;
+	while (parent_container->has_node(NodePath(unique_name))) {
+		unique_name = vformat("%s_%d", base_node_name, suffix++);
+	}
+	ev->set_name(unique_name);
+
+	if (p_tab == TAB_NPC || p_tab == TAB_ARPG_NPC || p_tab == TAB_ARPG_ENEMIGO) {
+		int btype = 1;
+		int cat = CAT_NPCS;
+		if (p_tab == TAB_ARPG_NPC) {
+			btype = 2;
+			cat = CAT_ARPG_NPCS;
+		} else if (p_tab == TAB_ARPG_ENEMIGO) {
+			btype = 3;
+			cat = CAT_ARPG_ENEMIES;
+		}
+		Dictionary rec = dm->get_record_by_id(cat, p_record_id);
+		String rname = String(rec.get("name", ""));
+		ev->set_event_name(rname.is_empty() ? base_node_name : rname);
+		ev->set_behavior_type(btype);
+		ev->set_behavior_ref_id(p_record_id);
+		ev->serialize_to_meta();
+	} else if (p_tab == TAB_ENEMIGO) {
+		Dictionary troop = dm->get_record_by_id(CAT_TROOPS, p_record_id);
+		String troop_name = String(troop.get("name", ""));
+		ev->set_event_name(troop_name.is_empty() ? base_node_name : troop_name);
+		ev->set_behavior_type(0);
+		ev->set_behavior_ref_id(0);
+		ev->set_trigger_type(TRIGGER_PLAYER_TOUCH);
+		ev->set_priority_type(1);
+		ev->set_through(false);
+		ev->set_direction_fix(false);
+		ev->set_move_type(MOVE_FIXED);
+		ev->set_move_speed(3);
+		ev->set_move_frequency(3);
+
+		String gpath;
+		int hf = 1;
+		int vf = 1;
+		int fr = 0;
+		Array mems = troop.get("members", Array());
+		if (!mems.is_empty() && mems[0].get_type() == Variant::DICTIONARY) {
+			int eid = int(Dictionary(mems[0]).get("enemy_id", 1));
+			Dictionary ed = dm->get_record_by_id(CAT_ENEMIES, eid);
+			if (!ed.is_empty()) {
+				Ref<Texture2D> sp_tex;
+				Rect2 sp_reg;
+				String sp_src;
+				ClockGearsBattleScene::resolve_enemy_preview_sprite(ed, sp_tex, sp_reg, sp_src);
+				if (sp_src != "placeholder" && sp_tex.is_valid() && !sp_tex->get_path().is_empty()) {
+					gpath = sp_tex->get_path();
+					if (sp_reg.size.x > 0 && sp_reg.size.y > 0) {
+						hf = MAX(1, int(Math::round(float(sp_tex->get_width()) / sp_reg.size.x)));
+						vf = MAX(1, int(Math::round(float(sp_tex->get_height()) / sp_reg.size.y)));
+						int col = CLAMP(int(sp_reg.position.x / sp_reg.size.x), 0, hf - 1);
+						int row = CLAMP(int(sp_reg.position.y / sp_reg.size.y), 0, vf - 1);
+						fr = row * hf + col;
+					}
+				}
+			}
+		}
+		ev->set_graphic_path(gpath);
+		ev->set_sprite_hframes(hf);
+		ev->set_sprite_vframes(vf);
+		ev->set_sprite_frame(fr);
+
+		Array cmds;
+		Dictionary cmd;
+		cmd["type"] = "battle";
+		cmd["code"] = CMD_BATTLE_PROCESSING;
+		cmd["troop_id"] = p_record_id;
+		cmd["troop"] = troop_name.is_empty() ? vformat("%03d", p_record_id) : vformat("%03d: %s", p_record_id, troop_name);
+		cmd["can_escape"] = true;
+		cmd["can_lose"] = false;
+		cmd["bgm"] = "";
+		cmds.push_back(cmd);
+
+		Dictionary p0;
+		p0["sw1_en"] = false;
+		p0["sw2_en"] = false;
+		p0["self_sw_en"] = false;
+		p0["self_sw_letter"] = "A";
+		p0["var_en"] = false;
+		p0["item_en"] = false;
+		p0["actor_en"] = false;
+		p0["trigger"] = TRIGGER_PLAYER_TOUCH;
+		p0["priority"] = 1;
+		p0["through"] = false;
+		p0["dir_fix"] = false;
+		p0["graphic_path"] = gpath;
+		p0["hframes"] = hf;
+		p0["vframes"] = vf;
+		p0["frame"] = fr;
+		p0["move_type"] = MOVE_FIXED;
+		p0["speed"] = 3;
+		p0["freq"] = 3;
+		p0["commands"] = cmds;
+
+		Array pages;
+		pages.push_back(p0);
+		ev->set_pages(pages);
+		ev->set_commands(cmds);
+	} else {
+		memdelete(ev);
+		return nullptr;
+	}
+
+	UndoRedo *test_ur = p_use_undo_redo ? Object::cast_to<UndoRedo>(p_undo_redo) : nullptr;
+	EditorUndoRedoManager *editor_ur = (p_use_undo_redo && !test_ur) ? EditorUndoRedoManager::get_singleton() : nullptr;
+	if (test_ur) {
+		test_ur->create_action(CG_TR("Generar entidad en el mapa"), UndoRedo::MERGE_DISABLE);
+		test_ur->add_do_method(Callable(parent_container, "add_child").bind(ev));
+		test_ur->add_do_method(Callable(ev, "set_owner").bind(p_scene));
+		test_ur->add_do_method(Callable(ev, "update_active_page"));
+		test_ur->add_do_method(Callable(ev, "serialize_to_meta"));
+		test_ur->add_do_reference(ev);
+		test_ur->add_undo_method(Callable(parent_container, "remove_child").bind(ev));
+		test_ur->commit_action();
+	} else if (editor_ur) {
+		editor_ur->create_action(CG_TR("Generar entidad en el mapa"), UndoRedo::MERGE_DISABLE, p_scene);
+		editor_ur->add_do_method(parent_container, "add_child", ev);
+		editor_ur->add_do_method(ev, "set_owner", p_scene);
+		editor_ur->add_do_method(ev, "update_active_page");
+		editor_ur->add_do_method(ev, "serialize_to_meta");
+		editor_ur->add_do_reference(ev);
+		editor_ur->add_undo_method(parent_container, "remove_child", ev);
+		editor_ur->commit_action();
+	} else {
+		parent_container->add_child(ev);
+		ev->set_owner(p_scene);
+		ev->update_active_page();
+		ev->serialize_to_meta();
+	}
+	return ev;
+}
+
+ClockGearsEvent *ClockGearsEditorPlugin::generate_entity_at_cell(int p_tab, int p_record_id, int p_x, int p_y, bool p_use_undo_redo) {
+	Node *scene = ensure_active_map();
+	if (!scene) {
+		return nullptr;
+	}
+	int grid_size = 32;
+	if (CanvasItemEditor::get_singleton()) {
+		grid_size = CanvasItemEditor::get_singleton()->get_clockgears_grid_size();
+	}
+	ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(
+			ClockGearsGenerateEntityDialog::create_entity_event_on_map(scene, p_tab, p_record_id, p_x, p_y, grid_size, p_use_undo_redo, nullptr));
+	if (ev && CanvasItemEditor::get_singleton()) {
+		CanvasItemEditor::get_singleton()->update_viewport();
+	}
+	return ev;
+}
+
 void ClockGearsEditorPlugin::open_resource_manager() {
 	if (resource_manager_dialog) {
 		resource_manager_dialog->open_manager();
@@ -1153,6 +1857,7 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 		th->apply_to_window(camera_dialog);
 		th->apply_to_window(new_project_dialog);
 		th->apply_to_window(resource_manager_dialog);
+		th->apply_to_window(generate_entity_dialog);
 		th->apply_to_window(missing_folders_dialog);
 		th->apply_to_window(playtest_warning_dialog);
 		th->apply_to_window(event_context_menu);
@@ -1194,6 +1899,10 @@ ClockGearsEditorPlugin::ClockGearsEditorPlugin() {
 
 	resource_manager_dialog = memnew(ClockGearsResourceManagerDialog);
 	EditorNode::get_singleton()->get_gui_base()->add_child(resource_manager_dialog);
+
+	generate_entity_dialog = memnew(ClockGearsGenerateEntityDialog);
+	generate_entity_dialog->connect("entity_chosen", callable_mp(this, &ClockGearsEditorPlugin::_on_generate_entity_chosen));
+	EditorNode::get_singleton()->get_gui_base()->add_child(generate_entity_dialog);
 
 	missing_folders_dialog = memnew(ConfirmationDialog);
 	missing_folders_dialog->set_title(CG_TR("Estructura de Carpetas de ClockGears Engine"));

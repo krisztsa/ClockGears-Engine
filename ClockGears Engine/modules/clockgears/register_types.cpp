@@ -99,6 +99,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsPictureVisualPicker);
 		GDREGISTER_CLASS(ClockGearsCameraPreviewCanvas);
 		GDREGISTER_CLASS(ClockGearsCameraDialog);
+		GDREGISTER_CLASS(ClockGearsGenerateEntityDialog);
 #endif
 
 		cg_system_catalog_singleton = memnew(ClockGearsSystemCatalog);
