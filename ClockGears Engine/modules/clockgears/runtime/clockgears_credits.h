@@ -24,6 +24,7 @@ private:
 	bool enter_held = false;
 	bool mouse_held = false;
 	bool script_accelerated = false;
+	bool preview_mode = false;
 	bool audio_saved_prev_bgm = false;
 	bool audio_played_credits_bgm = false;
 
@@ -52,6 +53,10 @@ public:
 	void start_credits(const Dictionary &p_cfg_override = Dictionary());
 	void stop_credits(bool p_cancelled = true);
 	void step_credits(float p_delta);
+	void set_preview_mode(bool p_preview);
+	bool is_preview_mode() const { return preview_mode; }
+	void apply_credits_config_preview(const Dictionary &p_cfg, float p_scroll_y = 60.0f);
+	Dictionary get_preview_snapshot() const;
 
 	bool is_playing() const { return playing; }
 	bool was_cancelled() const { return cancelled_exit; }

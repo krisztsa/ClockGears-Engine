@@ -37,6 +37,9 @@ void ClockGearsEventEditorDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("edit_database_event", "category_key", "record_id", "record_name", "pages", "on_saved"), &ClockGearsEventEditorDialog::edit_database_event, DEFVAL(Callable()));
 	ClassDB::bind_method(D_METHOD("is_sprite_selector_visible"), &ClockGearsEventEditorDialog::is_sprite_selector_visible);
 	ClassDB::bind_method(D_METHOD("get_working_pages"), &ClockGearsEventEditorDialog::get_working_pages);
+	ClassDB::bind_method(D_METHOD("trigger_command_id", "cmd_id"), &ClockGearsEventEditorDialog::trigger_command_id);
+	ClassDB::bind_method(D_METHOD("get_menu_command_ui_handles"), &ClockGearsEventEditorDialog::get_menu_command_ui_handles);
+	ClassDB::bind_method(D_METHOD("format_command_preview", "cmd"), &ClockGearsEventEditorDialog::format_command_preview);
 }
 
 Dictionary ClockGearsEventEditorDialog::_create_empty_page() const {
@@ -837,6 +840,44 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 			if (cutscene_wait_check) cutscene_wait_check->set_pressed(bool(d.get("wait", true)));
 			dlg_play_cutscene->popup_centered(Size2(420, 180) * EDSCALE);
 		}
+	} else if (type == "show_credits" && dlg_show_credits) {
+		if (show_credits_info_lbl) {
+			int n_items = 0;
+			if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+				n_items = Array(dm->get_credits_config().get("items", Array())).size();
+			}
+			show_credits_info_lbl->set_text(vformat(CG_TR("Muestra los créditos configurados en Base de Datos → Menús → Créditos (%d elemento(s)).\nEl evento espera a que terminen o el jugador pulse Esc."), n_items));
+		}
+		dlg_show_credits->popup_centered(Size2(420, 160) * EDSCALE);
+	} else if (type == "open_menu" && dlg_open_menu) {
+		dlg_open_menu->popup_centered(Size2(400, 150) * EDSCALE);
+	} else if ((type == "change_menu_access" || type == "set_menu_access" || type == "menu_access") && dlg_change_menu_access) {
+		bool allow_menu = true;
+		if (d.has("enabled")) {
+			allow_menu = bool(d["enabled"]);
+		} else if (d.has("allowed")) {
+			allow_menu = bool(d["allowed"]);
+		} else if (d.has("disabled")) {
+			allow_menu = !bool(d["disabled"]);
+		} else if (d.has("locked")) {
+			allow_menu = !bool(d["locked"]);
+		}
+		if (menu_access_opt) {
+			menu_access_opt->select(allow_menu ? 0 : 1);
+		}
+		dlg_change_menu_access->popup_centered(Size2(380, 150) * EDSCALE);
+	} else if (type == "return_to_title" && dlg_return_to_title) {
+		if (return_title_confirm_check) {
+			return_title_confirm_check->set_pressed(bool(d.get("confirm", false)));
+		}
+		dlg_return_to_title->popup_centered(Size2(420, 160) * EDSCALE);
+	} else if (type == "open_save" && dlg_open_save) {
+		dlg_open_save->popup_centered(Size2(400, 150) * EDSCALE);
+	} else if (type == "change_window_style" && dlg_change_window_style) {
+		String wtype = String(d.get("window_type_id", d.get("window_type", "")));
+		String sid = String(d.get("style_id", d.get("style", "")));
+		_populate_change_window_style_options(wtype, sid);
+		dlg_change_window_style->popup_centered(Size2(440, 190) * EDSCALE);
 	} else {
 		_on_add_command_pressed();
 	}
@@ -1064,6 +1105,50 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 				cutscene_temp_keyframes.clear();
 				_refresh_cutscene_kf_tree();
 				dlg_create_cutscene->popup_centered(Size2(560, 440) * EDSCALE);
+			}
+			break;
+		case CMD_SHOW_CREDITS:
+			if (dlg_show_credits) {
+				if (show_credits_info_lbl) {
+					int n_items = 0;
+					if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+						n_items = Array(dm->get_credits_config().get("items", Array())).size();
+					}
+					show_credits_info_lbl->set_text(vformat(CG_TR("Muestra los créditos configurados en Base de Datos → Menús → Créditos (%d elemento(s)).\nEl evento espera a que terminen o el jugador pulse Esc."), n_items));
+				}
+				dlg_show_credits->popup_centered(Size2(420, 160) * EDSCALE);
+			}
+			break;
+		case CMD_OPEN_MENU:
+			if (dlg_open_menu) {
+				dlg_open_menu->popup_centered(Size2(400, 150) * EDSCALE);
+			}
+			break;
+		case CMD_CHANGE_MENU_ACCESS:
+			if (dlg_change_menu_access) {
+				if (menu_access_opt) {
+					menu_access_opt->select(0);
+				}
+				dlg_change_menu_access->popup_centered(Size2(380, 150) * EDSCALE);
+			}
+			break;
+		case CMD_RETURN_TO_TITLE:
+			if (dlg_return_to_title) {
+				if (return_title_confirm_check) {
+					return_title_confirm_check->set_pressed(false);
+				}
+				dlg_return_to_title->popup_centered(Size2(420, 160) * EDSCALE);
+			}
+			break;
+		case CMD_OPEN_SAVE:
+			if (dlg_open_save) {
+				dlg_open_save->popup_centered(Size2(400, 150) * EDSCALE);
+			}
+			break;
+		case CMD_CHANGE_WINDOW_STYLE:
+			if (dlg_change_window_style) {
+				_populate_change_window_style_options();
+				dlg_change_window_style->popup_centered(Size2(440, 190) * EDSCALE);
 			}
 			break;
 	}
@@ -1976,6 +2061,130 @@ void ClockGearsEventEditorDialog::_on_confirm_create_cutscene() {
 	cmd["cutscene_dict"] = cs_dict;
 	cmd["name"] = cutscene_create_name_edit->get_text();
 	_append_command_to_active_page(cmd);
+}
+
+void ClockGearsEventEditorDialog::_populate_change_window_style_options(const String &p_sel_wtype, const String &p_sel_style) {
+	if (cws_window_type_opt) {
+		cws_window_type_opt->clear();
+		Array wtypes = ClockGearsDataManager::get_registered_window_types();
+		int sel_idx = 0;
+		for (int i = 0; i < wtypes.size(); i++) {
+			if (wtypes[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary wt = wtypes[i];
+			String wid = String(wt.get("id", ""));
+			String wlabel = String(wt.get("label", wid));
+			int idx = cws_window_type_opt->get_item_count();
+			cws_window_type_opt->add_item(wlabel, idx);
+			cws_window_type_opt->set_item_metadata(idx, wid);
+			if (!p_sel_wtype.is_empty() && wid == p_sel_wtype) {
+				sel_idx = idx;
+			}
+		}
+		if (cws_window_type_opt->get_item_count() > 0) {
+			cws_window_type_opt->select(sel_idx);
+		}
+	}
+	if (cws_style_opt) {
+		cws_style_opt->clear();
+		cws_style_opt->add_item(CG_TR("(Por defecto del proyecto)"), 0);
+		cws_style_opt->set_item_metadata(0, String(""));
+		int sel_idx = 0;
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			Array styles = dm->get_window_styles();
+			for (int i = 0; i < styles.size(); i++) {
+				if (styles[i].get_type() != Variant::DICTIONARY) continue;
+				Dictionary st = styles[i];
+				String sid = String(st.get("id", ""));
+				String sname = String(st.get("name", sid));
+				int idx = cws_style_opt->get_item_count();
+				cws_style_opt->add_item(sname, idx);
+				cws_style_opt->set_item_metadata(idx, sid);
+				if (!p_sel_style.is_empty() && sid == p_sel_style) {
+					sel_idx = idx;
+				}
+			}
+		}
+		cws_style_opt->select(sel_idx);
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_show_credits() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	Dictionary cmd;
+	cmd["type"] = "show_credits";
+	cmd["code"] = CMD_SHOW_CREDITS;
+	_append_command_to_active_page(cmd);
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_open_menu() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	Dictionary cmd;
+	cmd["type"] = "open_menu";
+	cmd["code"] = CMD_OPEN_MENU;
+	_append_command_to_active_page(cmd);
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_change_menu_access() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	bool allow_menu = menu_access_opt ? (menu_access_opt->get_selected() == 0) : true;
+	Dictionary cmd;
+	cmd["type"] = "change_menu_access";
+	cmd["code"] = CMD_CHANGE_MENU_ACCESS;
+	cmd["enabled"] = allow_menu;
+	_append_command_to_active_page(cmd);
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_return_to_title() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	bool confirm = return_title_confirm_check ? return_title_confirm_check->is_pressed() : false;
+	Dictionary cmd;
+	cmd["type"] = "return_to_title";
+	cmd["code"] = CMD_RETURN_TO_TITLE;
+	cmd["confirm"] = confirm;
+	_append_command_to_active_page(cmd);
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_open_save() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	Dictionary cmd;
+	cmd["type"] = "open_save";
+	cmd["code"] = CMD_OPEN_SAVE;
+	_append_command_to_active_page(cmd);
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_change_window_style() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	String wtype;
+	if (cws_window_type_opt && cws_window_type_opt->get_selected() >= 0) {
+		wtype = String(cws_window_type_opt->get_selected_metadata());
+	}
+	String sid;
+	if (cws_style_opt && cws_style_opt->get_selected() >= 0) {
+		sid = String(cws_style_opt->get_selected_metadata());
+	}
+	Dictionary cmd;
+	cmd["type"] = "change_window_style";
+	cmd["code"] = CMD_CHANGE_WINDOW_STYLE;
+	cmd["window_type_id"] = wtype;
+	cmd["style_id"] = sid;
+	_append_command_to_active_page(cmd);
+}
+
+Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() const {
+	Dictionary out;
+	out["command_selector"] = cmd_catalog_dialog;
+	out["command_tree"] = command_tree;
+	out["dlg_show_credits"] = dlg_show_credits;
+	out["dlg_open_menu"] = dlg_open_menu;
+	out["dlg_change_menu_access"] = dlg_change_menu_access;
+	out["menu_access_opt"] = menu_access_opt;
+	out["dlg_return_to_title"] = dlg_return_to_title;
+	out["return_title_confirm_check"] = return_title_confirm_check;
+	out["dlg_open_save"] = dlg_open_save;
+	out["dlg_change_window_style"] = dlg_change_window_style;
+	out["cws_window_type_opt"] = cws_window_type_opt;
+	out["cws_style_opt"] = cws_style_opt;
+	return out;
 }
 
 void ClockGearsEventEditorDialog::_on_cutscene_add_kf() {
@@ -3685,6 +3894,117 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 
 	dlg_create_cutscene->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_create_cutscene));
 	add_child(dlg_create_cutscene);
+
+	// -------------------------------------------------------------
+	// Sub-diálogos 9B Tanda 4: Menús y Sistema
+	// -------------------------------------------------------------
+	auto make_info_cmd_dialog = [&](ConfirmationDialog *&r_dlg, const String &p_title, const String &p_desc, Label *&r_lbl, Callable p_confirm_cb) {
+		r_dlg = memnew(ConfirmationDialog);
+		r_dlg->set_title(p_title);
+		r_dlg->set_ok_button_text(CG_TR("Aceptar"));
+		r_dlg->set_cancel_button_text(CG_TR("Cancelar"));
+		PanelContainer *card = memnew(PanelContainer);
+		card->add_theme_style_override("panel", _event_card_style());
+		r_dlg->add_child(card);
+		VBoxContainer *vb = memnew(VBoxContainer);
+		vb->add_theme_constant_override("separation", 8);
+		card->add_child(vb);
+		r_lbl = memnew(Label(p_desc));
+		r_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		r_lbl->set_custom_minimum_size(Size2(340, 0) * EDSCALE);
+		vb->add_child(r_lbl);
+		r_dlg->connect("confirmed", p_confirm_cb);
+		add_child(r_dlg);
+	};
+
+	// Mostrar Créditos (CMD_SHOW_CREDITS)
+	make_info_cmd_dialog(dlg_show_credits, CG_TR("Mostrar Créditos"),
+			CG_TR("Muestra los créditos configurados en Base de Datos → Menús → Créditos.\nEl evento espera a que terminen o el jugador pulse Esc."),
+			show_credits_info_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_show_credits));
+
+	// Abrir Menú del Juego (CMD_OPEN_MENU)
+	Label *open_menu_lbl = nullptr;
+	make_info_cmd_dialog(dlg_open_menu, CG_TR("Abrir Menú del Juego"),
+			CG_TR("Abre el menú del juego (Objetos / Equipo / Estado / Guardar / Opciones / Salir) desde el evento y espera a que el jugador lo cierre."),
+			open_menu_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_open_menu));
+
+	// Abrir Guardado (CMD_OPEN_SAVE)
+	Label *open_save_lbl = nullptr;
+	make_info_cmd_dialog(dlg_open_save, CG_TR("Abrir Guardado"),
+			CG_TR("Abre directamente la pantalla de ranuras de guardado para que el jugador guarde su partida y vuelve al evento al cerrar."),
+			open_save_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_open_save));
+
+	// Bloquear / Permitir Menú (CMD_CHANGE_MENU_ACCESS)
+	dlg_change_menu_access = memnew(ConfirmationDialog);
+	dlg_change_menu_access->set_title(CG_TR("Bloquear / Permitir Menú del Juego"));
+	dlg_change_menu_access->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_change_menu_access->set_cancel_button_text(CG_TR("Cancelar"));
+	{
+		PanelContainer *card = memnew(PanelContainer);
+		card->add_theme_style_override("panel", _event_card_style());
+		dlg_change_menu_access->add_child(card);
+		HBoxContainer *hb = memnew(HBoxContainer);
+		hb->add_theme_constant_override("separation", 10);
+		card->add_child(hb);
+		hb->add_child(memnew(Label(CG_TR("Acceso al menú:"))));
+		menu_access_opt = memnew(OptionButton);
+		menu_access_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		menu_access_opt->add_item(CG_TR("Permitir"), 1);
+		menu_access_opt->add_item(CG_TR("Bloquear"), 0);
+		hb->add_child(menu_access_opt);
+	}
+	dlg_change_menu_access->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_change_menu_access));
+	add_child(dlg_change_menu_access);
+
+	// Ir a la Pantalla de Título (CMD_RETURN_TO_TITLE)
+	dlg_return_to_title = memnew(ConfirmationDialog);
+	dlg_return_to_title->set_title(CG_TR("Ir a la Pantalla de Título"));
+	dlg_return_to_title->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_return_to_title->set_cancel_button_text(CG_TR("Cancelar"));
+	{
+		PanelContainer *card = memnew(PanelContainer);
+		card->add_theme_style_override("panel", _event_card_style());
+		dlg_return_to_title->add_child(card);
+		VBoxContainer *vb = memnew(VBoxContainer);
+		vb->add_theme_constant_override("separation", 8);
+		card->add_child(vb);
+		Label *desc = memnew(Label(CG_TR("Regresa a la pantalla de título del juego.")));
+		desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		vb->add_child(desc);
+		return_title_confirm_check = memnew(CheckBox(CG_TR("Pedir confirmación al jugador antes de salir")));
+		return_title_confirm_check->set_pressed(false);
+		vb->add_child(return_title_confirm_check);
+	}
+	dlg_return_to_title->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_return_to_title));
+	add_child(dlg_return_to_title);
+
+	// Cambiar Estilo de Ventana (CMD_CHANGE_WINDOW_STYLE)
+	dlg_change_window_style = memnew(ConfirmationDialog);
+	dlg_change_window_style->set_title(CG_TR("Cambiar Estilo de Ventana"));
+	dlg_change_window_style->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_change_window_style->set_cancel_button_text(CG_TR("Cancelar"));
+	{
+		PanelContainer *card = memnew(PanelContainer);
+		card->add_theme_style_override("panel", _event_card_style());
+		dlg_change_window_style->add_child(card);
+		GridContainer *gr = memnew(GridContainer);
+		gr->set_columns(2);
+		gr->add_theme_constant_override("h_separation", 10);
+		gr->add_theme_constant_override("v_separation", 8);
+		card->add_child(gr);
+		gr->add_child(memnew(Label(CG_TR("Tipo de ventana:"))));
+		cws_window_type_opt = memnew(OptionButton);
+		cws_window_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		cws_window_type_opt->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+		gr->add_child(cws_window_type_opt);
+		gr->add_child(memnew(Label(CG_TR("Estilo de ventana:"))));
+		cws_style_opt = memnew(OptionButton);
+		cws_style_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		cws_style_opt->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+		gr->add_child(cws_style_opt);
+	}
+	dlg_change_window_style->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_change_window_style));
+	add_child(dlg_change_window_style);
 }
 
 void ClockGearsEventEditorDialog::_setup_database_picker_dialogs() {
@@ -4705,6 +5025,45 @@ String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) co
 		} else {
 			return vformat(CG_TR("◆ Reproducir Cinemática: %s"), d.get("path", ""));
 		}
+	} else if (type == "show_credits") {
+		return CG_TR("◆ Mostrar Créditos");
+	} else if (type == "open_menu") {
+		return CG_TR("◆ Abrir Menú del Juego");
+	} else if (type == "change_menu_access" || type == "set_menu_access" || type == "menu_access") {
+		bool allow_menu = true;
+		if (d.has("enabled")) {
+			allow_menu = bool(d["enabled"]);
+		} else if (d.has("allowed")) {
+			allow_menu = bool(d["allowed"]);
+		} else if (d.has("disabled")) {
+			allow_menu = !bool(d["disabled"]);
+		} else if (d.has("locked")) {
+			allow_menu = !bool(d["locked"]);
+		}
+		return vformat(CG_TR("◆ Bloquear / Permitir Menú: %s"), allow_menu ? CG_TR("Permitir") : CG_TR("Bloquear"));
+	} else if (type == "return_to_title") {
+		return vformat(CG_TR("◆ Ir a la Pantalla de Título%s"), bool(d.get("confirm", false)) ? CG_TR(" (con confirmación)") : "");
+	} else if (type == "open_save") {
+		return CG_TR("◆ Abrir Guardado");
+	} else if (type == "change_window_style") {
+		String wtype = String(d.get("window_type_id", d.get("window_type", "")));
+		String sid = String(d.get("style_id", d.get("style", "")));
+		String wlabel = wtype;
+		Array wtypes = ClockGearsDataManager::get_registered_window_types();
+		for (int i = 0; i < wtypes.size(); i++) {
+			if (wtypes[i].get_type() == Variant::DICTIONARY && String(Dictionary(wtypes[i]).get("id", "")) == wtype) {
+				wlabel = String(Dictionary(wtypes[i]).get("label", wtype));
+				break;
+			}
+		}
+		String slabel = sid.is_empty() ? CG_TR("(Por defecto)") : sid;
+		if (!sid.is_empty() && ClockGearsDataManager::get_singleton()) {
+			Dictionary st = ClockGearsDataManager::get_singleton()->get_window_style(sid);
+			if (!st.is_empty()) {
+				slabel = String(st.get("name", sid));
+			}
+		}
+		return vformat(CG_TR("◆ Cambiar Estilo de Ventana: %s → %s"), wlabel, slabel);
 	}
 	return vformat(CG_TR("◆ Comando: %s"), type);
 }
@@ -4715,7 +5074,7 @@ void ClockGearsEventEditorDialog::_refresh_command_list() {
 	}
 	command_tree->clear();
 	TreeItem *root = command_tree->create_item();
-	if (!target_event) {
+	if (!target_event && !db_edit_mode) {
 		return;
 	}
 

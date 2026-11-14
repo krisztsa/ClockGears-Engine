@@ -212,11 +212,66 @@ void ClockGearsCreditsPlayer::_rebuild_from_config(const Dictionary &p_cfg) {
 	}
 
 	item_count_rendered = visible_items;
+	if (preview_mode && visible_items == 0) {
+		Label *empty_lbl = memnew(Label);
+		empty_lbl->set_text(String::utf8("(Sin líneas de créditos configuradas)"));
+		empty_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		empty_lbl->set_custom_minimum_size(Size2(inner_width, 0.0f));
+		empty_lbl->add_theme_font_size_override("font_size", 16);
+		empty_lbl->add_theme_color_override("font_color", Color(0.65f, 0.72f, 0.84f, 0.75f));
+		scroll_vbox->add_child(empty_lbl);
+		est_height = 28.0f;
+	}
 	Size2 min_sz = scroll_vbox->get_combined_minimum_size();
 	content_height = MAX(est_height, min_sz.y);
 	scroll_vbox->set_size(Size2(inner_width, content_height));
 	scroll_y = LOGICAL_HEIGHT;
 	scroll_vbox->set_position(Vector2(50.0f, scroll_y));
+}
+
+void ClockGearsCreditsPlayer::set_preview_mode(bool p_preview) {
+	preview_mode = p_preview;
+	if (preview_mode) {
+		playing = false;
+		set_process(false);
+		set_process_input(false);
+		set_mouse_filter(MOUSE_FILTER_IGNORE);
+	} else {
+		set_mouse_filter(MOUSE_FILTER_STOP);
+	}
+}
+
+void ClockGearsCreditsPlayer::apply_credits_config_preview(const Dictionary &p_cfg, float p_scroll_y) {
+	set_preview_mode(true);
+	_ensure_ui_nodes();
+	_rebuild_from_config(p_cfg);
+	_update_responsive_stage();
+
+	completed_naturally = false;
+	cancelled_exit = false;
+	playing = false;
+	scroll_y = p_scroll_y;
+	if (scroll_vbox) {
+		scroll_vbox->set_position(Vector2(50.0f, scroll_y));
+	}
+	set_visible(true);
+}
+
+Dictionary ClockGearsCreditsPlayer::get_preview_snapshot() const {
+	Dictionary out;
+	Dictionary bg = active_config.get("background", Dictionary());
+	out["bg_type"] = String(bg.get("type", "color"));
+	out["bg_color"] = String(bg.get("color", "#090b12ff"));
+	out["bg_image_path"] = String(bg.get("image_path", ""));
+	out["bg_texture_visible"] = bg_texture_rect ? bg_texture_rect->is_visible() : false;
+	out["scroll_speed"] = scroll_speed;
+	out["alignment"] = String(active_config.get("alignment", "center"));
+	out["bgm_path"] = String(active_config.get("bgm_path", ""));
+	out["item_count"] = item_count_rendered;
+	out["scroll_y"] = scroll_y;
+	out["content_height"] = content_height;
+	out["styles"] = Dictionary(active_config.get("styles", Dictionary())).duplicate(true);
+	return out;
 }
 
 void ClockGearsCreditsPlayer::_update_responsive_stage(const Vector2 &p_override_vp_size) {
@@ -246,6 +301,7 @@ void ClockGearsCreditsPlayer::_update_responsive_stage(const Vector2 &p_override
 }
 
 void ClockGearsCreditsPlayer::start_credits(const Dictionary &p_cfg_override) {
+	set_preview_mode(false);
 	_ensure_ui_nodes();
 	Dictionary cfg = p_cfg_override;
 	if (cfg.is_empty()) {
@@ -470,6 +526,10 @@ void ClockGearsCreditsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("start_credits", "cfg_override"), &ClockGearsCreditsPlayer::start_credits, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("stop_credits", "cancelled"), &ClockGearsCreditsPlayer::stop_credits, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("step_credits", "delta"), &ClockGearsCreditsPlayer::step_credits);
+	ClassDB::bind_method(D_METHOD("set_preview_mode", "preview"), &ClockGearsCreditsPlayer::set_preview_mode);
+	ClassDB::bind_method(D_METHOD("is_preview_mode"), &ClockGearsCreditsPlayer::is_preview_mode);
+	ClassDB::bind_method(D_METHOD("apply_credits_config_preview", "cfg", "scroll_y"), &ClockGearsCreditsPlayer::apply_credits_config_preview, DEFVAL(60.0f));
+	ClassDB::bind_method(D_METHOD("get_preview_snapshot"), &ClockGearsCreditsPlayer::get_preview_snapshot);
 	ClassDB::bind_method(D_METHOD("is_playing"), &ClockGearsCreditsPlayer::is_playing);
 	ClassDB::bind_method(D_METHOD("was_cancelled"), &ClockGearsCreditsPlayer::was_cancelled);
 	ClassDB::bind_method(D_METHOD("was_completed_naturally"), &ClockGearsCreditsPlayer::was_completed_naturally);

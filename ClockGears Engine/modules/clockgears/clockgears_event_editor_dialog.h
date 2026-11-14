@@ -367,6 +367,24 @@ private:
 	Button *kf_remove_btn = nullptr;
 	Array cutscene_temp_keyframes;
 
+	// Sub-diálogos 9B Tanda 4: Menús y Sistema
+	ConfirmationDialog *dlg_show_credits = nullptr;
+	Label *show_credits_info_lbl = nullptr;
+
+	ConfirmationDialog *dlg_open_menu = nullptr;
+
+	ConfirmationDialog *dlg_change_menu_access = nullptr;
+	OptionButton *menu_access_opt = nullptr;
+
+	ConfirmationDialog *dlg_return_to_title = nullptr;
+	CheckBox *return_title_confirm_check = nullptr;
+
+	ConfirmationDialog *dlg_open_save = nullptr;
+
+	ConfirmationDialog *dlg_change_window_style = nullptr;
+	OptionButton *cws_window_type_opt = nullptr;
+	OptionButton *cws_style_opt = nullptr;
+
 	Dictionary _create_empty_page() const;
 	void _save_current_page_from_ui();
 	void _load_page_to_ui(int p_page_idx);
@@ -496,6 +514,15 @@ private:
 	void _on_graphic_file_selected(const String &p_path);
 	void _update_graphic_preview(const String &p_path);
 
+	// Handlers 9B Tanda 4: Menús y Sistema
+	void _populate_change_window_style_options(const String &p_sel_wtype = "", const String &p_sel_style = "");
+	void _on_confirm_show_credits();
+	void _on_confirm_open_menu();
+	void _on_confirm_change_menu_access();
+	void _on_confirm_return_to_title();
+	void _on_confirm_open_save();
+	void _on_confirm_change_window_style();
+
 protected:
 	static void _bind_methods();
 
@@ -504,6 +531,9 @@ public:
 	void edit_database_event(const String &p_category_key, int p_record_id, const String &p_record_name, const Array &p_pages, const Callable &p_on_saved = Callable());
 	bool is_sprite_selector_visible() const;
 	Array get_working_pages() const { return working_pages.duplicate(true); }
+	void trigger_command_id(int p_cmd_id) { _on_command_id_selected(p_cmd_id); }
+	Dictionary get_menu_command_ui_handles() const;
+	String format_command_preview(const Dictionary &p_cmd) const { return _format_command_text(p_cmd); }
 
 	ClockGearsEventEditorDialog();
 };

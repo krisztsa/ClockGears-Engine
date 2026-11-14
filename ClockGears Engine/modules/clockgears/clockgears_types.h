@@ -137,6 +137,14 @@ enum ClockGearsCommandID {
 	// Cinemática (Anexo A1.2)
 	CMD_PLAY_CUTSCENE = 320,
 	CMD_CREATE_CUTSCENE = 321,
+
+	// Menús y Sistema (9B Tanda 4)
+	CMD_OPEN_MENU = 351,
+	CMD_OPEN_SAVE = 352,
+	CMD_RETURN_TO_TITLE = 354,
+	CMD_SHOW_CREDITS = 357,
+	CMD_CHANGE_MENU_ACCESS = 358,
+	CMD_CHANGE_WINDOW_STYLE = 359,
 };
 
 #define CG_TR(m_str) String::utf8(m_str)

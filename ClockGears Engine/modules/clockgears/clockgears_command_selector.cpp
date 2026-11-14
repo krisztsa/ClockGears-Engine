@@ -26,6 +26,12 @@ void ClockGearsCommandSelector::_bind_methods() {
 	BIND_CONSTANT(CMD_PLAY_CUTSCENE);
 	BIND_CONSTANT(CMD_CREATE_CUTSCENE);
 	BIND_CONSTANT(CMD_BATTLE_PROCESSING);
+	BIND_CONSTANT(CMD_SHOW_CREDITS);
+	BIND_CONSTANT(CMD_OPEN_MENU);
+	BIND_CONSTANT(CMD_CHANGE_MENU_ACCESS);
+	BIND_CONSTANT(CMD_RETURN_TO_TITLE);
+	BIND_CONSTANT(CMD_OPEN_SAVE);
+	BIND_CONSTANT(CMD_CHANGE_WINDOW_STYLE);
 }
 
 Button *ClockGearsCommandSelector::_create_cmd_button(GridContainer *p_parent, const String &p_text, int p_cmd_id) {
@@ -161,4 +167,35 @@ ClockGearsCommandSelector::ClockGearsCommandSelector() {
 	_create_cmd_button(grid3, CG_TR("◆ Reproducir Cinemática..."), CMD_PLAY_CUTSCENE);
 	_create_cmd_button(grid3, CG_TR("◆ Crear Cinemática..."), CMD_CREATE_CUTSCENE);
 	_create_cmd_button(grid3, CG_TR("◆ Iniciar Batalla..."), CMD_BATTLE_PROCESSING);
+
+	// =============================================================
+	// Pestaña 4: Menús y Sistema (9B Tanda 4)
+	// =============================================================
+	MarginContainer *tab4_margin = memnew(MarginContainer);
+	tab4_margin->set_name(CG_TR("4. Menús y Sistema"));
+	tab4_margin->add_theme_constant_override("margin_top", 10);
+	tab4_margin->add_theme_constant_override("margin_left", 10);
+	tab4_margin->add_theme_constant_override("margin_right", 10);
+	tab4_margin->add_theme_constant_override("margin_bottom", 10);
+	tabs->add_child(tab4_margin);
+
+	ScrollContainer *tab4_scroll = memnew(ScrollContainer);
+	tab4_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	tab4_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab4_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tab4_margin->add_child(tab4_scroll);
+
+	GridContainer *grid4 = memnew(GridContainer);
+	grid4->set_columns(2);
+	grid4->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	grid4->add_theme_constant_override("h_separation", 10);
+	grid4->add_theme_constant_override("v_separation", 8);
+	tab4_scroll->add_child(grid4);
+
+	_create_cmd_button(grid4, CG_TR("◆ Mostrar Créditos..."), CMD_SHOW_CREDITS);
+	_create_cmd_button(grid4, CG_TR("◆ Abrir Menú del Juego..."), CMD_OPEN_MENU);
+	_create_cmd_button(grid4, CG_TR("◆ Bloquear / Permitir Menú..."), CMD_CHANGE_MENU_ACCESS);
+	_create_cmd_button(grid4, CG_TR("◆ Ir a la Pantalla de Título..."), CMD_RETURN_TO_TITLE);
+	_create_cmd_button(grid4, CG_TR("◆ Abrir Guardado..."), CMD_OPEN_SAVE);
+	_create_cmd_button(grid4, CG_TR("◆ Cambiar Estilo de Ventana..."), CMD_CHANGE_WINDOW_STYLE);
 }

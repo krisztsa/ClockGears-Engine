@@ -26,6 +26,7 @@
 #include "scene/gui/slider.h"
 
 class ClockGearsBattleScene;
+class ClockGearsCreditsPlayer;
 class ClockGearsEventEditorDialog;
 class ClockGearsGameMenu;
 class ClockGearsNineSlicePreview;
@@ -738,6 +739,65 @@ private:
 	ClockGearsGameMenu *gm_test_menu = nullptr;
 	FileDialog *gm_asset_file_dialog = nullptr;
 
+	// Menús -> Créditos (9B Tanda 4 UI)
+	Dictionary credits_config_draft;
+	int cred_selected_item_idx = -1;
+	VBoxContainer *credits_editor_panel = nullptr;
+	BoxContainer *cred_main_split = nullptr;
+	OptionButton *cred_add_type_opt = nullptr;
+	Button *cred_add_btn = nullptr;
+	Button *cred_del_btn = nullptr;
+	Button *cred_up_btn = nullptr;
+	Button *cred_down_btn = nullptr;
+	Button *cred_dup_btn = nullptr;
+	ItemList *cred_items_list = nullptr;
+	VBoxContainer *cred_item_props_box = nullptr;
+	Label *cred_item_empty_lbl = nullptr;
+	HBoxContainer *cred_item_text_row = nullptr;
+	LineEdit *cred_item_text_edit = nullptr;
+	HBoxContainer *cred_item_multiline_row = nullptr;
+	TextEdit *cred_item_multiline_edit = nullptr;
+	HBoxContainer *cred_item_role_row = nullptr;
+	LineEdit *cred_item_role_edit = nullptr;
+	HBoxContainer *cred_item_name_row = nullptr;
+	LineEdit *cred_item_name_edit = nullptr;
+	VBoxContainer *cred_item_img_box = nullptr;
+	LineEdit *cred_item_img_edit = nullptr;
+	Button *cred_item_img_import_btn = nullptr;
+	Button *cred_item_img_clear_btn = nullptr;
+	OptionButton *cred_item_img_filter_opt = nullptr;
+	SpinBox *cred_item_img_w_spin = nullptr;
+	SpinBox *cred_item_img_h_spin = nullptr;
+	HBoxContainer *cred_item_spacer_row = nullptr;
+	SpinBox *cred_item_spacer_spin = nullptr;
+	HBoxContainer *cred_item_align_row = nullptr;
+	OptionButton *cred_item_align_opt = nullptr;
+
+	OptionButton *cred_bg_type_opt = nullptr;
+	ColorPickerButton *cred_bg_color_btn = nullptr;
+	LineEdit *cred_bg_image_edit = nullptr;
+	Button *cred_bg_import_btn = nullptr;
+	Button *cred_bg_clear_btn = nullptr;
+	OptionButton *cred_bg_scale_opt = nullptr;
+	OptionButton *cred_bg_filter_opt = nullptr;
+	LineEdit *cred_bgm_edit = nullptr;
+	Button *cred_bgm_import_btn = nullptr;
+	Button *cred_bgm_clear_btn = nullptr;
+	HSlider *cred_speed_slider = nullptr;
+	SpinBox *cred_speed_spin = nullptr;
+	OptionButton *cred_align_opt = nullptr;
+
+	SpinBox *cred_style_size_spin[4] = { nullptr, nullptr, nullptr, nullptr };
+	ColorPickerButton *cred_style_color_btn[4] = { nullptr, nullptr, nullptr, nullptr };
+
+	Button *cred_test_btn = nullptr;
+	SubViewport *cred_preview_viewport = nullptr;
+	ClockGearsCreditsPlayer *cred_live_preview = nullptr;
+	Window *cred_test_window = nullptr;
+	ClockGearsCreditsPlayer *cred_test_player = nullptr;
+	FileDialog *cred_asset_file_dialog = nullptr;
+	int cred_asset_pick_target = 0; // 0 = bg image, 1 = item image, 2 = bgm audio
+
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
 	bool updating_ui = false;
 
@@ -1118,6 +1178,38 @@ private:
 	void _on_gm_bg_file_selected(const String &p_path);
 	void _on_gm_test_popup_close_requested();
 
+	// Menús -> Créditos helpers (9B Tanda 4 UI)
+	void _setup_credits_editor_ui();
+	void _refresh_credits_editor_ui();
+	void _rebuild_credits_items_list();
+	void _refresh_credits_selected_item_props();
+	void _update_credits_live_preview();
+	void _on_cred_add_pressed();
+	void _on_cred_remove_pressed();
+	void _on_cred_move_pressed(int p_delta);
+	void _on_cred_duplicate_pressed();
+	void _on_cred_item_selected(int p_idx);
+	void _on_cred_item_text_changed(const String &p_text);
+	void _on_cred_item_multiline_changed();
+	void _on_cred_item_role_or_name_changed(const String &p_text);
+	void _on_cred_item_img_changed(const String &p_text);
+	void _on_cred_item_img_opt_or_spin_changed(double p_unused = 0.0);
+	void _on_cred_item_spacer_changed(double p_val);
+	void _on_cred_item_align_selected(int p_idx);
+	void _on_cred_bg_or_align_changed(int p_unused = 0);
+	void _on_cred_bg_color_changed(const Color &p_col);
+	void _on_cred_bg_image_text_changed(const String &p_text);
+	void _on_cred_bgm_text_changed(const String &p_text);
+	void _on_cred_speed_slider_changed(double p_val);
+	void _on_cred_speed_spin_changed(double p_val);
+	void _on_cred_style_size_changed(double p_val, int p_style_idx);
+	void _on_cred_style_color_changed(const Color &p_col, int p_style_idx);
+	void _on_cred_pick_asset_pressed(int p_target);
+	void _on_cred_clear_asset_pressed(int p_target);
+	void _on_cred_asset_file_selected(const String &p_path);
+	void _on_cred_test_popup_close_requested();
+	void _on_cred_test_player_finished(bool p_cancelled);
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -1125,7 +1217,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2 };
+	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3 };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -1207,6 +1299,19 @@ public:
 	Window *open_game_menu_test_popup();
 	Window *get_game_menu_test_popup() const { return gm_test_window; }
 	Dictionary get_game_menu_editor_ui_handles() const;
+
+	Dictionary get_credits_draft_copy() const;
+	int add_credits_item(const String &p_type, const Dictionary &p_fields = Dictionary());
+	bool remove_credits_item(int p_index);
+	bool move_credits_item(int p_index, int p_delta);
+	int duplicate_credits_item(int p_index);
+	void select_credits_item(int p_index);
+	bool set_credits_item_field(int p_index, const String &p_key, const Variant &p_val);
+	ClockGearsCreditsPlayer *get_credits_live_preview() const { return cred_live_preview; }
+	Window *open_credits_test_popup();
+	Window *get_credits_test_popup() const { return cred_test_window; }
+	ClockGearsCreditsPlayer *get_credits_test_player() const { return cred_test_player; }
+	Dictionary get_credits_editor_ui_handles() const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

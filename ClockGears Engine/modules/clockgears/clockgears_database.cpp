@@ -27,6 +27,7 @@
 #include "editor/file_system/editor_paths.h"
 #include "editor/themes/editor_scale.h"
 #include "icons/clockgears_icons.h"
+#include "runtime/clockgears_credits.h"
 #include "runtime/clockgears_game_menu.h"
 #include "runtime/clockgears_title_screen.h"
 #include "runtime/clockgears_window_style.h"
@@ -212,7 +213,8 @@ static bool s_is_arpg_shape_category(int p_category) {
 static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
 	if (p_category == ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU ||
 			p_category == ClockGearsDatabaseDialog::DB_CAT_WINDOW_STYLES ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU) {
+			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_CREDITS) {
 		return true;
 	}
 	if (p_combat_mode == COMBAT_MODE_ACTION_RPG) {
@@ -498,6 +500,18 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("open_game_menu_test_popup"), &ClockGearsDatabaseDialog::open_game_menu_test_popup);
 	ClassDB::bind_method(D_METHOD("get_game_menu_test_popup"), &ClockGearsDatabaseDialog::get_game_menu_test_popup);
 	ClassDB::bind_method(D_METHOD("get_game_menu_editor_ui_handles"), &ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles);
+	ClassDB::bind_method(D_METHOD("get_credits_draft_copy"), &ClockGearsDatabaseDialog::get_credits_draft_copy);
+	ClassDB::bind_method(D_METHOD("add_credits_item", "type", "fields"), &ClockGearsDatabaseDialog::add_credits_item, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("remove_credits_item", "index"), &ClockGearsDatabaseDialog::remove_credits_item);
+	ClassDB::bind_method(D_METHOD("move_credits_item", "index", "delta"), &ClockGearsDatabaseDialog::move_credits_item);
+	ClassDB::bind_method(D_METHOD("duplicate_credits_item", "index"), &ClockGearsDatabaseDialog::duplicate_credits_item);
+	ClassDB::bind_method(D_METHOD("select_credits_item", "index"), &ClockGearsDatabaseDialog::select_credits_item);
+	ClassDB::bind_method(D_METHOD("set_credits_item_field", "index", "key", "val"), &ClockGearsDatabaseDialog::set_credits_item_field);
+	ClassDB::bind_method(D_METHOD("get_credits_live_preview"), &ClockGearsDatabaseDialog::get_credits_live_preview);
+	ClassDB::bind_method(D_METHOD("open_credits_test_popup"), &ClockGearsDatabaseDialog::open_credits_test_popup);
+	ClassDB::bind_method(D_METHOD("get_credits_test_popup"), &ClockGearsDatabaseDialog::get_credits_test_popup);
+	ClassDB::bind_method(D_METHOD("get_credits_test_player"), &ClockGearsDatabaseDialog::get_credits_test_player);
+	ClassDB::bind_method(D_METHOD("get_credits_editor_ui_handles"), &ClockGearsDatabaseDialog::get_credits_editor_ui_handles);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -684,6 +698,8 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 			return CG_DB_TR("Estilos de ventana");
 		case DB_CAT_GAME_MENU:
 			return CG_DB_TR("Menú del juego");
+		case DB_CAT_CREDITS:
+			return CG_DB_TR("Créditos");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -1024,7 +1040,7 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 	add_chap("Animaciones", { CAT_ANIMATIONS });
 	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
 	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
-	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES, DB_CAT_GAME_MENU });
+	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES, DB_CAT_GAME_MENU, DB_CAT_CREDITS });
 
 	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
 	for (int c = 0; c < CAT_MAX; c++) {
@@ -1150,7 +1166,7 @@ void ClockGearsDatabaseDialog::_save_editor_ui_state() {
 }
 
 void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
-	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES && p_category != DB_CAT_GAME_MENU)) {
+	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES && p_category != DB_CAT_GAME_MENU && p_category != DB_CAT_CREDITS)) {
 		return;
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -1194,7 +1210,8 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_main_menu = (current_category == DB_CAT_MAIN_MENU);
 	bool is_window_styles = (current_category == DB_CAT_WINDOW_STYLES);
 	bool is_game_menu = (current_category == DB_CAT_GAME_MENU);
-	bool hide_record_col = (is_system || is_main_menu || is_game_menu);
+	bool is_credits = (current_category == DB_CAT_CREDITS);
+	bool hide_record_col = (is_system || is_main_menu || is_game_menu || is_credits);
 	bool is_tileset = (current_category == CAT_TILESETS);
 	bool is_troops = (current_category == CAT_TROOPS);
 	bool is_enemy = (current_category == CAT_ENEMIES);
@@ -1264,6 +1281,12 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		game_menu_editor_panel->set_visible(is_game_menu);
 		if (is_game_menu) {
 			_refresh_game_menu_editor_ui();
+		}
+	}
+	if (credits_editor_panel) {
+		credits_editor_panel->set_visible(is_credits);
+		if (is_credits) {
+			_refresh_credits_editor_ui();
 		}
 	}
 	if (main_editor_tabs) {
@@ -5495,7 +5518,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cats_panel->add_child(cats_bar);
 
 	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
-	for (int i = 0; i <= DB_CAT_GAME_MENU; i++) {
+	for (int i = 0; i <= DB_CAT_CREDITS; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_theme_type_variation("ClockGearsTabButton");
 		btn->set_toggle_mode(true);
@@ -7133,6 +7156,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	_setup_main_menu_editor_ui();
 	_setup_window_styles_editor_ui();
 	_setup_game_menu_editor_ui();
+	_setup_credits_editor_ui();
 
 	// Vista previa de colocación de tropas debajo de los miembros (todo el ancho disponible hasta 960px, proporción 16:9, sin hueco arriba)
 	troop_placement_col3_box = memnew(VBoxContainer);
@@ -7993,7 +8017,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Dictionary init_ui_state = _load_editor_ui_state();
 	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
-	if (init_cat < 0 || init_cat > DB_CAT_GAME_MENU) {
+	if (init_cat < 0 || init_cat > DB_CAT_CREDITS) {
 		init_cat = CAT_ACTORS;
 	}
 	_on_category_selected(init_cat);
@@ -8055,7 +8079,7 @@ void ClockGearsDatabaseDialog::open_database() {
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
 	int last_cat = int(ui_state.get("last_category", current_category));
-	if (last_cat >= 0 && last_cat <= DB_CAT_GAME_MENU) {
+	if (last_cat >= 0 && last_cat <= DB_CAT_CREDITS) {
 		current_category = last_cat;
 	}
 	_on_category_selected(current_category);
@@ -8130,6 +8154,7 @@ void ClockGearsDatabaseDialog::_save_database_to_disk() {
 	dm->set_title_menu_config(ClockGearsDataManager::normalize_title_menu_config(menu_title_config));
 	dm->set_window_styles_config(ClockGearsDataManager::normalize_window_styles_config(window_styles_config_draft));
 	dm->set_game_menu_config(ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft));
+	dm->set_credits_config(ClockGearsDataManager::normalize_credits_config(credits_config_draft));
 	dm->save_all("res://clockgears_data");
 }
 
@@ -8146,6 +8171,7 @@ void ClockGearsDatabaseDialog::_load_database_from_disk() {
 	menu_title_config = ClockGearsDataManager::normalize_title_menu_config(dm->get_title_menu_config());
 	window_styles_config_draft = ClockGearsDataManager::normalize_window_styles_config(dm->get_window_styles_config());
 	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(dm->get_game_menu_config());
+	credits_config_draft = ClockGearsDataManager::normalize_credits_config(dm->get_credits_config());
 	current_combat_mode = (int)system_config.get("combat_mode", COMBAT_MODE_TURN_BASED);
 	_clear_troop_texture_cache();
 	_clear_record_list_icon_cache();
@@ -12340,6 +12366,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 				ckey = "window_styles";
 			} else if (cid == DB_CAT_GAME_MENU) {
 				ckey = "game_menu";
+			} else if (cid == DB_CAT_CREDITS) {
+				ckey = "credits";
 			} else {
 				ckey = ClockGearsDataManager::get_category_key(cid);
 			}
@@ -12366,6 +12394,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 		out["current_category_key"] = String("window_styles");
 	} else if (current_category == DB_CAT_GAME_MENU) {
 		out["current_category_key"] = String("game_menu");
+	} else if (current_category == DB_CAT_CREDITS) {
+		out["current_category_key"] = String("credits");
 	} else {
 		out["current_category_key"] = ClockGearsDataManager::get_category_key(current_category);
 	}
@@ -12384,6 +12414,10 @@ void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
 	}
 	if (p_key == "game_menu") {
 		_on_category_selected(DB_CAT_GAME_MENU);
+		return;
+	}
+	if (p_key == "credits") {
+		_on_category_selected(DB_CAT_CREDITS);
 		return;
 	}
 	for (int i = 0; i < CAT_MAX; i++) {
@@ -15240,6 +15274,9 @@ void ClockGearsDatabaseDialog::adapt_to_window_size(const Vector2i &p_window_siz
 	if (gm_main_split) {
 		gm_main_split->set_vertical(p_window_size.x < 1100);
 	}
+	if (cred_main_split) {
+		cred_main_split->set_vertical(p_window_size.x < 1100);
+	}
 }
 
 bool ClockGearsDatabaseDialog::is_realtime_combat_section_visible() const {
@@ -18084,6 +18121,1149 @@ Dictionary ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles() const {
 	out["test_window"] = gm_test_window;
 	out["test_menu"] = gm_test_menu;
 	out["active_bg_screen"] = gm_active_bg_screen;
+	return out;
+}
+
+// ============================================================================
+// Menús -> Créditos (9B Tanda 4 UI)
+// ============================================================================
+
+static const char *s_cred_style_keys[4] = { "section", "role", "name", "text" };
+static const char *s_cred_style_labels[4] = { "Sección", "Rol", "Nombre", "Texto" };
+
+static String s_cred_item_summary(int p_index, const Dictionary &p_item) {
+	String itype = String(p_item.get("type", "text"));
+	if (itype == "section") {
+		String txt = String(p_item.get("text", "")).strip_edges();
+		return vformat("%d. [Sección] %s", p_index + 1, txt.is_empty() ? CG_DB_TR("(sin título)") : txt);
+	}
+	if (itype == "role_name") {
+		String r = String(p_item.get("role", "")).strip_edges();
+		String n = String(p_item.get("name", "")).strip_edges();
+		return vformat("%d. [Rol/Nombre] %s — %s", p_index + 1, r.is_empty() ? CG_DB_TR("(rol)") : r, n.is_empty() ? CG_DB_TR("(nombre)") : n);
+	}
+	if (itype == "image") {
+		String p = String(p_item.get("image_path", "")).get_file();
+		return vformat("%d. [Imagen] %s", p_index + 1, p.is_empty() ? CG_DB_TR("(sin imagen)") : p);
+	}
+	if (itype == "spacer") {
+		return vformat("%d. [Espacio] %d px", p_index + 1, int(p_item.get("height", 32.0)));
+	}
+	String txt = String(p_item.get("text", "")).strip_edges().replace("\n", " ");
+	if (txt.length() > 42) {
+		txt = txt.substr(0, 42) + "...";
+	}
+	return vformat("%d. [Texto] %s", p_index + 1, txt.is_empty() ? CG_DB_TR("(vacío)") : txt);
+}
+
+void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
+	if (credits_editor_panel || !col2_box) {
+		return;
+	}
+	const float row_h = 30.0f * EDSCALE;
+	credits_config_draft = ClockGearsDataManager::get_default_credits_config();
+	if (ClockGearsDataManager::get_singleton()) {
+		credits_config_draft = ClockGearsDataManager::normalize_credits_config(ClockGearsDataManager::get_singleton()->get_credits_config());
+	}
+
+	credits_editor_panel = memnew(VBoxContainer);
+	credits_editor_panel->set_name("CreditsEditorPanel");
+	credits_editor_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	credits_editor_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	credits_editor_panel->add_theme_constant_override("separation", int(12 * EDSCALE));
+	credits_editor_panel->hide();
+	col2_box->add_child(credits_editor_panel);
+
+	cred_main_split = memnew(BoxContainer);
+	cred_main_split->set_vertical(false);
+	cred_main_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_main_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
+	credits_editor_panel->add_child(cred_main_split);
+
+	VBoxContainer *left_col = memnew(VBoxContainer);
+	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	left_col->set_stretch_ratio(1.15f);
+	left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	cred_main_split->add_child(left_col);
+
+	auto make_card = [&](const String &p_title, VBoxContainer *&r_body) {
+		PanelContainer *card = memnew(PanelContainer);
+		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+		left_col->add_child(card);
+
+		r_body = memnew(VBoxContainer);
+		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
+		card->add_child(r_body);
+
+		Label *hdr = memnew(Label(p_title));
+		hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+		r_body->add_child(hdr);
+	};
+
+	auto add_grid_label = [&](GridContainer *p_grid, const String &p_txt) {
+		Label *lbl = memnew(Label(p_txt));
+		lbl->set_custom_minimum_size(Size2(118 * EDSCALE, 0));
+		p_grid->add_child(lbl);
+	};
+
+	// 1. Secciones y líneas
+	VBoxContainer *items_body = nullptr;
+	make_card(CG_DB_TR("Secciones y líneas"), items_body);
+
+	HBoxContainer *toolbar = memnew(HBoxContainer);
+	toolbar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	toolbar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	items_body->add_child(toolbar);
+
+	cred_add_type_opt = memnew(OptionButton);
+	cred_add_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_add_type_opt->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	cred_add_type_opt->add_item(CG_DB_TR("Sección"), 0);
+	cred_add_type_opt->set_item_metadata(0, String("section"));
+	cred_add_type_opt->add_item(CG_DB_TR("Rol y nombre"), 1);
+	cred_add_type_opt->set_item_metadata(1, String("role_name"));
+	cred_add_type_opt->add_item(CG_DB_TR("Texto"), 2);
+	cred_add_type_opt->set_item_metadata(2, String("text"));
+	cred_add_type_opt->add_item(CG_DB_TR("Imagen"), 3);
+	cred_add_type_opt->set_item_metadata(3, String("image"));
+	cred_add_type_opt->add_item(CG_DB_TR("Espacio"), 4);
+	cred_add_type_opt->set_item_metadata(4, String("spacer"));
+	toolbar->add_child(cred_add_type_opt);
+
+	cred_add_btn = memnew(Button("+"));
+	cred_add_btn->set_tooltip_text(CG_DB_TR("Añadir elemento"));
+	cred_add_btn->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	cred_add_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_add_pressed));
+	toolbar->add_child(cred_add_btn);
+
+	cred_del_btn = memnew(Button("-"));
+	cred_del_btn->set_tooltip_text(CG_DB_TR("Eliminar elemento"));
+	cred_del_btn->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	cred_del_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_remove_pressed));
+	toolbar->add_child(cred_del_btn);
+
+	cred_up_btn = memnew(Button(String::utf8("↑")));
+	cred_up_btn->set_tooltip_text(CG_DB_TR("Subir elemento"));
+	cred_up_btn->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	cred_up_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_move_pressed).bind(-1));
+	toolbar->add_child(cred_up_btn);
+
+	cred_down_btn = memnew(Button(String::utf8("↓")));
+	cred_down_btn->set_tooltip_text(CG_DB_TR("Bajar elemento"));
+	cred_down_btn->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	cred_down_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_move_pressed).bind(1));
+	toolbar->add_child(cred_down_btn);
+
+	cred_dup_btn = memnew(Button(CG_DB_TR("Duplicar")));
+	cred_dup_btn->set_custom_minimum_size(Size2(74 * EDSCALE, row_h));
+	cred_dup_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_duplicate_pressed));
+	toolbar->add_child(cred_dup_btn);
+
+	cred_items_list = memnew(ItemList);
+	cred_items_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_items_list->set_custom_minimum_size(Size2(0, 132 * EDSCALE));
+	cred_items_list->set_allow_reselect(true);
+	cred_items_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_selected));
+	items_body->add_child(cred_items_list);
+
+	// Inspector del elemento seleccionado
+	cred_item_props_box = memnew(VBoxContainer);
+	cred_item_props_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_props_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	items_body->add_child(cred_item_props_box);
+
+	cred_item_empty_lbl = memnew(Label(CG_DB_TR("Selecciona o añade un elemento para editar su contenido.")));
+	cred_item_empty_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	cred_item_empty_lbl->add_theme_color_override("font_color", Color(0.70f, 0.76f, 0.86f, 0.85f));
+	cred_item_props_box->add_child(cred_item_empty_lbl);
+
+	// Sección (una línea)
+	cred_item_text_row = memnew(HBoxContainer);
+	cred_item_text_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	cred_item_text_row->hide();
+	cred_item_props_box->add_child(cred_item_text_row);
+	Label *sec_lbl = memnew(Label(CG_DB_TR("Título:")));
+	sec_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	cred_item_text_row->add_child(sec_lbl);
+	cred_item_text_edit = memnew(LineEdit);
+	cred_item_text_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_text_edit->set_custom_minimum_size(Size2(0, row_h));
+	cred_item_text_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_text_changed));
+	cred_item_text_row->add_child(cred_item_text_edit);
+
+	// Texto libre (multilínea)
+	cred_item_multiline_row = memnew(HBoxContainer);
+	cred_item_multiline_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	cred_item_multiline_row->hide();
+	cred_item_props_box->add_child(cred_item_multiline_row);
+	Label *txt_lbl = memnew(Label(CG_DB_TR("Texto:")));
+	txt_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	cred_item_multiline_row->add_child(txt_lbl);
+	cred_item_multiline_edit = memnew(TextEdit);
+	cred_item_multiline_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_multiline_edit->set_line_wrapping_mode(TextEdit::LINE_WRAPPING_BOUNDARY);
+	cred_item_multiline_edit->set_custom_minimum_size(Size2(0, 58 * EDSCALE));
+	cred_item_multiline_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_multiline_changed));
+	cred_item_multiline_row->add_child(cred_item_multiline_edit);
+
+	// Rol y Nombre
+	cred_item_role_row = memnew(HBoxContainer);
+	cred_item_role_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	cred_item_role_row->hide();
+	cred_item_props_box->add_child(cred_item_role_row);
+	Label *role_lbl = memnew(Label(CG_DB_TR("Rol:")));
+	role_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	cred_item_role_row->add_child(role_lbl);
+	cred_item_role_edit = memnew(LineEdit);
+	cred_item_role_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_role_edit->set_custom_minimum_size(Size2(0, row_h));
+	cred_item_role_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_role_or_name_changed));
+	cred_item_role_row->add_child(cred_item_role_edit);
+
+	cred_item_name_row = memnew(HBoxContainer);
+	cred_item_name_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	cred_item_name_row->hide();
+	cred_item_props_box->add_child(cred_item_name_row);
+	Label *name_lbl = memnew(Label(CG_DB_TR("Nombre:")));
+	name_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	cred_item_name_row->add_child(name_lbl);
+	cred_item_name_edit = memnew(LineEdit);
+	cred_item_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_name_edit->set_custom_minimum_size(Size2(0, row_h));
+	cred_item_name_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_role_or_name_changed));
+	cred_item_name_row->add_child(cred_item_name_edit);
+
+	// Imagen
+	cred_item_img_box = memnew(VBoxContainer);
+	cred_item_img_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	cred_item_img_box->hide();
+	cred_item_props_box->add_child(cred_item_img_box);
+
+	HBoxContainer *img_path_row = memnew(HBoxContainer);
+	img_path_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	cred_item_img_box->add_child(img_path_row);
+	Label *img_lbl = memnew(Label(CG_DB_TR("Imagen:")));
+	img_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	img_path_row->add_child(img_lbl);
+	cred_item_img_edit = memnew(LineEdit);
+	cred_item_img_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_img_edit->set_custom_minimum_size(Size2(0, row_h));
+	cred_item_img_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_img_changed));
+	img_path_row->add_child(cred_item_img_edit);
+	cred_item_img_import_btn = memnew(Button(CG_DB_TR("Importar")));
+	cred_item_img_import_btn->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	cred_item_img_import_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_pick_asset_pressed).bind(1));
+	img_path_row->add_child(cred_item_img_import_btn);
+	cred_item_img_clear_btn = memnew(Button(CG_DB_TR("Quitar")));
+	cred_item_img_clear_btn->set_custom_minimum_size(Size2(66 * EDSCALE, row_h));
+	cred_item_img_clear_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_clear_asset_pressed).bind(1));
+	img_path_row->add_child(cred_item_img_clear_btn);
+
+	HBoxContainer *img_opts_row = memnew(HBoxContainer);
+	img_opts_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	cred_item_img_box->add_child(img_opts_row);
+	Label *iflt_lbl = memnew(Label(CG_DB_TR("Filtro:")));
+	iflt_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	img_opts_row->add_child(iflt_lbl);
+	cred_item_img_filter_opt = memnew(OptionButton);
+	cred_item_img_filter_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_img_filter_opt->add_item("Nearest", 0);
+	cred_item_img_filter_opt->add_item("Linear", 1);
+	cred_item_img_filter_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_img_opt_or_spin_changed));
+	img_opts_row->add_child(cred_item_img_filter_opt);
+	img_opts_row->add_child(memnew(Label(CG_DB_TR("Máx:"))));
+	cred_item_img_w_spin = memnew(SpinBox);
+	cred_item_img_w_spin->set_min(16);
+	cred_item_img_w_spin->set_max(960);
+	cred_item_img_w_spin->set_step(8);
+	cred_item_img_w_spin->set_custom_minimum_size(Size2(74 * EDSCALE, row_h));
+	cred_item_img_w_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_img_opt_or_spin_changed));
+	img_opts_row->add_child(cred_item_img_w_spin);
+	cred_item_img_h_spin = memnew(SpinBox);
+	cred_item_img_h_spin->set_min(16);
+	cred_item_img_h_spin->set_max(540);
+	cred_item_img_h_spin->set_step(8);
+	cred_item_img_h_spin->set_custom_minimum_size(Size2(74 * EDSCALE, row_h));
+	cred_item_img_h_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_img_opt_or_spin_changed));
+	img_opts_row->add_child(cred_item_img_h_spin);
+
+	// Espacio
+	cred_item_spacer_row = memnew(HBoxContainer);
+	cred_item_spacer_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	cred_item_spacer_row->hide();
+	cred_item_props_box->add_child(cred_item_spacer_row);
+	Label *sp_lbl = memnew(Label(CG_DB_TR("Altura:")));
+	sp_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	cred_item_spacer_row->add_child(sp_lbl);
+	cred_item_spacer_spin = memnew(SpinBox);
+	cred_item_spacer_spin->set_min(4);
+	cred_item_spacer_spin->set_max(480);
+	cred_item_spacer_spin->set_step(2);
+	cred_item_spacer_spin->set_suffix(" px");
+	cred_item_spacer_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_spacer_spin->set_custom_minimum_size(Size2(0, row_h));
+	cred_item_spacer_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_spacer_changed));
+	cred_item_spacer_row->add_child(cred_item_spacer_spin);
+
+	// Alineación propia del elemento (opcional)
+	cred_item_align_row = memnew(HBoxContainer);
+	cred_item_align_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	cred_item_align_row->hide();
+	cred_item_props_box->add_child(cred_item_align_row);
+	Label *ial_lbl = memnew(Label(CG_DB_TR("Alineación:")));
+	ial_lbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+	cred_item_align_row->add_child(ial_lbl);
+	cred_item_align_opt = memnew(OptionButton);
+	cred_item_align_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_item_align_opt->set_custom_minimum_size(Size2(0, row_h));
+	cred_item_align_opt->add_item(CG_DB_TR("(Usar global)"), 0);
+	cred_item_align_opt->add_item(CG_DB_TR("Izquierda"), 1);
+	cred_item_align_opt->add_item(CG_DB_TR("Centro"), 2);
+	cred_item_align_opt->add_item(CG_DB_TR("Derecha"), 3);
+	cred_item_align_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_item_align_selected));
+	cred_item_align_row->add_child(cred_item_align_opt);
+
+	// 2. Fondo, Música, Velocidad y Alineación Global
+	VBoxContainer *gen_body = nullptr;
+	make_card(CG_DB_TR("Fondo, música y desplazamiento"), gen_body);
+
+	GridContainer *gen_grid = memnew(GridContainer);
+	gen_grid->set_columns(2);
+	gen_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gen_grid->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	gen_grid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	gen_body->add_child(gen_grid);
+
+	add_grid_label(gen_grid, CG_DB_TR("Tipo de fondo:"));
+	cred_bg_type_opt = memnew(OptionButton);
+	cred_bg_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_bg_type_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	cred_bg_type_opt->add_item(CG_DB_TR("Color sólido"), 0);
+	cred_bg_type_opt->add_item(CG_DB_TR("Imagen"), 1);
+	cred_bg_type_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bg_or_align_changed));
+	gen_grid->add_child(cred_bg_type_opt);
+
+	add_grid_label(gen_grid, CG_DB_TR("Color de fondo:"));
+	cred_bg_color_btn = memnew(ColorPickerButton);
+	cred_bg_color_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_bg_color_btn->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	cred_bg_color_btn->set_edit_alpha(false);
+	cred_bg_color_btn->connect("color_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bg_color_changed));
+	gen_grid->add_child(cred_bg_color_btn);
+
+	add_grid_label(gen_grid, CG_DB_TR("Imagen de fondo:"));
+	HBoxContainer *bg_img_row = memnew(HBoxContainer);
+	bg_img_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bg_img_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	gen_grid->add_child(bg_img_row);
+
+	cred_bg_image_edit = memnew(LineEdit);
+	cred_bg_image_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_bg_image_edit->set_custom_minimum_size(Size2(70 * EDSCALE, row_h));
+	cred_bg_image_edit->set_placeholder("res://img/...");
+	cred_bg_image_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bg_image_text_changed));
+	bg_img_row->add_child(cred_bg_image_edit);
+
+	cred_bg_import_btn = memnew(Button(CG_DB_TR("Importar")));
+	cred_bg_import_btn->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	cred_bg_import_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_pick_asset_pressed).bind(0));
+	bg_img_row->add_child(cred_bg_import_btn);
+
+	cred_bg_clear_btn = memnew(Button(CG_DB_TR("Quitar")));
+	cred_bg_clear_btn->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
+	cred_bg_clear_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_clear_asset_pressed).bind(0));
+	bg_img_row->add_child(cred_bg_clear_btn);
+
+	add_grid_label(gen_grid, CG_DB_TR("Modo de imagen:"));
+	cred_bg_scale_opt = memnew(OptionButton);
+	cred_bg_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_bg_scale_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	cred_bg_scale_opt->add_item(CG_DB_TR("Ajustar (Fit)"), 0);
+	cred_bg_scale_opt->add_item(CG_DB_TR("Rellenar (Fill)"), 1);
+	cred_bg_scale_opt->add_item(CG_DB_TR("Estirar (Stretch)"), 2);
+	cred_bg_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bg_or_align_changed));
+	gen_grid->add_child(cred_bg_scale_opt);
+
+	add_grid_label(gen_grid, CG_DB_TR("Filtro de fondo:"));
+	cred_bg_filter_opt = memnew(OptionButton);
+	cred_bg_filter_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_bg_filter_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	cred_bg_filter_opt->add_item(CG_DB_TR("Nearest (Pixel Art)"), 0);
+	cred_bg_filter_opt->add_item(CG_DB_TR("Linear (Suavizado)"), 1);
+	cred_bg_filter_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bg_or_align_changed));
+	gen_grid->add_child(cred_bg_filter_opt);
+
+	add_grid_label(gen_grid, CG_DB_TR("Música opcional:"));
+	HBoxContainer *bgm_row = memnew(HBoxContainer);
+	bgm_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bgm_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	gen_grid->add_child(bgm_row);
+
+	cred_bgm_edit = memnew(LineEdit);
+	cred_bgm_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_bgm_edit->set_custom_minimum_size(Size2(70 * EDSCALE, row_h));
+	cred_bgm_edit->set_placeholder("res://audio/...");
+	cred_bgm_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bgm_text_changed));
+	bgm_row->add_child(cred_bgm_edit);
+
+	cred_bgm_import_btn = memnew(Button(CG_DB_TR("Importar")));
+	cred_bgm_import_btn->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	cred_bgm_import_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_pick_asset_pressed).bind(2));
+	bgm_row->add_child(cred_bgm_import_btn);
+
+	cred_bgm_clear_btn = memnew(Button(CG_DB_TR("Quitar")));
+	cred_bgm_clear_btn->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
+	cred_bgm_clear_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_clear_asset_pressed).bind(2));
+	bgm_row->add_child(cred_bgm_clear_btn);
+
+	add_grid_label(gen_grid, CG_DB_TR("Velocidad:"));
+	HBoxContainer *spd_row = memnew(HBoxContainer);
+	spd_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	spd_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+	gen_grid->add_child(spd_row);
+
+	cred_speed_slider = memnew(HSlider);
+	cred_speed_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_speed_slider->set_min(5.0);
+	cred_speed_slider->set_max(600.0);
+	cred_speed_slider->set_step(1.0);
+	cred_speed_slider->set_value(60.0);
+	cred_speed_slider->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_speed_slider_changed));
+	spd_row->add_child(cred_speed_slider);
+
+	cred_speed_spin = memnew(SpinBox);
+	cred_speed_spin->set_min(5.0);
+	cred_speed_spin->set_max(600.0);
+	cred_speed_spin->set_step(1.0);
+	cred_speed_spin->set_value(60.0);
+	cred_speed_spin->set_suffix(" px/s");
+	cred_speed_spin->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	cred_speed_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_speed_spin_changed));
+	spd_row->add_child(cred_speed_spin);
+
+	add_grid_label(gen_grid, CG_DB_TR("Alineación global:"));
+	cred_align_opt = memnew(OptionButton);
+	cred_align_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_align_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	cred_align_opt->add_item(CG_DB_TR("Izquierda"), 0);
+	cred_align_opt->add_item(CG_DB_TR("Centro"), 1);
+	cred_align_opt->add_item(CG_DB_TR("Derecha"), 2);
+	cred_align_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_bg_or_align_changed));
+	gen_grid->add_child(cred_align_opt);
+
+	// 3. Estilos de texto por tipo de línea
+	VBoxContainer *st_body = nullptr;
+	make_card(CG_DB_TR("Estilo de texto por tipo de línea"), st_body);
+
+	GridContainer *st_grid = memnew(GridContainer);
+	st_grid->set_columns(3);
+	st_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	st_grid->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	st_grid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	st_body->add_child(st_grid);
+
+	for (int i = 0; i < 4; i++) {
+		Label *slbl = memnew(Label(CG_DB_TR(s_cred_style_labels[i])));
+		slbl->set_custom_minimum_size(Size2(96 * EDSCALE, 0));
+		st_grid->add_child(slbl);
+
+		cred_style_size_spin[i] = memnew(SpinBox);
+		cred_style_size_spin[i]->set_min(8);
+		cred_style_size_spin[i]->set_max(96);
+		cred_style_size_spin[i]->set_step(1);
+		cred_style_size_spin[i]->set_suffix(" px");
+		cred_style_size_spin[i]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		cred_style_size_spin[i]->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+		cred_style_size_spin[i]->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_style_size_changed).bind(i));
+		st_grid->add_child(cred_style_size_spin[i]);
+
+		cred_style_color_btn[i] = memnew(ColorPickerButton);
+		cred_style_color_btn[i]->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
+		cred_style_color_btn[i]->set_edit_alpha(false);
+		cred_style_color_btn[i]->connect("color_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_style_color_changed).bind(i));
+		st_grid->add_child(cred_style_color_btn[i]);
+	}
+
+	// Columna derecha: Vista previa en vivo + Probar
+	PanelContainer *prev_card = memnew(PanelContainer);
+	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_card->set_stretch_ratio(1.0f);
+	prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+	cred_main_split->add_child(prev_card);
+
+	VBoxContainer *prev_vb = memnew(VBoxContainer);
+	prev_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	prev_card->add_child(prev_vb);
+
+	HBoxContainer *prev_hdr = memnew(HBoxContainer);
+	prev_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
+	prev_vb->add_child(prev_hdr);
+
+	Label *prev_lbl = memnew(Label(CG_DB_TR("Vista previa en vivo (960x540)")));
+	prev_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+	prev_hdr->add_child(prev_lbl);
+
+	cred_test_btn = memnew(Button(CG_DB_TR("Probar")));
+	cred_test_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	cred_test_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::open_credits_test_popup));
+	prev_hdr->add_child(cred_test_btn);
+
+	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
+	aspect->set_ratio(16.0f / 9.0f);
+	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
+	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
+	prev_vb->add_child(aspect);
+
+	SubViewportContainer *svc = memnew(SubViewportContainer);
+	svc->set_stretch(true);
+	svc->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	svc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	aspect->add_child(svc);
+
+	cred_preview_viewport = memnew(SubViewport);
+	cred_preview_viewport->set_size(Size2i(960, 540));
+	cred_preview_viewport->set_disable_3d(true);
+	cred_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
+	svc->add_child(cred_preview_viewport);
+
+	cred_live_preview = memnew(ClockGearsCreditsPlayer);
+	cred_live_preview->set_preview_mode(true);
+	cred_preview_viewport->add_child(cred_live_preview);
+
+	Label *prev_tip = memnew(Label(CG_DB_TR("Pulsa 'Probar' para ver los créditos desplazarse a velocidad real (Esc cierra, Enter o clic acelera).")));
+	prev_tip->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	prev_tip->add_theme_color_override("font_color", Color(0.70f, 0.76f, 0.86f, 0.85f));
+	prev_vb->add_child(prev_tip);
+
+	cred_asset_file_dialog = memnew(FileDialog);
+	cred_asset_file_dialog->set_access(FileDialog::ACCESS_FILESYSTEM);
+	cred_asset_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
+	cred_asset_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_asset_file_selected));
+	add_child(cred_asset_file_dialog);
+
+	cred_test_window = memnew(Window);
+	cred_test_window->set_title(CG_DB_TR("Probar créditos (960x540)"));
+	cred_test_window->set_visible(false);
+	cred_test_window->set_transient(true);
+	cred_test_window->set_content_scale_size(Size2i(960, 540));
+	cred_test_window->set_content_scale_mode(Window::CONTENT_SCALE_MODE_CANVAS_ITEMS);
+	cred_test_window->set_content_scale_aspect(Window::CONTENT_SCALE_ASPECT_KEEP);
+	cred_test_window->connect("close_requested", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_test_popup_close_requested));
+	add_child(cred_test_window);
+
+	cred_test_player = memnew(ClockGearsCreditsPlayer);
+	cred_test_player->connect("credits_finished", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_test_player_finished));
+	cred_test_window->add_child(cred_test_player);
+}
+
+void ClockGearsDatabaseDialog::_update_credits_live_preview() {
+	if (!cred_live_preview) {
+		return;
+	}
+	cred_live_preview->apply_credits_config_preview(ClockGearsDataManager::normalize_credits_config(credits_config_draft), 42.0f);
+}
+
+void ClockGearsDatabaseDialog::_rebuild_credits_items_list() {
+	if (!cred_items_list) {
+		return;
+	}
+	cred_items_list->clear();
+	Array items = credits_config_draft.get("items", Array());
+	for (int i = 0; i < items.size(); i++) {
+		if (items[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		cred_items_list->add_item(s_cred_item_summary(i, Dictionary(items[i])));
+	}
+	if (items.is_empty()) {
+		cred_selected_item_idx = -1;
+	} else {
+		if (cred_selected_item_idx < 0) {
+			cred_selected_item_idx = 0;
+		} else if (cred_selected_item_idx >= items.size()) {
+			cred_selected_item_idx = items.size() - 1;
+		}
+		if (cred_selected_item_idx >= 0 && cred_selected_item_idx < cred_items_list->get_item_count()) {
+			cred_items_list->select(cred_selected_item_idx);
+		}
+	}
+	if (cred_del_btn) cred_del_btn->set_disabled(cred_selected_item_idx < 0);
+	if (cred_dup_btn) cred_dup_btn->set_disabled(cred_selected_item_idx < 0);
+	if (cred_up_btn) cred_up_btn->set_disabled(cred_selected_item_idx <= 0);
+	if (cred_down_btn) cred_down_btn->set_disabled(cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size() - 1);
+	_refresh_credits_selected_item_props();
+}
+
+void ClockGearsDatabaseDialog::_refresh_credits_selected_item_props() {
+	bool prev_updating = updating_ui;
+	updating_ui = true;
+
+	Array items = credits_config_draft.get("items", Array());
+	bool has_sel = (cred_selected_item_idx >= 0 && cred_selected_item_idx < items.size() && items[cred_selected_item_idx].get_type() == Variant::DICTIONARY);
+
+	if (cred_item_empty_lbl) cred_item_empty_lbl->set_visible(!has_sel);
+	if (cred_item_text_row) cred_item_text_row->set_visible(false);
+	if (cred_item_multiline_row) cred_item_multiline_row->set_visible(false);
+	if (cred_item_role_row) cred_item_role_row->set_visible(false);
+	if (cred_item_name_row) cred_item_name_row->set_visible(false);
+	if (cred_item_img_box) cred_item_img_box->set_visible(false);
+	if (cred_item_spacer_row) cred_item_spacer_row->set_visible(false);
+	if (cred_item_align_row) cred_item_align_row->set_visible(false);
+
+	if (has_sel) {
+		Dictionary item = items[cred_selected_item_idx];
+		String itype = String(item.get("type", "text"));
+		if (itype == "section") {
+			if (cred_item_text_row) cred_item_text_row->set_visible(true);
+			if (cred_item_text_edit) cred_item_text_edit->set_text(String(item.get("text", "")));
+		} else if (itype == "text") {
+			if (cred_item_multiline_row) cred_item_multiline_row->set_visible(true);
+			if (cred_item_multiline_edit) cred_item_multiline_edit->set_text(String(item.get("text", "")));
+		} else if (itype == "role_name") {
+			if (cred_item_role_row) cred_item_role_row->set_visible(true);
+			if (cred_item_name_row) cred_item_name_row->set_visible(true);
+			if (cred_item_role_edit) cred_item_role_edit->set_text(String(item.get("role", "")));
+			if (cred_item_name_edit) cred_item_name_edit->set_text(String(item.get("name", "")));
+		} else if (itype == "image") {
+			if (cred_item_img_box) cred_item_img_box->set_visible(true);
+			if (cred_item_img_edit) cred_item_img_edit->set_text(String(item.get("image_path", "")));
+			if (cred_item_img_filter_opt) {
+				String flt = String(item.get("filter", "nearest")).strip_edges().to_lower();
+				cred_item_img_filter_opt->select(flt == "linear" ? 1 : 0);
+			}
+			if (cred_item_img_w_spin) cred_item_img_w_spin->set_value(float(item.get("max_width", 420.0)));
+			if (cred_item_img_h_spin) cred_item_img_h_spin->set_value(float(item.get("max_height", 220.0)));
+		} else if (itype == "spacer") {
+			if (cred_item_spacer_row) cred_item_spacer_row->set_visible(true);
+			if (cred_item_spacer_spin) cred_item_spacer_spin->set_value(float(item.get("height", 32.0)));
+		}
+
+		if (itype != "spacer" && cred_item_align_row && cred_item_align_opt) {
+			cred_item_align_row->set_visible(true);
+			String ial = String(item.get("align", "")).strip_edges().to_lower();
+			int aidx = 0;
+			if (ial == "left" || ial == "izquierda") {
+				aidx = 1;
+			} else if (ial == "center" || ial == "centro") {
+				aidx = 2;
+			} else if (ial == "right" || ial == "derecha") {
+				aidx = 3;
+			}
+			cred_item_align_opt->select(aidx);
+		}
+	}
+
+	updating_ui = prev_updating;
+}
+
+void ClockGearsDatabaseDialog::_refresh_credits_editor_ui() {
+	if (!credits_editor_panel) {
+		return;
+	}
+	bool prev_updating = updating_ui;
+	updating_ui = true;
+
+	credits_config_draft = ClockGearsDataManager::normalize_credits_config(credits_config_draft);
+	Dictionary cred_bg = credits_config_draft.get("background", Dictionary());
+
+	String bg_type = String(cred_bg.get("type", "color")).to_lower();
+	if (cred_bg_type_opt) cred_bg_type_opt->select(bg_type == "image" ? 1 : 0);
+	String col_s = String(cred_bg.get("color", "#090b12ff"));
+	if (cred_bg_color_btn) cred_bg_color_btn->set_pick_color(Color::html_is_valid(col_s) ? Color::html(col_s) : Color::html("#090b12ff"));
+	if (cred_bg_image_edit) cred_bg_image_edit->set_text(String(cred_bg.get("image_path", "")));
+
+	String sc = String(cred_bg.get("scale_mode", "fit")).to_lower();
+	if (cred_bg_scale_opt) cred_bg_scale_opt->select(sc == "fill" ? 1 : (sc == "stretch" ? 2 : 0));
+	String flt = String(cred_bg.get("filter", "nearest")).to_lower();
+	if (cred_bg_filter_opt) cred_bg_filter_opt->select(flt == "linear" ? 1 : 0);
+
+	if (cred_bgm_edit) cred_bgm_edit->set_text(String(credits_config_draft.get("bgm_path", "")));
+	double spd = CLAMP(double(credits_config_draft.get("scroll_speed", 60.0)), 5.0, 600.0);
+	if (cred_speed_slider) cred_speed_slider->set_value(spd);
+	if (cred_speed_spin) cred_speed_spin->set_value(spd);
+
+	String gal = String(credits_config_draft.get("alignment", "center")).to_lower();
+	if (cred_align_opt) cred_align_opt->select(gal == "left" ? 0 : (gal == "right" ? 2 : 1));
+
+	Dictionary styles = credits_config_draft.get("styles", Dictionary());
+	for (int i = 0; i < 4; i++) {
+		Dictionary st = styles.get(s_cred_style_keys[i], Dictionary());
+		if (cred_style_size_spin[i]) {
+			cred_style_size_spin[i]->set_value(CLAMP(int(st.get("font_size", 16)), 8, 96));
+		}
+		if (cred_style_color_btn[i]) {
+			String scs = String(st.get("color", "#ffffffff"));
+			cred_style_color_btn[i]->set_pick_color(Color::html_is_valid(scs) ? Color::html(scs) : Color(1, 1, 1, 1));
+		}
+	}
+
+	updating_ui = prev_updating;
+	_rebuild_credits_items_list();
+	_update_credits_live_preview();
+}
+
+int ClockGearsDatabaseDialog::add_credits_item(const String &p_type, const Dictionary &p_fields) {
+	credits_config_draft = ClockGearsDataManager::normalize_credits_config(credits_config_draft);
+	Array items = credits_config_draft.get("items", Array());
+	Dictionary ni;
+	String tp = p_type.strip_edges().to_lower();
+	if (tp != "section" && tp != "role_name" && tp != "text" && tp != "image" && tp != "spacer") {
+		tp = "text";
+	}
+	ni["type"] = tp;
+	if (tp == "section") {
+		ni["text"] = p_fields.has("text") ? p_fields["text"] : Variant(CG_DB_TR("Nueva sección"));
+	} else if (tp == "role_name") {
+		ni["role"] = p_fields.has("role") ? p_fields["role"] : Variant(CG_DB_TR("Rol"));
+		ni["name"] = p_fields.has("name") ? p_fields["name"] : Variant(CG_DB_TR("Nombre"));
+	} else if (tp == "text") {
+		ni["text"] = p_fields.has("text") ? p_fields["text"] : Variant(CG_DB_TR("Texto de créditos"));
+	} else if (tp == "image") {
+		ni["image_path"] = p_fields.get("image_path", "");
+		ni["filter"] = p_fields.get("filter", "nearest");
+		ni["max_width"] = p_fields.get("max_width", 420.0);
+		ni["max_height"] = p_fields.get("max_height", 220.0);
+	} else if (tp == "spacer") {
+		ni["height"] = p_fields.get("height", 32.0);
+	}
+	if (p_fields.has("align")) {
+		ni["align"] = p_fields["align"];
+	}
+	int insert_idx = (cred_selected_item_idx >= 0 && cred_selected_item_idx < items.size()) ? (cred_selected_item_idx + 1) : items.size();
+	items.insert(insert_idx, ni);
+	credits_config_draft["items"] = items;
+	credits_config_draft = ClockGearsDataManager::normalize_credits_config(credits_config_draft);
+	cred_selected_item_idx = insert_idx;
+	_rebuild_credits_items_list();
+	_update_credits_live_preview();
+	_mark_database_dirty();
+	return insert_idx;
+}
+
+bool ClockGearsDatabaseDialog::remove_credits_item(int p_index) {
+	Array items = credits_config_draft.get("items", Array());
+	if (p_index < 0 || p_index >= items.size()) {
+		return false;
+	}
+	items.remove_at(p_index);
+	credits_config_draft["items"] = items;
+	if (items.is_empty()) {
+		cred_selected_item_idx = -1;
+	} else {
+		cred_selected_item_idx = CLAMP(p_index, 0, items.size() - 1);
+	}
+	_rebuild_credits_items_list();
+	_update_credits_live_preview();
+	_mark_database_dirty();
+	return true;
+}
+
+bool ClockGearsDatabaseDialog::move_credits_item(int p_index, int p_delta) {
+	Array items = credits_config_draft.get("items", Array());
+	int target = p_index + p_delta;
+	if (p_delta == 0 || p_index < 0 || p_index >= items.size() || target < 0 || target >= items.size()) {
+		return false;
+	}
+	Variant tmp = items[p_index];
+	items[p_index] = items[target];
+	items[target] = tmp;
+	credits_config_draft["items"] = items;
+	cred_selected_item_idx = target;
+	_rebuild_credits_items_list();
+	_update_credits_live_preview();
+	_mark_database_dirty();
+	return true;
+}
+
+int ClockGearsDatabaseDialog::duplicate_credits_item(int p_index) {
+	Array items = credits_config_draft.get("items", Array());
+	if (p_index < 0 || p_index >= items.size() || items[p_index].get_type() != Variant::DICTIONARY) {
+		return -1;
+	}
+	Dictionary copy = Dictionary(items[p_index]).duplicate(true);
+	int new_idx = p_index + 1;
+	items.insert(new_idx, copy);
+	credits_config_draft["items"] = items;
+	cred_selected_item_idx = new_idx;
+	_rebuild_credits_items_list();
+	_update_credits_live_preview();
+	_mark_database_dirty();
+	return new_idx;
+}
+
+void ClockGearsDatabaseDialog::select_credits_item(int p_index) {
+	Array items = credits_config_draft.get("items", Array());
+	if (p_index < 0 || p_index >= items.size()) {
+		return;
+	}
+	cred_selected_item_idx = p_index;
+	_rebuild_credits_items_list();
+}
+
+bool ClockGearsDatabaseDialog::set_credits_item_field(int p_index, const String &p_key, const Variant &p_val) {
+	Array items = credits_config_draft.get("items", Array());
+	if (p_index < 0 || p_index >= items.size() || items[p_index].get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	Dictionary item = items[p_index];
+	if (p_key == "align" && String(p_val).strip_edges().is_empty()) {
+		item.erase("align");
+	} else {
+		item[p_key] = p_val;
+	}
+	items[p_index] = item;
+	credits_config_draft["items"] = items;
+	credits_config_draft = ClockGearsDataManager::normalize_credits_config(credits_config_draft);
+	cred_selected_item_idx = p_index;
+	_rebuild_credits_items_list();
+	_update_credits_live_preview();
+	_mark_database_dirty();
+	return true;
+}
+
+void ClockGearsDatabaseDialog::_on_cred_add_pressed() {
+	String tp = "section";
+	if (cred_add_type_opt && cred_add_type_opt->get_selected() >= 0) {
+		tp = String(cred_add_type_opt->get_selected_metadata());
+	}
+	add_credits_item(tp);
+}
+
+void ClockGearsDatabaseDialog::_on_cred_remove_pressed() {
+	remove_credits_item(cred_selected_item_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_cred_move_pressed(int p_delta) {
+	move_credits_item(cred_selected_item_idx, p_delta);
+}
+
+void ClockGearsDatabaseDialog::_on_cred_duplicate_pressed() {
+	duplicate_credits_item(cred_selected_item_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_selected(int p_idx) {
+	if (updating_ui) return;
+	cred_selected_item_idx = p_idx;
+	Array items = credits_config_draft.get("items", Array());
+	if (cred_del_btn) cred_del_btn->set_disabled(cred_selected_item_idx < 0);
+	if (cred_dup_btn) cred_dup_btn->set_disabled(cred_selected_item_idx < 0);
+	if (cred_up_btn) cred_up_btn->set_disabled(cred_selected_item_idx <= 0);
+	if (cred_down_btn) cred_down_btn->set_disabled(cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size() - 1);
+	_refresh_credits_selected_item_props();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_text_changed(const String &p_text) {
+	if (updating_ui) return;
+	Array items = credits_config_draft.get("items", Array());
+	if (cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size()) return;
+	Dictionary item = items[cred_selected_item_idx];
+	item["text"] = p_text;
+	items[cred_selected_item_idx] = item;
+	credits_config_draft["items"] = items;
+	if (cred_items_list && cred_selected_item_idx < cred_items_list->get_item_count()) {
+		cred_items_list->set_item_text(cred_selected_item_idx, s_cred_item_summary(cred_selected_item_idx, item));
+	}
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_multiline_changed() {
+	if (updating_ui || !cred_item_multiline_edit) return;
+	_on_cred_item_text_changed(cred_item_multiline_edit->get_text());
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_role_or_name_changed(const String &p_text) {
+	if (updating_ui) return;
+	Array items = credits_config_draft.get("items", Array());
+	if (cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size()) return;
+	Dictionary item = items[cred_selected_item_idx];
+	if (cred_item_role_edit) item["role"] = cred_item_role_edit->get_text();
+	if (cred_item_name_edit) item["name"] = cred_item_name_edit->get_text();
+	items[cred_selected_item_idx] = item;
+	credits_config_draft["items"] = items;
+	if (cred_items_list && cred_selected_item_idx < cred_items_list->get_item_count()) {
+		cred_items_list->set_item_text(cred_selected_item_idx, s_cred_item_summary(cred_selected_item_idx, item));
+	}
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_img_changed(const String &p_text) {
+	if (updating_ui) return;
+	Array items = credits_config_draft.get("items", Array());
+	if (cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size()) return;
+	Dictionary item = items[cred_selected_item_idx];
+	item["image_path"] = p_text.strip_edges();
+	items[cred_selected_item_idx] = item;
+	credits_config_draft["items"] = items;
+	if (cred_items_list && cred_selected_item_idx < cred_items_list->get_item_count()) {
+		cred_items_list->set_item_text(cred_selected_item_idx, s_cred_item_summary(cred_selected_item_idx, item));
+	}
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_img_opt_or_spin_changed(double p_unused) {
+	if (updating_ui) return;
+	Array items = credits_config_draft.get("items", Array());
+	if (cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size()) return;
+	Dictionary item = items[cred_selected_item_idx];
+	if (cred_item_img_filter_opt) {
+		item["filter"] = (cred_item_img_filter_opt->get_selected() == 1) ? "linear" : "nearest";
+	}
+	if (cred_item_img_w_spin) item["max_width"] = cred_item_img_w_spin->get_value();
+	if (cred_item_img_h_spin) item["max_height"] = cred_item_img_h_spin->get_value();
+	items[cred_selected_item_idx] = item;
+	credits_config_draft["items"] = items;
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_spacer_changed(double p_val) {
+	if (updating_ui) return;
+	Array items = credits_config_draft.get("items", Array());
+	if (cred_selected_item_idx < 0 || cred_selected_item_idx >= items.size()) return;
+	Dictionary item = items[cred_selected_item_idx];
+	item["height"] = CLAMP(p_val, 4.0, 480.0);
+	items[cred_selected_item_idx] = item;
+	credits_config_draft["items"] = items;
+	if (cred_items_list && cred_selected_item_idx < cred_items_list->get_item_count()) {
+		cred_items_list->set_item_text(cred_selected_item_idx, s_cred_item_summary(cred_selected_item_idx, item));
+	}
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_item_align_selected(int p_idx) {
+	if (updating_ui) return;
+	String al;
+	if (p_idx == 1) al = "left";
+	else if (p_idx == 2) al = "center";
+	else if (p_idx == 3) al = "right";
+	set_credits_item_field(cred_selected_item_idx, "align", al);
+}
+
+void ClockGearsDatabaseDialog::_on_cred_bg_or_align_changed(int p_unused) {
+	if (updating_ui) return;
+	Dictionary cred_bg = credits_config_draft.get("background", Dictionary());
+	if (cred_bg_type_opt) cred_bg["type"] = (cred_bg_type_opt->get_selected() == 1) ? "image" : "color";
+	if (cred_bg_color_btn) cred_bg["color"] = "#" + cred_bg_color_btn->get_pick_color().to_html(false);
+	if (cred_bg_image_edit) cred_bg["image_path"] = cred_bg_image_edit->get_text().strip_edges();
+	if (cred_bg_scale_opt) {
+		int sc = cred_bg_scale_opt->get_selected();
+		cred_bg["scale_mode"] = (sc == 1) ? "fill" : ((sc == 2) ? "stretch" : "fit");
+	}
+	if (cred_bg_filter_opt) {
+		cred_bg["filter"] = (cred_bg_filter_opt->get_selected() == 1) ? "linear" : "nearest";
+	}
+	credits_config_draft["background"] = cred_bg;
+	if (cred_align_opt) {
+		int ai = cred_align_opt->get_selected();
+		credits_config_draft["alignment"] = (ai == 0) ? "left" : ((ai == 2) ? "right" : "center");
+	}
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_bg_color_changed(const Color &p_col) {
+	_on_cred_bg_or_align_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_bg_image_text_changed(const String &p_text) {
+	_on_cred_bg_or_align_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_bgm_text_changed(const String &p_text) {
+	if (updating_ui) return;
+	credits_config_draft["bgm_path"] = p_text.strip_edges();
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_speed_slider_changed(double p_val) {
+	if (updating_ui) return;
+	bool prev = updating_ui;
+	updating_ui = true;
+	double v = CLAMP(p_val, 5.0, 600.0);
+	if (cred_speed_spin) cred_speed_spin->set_value(v);
+	updating_ui = prev;
+	credits_config_draft["scroll_speed"] = v;
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_speed_spin_changed(double p_val) {
+	if (updating_ui) return;
+	bool prev = updating_ui;
+	updating_ui = true;
+	double v = CLAMP(p_val, 5.0, 600.0);
+	if (cred_speed_slider) cred_speed_slider->set_value(v);
+	updating_ui = prev;
+	credits_config_draft["scroll_speed"] = v;
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_style_size_changed(double p_val, int p_style_idx) {
+	if (updating_ui || p_style_idx < 0 || p_style_idx >= 4) return;
+	Dictionary styles = credits_config_draft.get("styles", Dictionary());
+	String key = s_cred_style_keys[p_style_idx];
+	Dictionary st = styles.get(key, Dictionary());
+	st["font_size"] = CLAMP(int(p_val), 8, 96);
+	styles[key] = st;
+	credits_config_draft["styles"] = styles;
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_style_color_changed(const Color &p_col, int p_style_idx) {
+	if (updating_ui || p_style_idx < 0 || p_style_idx >= 4) return;
+	Dictionary styles = credits_config_draft.get("styles", Dictionary());
+	String key = s_cred_style_keys[p_style_idx];
+	Dictionary st = styles.get(key, Dictionary());
+	st["color"] = "#" + p_col.to_html(false);
+	styles[key] = st;
+	credits_config_draft["styles"] = styles;
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_pick_asset_pressed(int p_target) {
+	cred_asset_pick_target = p_target;
+	if (!cred_asset_file_dialog) return;
+	cred_asset_file_dialog->clear_filters();
+	if (p_target == 2) {
+		cred_asset_file_dialog->set_title(CG_DB_TR("Importar música de créditos"));
+		cred_asset_file_dialog->add_filter("*.ogg, *.mp3, *.wav ; " + CG_DB_TR("Archivos de audio"));
+	} else {
+		cred_asset_file_dialog->set_title(p_target == 0 ? CG_DB_TR("Importar imagen de fondo") : CG_DB_TR("Importar imagen de créditos"));
+		cred_asset_file_dialog->add_filter("*.png, *.webp, *.jpg, *.jpeg ; " + CG_DB_TR("Imágenes"));
+	}
+	cred_asset_file_dialog->popup_centered_ratio(0.60f);
+}
+
+void ClockGearsDatabaseDialog::_on_cred_clear_asset_pressed(int p_target) {
+	if (p_target == 0) {
+		Dictionary cred_bg = credits_config_draft.get("background", Dictionary());
+		cred_bg["image_path"] = "";
+		if (String(cred_bg.get("type", "color")) == "image") {
+			cred_bg["type"] = "color";
+		}
+		credits_config_draft["background"] = cred_bg;
+		if (cred_bg_image_edit) cred_bg_image_edit->set_text("");
+		if (cred_bg_type_opt) cred_bg_type_opt->select(0);
+	} else if (p_target == 1) {
+		set_credits_item_field(cred_selected_item_idx, "image_path", String(""));
+		return;
+	} else if (p_target == 2) {
+		credits_config_draft["bgm_path"] = "";
+		if (cred_bgm_edit) cred_bgm_edit->set_text("");
+	}
+	_update_credits_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_cred_asset_file_selected(const String &p_path) {
+	if (cred_asset_pick_target == 2) {
+		String final_path = _import_menu_asset_file(p_path, "audio/bgm", false);
+		credits_config_draft["bgm_path"] = final_path;
+		if (cred_bgm_edit) cred_bgm_edit->set_text(final_path);
+		_update_credits_live_preview();
+		_mark_database_dirty();
+	} else if (cred_asset_pick_target == 1) {
+		bool pixel = cred_item_img_filter_opt ? (cred_item_img_filter_opt->get_selected() == 0) : true;
+		String final_path = _import_menu_asset_file(p_path, "img/credits", pixel);
+		set_credits_item_field(cred_selected_item_idx, "image_path", final_path);
+	} else {
+		bool pixel = cred_bg_filter_opt ? (cred_bg_filter_opt->get_selected() == 0) : true;
+		String final_path = _import_menu_asset_file(p_path, "img/credits", pixel);
+		Dictionary cred_bg = credits_config_draft.get("background", Dictionary());
+		cred_bg["type"] = "image";
+		cred_bg["image_path"] = final_path;
+		credits_config_draft["background"] = cred_bg;
+		if (cred_bg_type_opt) cred_bg_type_opt->select(1);
+		if (cred_bg_image_edit) cred_bg_image_edit->set_text(final_path);
+		_update_credits_live_preview();
+		_mark_database_dirty();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_cred_test_popup_close_requested() {
+	if (cred_test_player && cred_test_player->is_playing()) {
+		cred_test_player->stop_credits(true);
+	}
+	if (cred_test_window) {
+		cred_test_window->hide();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_cred_test_player_finished(bool p_cancelled) {
+	if (cred_test_window && cred_test_window->is_visible()) {
+		cred_test_window->hide();
+	}
+}
+
+Dictionary ClockGearsDatabaseDialog::get_credits_draft_copy() const {
+	return ClockGearsDataManager::normalize_credits_config(credits_config_draft);
+}
+
+Window *ClockGearsDatabaseDialog::open_credits_test_popup() {
+	if (!cred_test_window || !cred_test_player) {
+		return nullptr;
+	}
+	Size2i popup_sz(960, 540);
+	if (DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		Size2i usable = DisplayServer::get_singleton()->screen_get_usable_rect(scr).size;
+		if (usable.x > 0 && usable.y > 0) {
+			popup_sz = popup_sz.min(usable);
+		}
+	}
+	cred_test_window->popup_centered(popup_sz);
+	cred_test_player->start_credits(ClockGearsDataManager::normalize_credits_config(credits_config_draft));
+	return cred_test_window;
+}
+
+Dictionary ClockGearsDatabaseDialog::get_credits_editor_ui_handles() const {
+	Dictionary out;
+	out["panel"] = credits_editor_panel;
+	out["main_split"] = cred_main_split;
+	out["add_type_opt"] = cred_add_type_opt;
+	out["add_btn"] = cred_add_btn;
+	out["del_btn"] = cred_del_btn;
+	out["up_btn"] = cred_up_btn;
+	out["down_btn"] = cred_down_btn;
+	out["dup_btn"] = cred_dup_btn;
+	out["items_list"] = cred_items_list;
+	out["item_text_edit"] = cred_item_text_edit;
+	out["item_multiline_edit"] = cred_item_multiline_edit;
+	out["item_role_edit"] = cred_item_role_edit;
+	out["item_name_edit"] = cred_item_name_edit;
+	out["item_img_edit"] = cred_item_img_edit;
+	out["item_spacer_spin"] = cred_item_spacer_spin;
+	out["item_align_opt"] = cred_item_align_opt;
+	out["bg_type_opt"] = cred_bg_type_opt;
+	out["bg_color_btn"] = cred_bg_color_btn;
+	out["bg_image_edit"] = cred_bg_image_edit;
+	out["bg_scale_opt"] = cred_bg_scale_opt;
+	out["bg_filter_opt"] = cred_bg_filter_opt;
+	out["bgm_edit"] = cred_bgm_edit;
+	out["speed_slider"] = cred_speed_slider;
+	out["speed_spin"] = cred_speed_spin;
+	out["align_opt"] = cred_align_opt;
+	out["test_btn"] = cred_test_btn;
+	out["live_preview"] = cred_live_preview;
+	out["test_window"] = cred_test_window;
+	out["test_player"] = cred_test_player;
+	out["selected_item_idx"] = cred_selected_item_idx;
 	return out;
 }
 
