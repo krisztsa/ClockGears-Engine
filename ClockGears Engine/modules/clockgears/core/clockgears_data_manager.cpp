@@ -132,6 +132,7 @@ void ClockGearsDataManager::init_empty() {
 
 	title_menu_config = get_default_title_menu_config();
 	game_menu_config = get_default_game_menu_config();
+	credits_config = get_default_credits_config();
 	ensure_default_window_types_registered();
 	window_styles_config = get_default_window_styles_config();
 	if (!player_options_loaded) {
@@ -148,8 +149,10 @@ void ClockGearsDataManager::init_empty() {
 	runtime_arpg_equips.clear();
 	runtime_actor_states.clear();
 	runtime_defeated_enemies.clear();
+	runtime_window_style_overrides.clear();
 	runtime_playtime_sec = 0.0;
 	runtime_gold = 0;
+	runtime_game_menu_disabled = false;
 	dirty = false;
 }
 
@@ -1293,13 +1296,18 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 		}
 	}
 
-	// 5c. Guardar configuración del Menú Principal (title_menu.json) y Menú del Juego (game_menu.json)
+	// 5c. Guardar configuración del Menú Principal (title_menu.json), Menú del Juego (game_menu.json) y Créditos (credits.json)
 	title_menu_config = normalize_title_menu_config(title_menu_config);
+	title_menu_config["credits_configured"] = has_credits_lines();
 	if (!_write_json_atomic(p_dir_path.path_join("title_menu.json"), title_menu_config)) {
 		return false;
 	}
 	game_menu_config = normalize_game_menu_config(game_menu_config);
 	if (!_write_json_atomic(p_dir_path.path_join("game_menu.json"), game_menu_config)) {
+		return false;
+	}
+	credits_config = normalize_credits_config(credits_config);
+	if (!_write_json_atomic(p_dir_path.path_join("credits.json"), credits_config)) {
 		return false;
 	}
 
@@ -1418,6 +1426,19 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	} else {
 		game_menu_config = get_default_game_menu_config();
 	}
+
+	// Migración de credits.json (o fallback desde title_menu.json.credits en proyectos previos)
+	Variant cred_var;
+	if (_read_json_with_backup(p_dir_path.path_join("credits.json"), cred_var) && cred_var.get_type() == Variant::DICTIONARY) {
+		credits_config = normalize_credits_config(Dictionary(cred_var));
+	} else if (title_menu_config.has("credits") && title_menu_config["credits"].get_type() == Variant::ARRAY && !Array(title_menu_config["credits"]).is_empty()) {
+		Dictionary legacy_cred;
+		legacy_cred["items"] = title_menu_config["credits"];
+		credits_config = normalize_credits_config(legacy_cred);
+	} else {
+		credits_config = get_default_credits_config();
+	}
+	title_menu_config["credits_configured"] = has_credits_lines();
 
 	// Migración de estilos de ventana (window_styles.json; proyectos antiguos heredan "Redondeado")
 	ensure_default_window_types_registered();
@@ -1879,7 +1900,9 @@ void ClockGearsDataManager::reset_runtime_state() {
 	runtime_arpg_equips.clear();
 	runtime_actor_states.clear();
 	runtime_defeated_enemies.clear();
+	runtime_window_style_overrides.clear();
 	runtime_playtime_sec = 0.0;
+	runtime_game_menu_disabled = false;
 	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
 	PackedStringArray sys_slots = cat ? cat->get_equip_slots() : PackedStringArray();
 	for (int i = 0; i < category_data[CAT_ACTORS].size(); i++) {
@@ -3156,6 +3179,8 @@ Dictionary ClockGearsDataManager::export_runtime_state() const {
 	d["actor_states"] = runtime_actor_states.duplicate(true);
 	d["defeated_enemies"] = runtime_defeated_enemies.duplicate(true);
 	d["playtime_sec"] = runtime_playtime_sec;
+	d["game_menu_disabled"] = runtime_game_menu_disabled;
+	d["window_style_overrides"] = runtime_window_style_overrides.duplicate(true);
 	return d;
 }
 
@@ -3204,6 +3229,18 @@ void ClockGearsDataManager::import_runtime_state(const Dictionary &p_state) {
 		runtime_defeated_enemies = Dictionary(p_state["defeated_enemies"]).duplicate(true);
 	}
 	runtime_playtime_sec = MAX(0.0, double(p_state.get("playtime_sec", 0.0)));
+	runtime_game_menu_disabled = bool(p_state.get("game_menu_disabled", false));
+	runtime_window_style_overrides.clear();
+	if (p_state.has("window_style_overrides") && p_state["window_style_overrides"].get_type() == Variant::DICTIONARY) {
+		Dictionary wov = p_state["window_style_overrides"];
+		for (const Variant &k : wov.keys()) {
+			String wt = String(k).strip_edges().to_lower();
+			String sid = String(wov[k]).strip_edges().to_lower();
+			if (!wt.is_empty() && !sid.is_empty()) {
+				runtime_window_style_overrides[wt] = sid;
+			}
+		}
+	}
 }
 
 String ClockGearsDataManager::format_text(const String &p_text) const {
@@ -3426,7 +3463,7 @@ Array ClockGearsDataManager::get_visible_title_entries() const {
 	Dictionary norm = normalize_title_menu_config(title_menu_config);
 	Array entries = norm.get("entries", Array());
 	bool has_saves = has_any_save();
-	bool has_credits = bool(norm.get("credits_configured", false)) && !Array(norm.get("credits", Array())).is_empty();
+	bool has_credits = has_credits_lines();
 
 	Array out;
 	for (int i = 0; i < entries.size(); i++) {
@@ -3624,6 +3661,193 @@ Dictionary ClockGearsDataManager::get_game_menu_screen_background(const String &
 		return Dictionary(bgs[k]).duplicate(true);
 	}
 	return _cg_default_menu_bg("#0c101ccc");
+}
+
+// --- Créditos (9B Tanda 4) ---
+
+static String _cg_normalize_credits_align(const Variant &p_val) {
+	String a = String(p_val).strip_edges().to_lower();
+	if (a == "left" || a == "izquierda" || a == "right" || a == "derecha") {
+		return (a == "izquierda") ? String("left") : ((a == "derecha") ? String("right") : a);
+	}
+	return "center";
+}
+
+static Dictionary _cg_make_credits_text_style(int p_size, const String &p_col, const String &p_align = "") {
+	Dictionary s;
+	s["font_size"] = CLAMP(p_size, 8, 96);
+	s["color"] = Color::html_is_valid(p_col) ? p_col : String("#ffffff");
+	s["align"] = p_align;
+	return s;
+}
+
+static Dictionary _cg_normalize_credits_item(const Dictionary &p_raw) {
+	Dictionary item;
+	String t = String(p_raw.get("type", "text")).strip_edges().to_lower();
+	if (t == "title" || t == "seccion" || t == "sección") {
+		t = "section";
+	} else if (t == "role" || t == "credit" || t == "rol_nombre") {
+		t = "role_name";
+	} else if (t == "space" || t == "espacio") {
+		t = "spacer";
+	} else if (t == "img" || t == "imagen") {
+		t = "image";
+	} else if (t != "section" && t != "role_name" && t != "text" && t != "image" && t != "spacer") {
+		t = "text";
+	}
+	item["type"] = t;
+	if (t == "section" || t == "text") {
+		item["text"] = String(p_raw.get("text", p_raw.get("title", "")));
+	} else if (t == "role_name") {
+		item["role"] = String(p_raw.get("role", ""));
+		item["name"] = String(p_raw.get("name", p_raw.get("text", "")));
+	} else if (t == "image") {
+		item["image_path"] = String(p_raw.get("image_path", p_raw.get("path", ""))).strip_edges();
+		item["filter"] = s_normalize_texture_filter_mode(p_raw.get("filter", "nearest"));
+		item["max_width"] = CLAMP(double(p_raw.get("max_width", 420.0)), 16.0, 960.0);
+		item["max_height"] = CLAMP(double(p_raw.get("max_height", 220.0)), 16.0, 540.0);
+	} else if (t == "spacer") {
+		item["height"] = CLAMP(double(p_raw.get("height", 32.0)), 4.0, 480.0);
+	}
+	if (p_raw.has("align") && !String(p_raw["align"]).strip_edges().is_empty()) {
+		item["align"] = _cg_normalize_credits_align(p_raw["align"]);
+	}
+	return item;
+}
+
+static bool _cg_credits_item_counts_as_line(const Dictionary &p_item) {
+	String t = String(p_item.get("type", "")).strip_edges().to_lower();
+	if (t == "section" || t == "text") {
+		return !String(p_item.get("text", "")).strip_edges().is_empty();
+	}
+	if (t == "role_name") {
+		return !String(p_item.get("role", "")).strip_edges().is_empty() || !String(p_item.get("name", "")).strip_edges().is_empty();
+	}
+	if (t == "image") {
+		return !String(p_item.get("image_path", "")).strip_edges().is_empty();
+	}
+	return false;
+}
+
+Dictionary ClockGearsDataManager::get_default_credits_config() {
+	Dictionary d;
+	d["schema_version"] = 1;
+	d["background"] = _cg_default_menu_bg("#090b12ff");
+	d["bgm_path"] = "";
+	d["scroll_speed"] = 60.0;
+	d["alignment"] = "center";
+
+	Dictionary styles;
+	styles["section"] = _cg_make_credits_text_style(26, "#ffd97dff");
+	styles["role"] = _cg_make_credits_text_style(14, "#9fb4d9ff");
+	styles["name"] = _cg_make_credits_text_style(20, "#ffffffff");
+	styles["text"] = _cg_make_credits_text_style(16, "#dce4f2ff");
+	d["styles"] = styles;
+
+	d["items"] = Array();
+	return d;
+}
+
+Dictionary ClockGearsDataManager::normalize_credits_config(const Dictionary &p_cfg) {
+	Dictionary def = get_default_credits_config();
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+	out["background"] = _cg_normalize_menu_bg(p_cfg.get("background", Dictionary()), def["background"]);
+	out["bgm_path"] = String(p_cfg.get("bgm_path", "")).strip_edges();
+	out["scroll_speed"] = CLAMP(double(p_cfg.get("scroll_speed", 60.0)), 5.0, 600.0);
+	out["alignment"] = _cg_normalize_credits_align(p_cfg.get("alignment", p_cfg.get("align", "center")));
+
+	Dictionary def_styles = def["styles"];
+	Dictionary raw_styles = (p_cfg.has("styles") && p_cfg["styles"].get_type() == Variant::DICTIONARY) ? Dictionary(p_cfg["styles"]) : Dictionary();
+	Dictionary norm_styles;
+	static const char *k_style_keys[4] = { "section", "role", "name", "text" };
+	for (int i = 0; i < 4; i++) {
+		String sk = k_style_keys[i];
+		Dictionary ds = def_styles[sk];
+		Dictionary rs = (raw_styles.has(sk) && raw_styles[sk].get_type() == Variant::DICTIONARY) ? Dictionary(raw_styles[sk]) : Dictionary();
+		int fsz = CLAMP(int(rs.get("font_size", ds["font_size"])), 8, 96);
+		String col = String(rs.get("color", ds["color"])).strip_edges();
+		if (col.is_empty() || !Color::html_is_valid(col)) {
+			col = String(ds["color"]);
+		}
+		String al = rs.has("align") && !String(rs["align"]).strip_edges().is_empty() ? _cg_normalize_credits_align(rs["align"]) : String("");
+		norm_styles[sk] = _cg_make_credits_text_style(fsz, col, al);
+	}
+	out["styles"] = norm_styles;
+
+	Array norm_items;
+	if (p_cfg.has("items") && p_cfg["items"].get_type() == Variant::ARRAY) {
+		Array raw_items = p_cfg["items"];
+		for (int i = 0; i < raw_items.size(); i++) {
+			if (raw_items[i].get_type() == Variant::DICTIONARY) {
+				norm_items.push_back(_cg_normalize_credits_item(Dictionary(raw_items[i])));
+			} else if (raw_items[i].get_type() == Variant::STRING) {
+				Dictionary td;
+				td["type"] = "text";
+				td["text"] = String(raw_items[i]);
+				norm_items.push_back(_cg_normalize_credits_item(td));
+			}
+		}
+	} else if (p_cfg.has("sections") && p_cfg["sections"].get_type() == Variant::ARRAY) {
+		Array secs = p_cfg["sections"];
+		for (int i = 0; i < secs.size(); i++) {
+			if (secs[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary sd = secs[i];
+			String stitle = String(sd.get("title", sd.get("text", ""))).strip_edges();
+			if (!stitle.is_empty()) {
+				Dictionary sitem;
+				sitem["type"] = "section";
+				sitem["text"] = stitle;
+				norm_items.push_back(sitem);
+			}
+			Array sub = sd.has("items") && sd["items"].get_type() == Variant::ARRAY ? Array(sd["items"])
+					: (sd.has("lines") && sd["lines"].get_type() == Variant::ARRAY ? Array(sd["lines"]) : Array());
+			for (int j = 0; j < sub.size(); j++) {
+				if (sub[j].get_type() == Variant::DICTIONARY) {
+					norm_items.push_back(_cg_normalize_credits_item(Dictionary(sub[j])));
+				}
+			}
+		}
+	}
+	out["items"] = norm_items;
+	return out;
+}
+
+void ClockGearsDataManager::set_credits_config(const Dictionary &p_cfg) {
+	credits_config = normalize_credits_config(p_cfg);
+	title_menu_config["credits_configured"] = has_credits_lines();
+	dirty = true;
+	emit_signal("data_changed", "credits", 0);
+}
+
+bool ClockGearsDataManager::has_credits_lines() const {
+	Dictionary norm = normalize_credits_config(credits_config);
+	Array items = norm.get("items", Array());
+	for (int i = 0; i < items.size(); i++) {
+		if (items[i].get_type() == Variant::DICTIONARY && _cg_credits_item_counts_as_line(Dictionary(items[i]))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void ClockGearsDataManager::set_runtime_window_style_override(const String &p_window_type_id, const String &p_style_id) {
+	String wt = p_window_type_id.strip_edges().to_lower();
+	if (wt.is_empty()) {
+		return;
+	}
+	String sid = p_style_id.strip_edges().to_lower();
+	if (sid.is_empty()) {
+		runtime_window_style_overrides.erase(wt);
+	} else {
+		runtime_window_style_overrides[wt] = sid;
+	}
+}
+
+void ClockGearsDataManager::clear_runtime_window_style_overrides() {
+	runtime_window_style_overrides.clear();
 }
 
 // --- Estilos de Ventana y Botones (9B Tanda 2) ---
@@ -4267,9 +4491,15 @@ bool ClockGearsDataManager::set_window_type_assignment(const String &p_window_ty
 }
 
 String ClockGearsDataManager::resolve_window_style_id(const String &p_window_type_id) const {
+	String wt = p_window_type_id.strip_edges().to_lower();
+	if (runtime_window_style_overrides.has(wt)) {
+		String ov = String(runtime_window_style_overrides[wt]).strip_edges().to_lower();
+		if (!ov.is_empty() && !get_window_style(ov).is_empty()) {
+			return ov;
+		}
+	}
 	Dictionary cfg = normalize_window_styles_config(window_styles_config);
 	Dictionary assign = cfg.get("assignments", Dictionary());
-	String wt = p_window_type_id.strip_edges().to_lower();
 	String assigned = String(assign.get(wt, "")).strip_edges().to_lower();
 	if (!assigned.is_empty() && !get_window_style(assigned).is_empty()) {
 		return assigned;
@@ -4854,6 +5084,16 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_game_menu_config", "cfg"), &ClockGearsDataManager::set_game_menu_config);
 	ClassDB::bind_method(D_METHOD("get_visible_game_menu_entries"), &ClockGearsDataManager::get_visible_game_menu_entries);
 	ClassDB::bind_method(D_METHOD("get_game_menu_screen_background", "screen_id"), &ClockGearsDataManager::get_game_menu_screen_background);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_credits_config"), &ClockGearsDataManager::get_default_credits_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_credits_config", "cfg"), &ClockGearsDataManager::normalize_credits_config);
+	ClassDB::bind_method(D_METHOD("get_credits_config"), &ClockGearsDataManager::get_credits_config);
+	ClassDB::bind_method(D_METHOD("set_credits_config", "cfg"), &ClockGearsDataManager::set_credits_config);
+	ClassDB::bind_method(D_METHOD("has_credits_lines"), &ClockGearsDataManager::has_credits_lines);
+	ClassDB::bind_method(D_METHOD("is_game_menu_disabled"), &ClockGearsDataManager::is_game_menu_disabled);
+	ClassDB::bind_method(D_METHOD("set_game_menu_disabled", "disabled"), &ClockGearsDataManager::set_game_menu_disabled);
+	ClassDB::bind_method(D_METHOD("set_runtime_window_style_override", "window_type_id", "style_id"), &ClockGearsDataManager::set_runtime_window_style_override);
+	ClassDB::bind_method(D_METHOD("clear_runtime_window_style_overrides"), &ClockGearsDataManager::clear_runtime_window_style_overrides);
+	ClassDB::bind_method(D_METHOD("get_runtime_window_style_overrides"), &ClockGearsDataManager::get_runtime_window_style_overrides);
 	ClassDB::bind_method(D_METHOD("get_gold"), &ClockGearsDataManager::get_gold);
 	ClassDB::bind_method(D_METHOD("set_gold", "gold"), &ClockGearsDataManager::set_gold);
 	ClassDB::bind_method(D_METHOD("change_gold", "amount"), &ClockGearsDataManager::change_gold);

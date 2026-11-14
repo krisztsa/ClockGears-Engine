@@ -12,6 +12,8 @@
 #include "scene/gui/slider.h"
 #include "scene/gui/texture_rect.h"
 
+class ClockGearsCreditsPlayer;
+
 // ============================================================================
 // ClockGearsOptionsBox — Widget reutilizable de Opciones (Título y Menú)
 // ============================================================================
@@ -95,6 +97,7 @@ private:
 	CheckBox *fullscreen_check = nullptr;
 	Button *btn_options_reset = nullptr;
 	Button *btn_options_back = nullptr;
+	ClockGearsCreditsPlayer *credits_player = nullptr;
 	bool syncing_options_ui = false;
 
 	bool auto_quit_tree = true;
@@ -124,6 +127,7 @@ private:
 	void _on_reset_options_pressed();
 	void _on_entry_button_pressed(const String &p_id);
 	void _on_save_slot_pressed(int p_slot);
+	void _on_title_credits_finished(bool p_cancelled);
 
 	Ref<Texture2D> _load_texture(const String &p_path) const;
 
@@ -156,9 +160,12 @@ public:
 	bool select_save_slot(int p_slot);
 	PackedStringArray get_displayed_save_slot_texts() const;
 	void open_options_menu();
+	void open_credits();
 	void close_submenus();
 	bool is_continue_menu_open() const;
 	bool is_options_menu_open() const;
+	bool is_credits_open() const;
+	ClockGearsCreditsPlayer *get_credits_player() const { return credits_player; }
 	void apply_options_values(double p_music, double p_sfx, double p_brightness, bool p_fullscreen);
 	void trigger_quit();
 

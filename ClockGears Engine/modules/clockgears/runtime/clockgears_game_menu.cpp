@@ -62,6 +62,8 @@ void ClockGearsGameMenu::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("can_open_menu"), &ClockGearsGameMenu::can_open_menu);
 	ClassDB::bind_method(D_METHOD("open_menu"), &ClockGearsGameMenu::open_menu);
+	ClassDB::bind_method(D_METHOD("open_menu_from_event", "initial_subscreen", "close_on_back"), &ClockGearsGameMenu::open_menu_from_event, DEFVAL("main"), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("refresh_window_styles"), &ClockGearsGameMenu::refresh_window_styles);
 	ClassDB::bind_method(D_METHOD("close_menu"), &ClockGearsGameMenu::close_menu);
 	ClassDB::bind_method(D_METHOD("is_menu_open"), &ClockGearsGameMenu::is_menu_open);
 	ClassDB::bind_method(D_METHOD("handle_input_key", "keycode"), &ClockGearsGameMenu::handle_input_key);
@@ -708,6 +710,11 @@ bool ClockGearsGameMenu::can_open_menu() const {
 			return false;
 		}
 	}
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		if (dm->is_game_menu_disabled()) {
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -718,6 +725,7 @@ bool ClockGearsGameMenu::open_menu() {
 	if (!can_open_menu()) {
 		return false;
 	}
+	direct_subscreen_close_on_back = false;
 	menu_open = true;
 	last_returned_to_title = false;
 	set_visible(true);
@@ -728,11 +736,47 @@ bool ClockGearsGameMenu::open_menu() {
 	return true;
 }
 
+bool ClockGearsGameMenu::open_menu_from_event(const String &p_initial_subscreen, bool p_close_on_back) {
+	if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint()) {
+		return false;
+	}
+	if (interpreter && interpreter->has_active_battle()) {
+		return false;
+	}
+	direct_subscreen_close_on_back = p_close_on_back;
+	menu_open = true;
+	last_returned_to_title = false;
+	set_visible(true);
+	_apply_unified_styles();
+	String target = p_initial_subscreen.strip_edges().to_lower();
+	open_subscreen(target.is_empty() ? String("main") : target);
+	_update_responsive_layout();
+	emit_signal("menu_opened");
+	return true;
+}
+
+void ClockGearsGameMenu::refresh_window_styles() {
+	_apply_unified_styles();
+	if (menu_open) {
+		_refresh_main_view();
+		if (current_subscreen == "save") {
+			_refresh_save_view();
+		} else if (current_subscreen == "items") {
+			_refresh_items_view();
+		} else if (current_subscreen == "equip") {
+			_refresh_equip_view();
+		} else if (current_subscreen == "status") {
+			_refresh_status_view();
+		}
+	}
+}
+
 void ClockGearsGameMenu::close_menu() {
 	if (!menu_open) {
 		return;
 	}
 	menu_open = false;
+	direct_subscreen_close_on_back = false;
 	current_subscreen = "main";
 	set_visible(false);
 	emit_signal("menu_closed");
@@ -803,7 +847,7 @@ bool ClockGearsGameMenu::handle_input_key(Key p_keycode) {
 		return false;
 	}
 	if (is_cancel) {
-		if (current_subscreen != "main") {
+		if (current_subscreen != "main" && !direct_subscreen_close_on_back) {
 			open_subscreen("main");
 		} else {
 			close_menu();
@@ -1583,6 +1627,10 @@ void ClockGearsGameMenu::_on_entry_pressed(const String &p_id) {
 }
 
 void ClockGearsGameMenu::_on_subscreen_back() {
+	if (direct_subscreen_close_on_back) {
+		close_menu();
+		return;
+	}
 	open_subscreen("main");
 }
 

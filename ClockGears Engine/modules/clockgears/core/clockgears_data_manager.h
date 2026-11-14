@@ -58,6 +58,7 @@ private:
 	Dictionary vocabulary_config;
 	Dictionary title_menu_config;
 	Dictionary game_menu_config;
+	Dictionary credits_config;
 	Dictionary window_styles_config;
 	Dictionary player_options;
 	bool player_options_loaded = false;
@@ -78,8 +79,10 @@ private:
 	Dictionary runtime_arpg_equips;
 	Dictionary runtime_actor_states;
 	Dictionary runtime_defeated_enemies;
+	Dictionary runtime_window_style_overrides;
 	double runtime_playtime_sec = 0.0;
 	int runtime_gold = 0;
+	bool runtime_game_menu_disabled = false;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
 
@@ -144,6 +147,18 @@ public:
 	void set_game_menu_config(const Dictionary &p_cfg);
 	Array get_visible_game_menu_entries() const;
 	Dictionary get_game_menu_screen_background(const String &p_screen_id) const;
+
+	// Créditos (9B Tanda 4)
+	static Dictionary get_default_credits_config();
+	static Dictionary normalize_credits_config(const Dictionary &p_cfg);
+	Dictionary get_credits_config() const { return credits_config.duplicate(true); }
+	void set_credits_config(const Dictionary &p_cfg);
+	bool has_credits_lines() const;
+	bool is_game_menu_disabled() const { return runtime_game_menu_disabled; }
+	void set_game_menu_disabled(bool p_disabled) { runtime_game_menu_disabled = p_disabled; }
+	void set_runtime_window_style_override(const String &p_window_type_id, const String &p_style_id);
+	void clear_runtime_window_style_overrides();
+	Dictionary get_runtime_window_style_overrides() const { return runtime_window_style_overrides.duplicate(true); }
 
 	// Estilos de ventana y botones (9B Tanda 2)
 	static void ensure_default_window_types_registered();

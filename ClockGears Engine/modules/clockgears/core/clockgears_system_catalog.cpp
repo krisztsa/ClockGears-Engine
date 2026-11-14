@@ -266,6 +266,9 @@ void ClockGearsSystemCatalog::_init_system_defaults() {
 	command_definitions.push_back(_make_def(CG_CMD_OPEN_SAVE, "Abrir Pantalla de Guardado", "Escena"));
 	command_definitions.push_back(_make_def(CG_CMD_GAME_OVER, "Game Over", "Escena"));
 	command_definitions.push_back(_make_def(CG_CMD_RETURN_TO_TITLE, "Volver a la Pantalla de Título", "Escena"));
+	command_definitions.push_back(_make_def(CG_CMD_SHOW_CREDITS, "Mostrar Créditos...", "Escena"));
+	command_definitions.push_back(_make_def(CG_CMD_CHANGE_MENU_ACCESS, "Bloquear / Permitir Menú del Juego...", "Sistema"));
+	command_definitions.push_back(_make_def(CG_CMD_CHANGE_WINDOW_STYLE, "Cambiar Estilo de Ventana...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_TILESET, "Cambiar Tileset...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_BATTLE_BG, "Cambiar Fondo de Batalla...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_SYSTEM_OPTIONS, "Cambiar Opciones del Sistema...", "Sistema"));

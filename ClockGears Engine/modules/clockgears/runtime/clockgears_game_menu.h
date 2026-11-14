@@ -120,6 +120,7 @@ private:
 	String selected_equip_candidate_key;
 	int selected_status_actor_id = 1;
 	bool last_returned_to_title = false;
+	bool direct_subscreen_close_on_back = false;
 	String last_applied_style_type;
 	bool preview_mode = false;
 	bool editor_test_popup_mode = false;
@@ -182,6 +183,8 @@ public:
 
 	bool can_open_menu() const;
 	bool open_menu();
+	bool open_menu_from_event(const String &p_initial_subscreen = "main", bool p_close_on_back = false);
+	void refresh_window_styles();
 	void close_menu();
 	bool is_menu_open() const { return menu_open; }
 	bool handle_input_key(Key p_keycode);

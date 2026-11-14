@@ -2,6 +2,7 @@
 #include "../core/clockgears_data_manager.h"
 #include "../editor/clockgears_theme.h"
 #include "clockgears_audio_manager.h"
+#include "clockgears_credits.h"
 #include "clockgears_window_style.h"
 
 #include "core/config/engine.h"
@@ -546,6 +547,12 @@ void ClockGearsTitleScreen::_build_base_ui() {
 	btn_options_reset = options_box->get_reset_button();
 	btn_options_back = options_box->get_back_button();
 
+	credits_player = memnew(ClockGearsCreditsPlayer);
+	credits_player->set_name("TitleCreditsPlayer");
+	credits_player->set_visible(false);
+	credits_player->connect("credits_finished", callable_mp(this, &ClockGearsTitleScreen::_on_title_credits_finished));
+	add_child(credits_player);
+
 	_apply_theme_styling();
 }
 
@@ -618,7 +625,7 @@ void ClockGearsTitleScreen::_apply_title_config(const Dictionary &p_cfg, const D
 	sorted_entries.sort_custom<OrderCmp>();
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	const bool credits_ok = bool(cfg.get("credits_configured", false));
+	const bool credits_ok = dm ? dm->has_credits_lines() : (bool(cfg.get("credits_configured", false)) && !Array(cfg.get("credits", Array())).is_empty());
 	const bool has_saves = dm ? dm->has_any_save() : false;
 
 	Vector<Button *> created_buttons;
@@ -769,6 +776,10 @@ bool ClockGearsTitleScreen::trigger_entry(const String &p_id) {
 		open_options_menu();
 		return true;
 	}
+	if (id == "credits") {
+		open_credits();
+		return true;
+	}
 	if (id == "quit") {
 		trigger_quit();
 		return true;
@@ -878,7 +889,55 @@ void ClockGearsTitleScreen::open_options_menu() {
 	}
 }
 
+void ClockGearsTitleScreen::open_credits() {
+	_build_base_ui();
+	if (continue_overlay) {
+		continue_overlay->hide();
+	}
+	if (continue_panel) {
+		continue_panel->hide();
+	}
+	if (options_overlay) {
+		options_overlay->hide();
+	}
+	if (options_panel) {
+		options_panel->hide();
+	}
+	if (main_menu_panel) {
+		main_menu_panel->hide();
+	}
+	if (credits_player) {
+		credits_player->start_credits();
+	}
+}
+
+void ClockGearsTitleScreen::_on_title_credits_finished(bool p_cancelled) {
+	if (main_menu_panel) {
+		main_menu_panel->show();
+	}
+	if (!preview_mode && entries_box && entries_box->get_child_count() > 0 && is_inside_tree()) {
+		Button *focus_target = nullptr;
+		for (int i = 0; i < entries_box->get_child_count(); i++) {
+			Button *b = Object::cast_to<Button>(entries_box->get_child(i));
+			if (b && b->has_meta("entry_id") && String(b->get_meta("entry_id")) == "credits") {
+				focus_target = b;
+				break;
+			}
+		}
+		if (!focus_target) {
+			focus_target = Object::cast_to<Button>(entries_box->get_child(0));
+		}
+		if (focus_target) {
+			focus_target->grab_focus();
+		}
+	}
+}
+
 void ClockGearsTitleScreen::close_submenus() {
+	if (credits_player && credits_player->is_playing()) {
+		credits_player->stop_credits(true);
+		return;
+	}
 	if (continue_overlay) {
 		continue_overlay->hide();
 	}
@@ -907,6 +966,10 @@ bool ClockGearsTitleScreen::is_continue_menu_open() const {
 
 bool ClockGearsTitleScreen::is_options_menu_open() const {
 	return options_overlay && options_overlay->is_visible() && options_panel && options_panel->is_visible();
+}
+
+bool ClockGearsTitleScreen::is_credits_open() const {
+	return credits_player && credits_player->is_playing();
 }
 
 void ClockGearsTitleScreen::apply_options_values(double p_music, double p_sfx, double p_brightness, bool p_fullscreen) {
@@ -1052,6 +1115,9 @@ bool ClockGearsTitleScreen::_activate_focused_button() {
 bool ClockGearsTitleScreen::handle_navigation_key(Key p_keycode) {
 	if (preview_mode || !is_visible_in_tree()) {
 		return false;
+	}
+	if (is_credits_open() && credits_player) {
+		return credits_player->handle_credits_key(p_keycode, true);
 	}
 	if (p_keycode == Key::ESCAPE) {
 		if (is_continue_menu_open() || is_options_menu_open()) {
@@ -1267,9 +1333,12 @@ void ClockGearsTitleScreen::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("select_save_slot", "slot"), &ClockGearsTitleScreen::select_save_slot);
 	ClassDB::bind_method(D_METHOD("get_displayed_save_slot_texts"), &ClockGearsTitleScreen::get_displayed_save_slot_texts);
 	ClassDB::bind_method(D_METHOD("open_options_menu"), &ClockGearsTitleScreen::open_options_menu);
+	ClassDB::bind_method(D_METHOD("open_credits"), &ClockGearsTitleScreen::open_credits);
 	ClassDB::bind_method(D_METHOD("close_submenus"), &ClockGearsTitleScreen::close_submenus);
 	ClassDB::bind_method(D_METHOD("is_continue_menu_open"), &ClockGearsTitleScreen::is_continue_menu_open);
 	ClassDB::bind_method(D_METHOD("is_options_menu_open"), &ClockGearsTitleScreen::is_options_menu_open);
+	ClassDB::bind_method(D_METHOD("is_credits_open"), &ClockGearsTitleScreen::is_credits_open);
+	ClassDB::bind_method(D_METHOD("get_credits_player"), &ClockGearsTitleScreen::get_credits_player);
 	ClassDB::bind_method(D_METHOD("apply_options_values", "music", "sfx", "brightness", "fullscreen"), &ClockGearsTitleScreen::apply_options_values);
 	ClassDB::bind_method(D_METHOD("trigger_quit"), &ClockGearsTitleScreen::trigger_quit);
 	ClassDB::bind_method(D_METHOD("set_auto_quit_tree", "enable"), &ClockGearsTitleScreen::set_auto_quit_tree);

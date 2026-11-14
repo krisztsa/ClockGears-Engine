@@ -1,4 +1,5 @@
 #include "clockgears_runtime.h"
+#include "clockgears_credits.h"
 #include "clockgears_entity_ai.h"
 #include "clockgears_game_menu.h"
 #include "clockgears_title_screen.h"
@@ -2444,7 +2445,10 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_picture_manager"), &ClockGearsEventInterpreter::get_picture_manager);
 	ClassDB::bind_method(D_METHOD("get_cutscene_player"), &ClockGearsEventInterpreter::get_cutscene_player);
 	ClassDB::bind_method(D_METHOD("get_game_menu"), &ClockGearsEventInterpreter::get_game_menu);
+	ClassDB::bind_method(D_METHOD("get_credits_player"), &ClockGearsEventInterpreter::get_credits_player);
 	ClassDB::bind_method(D_METHOD("has_active_battle"), &ClockGearsEventInterpreter::has_active_battle);
+	ClassDB::bind_method(D_METHOD("has_active_credits"), &ClockGearsEventInterpreter::has_active_credits);
+	ClassDB::bind_method(D_METHOD("was_return_to_title_requested"), &ClockGearsEventInterpreter::was_return_to_title_requested);
 	ClassDB::bind_method(D_METHOD("get_screen_tint_color"), &ClockGearsEventInterpreter::get_screen_tint_color);
 	ClassDB::bind_method(D_METHOD("get_screen_tint_rect"), &ClockGearsEventInterpreter::get_screen_tint_rect);
 	ClassDB::bind_method(D_METHOD("get_screen_tint_layer"), &ClockGearsEventInterpreter::get_screen_tint_layer);
@@ -2464,12 +2468,16 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	BIND_CONSTANT(STATE_WAITING_NUMBER);
 	BIND_CONSTANT(STATE_WAITING_TRANSFER);
 	BIND_CONSTANT(STATE_WAITING_BATTLE);
+	BIND_CONSTANT(STATE_WAITING_CREDITS);
+	BIND_CONSTANT(STATE_WAITING_MENU);
 	BIND_CONSTANT(STATE_GAME_OVER);
 	ClassDB::bind_method(D_METHOD("start_camera_zoom_transition", "target_zoom", "duration_frames"), &ClockGearsEventInterpreter::start_camera_zoom_transition, DEFVAL(0));
 
 	ADD_SIGNAL(MethodInfo("event_started", PropertyInfo(Variant::OBJECT, "event")));
 	ADD_SIGNAL(MethodInfo("event_finished", PropertyInfo(Variant::OBJECT, "event")));
 	ADD_SIGNAL(MethodInfo("message_shown", PropertyInfo(Variant::STRING, "text")));
+	ADD_SIGNAL(MethodInfo("return_to_title_requested"));
+	ADD_SIGNAL(MethodInfo("window_style_changed", PropertyInfo(Variant::STRING, "window_type_id"), PropertyInfo(Variant::STRING, "style_id")));
 }
 
 void ClockGearsEventInterpreter::_build_runtime_ui() {
@@ -2544,7 +2552,17 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 	// 6. Menú del Juego en Runtime (9B Tanda 3)
 	if (!game_menu) {
 		game_menu = memnew(ClockGearsGameMenu);
+		game_menu->connect("menu_closed", callable_mp(this, &ClockGearsEventInterpreter::_on_game_menu_closed));
 		add_child(game_menu);
+	}
+
+	// 7. Reproductor de Créditos en Runtime (9B Tanda 4)
+	if (!credits_player) {
+		credits_player = memnew(ClockGearsCreditsPlayer);
+		credits_player->set_name("ClockGearsCreditsPlayer");
+		credits_player->set_visible(false);
+		credits_player->connect("credits_finished", callable_mp(this, &ClockGearsEventInterpreter::_on_credits_player_finished));
+		ui_layer->add_child(credits_player);
 	}
 }
 
@@ -2674,6 +2692,28 @@ void ClockGearsEventInterpreter::_on_message_window_number_entered(int p_val) {
 				}
 			}
 		}
+		command_index++;
+		state = STATE_RUNNING;
+		if (player) {
+			player->lock_action_key();
+		}
+		_execute_next_commands();
+	}
+}
+
+void ClockGearsEventInterpreter::_on_credits_player_finished(bool p_cancelled) {
+	if (state == STATE_WAITING_CREDITS) {
+		command_index++;
+		state = STATE_RUNNING;
+		if (player) {
+			player->lock_action_key();
+		}
+		_execute_next_commands();
+	}
+}
+
+void ClockGearsEventInterpreter::_on_game_menu_closed() {
+	if (state == STATE_WAITING_MENU) {
 		command_index++;
 		state = STATE_RUNNING;
 		if (player) {
@@ -3375,16 +3415,101 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		return false;
 	}
 
-	// --- Abrir Menú del Juego ---
-	if (type == "open_menu" || code == CG_CMD_OPEN_MENU) {
-		if (game_menu) {
-			game_menu->open_menu();
+	// --- Mostrar Créditos (9B Tanda 4) ---
+	if (type == "show_credits" || code == CG_CMD_SHOW_CREDITS) {
+		_build_runtime_ui();
+		if (game_menu && game_menu->is_menu_open()) {
+			game_menu->close_menu();
+		}
+		if (credits_player) {
+			Dictionary cfg_ov = p_cmd.has("credits_config") && p_cmd["credits_config"].get_type() == Variant::DICTIONARY
+					? Dictionary(p_cmd["credits_config"])
+					: Dictionary();
+			credits_player->start_credits(cfg_ov);
+			if (credits_player->is_playing()) {
+				state = STATE_WAITING_CREDITS;
+				return false;
+			}
 		}
 		return true;
 	}
 
-	// --- Volver al Título ---
+	// --- Abrir Menú del Juego (9B Tanda 4) ---
+	if (type == "open_menu" || code == CG_CMD_OPEN_MENU) {
+		_build_runtime_ui();
+		if (game_menu) {
+			game_menu->open_menu_from_event("main", false);
+			if (game_menu->is_menu_open()) {
+				state = STATE_WAITING_MENU;
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// --- Abrir Pantalla de Guardado (9B Tanda 4) ---
+	if (type == "open_save" || code == CG_CMD_OPEN_SAVE) {
+		_build_runtime_ui();
+		if (game_menu) {
+			game_menu->open_menu_from_event("save", true);
+			if (game_menu->is_menu_open()) {
+				state = STATE_WAITING_MENU;
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// --- Bloquear / Permitir Menú del Juego (9B Tanda 4) ---
+	if (type == "change_menu_access" || type == "set_menu_access" || type == "menu_access" || code == CG_CMD_CHANGE_MENU_ACCESS) {
+		if (dm) {
+			bool allow_menu = true;
+			if (p_cmd.has("enabled")) {
+				allow_menu = bool(p_cmd["enabled"]);
+			} else if (p_cmd.has("allowed")) {
+				allow_menu = bool(p_cmd["allowed"]);
+			} else if (p_cmd.has("disabled")) {
+				allow_menu = !bool(p_cmd["disabled"]);
+			} else if (p_cmd.has("locked")) {
+				allow_menu = !bool(p_cmd["locked"]);
+			}
+			dm->set_game_menu_disabled(!allow_menu);
+		}
+		return true;
+	}
+
+	// --- Cambiar Estilo de Ventana (9B Tanda 4) ---
+	if (type == "change_window_style" || code == CG_CMD_CHANGE_WINDOW_STYLE) {
+		String wtype = String(p_cmd.get("window_type_id", p_cmd.get("window_type", ""))).strip_edges().to_lower();
+		String sid = String(p_cmd.get("style_id", p_cmd.get("style", ""))).strip_edges().to_lower();
+		if (dm && !wtype.is_empty()) {
+			dm->set_runtime_window_style_override(wtype, sid);
+		}
+		if (message_window) {
+			message_window->refresh_window_styles();
+		}
+		if (game_menu) {
+			game_menu->refresh_window_styles();
+		}
+		emit_signal("window_style_changed", wtype, sid);
+		return true;
+	}
+
+	// --- Volver al Título (9B Tanda 4: con confirmación opcional) ---
 	if (type == "return_to_title" || code == CG_CMD_RETURN_TO_TITLE) {
+		bool ask_confirm = bool(p_cmd.get("confirm", false));
+		if (ask_confirm) {
+			_build_runtime_ui();
+			if (game_menu) {
+				game_menu->open_menu_from_event("to_title", true);
+				if (game_menu->is_menu_open()) {
+					state = STATE_WAITING_MENU;
+					return false;
+				}
+			}
+		}
+		return_to_title_requested_flag = true;
+		emit_signal("return_to_title_requested");
 		if (is_inside_tree() && get_tree()) {
 			ClockGearsTitleScreen::ensure_title_screen_scene("res://title_screen.tscn");
 			if (ResourceLoader::exists("res://title_screen.tscn")) {
@@ -3614,7 +3739,7 @@ void ClockGearsEventInterpreter::step_frame() {
 		return;
 	}
 
-	if (state == STATE_WAITING_MESSAGE || state == STATE_WAITING_CHOICE || state == STATE_WAITING_NUMBER || state == STATE_WAITING_BATTLE || state == STATE_GAME_OVER) {
+	if (state == STATE_WAITING_MESSAGE || state == STATE_WAITING_CHOICE || state == STATE_WAITING_NUMBER || state == STATE_WAITING_BATTLE || state == STATE_WAITING_CREDITS || state == STATE_WAITING_MENU || state == STATE_GAME_OVER) {
 		return;
 	}
 

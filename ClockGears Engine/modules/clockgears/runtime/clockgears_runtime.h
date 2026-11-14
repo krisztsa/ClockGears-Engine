@@ -23,6 +23,7 @@
 class ClockGearsFollowerManager;
 class ClockGearsEventInterpreter;
 class ClockGearsGameMenu;
+class ClockGearsCreditsPlayer;
 
 // ============================================================================
 // ClockGearsPlayer — Controlador de Jugador en Rejilla 32x32 (Fase 6 / Sección 7.1)
@@ -345,6 +346,8 @@ public:
 		STATE_WAITING_NUMBER,
 		STATE_WAITING_TRANSFER,
 		STATE_WAITING_BATTLE,
+		STATE_WAITING_CREDITS,
+		STATE_WAITING_MENU,
 		STATE_GAME_OVER
 	};
 
@@ -376,8 +379,10 @@ private:
 	ClockGearsPictureManager *picture_manager = nullptr;
 	ClockGearsCutscenePlayer *cutscene_player = nullptr;
 	ClockGearsGameMenu *game_menu = nullptr;
+	ClockGearsCreditsPlayer *credits_player = nullptr;
 	Node *active_battle_scene = nullptr;
 	bool battle_can_lose_flag = false;
+	bool return_to_title_requested_flag = false;
 
 	float tint_timer = 0.0f;
 	float tint_duration = 0.0f;
@@ -413,6 +418,8 @@ private:
 	void _on_message_window_choice_selected(int p_idx);
 	void _on_message_window_number_entered(int p_val);
 	void _on_battle_scene_finished(int p_result);
+	void _on_credits_player_finished(bool p_cancelled);
+	void _on_game_menu_closed();
 	void _execute_next_commands();
 	bool _execute_single_command(const Dictionary &p_cmd);
 	void _refresh_all_map_events();
@@ -428,12 +435,15 @@ public:
 	bool is_running() const { return state != STATE_IDLE; }
 	bool is_blocking_player() const;
 	bool has_active_battle() const { return active_battle_scene != nullptr || state == STATE_WAITING_BATTLE; }
+	bool has_active_credits() const { return state == STATE_WAITING_CREDITS; }
+	bool was_return_to_title_requested() const { return return_to_title_requested_flag; }
 	ClockGearsEvent *get_active_event() const { return active_event; }
 	int get_state() const { return int(state); }
 	int get_last_choice_index() const { return last_choice_index; }
 	ClockGearsPictureManager *get_picture_manager() const { return picture_manager; }
 	ClockGearsCutscenePlayer *get_cutscene_player() const { return cutscene_player; }
 	ClockGearsGameMenu *get_game_menu() const { return game_menu; }
+	ClockGearsCreditsPlayer *get_credits_player() const { return credits_player; }
 	Color get_screen_tint_color() const { return current_tint_color; }
 	ColorRect *get_screen_tint_rect() const { return screen_tint_rect; }
 	CanvasLayer *get_screen_tint_layer() const { return screen_tint_layer; }
