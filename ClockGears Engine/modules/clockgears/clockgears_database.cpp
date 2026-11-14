@@ -9,6 +9,7 @@
 #include "core/clockgears_system_catalog.h"
 #include "core/config/project_settings.h"
 #include "editor/clockgears_project_manager.h"
+#include "editor/clockgears_shape_editor.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -194,6 +195,10 @@ static bool s_is_anim_slot_category(int p_category) {
 
 static bool s_is_arpg_equip_category(int p_category) {
 	return p_category >= CAT_ARPG_WEAPONS && p_category <= CAT_ARPG_ACCESSORIES;
+}
+
+static bool s_is_arpg_shape_category(int p_category) {
+	return p_category == CAT_ACTORS || s_is_arpg_category(p_category);
 }
 
 static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
@@ -422,6 +427,15 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("remove_anim_frame_at", "frame_idx"), &ClockGearsDatabaseDialog::remove_anim_frame_at);
 	ClassDB::bind_method(D_METHOD("set_system_movement_directions", "dirs"), &ClockGearsDatabaseDialog::set_system_movement_directions);
 	ClassDB::bind_method(D_METHOD("get_system_movement_directions"), &ClockGearsDatabaseDialog::get_system_movement_directions);
+	ClassDB::bind_method(D_METHOD("set_system_mannequin_size", "size"), &ClockGearsDatabaseDialog::set_system_mannequin_size);
+	ClassDB::bind_method(D_METHOD("get_system_mannequin_size"), &ClockGearsDatabaseDialog::get_system_mannequin_size);
+	ClassDB::bind_method(D_METHOD("set_anim_submode", "mode"), &ClockGearsDatabaseDialog::set_anim_submode);
+	ClassDB::bind_method(D_METHOD("get_anim_submode"), &ClockGearsDatabaseDialog::get_anim_submode);
+	ClassDB::bind_method(D_METHOD("get_shape_editor"), &ClockGearsDatabaseDialog::get_shape_editor);
+	ClassDB::bind_method(D_METHOD("select_shape_frame", "frame_idx"), &ClockGearsDatabaseDialog::select_shape_frame);
+	ClassDB::bind_method(D_METHOD("copy_shapes_to_next_frame"), &ClockGearsDatabaseDialog::copy_shapes_to_next_frame);
+	ClassDB::bind_method(D_METHOD("copy_shapes_to_all_frames"), &ClockGearsDatabaseDialog::copy_shapes_to_all_frames);
+	ClassDB::bind_method(D_METHOD("copy_shapes_from_direction", "from_dir", "mode"), &ClockGearsDatabaseDialog::copy_shapes_from_direction, DEFVAL("auto"));
 	ClassDB::bind_method(D_METHOD("set_actor_directional_idle", "enabled"), &ClockGearsDatabaseDialog::set_actor_directional_idle);
 	ClassDB::bind_method(D_METHOD("is_actor_directional_idle"), &ClockGearsDatabaseDialog::is_actor_directional_idle);
 	ClassDB::bind_method(D_METHOD("get_troop_battleback_cfg", "troop_idx", "slot"), &ClockGearsDatabaseDialog::get_troop_battleback_cfg);
@@ -541,6 +555,7 @@ void ClockGearsDatabaseDialog::_init_empty_database() {
 	system_config["currency"] = "G";
 	system_config["combat_mode"] = COMBAT_MODE_TURN_BASED;
 	system_config["movement_directions"] = 4;
+	system_config["mannequin_size"] = 32;
 	system_config["arpg_move_while_attacking"] = true;
 	system_config["arpg_attack_move_speed_pct"] = 100;
 	system_config["arpg_move_while_blocking"] = false;
@@ -1140,6 +1155,12 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		if (dm_sys.has("movement_directions")) {
 			system_config["movement_directions"] = dm_sys["movement_directions"];
 		}
+		if (dm_sys.has("mannequin_size")) {
+			system_config["mannequin_size"] = ClockGearsDataManager::normalize_mannequin_size(int(dm_sys["mannequin_size"]));
+		}
+	}
+	if (!s_is_arpg_shape_category(current_category)) {
+		anim_submode = 0;
 	}
 	_update_chapter_and_category_visibility();
 
@@ -1345,6 +1366,11 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		if (sys_movement_dirs_opt) {
 			int dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
 			sys_movement_dirs_opt->select(dirs == 8 ? 1 : 0);
+		}
+		if (sys_mannequin_size_opt) {
+			int msz = ClockGearsDataManager::normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
+			int m_idx = (msz == 64) ? 2 : (msz == 48 ? 1 : 0);
+			sys_mannequin_size_opt->select(m_idx);
 		}
 		if (sys_start_x_spin) {
 			sys_start_x_spin->set_value((int)system_config.get("start_x", 0));
@@ -2267,6 +2293,8 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		}
 
 		_refresh_anim_track_options();
+		_refresh_anim_submode_ui();
+		_refresh_shape_editor_context();
 		if (s_is_arpg_equip_category(current_category)) {
 			String dm_mode = String(d.get("draw_mode", "completo")).strip_edges().to_lower();
 			int lorder = d.has("layer_order") ? int(d["layer_order"]) : ClockGearsCharacterStateRegistry::get_default_arpg_layer_order(current_category);
@@ -4652,6 +4680,10 @@ void ClockGearsDatabaseDialog::_on_system_field_changed() {
 		int sel_id = sys_movement_dirs_opt->get_selected_id();
 		system_config["movement_directions"] = (sel_id == 8) ? 8 : 4;
 	}
+	if (sys_mannequin_size_opt) {
+		int sel_id = sys_mannequin_size_opt->get_selected_id();
+		system_config["mannequin_size"] = ClockGearsDataManager::normalize_mannequin_size(sel_id);
+	}
 	if (sys_arpg_move_atk_chk) {
 		system_config["arpg_move_while_attacking"] = sys_arpg_move_atk_chk->is_pressed();
 	}
@@ -6522,6 +6554,19 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	sys_movement_dirs_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_movement_dirs_selected));
 	sys_grid->add_child(sys_movement_dirs_opt);
 
+	Label *lbl_sys_mannequin = memnew(Label(CG_DB_TR("Tamaño del maniquí:")));
+	lbl_sys_mannequin->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
+	sys_grid->add_child(lbl_sys_mannequin);
+	sys_mannequin_size_opt = memnew(OptionButton);
+	sys_mannequin_size_opt->set_custom_minimum_size(Size2(280 * EDSCALE, row_h));
+	sys_mannequin_size_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_mannequin_size_opt->add_item(CG_DB_TR("32x32 px"), 32);
+	sys_mannequin_size_opt->add_item(CG_DB_TR("48x48 px"), 48);
+	sys_mannequin_size_opt->add_item(CG_DB_TR("64x64 px"), 64);
+	sys_mannequin_size_opt->select(0);
+	sys_mannequin_size_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_mannequin_size_selected));
+	sys_grid->add_child(sys_mannequin_size_opt);
+
 	Label *lbl_sys_map = memnew(Label(CG_DB_TR("Mapa Inicial:")));
 	lbl_sys_map->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
 	sys_grid->add_child(lbl_sys_map);
@@ -6850,6 +6895,33 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	btn_anim_play->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_play_pressed));
 	settings_row->add_child(btn_anim_play);
 
+	// Submodos por ranura para ARPG y Equipo ARPG: "Frames" (intacto) vs "Formas" (Hitbox/Hurtbox/Ancla/Maniquí)
+	anim_submode_bar = memnew(HFlowContainer);
+	anim_submode_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_submode_bar->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	anim_submode_bar->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	anim_submode_bar->set_visible(false);
+	anim_sel_sec->add_child(anim_submode_bar);
+
+	Label *lbl_submode = memnew(Label(CG_DB_TR("Modo de ranura:")));
+	anim_submode_bar->add_child(lbl_submode);
+
+	btn_anim_mode_frames = memnew(Button(CG_DB_TR("Frames")));
+	btn_anim_mode_frames->set_toggle_mode(true);
+	btn_anim_mode_frames->set_pressed(true);
+	btn_anim_mode_frames->set_theme_type_variation("ClockGearsTabButton");
+	btn_anim_mode_frames->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	btn_anim_mode_frames->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_submode_selected).bind(0));
+	anim_submode_bar->add_child(btn_anim_mode_frames);
+
+	btn_anim_mode_shapes = memnew(Button(CG_DB_TR("Formas")));
+	btn_anim_mode_shapes->set_toggle_mode(true);
+	btn_anim_mode_shapes->set_pressed(false);
+	btn_anim_mode_shapes->set_theme_type_variation("ClockGearsTabButton");
+	btn_anim_mode_shapes->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	btn_anim_mode_shapes->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_submode_selected).bind(1));
+	anim_submode_bar->add_child(btn_anim_mode_shapes);
+
 	// Tira de frames (con salto de línea HFlowContainer, NUNCA scroll horizontal) + Vista previa 128px a un lado
 	anim_frames_sec = memnew(VBoxContainer);
 	anim_frames_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -6919,6 +6991,8 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	anim_preview_atlas.instantiate();
 	anim_preview_rect->set_texture(anim_preview_atlas);
 	prev_panel->add_child(anim_preview_rect);
+
+	_setup_shape_editor_ui();
 
 	// ==========================================
 	// BLOQUE 5: ANIMACIONES DE COMBATE (Actores) / LANZAMIENTOS CON NOMBRE Y ELEMENTO (Enemigos)
@@ -10089,6 +10163,7 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	anim_preview_playing = false;
 	anim_preview_timer = 0.0f;
 	anim_preview_frame_idx = 0;
+	shape_frame_idx = 0;
 	if (btn_anim_play) {
 		btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
 	}
@@ -10096,6 +10171,7 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 
 	_refresh_frames_timeline();
 	_refresh_anim_preview();
+	_refresh_shape_editor_context();
 }
 
 void ClockGearsDatabaseDialog::_on_anim_item_selected(int p_idx) {
@@ -10618,6 +10694,7 @@ void ClockGearsDatabaseDialog::_on_sheet_importer_add_confirmed() {
 
 void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 	if (!frames_strip_hbox) return;
+	_refresh_shape_editor_context();
 	while (frames_strip_hbox->get_child_count() > 0) {
 		Node *c = frames_strip_hbox->get_child(0);
 		frames_strip_hbox->remove_child(c);
@@ -12075,9 +12152,7 @@ void ClockGearsDatabaseDialog::_refresh_arpg_piece_anim_mode_ui() {
 	if (anim_sel_sec) {
 		anim_sel_sec->set_visible(!is_simple);
 	}
-	if (anim_frames_sec) {
-		anim_frames_sec->set_visible(!is_simple);
-	}
+	_refresh_anim_submode_ui();
 	if (arpg_simple_editor_box) {
 		arpg_simple_editor_box->set_visible(is_simple);
 	}
@@ -12506,4 +12581,571 @@ void ClockGearsDatabaseDialog::_on_arpg_prev_canvas_gui_input(const Ref<InputEve
 		_on_arpg_simple_prop_changed();
 	}
 }
+
+// ============================================================================
+// Editor de Formas, Hitboxes y Maniquí (9A Tanda 2)
+// ============================================================================
+
+static void s_sync_anim_frames_data(ClockGearsSpriteAnimation &r_anim) {
+	int fc = r_anim.get_frame_count();
+	if (r_anim.frames_data.size() < fc) {
+		int prev_sz = r_anim.frames_data.size();
+		r_anim.frames_data.resize(fc);
+		for (int i = prev_sz; i < fc; i++) {
+			r_anim.frames_data.write[i] = r_anim.get_frame(i, 0, 0);
+		}
+	}
+}
+
+static bool s_parse_slot_dir_and_prefix(const String &p_slot_name, String &r_prefix, int &r_dir_code) {
+	static const int k_dir_order[8] = { 1, 3, 7, 9, 2, 4, 6, 8 };
+	String low = p_slot_name.strip_edges().to_lower();
+	for (int i = 0; i < 8; i++) {
+		int d = k_dir_order[i];
+		String suf = "_" + ClockGearsCharacterStateRegistry::direction_to_suffix(d);
+		if (low.ends_with(suf) && low.length() > suf.length()) {
+			r_prefix = low.substr(0, low.length() - suf.length());
+			r_dir_code = d;
+			return true;
+		}
+	}
+	r_prefix = low;
+	r_dir_code = 0;
+	return false;
+}
+
+static String s_dir_code_display_name(int p_dir) {
+	switch (p_dir) {
+		case 2: return CG_DB_TR("Abajo");
+		case 4: return CG_DB_TR("Izquierda");
+		case 6: return CG_DB_TR("Derecha");
+		case 8: return CG_DB_TR("Arriba");
+		case 1: return CG_DB_TR("Abajo-Izquierda");
+		case 3: return CG_DB_TR("Abajo-Derecha");
+		case 7: return CG_DB_TR("Arriba-Izquierda");
+		case 9: return CG_DB_TR("Arriba-Derecha");
+		default: return ClockGearsCharacterStateRegistry::direction_to_suffix(p_dir);
+	}
+}
+
+void ClockGearsDatabaseDialog::_setup_shape_editor_ui() {
+	const float row_h = 32.0f * EDSCALE;
+
+	anim_formas_sec = memnew(VBoxContainer);
+	anim_formas_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_formas_sec->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_formas_sec->add_theme_constant_override("separation", int(8 * EDSCALE));
+	anim_formas_sec->set_visible(false);
+	sprite_anim_editor_box->add_child(anim_formas_sec);
+
+	formas_frame_bar = memnew(HFlowContainer);
+	formas_frame_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	formas_frame_bar->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	formas_frame_bar->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	anim_formas_sec->add_child(formas_frame_bar);
+
+	formas_frame_bar->add_child(memnew(Label(CG_DB_TR("Frame:"))));
+
+	btn_shape_prev_frame = memnew(Button("<"));
+	btn_shape_prev_frame->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	btn_shape_prev_frame->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_prev_frame_pressed));
+	formas_frame_bar->add_child(btn_shape_prev_frame);
+
+	shape_frame_opt = memnew(OptionButton);
+	shape_frame_opt->set_custom_minimum_size(Size2(126 * EDSCALE, row_h));
+	shape_frame_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_frame_opt_selected));
+	formas_frame_bar->add_child(shape_frame_opt);
+
+	btn_shape_next_frame = memnew(Button(">"));
+	btn_shape_next_frame->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	btn_shape_next_frame->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_next_frame_pressed));
+	formas_frame_bar->add_child(btn_shape_next_frame);
+
+	btn_shape_copy_next = memnew(Button(CG_DB_TR("Copiar al siguiente")));
+	btn_shape_copy_next->set_custom_minimum_size(Size2(138 * EDSCALE, row_h));
+	btn_shape_copy_next->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_copy_next_pressed));
+	formas_frame_bar->add_child(btn_shape_copy_next);
+
+	btn_shape_copy_all = memnew(Button(CG_DB_TR("Copiar a todos")));
+	btn_shape_copy_all->set_custom_minimum_size(Size2(114 * EDSCALE, row_h));
+	btn_shape_copy_all->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_copy_all_pressed));
+	formas_frame_bar->add_child(btn_shape_copy_all);
+
+	shape_copy_dir_opt = memnew(OptionButton);
+	shape_copy_dir_opt->set_custom_minimum_size(Size2(146 * EDSCALE, row_h));
+	formas_frame_bar->add_child(shape_copy_dir_opt);
+
+	shape_copy_mode_opt = memnew(OptionButton);
+	shape_copy_mode_opt->set_custom_minimum_size(Size2(104 * EDSCALE, row_h));
+	shape_copy_mode_opt->add_item(CG_DB_TR("Auto"), 0);
+	shape_copy_mode_opt->set_item_metadata(0, "auto");
+	shape_copy_mode_opt->add_item(CG_DB_TR("Rotar"), 1);
+	shape_copy_mode_opt->set_item_metadata(1, "rotate");
+	shape_copy_mode_opt->add_item(CG_DB_TR("Espejar"), 2);
+	shape_copy_mode_opt->set_item_metadata(2, "mirror");
+	shape_copy_mode_opt->select(0);
+	formas_frame_bar->add_child(shape_copy_mode_opt);
+
+	btn_shape_copy_dir = memnew(Button(CG_DB_TR("Copiar desde otra dirección")));
+	btn_shape_copy_dir->set_custom_minimum_size(Size2(184 * EDSCALE, row_h));
+	btn_shape_copy_dir->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_copy_dir_pressed));
+	formas_frame_bar->add_child(btn_shape_copy_dir);
+
+	anim_formas_sec->add_child(memnew(HSeparator));
+
+	shape_no_frames_lbl = memnew(Label(CG_DB_TR("(Esta ranura no tiene frames. Añádelos primero en el modo Frames.)")));
+	shape_no_frames_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	shape_no_frames_lbl->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.80f));
+	shape_no_frames_lbl->set_visible(false);
+	anim_formas_sec->add_child(shape_no_frames_lbl);
+
+	shape_editor = memnew(ClockGearsShapeEditor);
+	shape_editor->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	shape_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	shape_editor->connect("shape_data_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_shape_editor_data_changed));
+	anim_formas_sec->add_child(shape_editor);
+}
+
+void ClockGearsDatabaseDialog::_refresh_anim_submode_ui() {
+	bool supports_shapes = s_is_arpg_shape_category(current_category);
+	bool is_arpg_eq = s_is_arpg_equip_category(current_category);
+	bool is_simple = is_arpg_eq && arpg_draw_mode_opt && arpg_draw_mode_opt->get_selected() == 1;
+
+	if (!supports_shapes || is_simple) {
+		if (!supports_shapes) {
+			anim_submode = 0;
+		}
+		if (anim_submode_bar) {
+			anim_submode_bar->set_visible(false);
+		}
+		if (anim_formas_sec) {
+			anim_formas_sec->set_visible(false);
+		}
+		if (anim_frames_sec) {
+			anim_frames_sec->set_visible(!is_simple);
+		}
+		return;
+	}
+
+	if (anim_submode_bar) {
+		anim_submode_bar->set_visible(true);
+	}
+	if (btn_anim_mode_frames) {
+		btn_anim_mode_frames->set_pressed_no_signal(anim_submode == 0);
+	}
+	if (btn_anim_mode_shapes) {
+		btn_anim_mode_shapes->set_pressed_no_signal(anim_submode == 1);
+	}
+	if (anim_frames_sec) {
+		anim_frames_sec->set_visible(anim_submode == 0);
+	}
+	if (anim_formas_sec) {
+		anim_formas_sec->set_visible(anim_submode == 1);
+	}
+}
+
+void ClockGearsDatabaseDialog::_refresh_shape_copy_dir_options() {
+	if (!shape_copy_dir_opt || !btn_shape_copy_dir) {
+		return;
+	}
+	shape_copy_dir_opt->clear();
+	String cur_slot = _get_active_anim_name();
+	String slot_prefix;
+	int cur_dir = 0;
+	if (!s_parse_slot_dir_and_prefix(cur_slot, slot_prefix, cur_dir)) {
+		shape_copy_dir_opt->add_item(CG_DB_TR("(Ranura sin dirección)"), 0);
+		shape_copy_dir_opt->set_disabled(true);
+		btn_shape_copy_dir->set_disabled(true);
+		return;
+	}
+
+	int dirs = get_system_movement_directions();
+	static const int k_cardinals[4] = { 2, 4, 6, 8 };
+	static const int k_all_dirs[8] = { 2, 4, 6, 8, 1, 3, 7, 9 };
+	int n_dirs = (dirs == 8) ? 8 : 4;
+	const int *dir_arr = (dirs == 8) ? k_all_dirs : k_cardinals;
+
+	for (int i = 0; i < n_dirs; i++) {
+		int d = dir_arr[i];
+		if (d == cur_dir) {
+			continue;
+		}
+		String suf = ClockGearsCharacterStateRegistry::direction_to_suffix(d);
+		String other_slot = slot_prefix + "_" + suf;
+		if (!current_sprite_data.animations.has(other_slot)) {
+			continue;
+		}
+		const ClockGearsSpriteAnimation &oa = current_sprite_data.animations[other_slot];
+		if (oa.get_frame_count() <= 0) {
+			continue;
+		}
+		int idx = shape_copy_dir_opt->get_item_count();
+		shape_copy_dir_opt->add_item(CG_DB_TR("Desde: ") + s_dir_code_display_name(d), d);
+		shape_copy_dir_opt->set_item_metadata(idx, suf);
+	}
+
+	bool has_sources = shape_copy_dir_opt->get_item_count() > 0;
+	if (!has_sources) {
+		shape_copy_dir_opt->add_item(CG_DB_TR("(Sin otras direcciones)"), 0);
+	} else {
+		shape_copy_dir_opt->select(0);
+	}
+	shape_copy_dir_opt->set_disabled(!has_sources);
+	btn_shape_copy_dir->set_disabled(!has_sources);
+}
+
+void ClockGearsDatabaseDialog::_sync_shape_editor_for_current_frame() {
+	if (!shape_editor) {
+		return;
+	}
+	String cur_slot = _get_active_anim_name();
+	bool allow_hb = ClockGearsSpriteAnimation::is_attack_slot_name(cur_slot);
+	bool show_mann = s_is_arpg_equip_category(current_category);
+	int mann_sz = get_system_mannequin_size();
+
+	shape_editor->set_mannequin(show_mann, mann_sz);
+	shape_editor->set_feature_flags(allow_hb, true, true);
+
+	if (!current_sprite_data.animations.has(cur_slot) || current_sprite_data.animations[cur_slot].get_frame_count() <= 0) {
+		if (shape_no_frames_lbl) shape_no_frames_lbl->set_visible(true);
+		shape_editor->set_visible(false);
+		return;
+	}
+
+	if (shape_no_frames_lbl) shape_no_frames_lbl->set_visible(false);
+	shape_editor->set_visible(true);
+
+	ClockGearsSpriteAnimation &anim = current_sprite_data.animations[cur_slot];
+	s_sync_anim_frames_data(anim);
+	int total = anim.frames_data.size();
+	shape_frame_idx = CLAMP(shape_frame_idx, 0, total - 1);
+
+	String fallback_sheet = anim.spritesheet_path;
+	if (fallback_sheet.is_empty()) {
+		int rec_idx = _db_selected_record_index(record_list);
+		if (rec_idx >= 0 && rec_idx < category_data[current_category].size()) {
+			fallback_sheet = Dictionary(category_data[current_category][rec_idx]).get("graphic_path", "");
+		}
+	}
+
+	const ClockGearsAnimationFrame &raw_fr = anim.frames_data[shape_frame_idx];
+	String spath = raw_fr.sheet_path.is_empty() ? fallback_sheet : raw_fr.sheet_path;
+	Ref<Texture2D> tex = _load_texture_from_path(spath);
+	int tw = tex.is_valid() ? tex->get_width() : 0;
+	int th = tex.is_valid() ? tex->get_height() : 0;
+	ClockGearsAnimationFrame resolved_fr = anim.get_frame(shape_frame_idx, tw, th);
+
+	updating_shape_ui = true;
+	shape_editor->set_preview_texture(tex, resolved_fr.region);
+	const ClockGearsHurtboxData &eff_hurt = resolved_fr.has_hurtbox_override
+			? resolved_fr.hurtbox_override
+			: current_sprite_data.hurtbox;
+	shape_editor->set_shape_data(
+			resolved_fr.hitbox.to_dict(),
+			eff_hurt.to_dict(),
+			resolved_fr.has_hurtbox_override,
+			resolved_fr.weapon_anchor.to_dict());
+	updating_shape_ui = false;
+}
+
+void ClockGearsDatabaseDialog::_refresh_shape_editor_context() {
+	if (!anim_formas_sec || !shape_editor) {
+		return;
+	}
+	if (!s_is_arpg_shape_category(current_category)) {
+		return;
+	}
+
+	String cur_slot = _get_active_anim_name();
+	int total = 0;
+	if (current_sprite_data.animations.has(cur_slot)) {
+		ClockGearsSpriteAnimation &anim = current_sprite_data.animations[cur_slot];
+		s_sync_anim_frames_data(anim);
+		total = anim.frames_data.size();
+	}
+
+	if (total > 0) {
+		shape_frame_idx = CLAMP(shape_frame_idx, 0, total - 1);
+	} else {
+		shape_frame_idx = 0;
+	}
+
+	updating_shape_ui = true;
+	if (shape_frame_opt) {
+		shape_frame_opt->clear();
+		if (total > 0) {
+			for (int i = 0; i < total; i++) {
+				shape_frame_opt->add_item(vformat(CG_DB_TR("Frame %d / %d"), i + 1, total), i);
+			}
+			shape_frame_opt->select(shape_frame_idx);
+			shape_frame_opt->set_disabled(false);
+		} else {
+			shape_frame_opt->add_item(CG_DB_TR("Frame 0 / 0"), 0);
+			shape_frame_opt->set_disabled(true);
+		}
+	}
+	if (btn_shape_prev_frame) btn_shape_prev_frame->set_disabled(total <= 1 || shape_frame_idx <= 0);
+	if (btn_shape_next_frame) btn_shape_next_frame->set_disabled(total <= 1 || shape_frame_idx >= total - 1);
+	if (btn_shape_copy_next) btn_shape_copy_next->set_disabled(total <= 1 || shape_frame_idx >= total - 1);
+	if (btn_shape_copy_all) btn_shape_copy_all->set_disabled(total <= 1);
+	updating_shape_ui = false;
+
+	_refresh_shape_copy_dir_options();
+	_sync_shape_editor_for_current_frame();
+}
+
+void ClockGearsDatabaseDialog::_on_anim_submode_selected(int p_mode) {
+	anim_submode = (p_mode == 1 && s_is_arpg_shape_category(current_category)) ? 1 : 0;
+	_refresh_anim_submode_ui();
+	if (anim_submode == 1) {
+		_refresh_shape_editor_context();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_shape_frame_opt_selected(int p_idx) {
+	if (updating_shape_ui) return;
+	shape_frame_idx = MAX(0, p_idx);
+	_refresh_shape_editor_context();
+}
+
+void ClockGearsDatabaseDialog::_on_shape_prev_frame_pressed() {
+	if (shape_frame_idx > 0) {
+		shape_frame_idx--;
+		_refresh_shape_editor_context();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_shape_next_frame_pressed() {
+	String cur_slot = _get_active_anim_name();
+	if (current_sprite_data.animations.has(cur_slot)) {
+		int total = current_sprite_data.animations[cur_slot].get_frame_count();
+		if (shape_frame_idx + 1 < total) {
+			shape_frame_idx++;
+			_refresh_shape_editor_context();
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_shape_copy_next_pressed() {
+	copy_shapes_to_next_frame();
+}
+
+void ClockGearsDatabaseDialog::_on_shape_copy_all_pressed() {
+	copy_shapes_to_all_frames();
+}
+
+void ClockGearsDatabaseDialog::_on_shape_copy_dir_pressed() {
+	if (!shape_copy_dir_opt || shape_copy_dir_opt->get_selected() < 0) {
+		return;
+	}
+	int sel = shape_copy_dir_opt->get_selected();
+	String suf = String(shape_copy_dir_opt->get_item_metadata(sel));
+	if (suf.is_empty()) {
+		return;
+	}
+	String mode_str = "auto";
+	if (shape_copy_mode_opt && shape_copy_mode_opt->get_selected() >= 0) {
+		String m = String(shape_copy_mode_opt->get_selected_metadata());
+		if (!m.is_empty()) {
+			mode_str = m;
+		}
+	}
+	copy_shapes_from_direction(suf, mode_str);
+}
+
+void ClockGearsDatabaseDialog::_on_shape_editor_data_changed() {
+	if (updating_shape_ui || updating_ui || !shape_editor) {
+		return;
+	}
+	String cur_slot = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_slot)) {
+		return;
+	}
+	ClockGearsSpriteAnimation &anim = current_sprite_data.animations[cur_slot];
+	s_sync_anim_frames_data(anim);
+	if (anim.frames_data.is_empty()) {
+		return;
+	}
+	shape_frame_idx = CLAMP(shape_frame_idx, 0, anim.frames_data.size() - 1);
+	ClockGearsAnimationFrame &fr = anim.frames_data.write[shape_frame_idx];
+
+	int fw = current_sprite_data.frame_w > 0 ? current_sprite_data.frame_w : 32;
+	int fh = current_sprite_data.frame_h > 0 ? current_sprite_data.frame_h : 32;
+	if (fr.region.size.x > 0 && fr.region.size.y > 0) {
+		fw = fr.region.size.x;
+		fh = fr.region.size.y;
+	}
+
+	if (ClockGearsSpriteAnimation::is_attack_slot_name(cur_slot)) {
+		fr.hitbox.from_dict(shape_editor->get_hitbox_data());
+	}
+	fr.weapon_anchor.from_dict(shape_editor->get_weapon_anchor_data());
+
+	bool new_override = shape_editor->has_hurtbox_override_enabled();
+	bool was_override = fr.has_hurtbox_override;
+	fr.has_hurtbox_override = new_override;
+	if (new_override) {
+		fr.hurtbox_override.from_dict(shape_editor->get_hurtbox_data(), fw, fh);
+	} else if (was_override) {
+		// Se acaba de desactivar la anulación por frame: restaurar en pantalla la hurtbox compartida del sprite
+		_sync_shape_editor_for_current_frame();
+	} else {
+		current_sprite_data.hurtbox.from_dict(shape_editor->get_hurtbox_data(), fw, fh);
+	}
+
+	_on_param_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_system_mannequin_size_selected(int p_idx) {
+	if (updating_ui || !sys_mannequin_size_opt) {
+		return;
+	}
+	int msz = ClockGearsDataManager::normalize_mannequin_size(sys_mannequin_size_opt->get_item_id(p_idx));
+	set_system_mannequin_size(msz);
+}
+
+void ClockGearsDatabaseDialog::set_system_mannequin_size(int p_size) {
+	int msz = ClockGearsDataManager::normalize_mannequin_size(p_size);
+	system_config["mannequin_size"] = msz;
+	if (ClockGearsDataManager::get_singleton()) {
+		ClockGearsDataManager::get_singleton()->set_mannequin_size(msz);
+		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
+	}
+	if (sys_mannequin_size_opt) {
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		sys_mannequin_size_opt->select(msz == 64 ? 2 : (msz == 48 ? 1 : 0));
+		updating_ui = prev_upd;
+	}
+	if (shape_editor) {
+		shape_editor->set_mannequin(s_is_arpg_equip_category(current_category), msz);
+	}
+	_mark_database_dirty();
+}
+
+int ClockGearsDatabaseDialog::get_system_mannequin_size() const {
+	return ClockGearsDataManager::normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
+}
+
+void ClockGearsDatabaseDialog::set_anim_submode(int p_mode) {
+	_on_anim_submode_selected(p_mode);
+}
+
+int ClockGearsDatabaseDialog::get_anim_submode() const {
+	return anim_submode;
+}
+
+void ClockGearsDatabaseDialog::select_shape_frame(int p_frame_idx) {
+	shape_frame_idx = MAX(0, p_frame_idx);
+	_refresh_shape_editor_context();
+}
+
+bool ClockGearsDatabaseDialog::copy_shapes_to_next_frame() {
+	String cur_slot = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_slot)) {
+		return false;
+	}
+	ClockGearsSpriteAnimation &anim = current_sprite_data.animations[cur_slot];
+	s_sync_anim_frames_data(anim);
+	if (shape_frame_idx < 0 || shape_frame_idx + 1 >= anim.frames_data.size()) {
+		return false;
+	}
+	const ClockGearsAnimationFrame src = anim.frames_data[shape_frame_idx];
+	ClockGearsAnimationFrame &dst = anim.frames_data.write[shape_frame_idx + 1];
+	if (ClockGearsSpriteAnimation::is_attack_slot_name(cur_slot)) {
+		dst.hitbox = src.hitbox;
+	}
+	dst.has_hurtbox_override = src.has_hurtbox_override;
+	if (src.has_hurtbox_override) {
+		dst.hurtbox_override = src.hurtbox_override;
+	}
+	dst.weapon_anchor = src.weapon_anchor;
+
+	_on_param_changed();
+	_refresh_shape_editor_context();
+	return true;
+}
+
+bool ClockGearsDatabaseDialog::copy_shapes_to_all_frames() {
+	String cur_slot = _get_active_anim_name();
+	if (!current_sprite_data.animations.has(cur_slot)) {
+		return false;
+	}
+	ClockGearsSpriteAnimation &anim = current_sprite_data.animations[cur_slot];
+	s_sync_anim_frames_data(anim);
+	if (anim.frames_data.size() <= 1 || shape_frame_idx < 0 || shape_frame_idx >= anim.frames_data.size()) {
+		return false;
+	}
+	const ClockGearsAnimationFrame src = anim.frames_data[shape_frame_idx];
+	bool is_atk = ClockGearsSpriteAnimation::is_attack_slot_name(cur_slot);
+	for (int i = 0; i < anim.frames_data.size(); i++) {
+		if (i == shape_frame_idx) continue;
+		ClockGearsAnimationFrame &dst = anim.frames_data.write[i];
+		if (is_atk) {
+			dst.hitbox = src.hitbox;
+		}
+		dst.has_hurtbox_override = src.has_hurtbox_override;
+		if (src.has_hurtbox_override) {
+			dst.hurtbox_override = src.hurtbox_override;
+		}
+		dst.weapon_anchor = src.weapon_anchor;
+	}
+	_on_param_changed();
+	_refresh_shape_editor_context();
+	return true;
+}
+
+bool ClockGearsDatabaseDialog::copy_shapes_from_direction(const String &p_from_dir, const String &p_mode) {
+	String cur_slot = _get_active_anim_name();
+	String prefix;
+	int to_dir = 0;
+	if (!s_parse_slot_dir_and_prefix(cur_slot, prefix, to_dir)) {
+		return false;
+	}
+
+	String q = p_from_dir.strip_edges().to_lower();
+	int from_dir = 0;
+	static const int k_all_dirs[8] = { 2, 4, 6, 8, 1, 3, 7, 9 };
+	for (int i = 0; i < 8; i++) {
+		int d = k_all_dirs[i];
+		if (ClockGearsCharacterStateRegistry::direction_to_suffix(d) == q || String::num_int64(d) == q) {
+			from_dir = d;
+			break;
+		}
+	}
+	if (from_dir == 0 || from_dir == to_dir) {
+		return false;
+	}
+
+	String src_slot = prefix + "_" + ClockGearsCharacterStateRegistry::direction_to_suffix(from_dir);
+	if (!current_sprite_data.animations.has(src_slot) || !current_sprite_data.animations.has(cur_slot)) {
+		return false;
+	}
+	s_sync_anim_frames_data(current_sprite_data.animations[src_slot]);
+	s_sync_anim_frames_data(current_sprite_data.animations[cur_slot]);
+
+	bool has_override_in_src = false;
+	const ClockGearsSpriteAnimation &sa = current_sprite_data.animations[src_slot];
+	for (int i = 0; i < sa.frames_data.size(); i++) {
+		if (sa.frames_data[i].has_hurtbox_override) {
+			has_override_in_src = true;
+			break;
+		}
+	}
+
+	Dictionary copied = ClockGearsShapeGeometry::copy_slot_shapes_between_directions(
+			current_sprite_data.to_dict(),
+			prefix,
+			from_dir,
+			to_dir,
+			p_mode,
+			true,
+			has_override_in_src);
+	current_sprite_data.from_dict(copied);
+
+	_on_param_changed();
+	_refresh_shape_editor_context();
+	return true;
+}
+
 

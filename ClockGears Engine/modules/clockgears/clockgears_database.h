@@ -26,6 +26,7 @@
 
 class ClockGearsBattleScene;
 class ClockGearsEventEditorDialog;
+class ClockGearsShapeEditor;
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
@@ -231,6 +232,7 @@ private:
 	Label *lbl_sys_arpg_blk_spd = nullptr;
 	SpinBox *sys_arpg_blk_spd_spin = nullptr;
 	OptionButton *sys_movement_dirs_opt = nullptr;
+	OptionButton *sys_mannequin_size_opt = nullptr;
 	OptionButton *sys_start_map_option = nullptr;
 	SpinBox *sys_start_x_spin = nullptr;
 	SpinBox *sys_start_y_spin = nullptr;
@@ -399,6 +401,27 @@ private:
 	// Sección B2: Equipo ARPG (Modo Completo / Simple, Orden de Capa, Detrás del Cuerpo y Vista Previa en Capas - Tanda 1C)
 	VBoxContainer *anim_sel_sec = nullptr;
 	VBoxContainer *anim_frames_sec = nullptr;
+	HFlowContainer *anim_submode_bar = nullptr;
+	Button *btn_anim_mode_frames = nullptr;
+	Button *btn_anim_mode_shapes = nullptr;
+	int anim_submode = 0; // 0 = Frames, 1 = Formas
+
+	// Editor de Formas, Hitboxes, Hurtbox, Ancla y Maniquí (9A Tanda 2)
+	VBoxContainer *anim_formas_sec = nullptr;
+	HFlowContainer *formas_frame_bar = nullptr;
+	Button *btn_shape_prev_frame = nullptr;
+	OptionButton *shape_frame_opt = nullptr;
+	Button *btn_shape_next_frame = nullptr;
+	Button *btn_shape_copy_next = nullptr;
+	Button *btn_shape_copy_all = nullptr;
+	OptionButton *shape_copy_dir_opt = nullptr;
+	OptionButton *shape_copy_mode_opt = nullptr;
+	Button *btn_shape_copy_dir = nullptr;
+	Label *shape_no_frames_lbl = nullptr;
+	ClockGearsShapeEditor *shape_editor = nullptr;
+	int shape_frame_idx = 0;
+	bool updating_shape_ui = false;
+
 	HFlowContainer *arpg_piece_mode_bar = nullptr;
 	OptionButton *arpg_draw_mode_opt = nullptr;
 	SpinBox *arpg_layer_order_spin = nullptr;
@@ -736,6 +759,20 @@ private:
 	void _update_anim_playback(float p_delta);
 
 	void _setup_arpg_equip_anim_ui();
+	void _setup_shape_editor_ui();
+	void _refresh_anim_submode_ui();
+	void _refresh_shape_editor_context();
+	void _refresh_shape_copy_dir_options();
+	void _sync_shape_editor_for_current_frame();
+	void _on_anim_submode_selected(int p_mode);
+	void _on_shape_frame_opt_selected(int p_idx);
+	void _on_shape_prev_frame_pressed();
+	void _on_shape_next_frame_pressed();
+	void _on_shape_copy_next_pressed();
+	void _on_shape_copy_all_pressed();
+	void _on_shape_copy_dir_pressed();
+	void _on_shape_editor_data_changed();
+	void _on_system_mannequin_size_selected(int p_idx);
 	void _refresh_arpg_piece_anim_mode_ui();
 	void _refresh_arpg_simple_fields();
 	void _refresh_arpg_preview_selectors();
@@ -795,6 +832,15 @@ public:
 	void remove_anim_frame_at(int p_frame_idx);
 	void set_system_movement_directions(int p_dirs);
 	int get_system_movement_directions() const;
+	void set_system_mannequin_size(int p_size);
+	int get_system_mannequin_size() const;
+	void set_anim_submode(int p_mode);
+	int get_anim_submode() const;
+	ClockGearsShapeEditor *get_shape_editor() const { return shape_editor; }
+	void select_shape_frame(int p_frame_idx);
+	bool copy_shapes_to_next_frame();
+	bool copy_shapes_to_all_frames();
+	bool copy_shapes_from_direction(const String &p_from_dir, const String &p_mode = "auto");
 	void set_actor_directional_idle(bool p_enabled);
 	bool is_actor_directional_idle() const;
 	Dictionary get_troop_battleback_cfg(int p_troop_idx, int p_slot) const;

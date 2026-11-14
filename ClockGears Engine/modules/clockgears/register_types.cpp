@@ -13,6 +13,7 @@
 
 // Tema, Iconos y Widgets Reutilizables Fase 2 & Fase 3 (icons/ y editor/)
 #include "editor/clockgears_project_manager.h"
+#include "editor/clockgears_shape_editor.h"
 #include "editor/clockgears_theme.h"
 #include "editor/clockgears_tile_picker.h"
 #include "editor/clockgears_ui_widgets.h"
@@ -85,6 +86,8 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsTilePickerCanvas);
 		GDREGISTER_CLASS(ClockGearsTilePicker);
 		GDREGISTER_CLASS(ClockGearsTilePickerDialog);
+		GDREGISTER_CLASS(ClockGearsShapeCanvas);
+		GDREGISTER_CLASS(ClockGearsShapeEditor);
 		GDREGISTER_CLASS(ClockGearsDebugWorldCanvas);
 		GDREGISTER_CLASS(ClockGearsDebugOverlay);
 #ifdef TOOLS_ENABLED
