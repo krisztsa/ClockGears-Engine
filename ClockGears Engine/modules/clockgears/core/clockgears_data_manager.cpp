@@ -301,7 +301,7 @@ static Dictionary s_normalize_body_shape_dict(const Variant &p_val) {
 			return s.to_dict();
 		}
 	}
-	return ClockGearsHitShape::make_circle(12.0f).to_dict();
+	return ClockGearsHitShape::make_default_body().to_dict();
 }
 
 static Array s_normalize_patrol_points(const Variant &p_val) {
@@ -734,7 +734,36 @@ void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary
 		}
 		r_record["detection_zones"] = migrated_zones;
 	} else {
-		r_record["detection_zones"] = s_normalize_detection_zones(r_record["detection_zones"]);
+		Array norm_zones = s_normalize_detection_zones(r_record["detection_zones"]);
+		for (int zi = 0; zi < norm_zones.size(); zi++) {
+			if (norm_zones[zi].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary zd = norm_zones[zi];
+			String zname = String(zd.get("name", ""));
+			String tf = String(zd.get("target_filter", "player")).strip_edges().to_lower();
+			String trig = String(zd.get("trigger", "enter")).strip_edges().to_lower();
+			Array acts = zd.get("actions", Array());
+			String act0_type;
+			if (acts.size() == 1 && acts[0].get_type() == Variant::DICTIONARY) {
+				act0_type = String(Dictionary(acts[0]).get("type", "")).strip_edges().to_lower();
+			}
+			ClockGearsHitShape sh = ClockGearsShapeGeometry::shape_from_variant(zd.get("shape", Dictionary()));
+			bool is_centered_circle = (sh.type == CG_SHAPE_CIRCLE && Math::abs(sh.offset.x) < 0.01f && Math::abs(sh.offset.y) < 0.01f);
+
+			// Solo migrar/actualizar si coincide con la zona migrada original y no fue editada por el creador.
+			if (zname == "Ataque" && tf == "player" && trig == "enter" && act0_type == "atacar" &&
+					is_centered_circle && atk_r > 0.0 && Math::abs(sh.get_radius() - float(atk_r * 32.0)) < 0.1f) {
+				zd["trigger"] = "while_inside";
+				zd["interval_sec"] = MAX(0.1, atk_iv);
+				norm_zones[zi] = zd;
+			} else if (zname == "Zona 2" && tf == "player" && (act0_type == "perseguir" || act0_type == "huir") &&
+					is_centered_circle && vis_r > 0.0 && Math::abs(sh.get_radius() - float(vis_r * 32.0)) < 0.1f) {
+				zd["name"] = String::utf8("Visión");
+				norm_zones[zi] = zd;
+			}
+		}
+		r_record["detection_zones"] = norm_zones;
 	}
 
 	// Aislar contenedores anidados existentes

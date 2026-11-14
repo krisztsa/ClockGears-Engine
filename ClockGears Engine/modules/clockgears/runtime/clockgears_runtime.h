@@ -101,7 +101,7 @@ private:
 
 	Sprite2D *sprite = nullptr;
 	HashMap<String, Sprite2D *> arpg_layer_sprites;
-	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
+	ClockGearsHitShape body_shape = ClockGearsHitShape::make_default_body();
 	bool body_through = false;
 	uint32_t body_shape_owner = UINT32_MAX;
 
@@ -187,6 +187,9 @@ public:
 	void set_body_shape(const Dictionary &p_shape);
 	Dictionary get_body_shape() const { return body_shape.to_dict(); }
 	const ClockGearsHitShape &get_body_shape_struct() const { return body_shape; }
+	Vector2 get_body_local_origin() const;
+	Vector2 get_body_world_origin() const { return get_position() + get_body_local_origin(); }
+	void get_active_attack_hitboxes_for_debug(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const { _collect_active_attack_hitboxes(r_hitboxes); }
 	void set_body_through(bool p_through) { body_through = p_through; }
 	bool is_body_through() const { return body_through; }
 	Vector2 move_with_collision(const Vector2 &p_delta);

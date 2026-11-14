@@ -30,6 +30,7 @@ private:
 	bool show_collisions = false;
 	bool show_grid = false;
 	bool show_bodies_zones = false;
+	bool show_hitboxes_hurtboxes = false;
 	bool show_damage_numbers = false;
 
 	struct FloatingDamageEntry {
@@ -60,6 +61,12 @@ public:
 
 	void set_show_bodies_zones(bool p_show);
 	bool is_show_bodies_zones() const { return show_bodies_zones; }
+
+	void set_show_hitboxes_hurtboxes(bool p_show);
+	bool is_show_hitboxes_hurtboxes() const { return show_hitboxes_hurtboxes; }
+
+	Transform2D get_world_to_screen_transform() const;
+	Vector2 world_to_screen(const Vector2 &p_world) const;
 
 	void set_show_damage_numbers(bool p_show);
 	bool is_show_damage_numbers() const { return show_damage_numbers; }
@@ -92,6 +99,7 @@ private:
 	CheckBox *chk_collisions = nullptr;
 	CheckBox *chk_grid = nullptr;
 	CheckBox *chk_bodies_zones = nullptr;
+	CheckBox *chk_hitboxes_hurtboxes = nullptr;
 	CheckBox *chk_damage_numbers = nullptr;
 	CheckBox *chk_fps = nullptr;
 	CheckBox *chk_player = nullptr;
@@ -192,6 +200,9 @@ public:
 
 	void set_show_bodies_zones(bool p_show);
 	bool is_show_bodies_zones() const;
+
+	void set_show_hitboxes_hurtboxes(bool p_show);
+	bool is_show_hitboxes_hurtboxes() const;
 
 	void set_show_player_hp(bool p_show);
 	bool is_show_player_hp() const;

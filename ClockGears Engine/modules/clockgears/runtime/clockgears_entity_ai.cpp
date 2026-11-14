@@ -47,6 +47,18 @@ static float s_approx_shape_radius(const ClockGearsHitShape &p_shape) {
 			MAX(Math::abs(b.position.y), Math::abs(b.position.y + b.size.y));
 }
 
+static Vector2 s_entity_body_local_origin(const Node *p_node, int p_ts) {
+	if (const ClockGearsPlayer *pl = Object::cast_to<ClockGearsPlayer>(p_node)) {
+		return pl->get_body_local_origin();
+	}
+	if (const ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(p_node)) {
+		if (ev->get_behavior_type() != 0) {
+			return ev->get_body_local_origin();
+		}
+	}
+	return Vector2(p_ts * 0.5f, p_ts * 0.5f);
+}
+
 bool ClockGearsEntityNav::can_body_occupy_position(
 		ClockGearsMap *p_map,
 		const ClockGearsHitShape &p_shape,
@@ -66,9 +78,9 @@ bool ClockGearsEntityNav::can_body_occupy_position(
 
 	int ts = MAX(16, p_tile_size);
 	Vector2i msize = p_map->get_map_size();
-	Vector2 half_tile(ts * 0.5f, ts * 0.5f);
-	Vector2 world_center = p_pos + half_tile;
-	Vector2 prev_center = p_prev_pos + half_tile;
+	Vector2 self_local_origin = s_entity_body_local_origin(p_self_owner, ts);
+	Vector2 world_center = p_pos + self_local_origin;
+	Vector2 prev_center = p_prev_pos + self_local_origin;
 
 	Rect2 local_bounds = ClockGearsShapeGeometry::compute_shape_local_bounds(p_shape);
 	const float skin = 0.35f;
@@ -140,8 +152,8 @@ bool ClockGearsEntityNav::can_body_occupy_position(
 	// 3. Colisión con cuerpos de otras entidades (jugador, enemigos, NPCs, eventos bloqueantes)
 	float self_r = s_approx_shape_radius(p_shape);
 
-	auto overlaps_other = [&](const ClockGearsHitShape &p_other_shape, const Vector2 &p_other_pos, int p_other_dir) -> bool {
-		Vector2 other_center = p_other_pos + half_tile;
+	auto overlaps_other = [&](const ClockGearsHitShape &p_other_shape, const Vector2 &p_other_pos, const Vector2 &p_other_local_origin, int p_other_dir) -> bool {
+		Vector2 other_center = p_other_pos + p_other_local_origin;
 		float other_r = s_approx_shape_radius(p_other_shape);
 		float max_d = self_r + other_r + 4.0f;
 		float dist_sq = world_center.distance_squared_to(other_center);
@@ -164,7 +176,7 @@ bool ClockGearsEntityNav::can_body_occupy_position(
 
 	ClockGearsPlayer *player = p_map->get_runtime_player();
 	if (player && player != p_self_owner && !player->is_through_enabled() && !player->is_body_through()) {
-		if (overlaps_other(player->get_body_shape_struct(), player->get_position(), player->get_direction())) {
+		if (overlaps_other(player->get_body_shape_struct(), player->get_position(), player->get_body_local_origin(), player->get_direction())) {
 			return false;
 		}
 	}
@@ -182,14 +194,14 @@ bool ClockGearsEntityNav::can_body_occupy_position(
 					continue;
 				}
 				ClockGearsHitShape std_box = ClockGearsHitShape::make_rect(Vector2(float(ts) - 1.0f, float(ts) - 1.0f));
-				if (overlaps_other(std_box, ev->get_position(), ev->get_direction())) {
+				if (overlaps_other(std_box, ev->get_position(), Vector2(ts * 0.5f, ts * 0.5f), ev->get_direction())) {
 					return false;
 				}
 			} else {
 				if (ev->is_through() || ev->is_body_through()) {
 					continue;
 				}
-				if (overlaps_other(ev->get_body_shape_struct(), ev->get_position(), ev->get_direction())) {
+				if (overlaps_other(ev->get_body_shape_struct(), ev->get_position(), ev->get_body_local_origin(), ev->get_direction())) {
 					return false;
 				}
 			}
@@ -256,7 +268,7 @@ Vector2 ClockGearsEntityNav::move_entity_with_slide(
 
 		// Si chocó de frente contra un cuerpo/curva (no contra pared plana) proyectar sobre la tangente para deslizar sin atascarse
 		if (!moved_axis && blocker_center != Vector2()) {
-			Vector2 normal = ((cur + half_tile) - blocker_center);
+			Vector2 normal = ((cur + s_entity_body_local_origin(p_self_owner, p_tile_size)) - blocker_center);
 			float nlen = normal.length();
 			if (nlen > 0.01f) {
 				normal /= nlen;

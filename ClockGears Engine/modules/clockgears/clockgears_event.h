@@ -54,7 +54,7 @@ private:
 	void _update_sprite_region();
 
 	// Runtime Cuerpo, Movimiento IA, A* y Zonas de Detección (behavior_type != 0)
-	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
+	ClockGearsHitShape body_shape = ClockGearsHitShape::make_default_body();
 	bool body_through = false;
 	bool avoid_obstacles = true;
 	int path_recalc_ms = 250;
@@ -62,6 +62,8 @@ private:
 	float walk_move_speed = 120.0f;
 	float run_move_speed = 180.0f;
 	float attack_speed_pct = 100.0f;
+	float attack_interval = 1.5f;
+	float arpg_attack_cooldown_timer = 0.0f;
 	float wander_radius = 3.0f;
 	Vector<Vector2> patrol_points;
 	bool patrol_loop = false;
@@ -140,10 +142,12 @@ private:
 	void _apply_entity_body_collision_state();
 	void _begin_enemy_attack_swing();
 	void _end_enemy_attack_swing();
+	void _collect_enemy_attack_hitboxes(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const;
 	void _process_enemy_attack_hits(ClockGearsMap *p_map);
 
 	void _apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed);
 	void _sync_runtime_entity_components();
+	void _sync_runtime_origins();
 	void _clear_runtime_entity_components();
 	void _update_behavior_visual_frame();
 	void _advance_behavior_animation(float p_delta);
@@ -227,6 +231,9 @@ public:
 	void set_body_shape(const Dictionary &p_shape);
 	Dictionary get_body_shape() const { return body_shape.to_dict(); }
 	const ClockGearsHitShape &get_body_shape_struct() const { return body_shape; }
+	Vector2 get_body_local_origin() const;
+	Vector2 get_body_world_origin() const { return get_position() + get_body_local_origin(); }
+	void get_active_attack_hitboxes_for_debug(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const { _collect_enemy_attack_hitboxes(r_hitboxes); }
 	void set_body_through(bool p_through);
 	bool is_body_through() const { return body_through; }
 	void set_avoid_obstacles(bool p_avoid) { avoid_obstacles = p_avoid; }

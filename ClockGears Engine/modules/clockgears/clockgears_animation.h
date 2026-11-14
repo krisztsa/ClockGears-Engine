@@ -148,6 +148,10 @@ struct ClockGearsHitShape {
 		return s;
 	}
 
+	static ClockGearsHitShape make_default_body() {
+		return make_circle(10.0f, Vector2(0.0f, 6.0f));
+	}
+
 	float get_radius() const {
 		return MAX(0.5f, size.x);
 	}
@@ -698,6 +702,19 @@ struct ClockGearsSpriteSheetData {
 		if (hurtbox.shape.size.x <= 0.5f || hurtbox.shape.size.y <= 0.5f) {
 			hurtbox = ClockGearsHurtboxData::make_default_for_frame(fw, fh);
 		}
+	}
+
+	bool has_authored_hitboxes_in_slot(const String &p_slot_name) const {
+		if (p_slot_name.is_empty() || !animations.has(p_slot_name)) {
+			return false;
+		}
+		const ClockGearsSpriteAnimation &a = animations[p_slot_name];
+		for (int i = 0; i < a.frames_data.size(); i++) {
+			if (!a.frames_data[i].hitbox.shapes.is_empty()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	ClockGearsHurtboxData get_effective_hurtbox(const String &p_slot_name, int p_frame_idx) const {
@@ -1328,6 +1345,8 @@ public:
 	static Dictionary make_rect_shape(const Vector2 &p_size, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
 	static Dictionary make_capsule_shape(float p_radius, float p_height, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
 	static Dictionary make_polygon_shape(const PackedVector2Array &p_vertices, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
+	static ClockGearsFrameHitboxData make_default_attack_hitbox_data(int p_dir, int p_tile_size = 32);
+	static Dictionary make_default_attack_hitbox_shape(int p_dir, int p_tile_size = 32);
 
 	static ClockGearsHitShape shape_from_variant(const Variant &p_var);
 	static void build_godot_shapes(const ClockGearsHitShape &p_shape, Vector<Ref<Shape2D>> &r_shapes);

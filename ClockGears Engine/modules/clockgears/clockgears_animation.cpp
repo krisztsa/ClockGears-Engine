@@ -1135,6 +1135,7 @@ void ClockGearsShapeGeometry::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_rect_shape", "size", "offset", "rotation_deg"), &ClockGearsShapeGeometry::make_rect_shape, DEFVAL(Vector2()), DEFVAL(0.0f));
 	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_capsule_shape", "radius", "height", "offset", "rotation_deg"), &ClockGearsShapeGeometry::make_capsule_shape, DEFVAL(Vector2()), DEFVAL(0.0f));
 	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_polygon_shape", "vertices", "offset", "rotation_deg"), &ClockGearsShapeGeometry::make_polygon_shape, DEFVAL(Vector2()), DEFVAL(0.0f));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_default_attack_hitbox_shape", "dir", "tile_size"), &ClockGearsShapeGeometry::make_default_attack_hitbox_shape, DEFVAL(32));
 
 	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("get_shape_world_pose", "shape", "world_pos", "entity_dir", "authored_dir"),
 			&ClockGearsShapeGeometry::get_shape_world_pose, DEFVAL(0), DEFVAL(0));
@@ -1183,6 +1184,25 @@ float ClockGearsShapeGeometry::direction_to_angle_deg(int p_dir) {
 
 Dictionary ClockGearsShapeGeometry::make_circle_shape(float p_radius, const Vector2 &p_offset) {
 	return ClockGearsHitShape::make_circle(p_radius, p_offset).to_dict();
+}
+
+ClockGearsFrameHitboxData ClockGearsShapeGeometry::make_default_attack_hitbox_data(int p_dir, int p_tile_size) {
+	ClockGearsFrameHitboxData hb;
+	Vector2 d = direction_to_vector(p_dir);
+	if (d.is_zero_approx()) {
+		d = Vector2(0.0f, 1.0f);
+	}
+	float ts = MAX(8.0f, float(p_tile_size));
+	hb.shapes.push_back(ClockGearsHitShape::make_rect(Vector2(ts, ts), d * (ts * 0.75f), 0.0f));
+	hb.damage_mult_pct = 100.0f;
+	hb.knockback = 0.0f;
+	hb.hitstop_ms = 0;
+	return hb;
+}
+
+Dictionary ClockGearsShapeGeometry::make_default_attack_hitbox_shape(int p_dir, int p_tile_size) {
+	ClockGearsFrameHitboxData hb = make_default_attack_hitbox_data(p_dir, p_tile_size);
+	return hb.shapes.is_empty() ? Dictionary() : hb.shapes[0].to_dict();
 }
 
 Dictionary ClockGearsShapeGeometry::make_rect_shape(const Vector2 &p_size, const Vector2 &p_offset, float p_rotation_deg) {

@@ -198,6 +198,8 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup_on_map", "map", "followers", "interpreter"), &ClockGearsPlayer::setup_on_map, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("set_body_shape", "shape"), &ClockGearsPlayer::set_body_shape);
 	ClassDB::bind_method(D_METHOD("get_body_shape"), &ClockGearsPlayer::get_body_shape);
+	ClassDB::bind_method(D_METHOD("get_body_local_origin"), &ClockGearsPlayer::get_body_local_origin);
+	ClassDB::bind_method(D_METHOD("get_body_world_origin"), &ClockGearsPlayer::get_body_world_origin);
 	ClassDB::bind_method(D_METHOD("set_body_through", "through"), &ClockGearsPlayer::set_body_through);
 	ClassDB::bind_method(D_METHOD("is_body_through"), &ClockGearsPlayer::is_body_through);
 	ClassDB::bind_method(D_METHOD("move_with_collision", "delta"), &ClockGearsPlayer::move_with_collision);
@@ -442,9 +444,13 @@ void ClockGearsPlayer::_collect_active_attack_hitboxes(Vector<ClockGearsFrameHit
 		return;
 	}
 	int cur_fi = active_freeze_frame0 ? 0 : MAX(0, slot_anim_frame_idx);
+	bool any_slot_has_authored_hitbox = false;
 
 	// 1) Hitbox en el propio slot del actor
 	if (ClockGearsSpriteAnimation::is_attack_slot_name(active_resolved_slot) && actor_sprite_data.animations.has(active_resolved_slot)) {
+		if (actor_sprite_data.has_authored_hitboxes_in_slot(active_resolved_slot)) {
+			any_slot_has_authored_hitbox = true;
+		}
 		const ClockGearsSpriteAnimation &a = actor_sprite_data.animations[active_resolved_slot];
 		if (cur_fi >= 0 && cur_fi < a.frames_data.size() && !a.frames_data[cur_fi].hitbox.is_empty()) {
 			r_hitboxes.push_back(a.frames_data[cur_fi].hitbox);
@@ -454,48 +460,55 @@ void ClockGearsPlayer::_collect_active_attack_hitboxes(Vector<ClockGearsFrameHit
 	// 2) Hitboxes en el arma ARPG equipada (si define animación de ataque con formas)
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
-	if (!dm || !reg || actor_id <= 0) {
-		return;
-	}
-	Array slots = dm->get_actor_arpg_equip_slots(actor_id);
-	for (int s = 0; s < slots.size(); s++) {
-		if (slots[s].get_type() != Variant::DICTIONARY) {
-			continue;
-		}
-		Dictionary sd = slots[s];
-		int pid = int(sd.get("piece_id", 0));
-		if (pid <= 0) {
-			continue;
-		}
-		String slot_id = String(sd.get("slot", "")).strip_edges().to_lower();
-		int cat = ClockGearsDataManager::get_category_from_key(String(sd.get("category", "")));
-		if (slot_id != "arma" && cat != CAT_ARPG_WEAPONS && cat != CAT_WEAPONS) {
-			continue;
-		}
-		Dictionary piece = dm->get_record_by_id(cat, pid);
-		if (piece.is_empty()) {
-			continue;
-		}
-		Dictionary sp_dict;
-		if (piece.has("sprite_data") && piece["sprite_data"].get_type() == Variant::DICTIONARY) {
-			sp_dict = Dictionary(piece["sprite_data"]);
-		} else if (piece.has("animations") && piece["animations"].get_type() == Variant::DICTIONARY) {
-			sp_dict["animations"] = Dictionary(piece["animations"]);
-		}
-		if (sp_dict.is_empty()) {
-			continue;
-		}
-		ClockGearsSpriteSheetData p_sheet;
-		p_sheet.from_dict(sp_dict);
-		ClockGearsSpriteAnimation p_anim;
-		bool p_freeze = false;
-		String p_slot;
-		if (reg->resolve_actor_animation(p_sheet, false, "atacar", direction, p_anim, p_freeze, p_slot) && !p_freeze && p_anim.get_frame_count() > 0) {
-			int wfi = CLAMP(cur_fi, 0, p_anim.get_frame_count() - 1);
-			if (wfi < p_anim.frames_data.size() && !p_anim.frames_data[wfi].hitbox.is_empty()) {
-				r_hitboxes.push_back(p_anim.frames_data[wfi].hitbox);
+	if (dm && reg && actor_id > 0) {
+		Array slots = dm->get_actor_arpg_equip_slots(actor_id);
+		for (int s = 0; s < slots.size(); s++) {
+			if (slots[s].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary sd = slots[s];
+			int pid = int(sd.get("piece_id", 0));
+			if (pid <= 0) {
+				continue;
+			}
+			String slot_id = String(sd.get("slot", "")).strip_edges().to_lower();
+			int cat = ClockGearsDataManager::get_category_from_key(String(sd.get("category", "")));
+			if (slot_id != "arma" && cat != CAT_ARPG_WEAPONS && cat != CAT_WEAPONS) {
+				continue;
+			}
+			Dictionary piece = dm->get_record_by_id(cat, pid);
+			if (piece.is_empty()) {
+				continue;
+			}
+			Dictionary sp_dict;
+			if (piece.has("sprite_data") && piece["sprite_data"].get_type() == Variant::DICTIONARY) {
+				sp_dict = Dictionary(piece["sprite_data"]);
+			} else if (piece.has("animations") && piece["animations"].get_type() == Variant::DICTIONARY) {
+				sp_dict["animations"] = Dictionary(piece["animations"]);
+			}
+			if (sp_dict.is_empty()) {
+				continue;
+			}
+			ClockGearsSpriteSheetData p_sheet;
+			p_sheet.from_dict(sp_dict);
+			ClockGearsSpriteAnimation p_anim;
+			bool p_freeze = false;
+			String p_slot;
+			if (reg->resolve_actor_animation(p_sheet, false, "atacar", direction, p_anim, p_freeze, p_slot) && !p_freeze && p_anim.get_frame_count() > 0) {
+				if (p_sheet.has_authored_hitboxes_in_slot(p_slot)) {
+					any_slot_has_authored_hitbox = true;
+				}
+				int wfi = CLAMP(cur_fi, 0, p_anim.get_frame_count() - 1);
+				if (wfi < p_anim.frames_data.size() && !p_anim.frames_data[wfi].hitbox.is_empty()) {
+					r_hitboxes.push_back(p_anim.frames_data[wfi].hitbox);
+				}
 			}
 		}
+	}
+
+	// 3) Si el slot de ataque no tiene ninguna hitbox dibujada en ningún frame, usar hitbox por defecto frente al personaje.
+	if (!any_slot_has_authored_hitbox && r_hitboxes.is_empty()) {
+		r_hitboxes.push_back(ClockGearsShapeGeometry::make_default_attack_hitbox_data(direction, tile_size));
 	}
 }
 
@@ -618,6 +631,7 @@ void ClockGearsPlayer::_process_active_attack_hits() {
 
 void ClockGearsPlayer::_update_sprite_frame() {
 	_update_body_sprite_frame();
+	_sync_body_collision_shapes();
 	refresh_arpg_equip_layers();
 }
 
@@ -731,7 +745,7 @@ void ClockGearsPlayer::load_actor_data(int p_actor_id) {
 			if (!bsd.is_empty()) {
 				body_shape.from_dict(bsd);
 			} else {
-				body_shape = ClockGearsHitShape::make_circle(12.0f);
+				body_shape = ClockGearsHitShape::make_default_body();
 			}
 			body_through = bool(rec.get("body_through", false));
 			Dictionary sp_dict = rec.get("sprite_data", Dictionary());
@@ -805,8 +819,7 @@ void ClockGearsPlayer::_sync_body_collision_shapes() {
 	if (body_shape_owner == UINT32_MAX) {
 		return;
 	}
-	Vector2 half_tile(tile_size * 0.5f, tile_size * 0.5f);
-	ClockGearsShapeGeometry::populate_collision_object_shapes(this, body_shape_owner, body_shape, half_tile);
+	ClockGearsShapeGeometry::populate_collision_object_shapes(this, body_shape_owner, body_shape, get_body_local_origin());
 }
 
 void ClockGearsPlayer::set_body_shape(const Dictionary &p_shape) {
@@ -852,14 +865,26 @@ int64_t ClockGearsPlayer::get_arpg_exp() const {
 	return (dm && actor_id > 0) ? dm->get_actor_runtime_exp(actor_id) : 0;
 }
 
-Vector2 ClockGearsPlayer::get_arpg_world_center() const {
+Vector2 ClockGearsPlayer::get_body_local_origin() const {
 	if (sprite && sprite->is_region_enabled()) {
 		Size2 rsz = sprite->get_region_rect().size;
 		if (rsz.x > 0.0f && rsz.y > 0.0f) {
-			return get_position() + sprite->get_position() + rsz * 0.5f;
+			return sprite->get_position() + rsz * 0.5f;
 		}
 	}
-	return get_position() + Vector2(tile_size * 0.5f, tile_size * 0.5f);
+	if (sprite && sprite->get_texture().is_valid()) {
+		int hf = MAX(1, sprite->get_hframes());
+		int vf = MAX(1, sprite->get_vframes());
+		Size2 fsz(float(sprite->get_texture()->get_width()) / float(hf), float(sprite->get_texture()->get_height()) / float(vf));
+		if (fsz.x > 0.0f && fsz.y > 0.0f) {
+			return sprite->get_position() + fsz * 0.5f;
+		}
+	}
+	return Vector2(tile_size * 0.5f, tile_size * 0.5f);
+}
+
+Vector2 ClockGearsPlayer::get_arpg_world_center() const {
+	return get_body_world_origin();
 }
 
 Dictionary ClockGearsPlayer::get_arpg_effective_hurtbox() const {
@@ -1333,7 +1358,7 @@ bool ClockGearsPlayer::_can_pass_cardinal_step(const Vector2i &p_from, const Vec
 
 	// Comprobar colisión con Eventos en la celda destino (Prioridad 1 = Mismo nivel que el jugador, sin Through/atravesable)
 	Vector<ClockGearsEvent *> ev_nodes = _cg_get_map_events(current_map);
-	Vector2 to_center = Vector2(p_to) * float(tile_size) + Vector2(tile_size * 0.5f, tile_size * 0.5f);
+	Vector2 to_center = Vector2(p_to) * float(tile_size) + get_body_local_origin();
 	for (int i = 0; i < ev_nodes.size(); i++) {
 		ClockGearsEvent *ev = ev_nodes[i];
 		if (!ev || !ev->is_visible() || ev->is_through()) {
@@ -1343,7 +1368,7 @@ bool ClockGearsPlayer::_can_pass_cardinal_step(const Vector2i &p_from, const Vec
 			if (ev->is_body_through()) {
 				continue;
 			}
-			Vector2 ev_center = ev->get_position() + Vector2(tile_size * 0.5f, tile_size * 0.5f);
+			Vector2 ev_center = ev->get_body_world_origin();
 			if (ClockGearsShapeGeometry::shapes_overlap_native(body_shape, to_center, direction, ev->get_body_shape_struct(), ev_center, ev->get_direction())) {
 				if (r_blocking_event) {
 					*r_blocking_event = ev;

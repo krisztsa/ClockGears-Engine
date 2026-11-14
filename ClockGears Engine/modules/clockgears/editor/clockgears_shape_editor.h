@@ -134,7 +134,7 @@ private:
 	ClockGearsWeaponAnchor weapon_anchor_data;
 
 	// Datos MODE_BODY_ZONES (cuerpo en px, zonas en px)
-	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
+	ClockGearsHitShape body_shape = ClockGearsHitShape::make_default_body();
 	bool body_through = false;
 	Vector<ZoneEntry> bz_zones;
 	int selected_bz_idx = -1; // -1 = Cuerpo, >= 0 = índice de zona

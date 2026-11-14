@@ -138,6 +138,8 @@ void ClockGearsEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_arpg_hp_bar_remaining"), &ClockGearsEvent::get_arpg_hp_bar_remaining);
 	ClassDB::bind_method(D_METHOD("get_arpg_hitstop_remaining"), &ClockGearsEvent::get_arpg_hitstop_remaining);
 	ClassDB::bind_method(D_METHOD("get_arpg_knockback_remaining"), &ClockGearsEvent::get_arpg_knockback_remaining);
+	ClassDB::bind_method(D_METHOD("get_body_local_origin"), &ClockGearsEvent::get_body_local_origin);
+	ClassDB::bind_method(D_METHOD("get_body_world_origin"), &ClockGearsEvent::get_body_world_origin);
 	ClassDB::bind_method(D_METHOD("get_arpg_world_center"), &ClockGearsEvent::get_arpg_world_center);
 	ClassDB::bind_method(D_METHOD("get_arpg_effective_hurtbox"), &ClockGearsEvent::get_arpg_effective_hurtbox);
 	ClassDB::bind_method(D_METHOD("get_arpg_enemy_record"), &ClockGearsEvent::get_arpg_enemy_record);
@@ -800,7 +802,7 @@ void ClockGearsEvent::_apply_behavior_record_config(const Dictionary &p_rec, flo
 	if (!bsd.is_empty()) {
 		body_shape.from_dict(bsd);
 	} else {
-		body_shape = ClockGearsHitShape::make_circle(12.0f);
+		body_shape = ClockGearsHitShape::make_default_body();
 	}
 	body_through = bool(p_rec.get("body_through", false));
 	avoid_obstacles = p_rec.has("avoid_obstacles") ? bool(p_rec["avoid_obstacles"]) : true;
@@ -810,6 +812,7 @@ void ClockGearsEvent::_apply_behavior_record_config(const Dictionary &p_rec, flo
 	float walk_pct = MAX(1.0f, float(p_rec.get("walk_speed_pct", 100)));
 	float run_pct = MAX(1.0f, float(p_rec.get("run_speed_pct", 100)));
 	attack_speed_pct = MAX(1.0f, float(p_rec.get("attack_speed_pct", 100)));
+	attack_interval = MAX(0.0f, float(p_rec.get("attack_interval", 1.5)));
 	walk_move_speed = MAX(8.0f, p_base_ev_speed * (walk_pct / 100.0f));
 	run_move_speed = MAX(8.0f, p_base_ev_speed * 1.5f * (run_pct / 100.0f));
 
@@ -880,6 +883,19 @@ void ClockGearsEvent::_clear_runtime_entity_components() {
 	cached_zones_sig = "";
 }
 
+void ClockGearsEvent::_sync_runtime_origins() {
+	if (behavior_type == 0) {
+		return;
+	}
+	Vector2 origin = get_body_local_origin();
+	if (entity_body) {
+		entity_body->set_position(origin);
+	}
+	if (zones_root) {
+		zones_root->set_position(origin);
+	}
+}
+
 void ClockGearsEvent::_sync_runtime_entity_components() {
 	if (Engine::get_singleton()->is_editor_hint() || behavior_type == 0) {
 		_clear_runtime_entity_components();
@@ -887,7 +903,7 @@ void ClockGearsEvent::_sync_runtime_entity_components() {
 	}
 	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
 	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
-	Vector2 half_tile(ts * 0.5f, ts * 0.5f);
+	Vector2 origin = get_body_local_origin();
 
 	String body_sig = JSON::stringify(body_shape.to_dict()) + ":" + String::num_int64(behavior_type) + ":" + String::num_int64(ts);
 	if (!entity_body || body_sig != cached_body_sig) {
@@ -899,11 +915,12 @@ void ClockGearsEvent::_sync_runtime_entity_components() {
 			entity_body_shape_owner = entity_body->create_shape_owner(entity_body);
 			add_child(entity_body);
 		}
-		entity_body->set_position(half_tile);
+		entity_body->set_position(origin);
 		_apply_entity_body_collision_state();
 		ClockGearsShapeGeometry::populate_collision_object_shapes(entity_body, entity_body_shape_owner, body_shape, Vector2());
 		cached_body_sig = body_sig;
 	} else {
+		entity_body->set_position(origin);
 		_apply_entity_body_collision_state();
 	}
 
@@ -914,7 +931,7 @@ void ClockGearsEvent::_sync_runtime_entity_components() {
 			zones_root->set_name("RuntimeDetectionZones");
 			add_child(zones_root);
 		}
-		zones_root->set_position(half_tile);
+		zones_root->set_position(origin);
 		for (int i = 0; i < zone_nodes.size(); i++) {
 			if (zone_nodes[i]) {
 				zone_nodes[i]->queue_free();
@@ -997,6 +1014,7 @@ void ClockGearsEvent::_update_behavior_visual_frame() {
 		sprite->set_vframes(1);
 		sprite->set_frame(0);
 		sprite->set_position(Vector2((32 - reg_rect.size.x) / 2, 32 - reg_rect.size.y));
+		_sync_runtime_origins();
 	}
 }
 
@@ -1222,7 +1240,7 @@ void ClockGearsEvent::execute_zone_actions(const Array &p_actions, Node *p_targe
 				}
 			}
 		} else if (act_type == "atacar") {
-			if (ev_action_state != "atacar") {
+			if (ev_action_state != "atacar" && arpg_attack_cooldown_timer <= 0.005f) {
 				start_arpg_attack(p_target);
 			}
 		}
@@ -1301,16 +1319,31 @@ void ClockGearsEvent::_apply_entity_body_collision_state() {
 	}
 }
 
-Vector2 ClockGearsEvent::get_arpg_world_center() const {
+Vector2 ClockGearsEvent::get_body_local_origin() const {
 	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
 	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
+	if (behavior_type == 0) {
+		return Vector2(ts * 0.5f, ts * 0.5f);
+	}
 	if (sprite && sprite->is_region_enabled()) {
 		Size2 rsz = sprite->get_region_rect().size;
 		if (rsz.x > 0.0f && rsz.y > 0.0f) {
-			return get_position() + sprite->get_position() + rsz * 0.5f;
+			return sprite->get_position() + rsz * 0.5f;
 		}
 	}
-	return get_position() + Vector2(ts * 0.5f, ts * 0.5f);
+	if (sprite && sprite->get_texture().is_valid()) {
+		int hf = MAX(1, sprite->get_hframes());
+		int vf = MAX(1, sprite->get_vframes());
+		Size2 fsz(float(sprite->get_texture()->get_width()) / float(hf), float(sprite->get_texture()->get_height()) / float(vf));
+		if (fsz.x > 0.0f && fsz.y > 0.0f) {
+			return sprite->get_position() + fsz * 0.5f;
+		}
+	}
+	return Vector2(ts * 0.5f, ts * 0.5f);
+}
+
+Vector2 ClockGearsEvent::get_arpg_world_center() const {
+	return get_body_world_origin();
 }
 
 Dictionary ClockGearsEvent::get_arpg_effective_hurtbox() const {
@@ -1375,9 +1408,35 @@ void ClockGearsEvent::start_arpg_attack(Node *p_target) {
 	ev_anim_frame = 0;
 	ev_anim_timer = 0.0f;
 	ev_attack_timer = 0.45f * (100.0f / MAX(1.0f, attack_speed_pct));
+	arpg_attack_cooldown_timer = attack_interval;
 	_begin_enemy_attack_swing();
 	_update_behavior_visual_frame();
 	_process_enemy_attack_hits(map);
+}
+
+void ClockGearsEvent::_collect_enemy_attack_hitboxes(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const {
+	r_hitboxes.clear();
+	if (behavior_type != 3 || !is_arpg_alive() || ev_action_state != "atacar") {
+		return;
+	}
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (reg) {
+		ClockGearsSpriteAnimation atk_anim;
+		bool freeze_f0 = false;
+		String res_slot;
+		bool resolved = reg->resolve_actor_animation(cached_sprite_data, cached_directional_idle, "atacar", direction, atk_anim, freeze_f0, res_slot);
+		int fcount = resolved ? atk_anim.get_frame_count() : 0;
+		if (resolved && !freeze_f0 && fcount > 0 && cached_sprite_data.has_authored_hitboxes_in_slot(res_slot)) {
+			int fi = CLAMP(ev_anim_frame, 0, fcount - 1);
+			if (fi >= 0 && fi < atk_anim.frames_data.size() && !atk_anim.frames_data[fi].hitbox.is_empty()) {
+				r_hitboxes.push_back(atk_anim.frames_data[fi].hitbox);
+			}
+			return;
+		}
+	}
+	r_hitboxes.push_back(ClockGearsShapeGeometry::make_default_attack_hitbox_data(direction, ts));
 }
 
 void ClockGearsEvent::_process_enemy_attack_hits(ClockGearsMap *p_map) {
@@ -1396,25 +1455,12 @@ void ClockGearsEvent::_process_enemy_attack_hits(ClockGearsMap *p_map) {
 		return;
 	}
 
-	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
-	if (!reg) {
+	Vector<ClockGearsFrameHitboxData> hitboxes;
+	_collect_enemy_attack_hitboxes(hitboxes);
+	if (hitboxes.is_empty()) {
 		return;
 	}
-	ClockGearsSpriteAnimation atk_anim;
-	bool freeze_f0 = false;
-	String res_slot;
-	if (!reg->resolve_actor_animation(cached_sprite_data, cached_directional_idle, "atacar", direction, atk_anim, freeze_f0, res_slot) || freeze_f0) {
-		return;
-	}
-	int fcount = atk_anim.get_frame_count();
-	if (fcount <= 0) {
-		return;
-	}
-	int fi = CLAMP(ev_anim_frame, 0, fcount - 1);
-	if (fi < 0 || fi >= atk_anim.frames_data.size() || atk_anim.frames_data[fi].hitbox.is_empty()) {
-		return;
-	}
-	const ClockGearsFrameHitboxData &hb = atk_anim.frames_data[fi].hitbox;
+	const ClockGearsFrameHitboxData &hb = hitboxes[0];
 	Array shapes_arr;
 	shapes_arr.resize(hb.shapes.size());
 	for (int si = 0; si < hb.shapes.size(); si++) {
@@ -1601,6 +1647,9 @@ void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 	if (arpg_hp_bar_timer > 0.0f) {
 		arpg_hp_bar_timer = MAX(0.0f, arpg_hp_bar_timer - p_delta);
 		queue_redraw();
+	}
+	if (arpg_attack_cooldown_timer > 0.0f) {
+		arpg_attack_cooldown_timer = MAX(0.0f, arpg_attack_cooldown_timer - p_delta);
 	}
 	if (!spawn_origin_set) {
 		reset_spawn_origin();

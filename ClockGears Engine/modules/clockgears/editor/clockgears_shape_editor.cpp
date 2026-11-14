@@ -2395,7 +2395,7 @@ void ClockGearsShapeEditor::_refresh_bz_list() {
 
 void ClockGearsShapeEditor::set_body_zones_data(const Dictionary &p_body_shape, bool p_body_through, const Array &p_zones) {
 	if (p_body_shape.is_empty()) {
-		body_shape = ClockGearsHitShape::make_circle(12.0f);
+		body_shape = ClockGearsHitShape::make_default_body();
 	} else {
 		body_shape.from_dict(p_body_shape);
 	}

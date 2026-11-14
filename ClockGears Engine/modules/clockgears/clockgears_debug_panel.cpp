@@ -14,6 +14,7 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/texture_rect.h"
+#include "scene/main/viewport.h"
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
@@ -67,6 +68,9 @@ void ClockGearsDebugWorldCanvas::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_grid"), &ClockGearsDebugWorldCanvas::is_show_grid);
 	ClassDB::bind_method(D_METHOD("set_show_bodies_zones", "show"), &ClockGearsDebugWorldCanvas::set_show_bodies_zones);
 	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugWorldCanvas::is_show_bodies_zones);
+	ClassDB::bind_method(D_METHOD("set_show_hitboxes_hurtboxes", "show"), &ClockGearsDebugWorldCanvas::set_show_hitboxes_hurtboxes);
+	ClassDB::bind_method(D_METHOD("is_show_hitboxes_hurtboxes"), &ClockGearsDebugWorldCanvas::is_show_hitboxes_hurtboxes);
+	ClassDB::bind_method(D_METHOD("world_to_screen", "world_pos"), &ClockGearsDebugWorldCanvas::world_to_screen);
 	ClassDB::bind_method(D_METHOD("set_show_damage_numbers", "show"), &ClockGearsDebugWorldCanvas::set_show_damage_numbers);
 	ClassDB::bind_method(D_METHOD("is_show_damage_numbers"), &ClockGearsDebugWorldCanvas::is_show_damage_numbers);
 	ClassDB::bind_method(D_METHOD("is_damage_numbers_enabled"), &ClockGearsDebugWorldCanvas::is_damage_numbers_enabled);
@@ -104,6 +108,22 @@ void ClockGearsDebugWorldCanvas::set_show_grid(bool p_show) {
 void ClockGearsDebugWorldCanvas::set_show_bodies_zones(bool p_show) {
 	show_bodies_zones = p_show;
 	queue_redraw();
+}
+
+void ClockGearsDebugWorldCanvas::set_show_hitboxes_hurtboxes(bool p_show) {
+	show_hitboxes_hurtboxes = p_show;
+	queue_redraw();
+}
+
+Transform2D ClockGearsDebugWorldCanvas::get_world_to_screen_transform() const {
+	if (const Viewport *vp = get_viewport()) {
+		return vp->get_canvas_transform();
+	}
+	return Transform2D();
+}
+
+Vector2 ClockGearsDebugWorldCanvas::world_to_screen(const Vector2 &p_world) const {
+	return get_world_to_screen_transform().xform(p_world);
 }
 
 void ClockGearsDebugWorldCanvas::set_show_damage_numbers(bool p_show) {
@@ -154,25 +174,31 @@ void ClockGearsDebugWorldCanvas::clear_damage_numbers() {
 	queue_redraw();
 }
 
-static void s_draw_hit_shape(CanvasItem *p_ci, const ClockGearsHitShape &p_shape, const Vector2 &p_origin, const Color &p_fill, const Color &p_border) {
+static void s_draw_hit_shape(ClockGearsDebugWorldCanvas *p_ci, const ClockGearsHitShape &p_shape, const Vector2 &p_world_origin, const Color &p_fill, const Color &p_border) {
 	if (!p_ci) {
 		return;
 	}
-	Vector2 c = p_origin + p_shape.offset;
+	Vector2 w_center = p_world_origin + p_shape.offset;
+	Vector2 s_center = p_ci->world_to_screen(w_center);
+	float px_scale = (p_ci->world_to_screen(w_center + Vector2(1.0f, 0.0f)) - s_center).length();
+	if (px_scale <= 0.001f) {
+		px_scale = 1.0f;
+	}
 	float ang = Math::deg_to_rad(p_shape.rotation);
 
 	if (p_shape.type == CG_SHAPE_CIRCLE) {
-		float r = p_shape.get_radius();
-		p_ci->draw_circle(c, r, p_fill);
-		p_ci->draw_arc(c, r, 0.0f, float(Math::TAU), 28, p_border, 1.5f);
+		float r = p_shape.get_radius() * px_scale;
+		p_ci->draw_circle(s_center, r, p_fill);
+		p_ci->draw_arc(s_center, r, 0.0f, float(Math::TAU), 28, p_border, 1.5f);
 	} else if (p_shape.type == CG_SHAPE_CAPSULE) {
-		float r = p_shape.get_radius();
-		float h = p_shape.get_capsule_height();
-		float half_seg = MAX(0.0f, h * 0.5f - r);
-		Transform2D xf(ang, c);
-		Vector2 a = xf.xform(Vector2(0, -half_seg));
-		Vector2 b = xf.xform(Vector2(0, half_seg));
-		Vector2 side = xf.basis_xform(Vector2(r, 0));
+		float wr = p_shape.get_radius();
+		float wh = p_shape.get_capsule_height();
+		float half_seg = MAX(0.0f, wh * 0.5f - wr);
+		Transform2D xf(ang, w_center);
+		Vector2 a = p_ci->world_to_screen(xf.xform(Vector2(0, -half_seg)));
+		Vector2 b = p_ci->world_to_screen(xf.xform(Vector2(0, half_seg)));
+		Vector2 side = p_ci->world_to_screen(w_center + xf.basis_xform(Vector2(wr, 0))) - s_center;
+		float r = wr * px_scale;
 		PackedVector2Array pts;
 		pts.push_back(a - side);
 		pts.push_back(a + side);
@@ -186,11 +212,11 @@ static void s_draw_hit_shape(CanvasItem *p_ci, const ClockGearsHitShape &p_shape
 		p_ci->draw_line(a - side, b - side, p_border, 1.5f);
 		p_ci->draw_line(a + side, b + side, p_border, 1.5f);
 	} else if (p_shape.type == CG_SHAPE_POLYGON && p_shape.vertices.size() >= 3) {
-		Transform2D xf(ang, c);
+		Transform2D xf(ang, w_center);
 		PackedVector2Array pts;
 		pts.resize(p_shape.vertices.size());
 		for (int i = 0; i < p_shape.vertices.size(); i++) {
-			pts.write[i] = xf.xform(p_shape.vertices[i]);
+			pts.write[i] = p_ci->world_to_screen(xf.xform(p_shape.vertices[i]));
 		}
 		p_ci->draw_colored_polygon(pts, p_fill);
 		PackedVector2Array outline = pts;
@@ -198,12 +224,12 @@ static void s_draw_hit_shape(CanvasItem *p_ci, const ClockGearsHitShape &p_shape
 		p_ci->draw_polyline(outline, p_border, 1.5f);
 	} else {
 		Vector2 half = Vector2(MAX(0.5f, p_shape.size.x), MAX(0.5f, p_shape.size.y)) * 0.5f;
-		Transform2D xf(ang, c);
+		Transform2D xf(ang, w_center);
 		PackedVector2Array pts;
-		pts.push_back(xf.xform(Vector2(-half.x, -half.y)));
-		pts.push_back(xf.xform(Vector2(half.x, -half.y)));
-		pts.push_back(xf.xform(Vector2(half.x, half.y)));
-		pts.push_back(xf.xform(Vector2(-half.x, half.y)));
+		pts.push_back(p_ci->world_to_screen(xf.xform(Vector2(-half.x, -half.y))));
+		pts.push_back(p_ci->world_to_screen(xf.xform(Vector2(half.x, -half.y))));
+		pts.push_back(p_ci->world_to_screen(xf.xform(Vector2(half.x, half.y))));
+		pts.push_back(p_ci->world_to_screen(xf.xform(Vector2(-half.x, half.y))));
 		p_ci->draw_colored_polygon(pts, p_fill);
 		PackedVector2Array outline = pts;
 		outline.push_back(pts[0]);
@@ -213,7 +239,7 @@ static void s_draw_hit_shape(CanvasItem *p_ci, const ClockGearsHitShape &p_shape
 
 void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
-		bool need_redraw = (show_events || show_collisions || show_grid || show_bodies_zones);
+		bool need_redraw = (show_events || show_collisions || show_grid || show_bodies_zones || show_hitboxes_hurtboxes);
 		if (!floating_damages.is_empty()) {
 			float dt = get_process_delta_time();
 			for (int i = floating_damages.size() - 1; i >= 0; i--) {
@@ -231,31 +257,34 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 		if (!map) return;
 
 		Ref<Font> font = ThemeDB::get_singleton()->get_fallback_font();
+		int ts = MAX(16, map->get_grid_resolution());
 
-		// Rango visible de celdas
-		Vector2 cam_pos = camera ? camera->get_position() : (map->get_runtime_player() ? map->get_runtime_player()->get_position() : Vector2(0, 0));
-		float zoom = camera ? camera->get_zoom().x : 1.0f;
-		if (zoom <= 0.05f) zoom = 1.0f;
+		// Transformación única mundo -> pantalla (incluye cámara, zoom y viewport)
+		Transform2D xf = get_world_to_screen_transform();
+		Transform2D inv_xf = xf.affine_inverse();
 		Size2 vp_size = get_viewport() ? get_viewport()->get_visible_rect().size : Size2(960, 540);
-		Vector2 half_sz = (vp_size / zoom) * 0.5f;
+		Vector2 w_tl = inv_xf.xform(Vector2(0.0f, 0.0f));
+		Vector2 w_br = inv_xf.xform(vp_size);
+		Vector2 w_min(MIN(w_tl.x, w_br.x), MIN(w_tl.y, w_br.y));
+		Vector2 w_max(MAX(w_tl.x, w_br.x), MAX(w_tl.y, w_br.y));
 
 		int mw = map->get_map_size().x;
 		int mh = map->get_map_size().y;
-		int min_cx = MAX(0, int(Math::floor((cam_pos.x - half_sz.x - 64.0f) / 32.0f)));
-		int max_cx = MIN(mw - 1, int(Math::ceil((cam_pos.x + half_sz.x + 64.0f) / 32.0f)));
-		int min_cy = MAX(0, int(Math::floor((cam_pos.y - half_sz.y - 64.0f) / 32.0f)));
-		int max_cy = MIN(mh - 1, int(Math::ceil((cam_pos.y + half_sz.y + 64.0f) / 32.0f)));
+		int min_cx = MAX(0, int(Math::floor((w_min.x - 64.0f) / float(ts))));
+		int max_cx = MIN(mw - 1, int(Math::ceil((w_max.x + 64.0f) / float(ts))));
+		int min_cy = MAX(0, int(Math::floor((w_min.y - 64.0f) / float(ts))));
+		int max_cy = MIN(mh - 1, int(Math::ceil((w_max.y + 64.0f) / float(ts))));
 
 		// 1. Rejilla de 32x32 (Punto 2)
 		if (show_grid && mw > 0 && mh > 0) {
 			Color grid_col(1.0f, 1.0f, 1.0f, 0.16f);
 			for (int cx = min_cx; cx <= max_cx + 1; cx++) {
-				float x = cx * 32.0f;
-				draw_line(Vector2(x, min_cy * 32.0f), Vector2(x, (max_cy + 1) * 32.0f), grid_col, 1.0f);
+				float x = cx * float(ts);
+				draw_line(world_to_screen(Vector2(x, min_cy * float(ts))), world_to_screen(Vector2(x, (max_cy + 1) * float(ts))), grid_col, 1.0f);
 			}
 			for (int cy = min_cy; cy <= max_cy + 1; cy++) {
-				float y = cy * 32.0f;
-				draw_line(Vector2(min_cx * 32.0f, y), Vector2((max_cx + 1) * 32.0f, y), grid_col, 1.0f);
+				float y = cy * float(ts);
+				draw_line(world_to_screen(Vector2(min_cx * float(ts), y)), world_to_screen(Vector2((max_cx + 1) * float(ts), y)), grid_col, 1.0f);
 			}
 		}
 
@@ -265,23 +294,24 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				for (int cx = min_cx; cx <= max_cx; cx++) {
 					Vector2i cell(cx, cy);
 					int col = map->get_cell_collision_type(cell);
-					Rect2 cell_rect(cx * 32.0f, cy * 32.0f, 32.0f, 32.0f);
+					Vector2 w_tl_c(cx * float(ts), cy * float(ts));
+					Vector2 s_tl = world_to_screen(w_tl_c);
+					Vector2 s_br = world_to_screen(w_tl_c + Vector2(float(ts), float(ts)));
+					Rect2 cell_rect(s_tl, s_br - s_tl);
 
 					if (col == 1) {
-						// Bloqueado (X) en rojo
 						draw_rect(cell_rect, Color(0.95f, 0.15f, 0.15f, 0.22f), true);
 						draw_rect(cell_rect, Color(0.95f, 0.2f, 0.2f, 0.65f), false, 1.0f);
-						draw_line(cell_rect.position + Vector2(6, 6), cell_rect.position + cell_rect.size - Vector2(6, 6), Color(1.0f, 0.25f, 0.25f, 0.95f), 2.0f);
-						draw_line(Vector2(cell_rect.position.x + cell_rect.size.x - 6, cell_rect.position.y + 6), Vector2(cell_rect.position.x + 6, cell_rect.position.y + cell_rect.size.y - 6), Color(1.0f, 0.25f, 0.25f, 0.95f), 2.0f);
+						Vector2 pad = cell_rect.size * 0.18f;
+						draw_line(cell_rect.position + pad, cell_rect.position + cell_rect.size - pad, Color(1.0f, 0.25f, 0.25f, 0.95f), 2.0f);
+						draw_line(Vector2(cell_rect.position.x + cell_rect.size.x - pad.x, cell_rect.position.y + pad.y), Vector2(cell_rect.position.x + pad.x, cell_rect.position.y + cell_rect.size.y - pad.y), Color(1.0f, 0.25f, 0.25f, 0.95f), 2.0f);
 					} else if (col == 2) {
-						// Estrella ★ en amarillo
 						draw_rect(cell_rect, Color(1.0f, 0.85f, 0.2f, 0.22f), true);
 						draw_rect(cell_rect, Color(1.0f, 0.85f, 0.2f, 0.65f), false, 1.0f);
 						if (font.is_valid()) {
-							draw_string(font, cell_rect.position + Vector2(10.0f, 22.0f), CG_DBG_TR("★"), HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color(1.0f, 0.9f, 0.25f, 0.95f));
+							draw_string(font, cell_rect.position + Vector2(cell_rect.size.x * 0.3f, cell_rect.size.y * 0.68f), CG_DBG_TR("★"), HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color(1.0f, 0.9f, 0.25f, 0.95f));
 						}
 					}
-					// 0 = Pasable: sin marca
 				}
 			}
 		}
@@ -294,19 +324,17 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				if (!ev) continue;
 
 				Vector2 ev_pos = ev->get_position();
-
-				// Zona de activación (32x32) con color según tipo de disparo
-				Rect2 tr_rect(ev_pos + Vector2(2, 2), Vector2(28, 28));
+				Vector2 tr_tl = world_to_screen(ev_pos + Vector2(2.0f, 2.0f));
+				Vector2 tr_br = world_to_screen(ev_pos + Vector2(float(ts) - 2.0f, float(ts) - 2.0f));
+				Rect2 tr_rect(tr_tl, tr_br - tr_tl);
 				Color tr_fill(0.2f, 0.8f, 1.0f, 0.30f);
 				Color tr_border(0.25f, 0.85f, 1.0f, 0.95f);
 
 				int tr_type = ev->get_trigger_type();
 				if (tr_type == 1 || tr_type == 2) {
-					// Toque jugador / evento (Naranja)
 					tr_fill = Color(1.0f, 0.6f, 0.1f, 0.32f);
 					tr_border = Color(1.0f, 0.7f, 0.2f, 0.95f);
 				} else if (tr_type == 3 || tr_type == 4) {
-					// Autoejecución / Proceso Paralelo (Magenta)
 					tr_fill = Color(0.85f, 0.25f, 0.85f, 0.32f);
 					tr_border = Color(0.95f, 0.35f, 0.95f, 0.95f);
 				}
@@ -317,9 +345,10 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				// Cartel con ID y Nombre sobre el evento
 				String ev_label = vformat("EV #%d: %s", ev->get_event_id(), ev->get_event_name());
 				if (font.is_valid()) {
-					int fsz = 9;
+					int fsz = 10;
 					Size2 ssz = font->get_string_size(ev_label, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz);
-					Rect2 badge(ev_pos.x + (32.0f - ssz.x - 8.0f) * 0.5f, ev_pos.y - 15.0f, ssz.x + 8.0f, 14.0f);
+					Vector2 s_top_center = world_to_screen(Vector2(ev_pos.x + float(ts) * 0.5f, ev_pos.y));
+					Rect2 badge(s_top_center.x - (ssz.x + 8.0f) * 0.5f, s_top_center.y - 16.0f, ssz.x + 8.0f, 14.0f);
 					draw_rect(badge, Color(0.08f, 0.10f, 0.14f, 0.88f), true);
 					draw_rect(badge, tr_border, false, 1.0f);
 					draw_string(font, Point2(badge.position.x + 4.0f, badge.position.y + 11.0f), ev_label, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz, Color(1, 1, 1, 0.95f));
@@ -329,9 +358,6 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 
 		// 4. Cuerpos y Zonas de Detección (Tanda 3B)
 		if (show_bodies_zones) {
-			int ts = MAX(16, map->get_grid_resolution());
-			Vector2 half_tile(ts * 0.5f, ts * 0.5f);
-
 			ClockGearsPlayer *pl = map->get_runtime_player();
 			if (pl) {
 				Color pfill(0.15f, 0.90f, 0.45f, 0.28f);
@@ -339,7 +365,7 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				if (pl->is_through_enabled() || pl->is_body_through()) {
 					pfill.a = 0.12f;
 				}
-				s_draw_hit_shape(this, pl->get_body_shape_struct(), pl->get_position() + half_tile, pfill, pborder);
+				s_draw_hit_shape(this, pl->get_body_shape_struct(), pl->get_body_world_origin(), pfill, pborder);
 			}
 
 			if (map->get_events_container()) {
@@ -349,7 +375,7 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 					if (!ev || !ev->is_visible() || ev->get_behavior_type() == 0) {
 						continue;
 					}
-					Vector2 origin = ev->get_position() + half_tile;
+					Vector2 origin = ev->get_body_world_origin();
 
 					Array zones = ev->get_detection_zones();
 					for (int zi = 0; zi < zones.size(); zi++) {
@@ -364,7 +390,7 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 						if (font.is_valid()) {
 							String zname = String(zd.get("name", ""));
 							if (!zname.is_empty()) {
-								draw_string(font, origin + zs.offset + Vector2(-24.0f, -6.0f), zname, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, zborder);
+								draw_string(font, world_to_screen(origin + zs.offset) + Vector2(-24.0f, -6.0f), zname, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, zborder);
 							}
 						}
 					}
@@ -380,13 +406,65 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 			}
 		}
 
+		// 4b. Hitboxes activas (rojo) y Hurtboxes (azul), mismos colores que el editor de formas
+		if (show_hitboxes_hurtboxes) {
+			Color hurt_fill(0.20f, 0.58f, 1.0f, 0.22f);
+			Color hurt_border(0.28f, 0.72f, 1.0f, 0.96f);
+			Color atk_fill(0.95f, 0.22f, 0.22f, 0.26f);
+			Color atk_border(1.0f, 0.30f, 0.30f, 0.98f);
+
+			ClockGearsPlayer *pl = map->get_runtime_player();
+			if (pl && pl->is_arpg_alive()) {
+				Vector2 pl_origin = pl->get_arpg_world_center();
+				Dictionary pl_hurt = pl->get_arpg_effective_hurtbox();
+				if (bool(pl_hurt.get("enabled", true))) {
+					ClockGearsHitShape hsh = ClockGearsShapeGeometry::shape_from_variant(pl_hurt.get("shape", Dictionary()));
+					s_draw_hit_shape(this, hsh, pl_origin, hurt_fill, hurt_border);
+				}
+				if (pl->get_action_state() == "atacar") {
+					Vector<ClockGearsFrameHitboxData> hbs;
+					pl->get_active_attack_hitboxes_for_debug(hbs);
+					for (int hi = 0; hi < hbs.size(); hi++) {
+						for (int si = 0; si < hbs[hi].shapes.size(); si++) {
+							s_draw_hit_shape(this, hbs[hi].shapes[si], pl_origin, atk_fill, atk_border);
+						}
+					}
+				}
+			}
+
+			if (map->get_events_container()) {
+				Node2D *ev_cont = map->get_events_container();
+				for (int i = 0; i < ev_cont->get_child_count(); i++) {
+					ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(ev_cont->get_child(i));
+					if (!ev || ev->get_behavior_type() != 3 || !ev->is_arpg_alive()) {
+						continue;
+					}
+					Vector2 ev_origin = ev->get_arpg_world_center();
+					Dictionary ev_hurt = ev->get_arpg_effective_hurtbox();
+					if (bool(ev_hurt.get("enabled", true))) {
+						ClockGearsHitShape hsh = ClockGearsShapeGeometry::shape_from_variant(ev_hurt.get("shape", Dictionary()));
+						s_draw_hit_shape(this, hsh, ev_origin, hurt_fill, hurt_border);
+					}
+					if (ev->get_action_state() == "atacar") {
+						Vector<ClockGearsFrameHitboxData> hbs;
+						ev->get_active_attack_hitboxes_for_debug(hbs);
+						for (int hi = 0; hi < hbs.size(); hi++) {
+							for (int si = 0; si < hbs[hi].shapes.size(); si++) {
+								s_draw_hit_shape(this, hbs[hi].shapes[si], ev_origin, atk_fill, atk_border);
+							}
+						}
+					}
+				}
+			}
+		}
+
 		// 5. Números de daño flotantes recientes (Tanda 3C-1 / 3C UI)
 		if (is_damage_numbers_enabled() && !floating_damages.is_empty() && font.is_valid()) {
 			for (int i = 0; i < floating_damages.size(); i++) {
 				const FloatingDamageEntry &fe = floating_damages[i];
 				float t = 1.0f - CLAMP(fe.remaining / MAX(0.01f, fe.max_time), 0.0f, 1.0f);
 				float alpha = CLAMP(fe.remaining * 2.0f, 0.0f, 1.0f);
-				Vector2 draw_pos = fe.world_pos + Vector2(-8.0f, -t * 18.0f);
+				Vector2 draw_pos = world_to_screen(fe.world_pos + Vector2(0.0f, -t * 18.0f)) + Vector2(-8.0f, 0.0f);
 				Color col = fe.is_crit ? Color(1.0f, 0.85f, 0.25f, alpha) : Color(1.0f, 0.35f, 0.35f, alpha);
 				String txt = fe.is_crit ? vformat("%d!", fe.amount) : vformat("%d", fe.amount);
 				draw_string(font, draw_pos + Vector2(1, 1), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0, 0, 0, alpha * 0.85f));
@@ -419,6 +497,8 @@ void ClockGearsDebugOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_camera"), &ClockGearsDebugOverlay::is_show_camera);
 	ClassDB::bind_method(D_METHOD("set_show_bodies_zones", "show"), &ClockGearsDebugOverlay::set_show_bodies_zones);
 	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugOverlay::is_show_bodies_zones);
+	ClassDB::bind_method(D_METHOD("set_show_hitboxes_hurtboxes", "show"), &ClockGearsDebugOverlay::set_show_hitboxes_hurtboxes);
+	ClassDB::bind_method(D_METHOD("is_show_hitboxes_hurtboxes"), &ClockGearsDebugOverlay::is_show_hitboxes_hurtboxes);
 	ClassDB::bind_method(D_METHOD("set_show_player_hp", "show"), &ClockGearsDebugOverlay::set_show_player_hp);
 	ClassDB::bind_method(D_METHOD("is_show_player_hp"), &ClockGearsDebugOverlay::is_show_player_hp);
 	ClassDB::bind_method(D_METHOD("set_show_damage_numbers", "show"), &ClockGearsDebugOverlay::set_show_damage_numbers);
@@ -629,6 +709,10 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	chk_bodies_zones = memnew(CheckBox(CG_DBG_TR("Mostrar cuerpos y zonas")));
 	chk_bodies_zones->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
 	tab_vis->add_child(chk_bodies_zones);
+
+	chk_hitboxes_hurtboxes = memnew(CheckBox(CG_DBG_TR("Mostrar hitboxes y hurtboxes")));
+	chk_hitboxes_hurtboxes->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
+	tab_vis->add_child(chk_hitboxes_hurtboxes);
 
 	chk_damage_numbers = memnew(CheckBox(CG_DBG_TR("Mostrar números de daño")));
 	chk_damage_numbers->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_chk_toggled));
@@ -948,6 +1032,14 @@ bool ClockGearsDebugOverlay::is_show_bodies_zones() const {
 	return chk_bodies_zones && chk_bodies_zones->is_pressed();
 }
 
+void ClockGearsDebugOverlay::set_show_hitboxes_hurtboxes(bool p_show) {
+	if (chk_hitboxes_hurtboxes) chk_hitboxes_hurtboxes->set_pressed(p_show);
+	if (world_canvas) world_canvas->set_show_hitboxes_hurtboxes(p_show);
+}
+bool ClockGearsDebugOverlay::is_show_hitboxes_hurtboxes() const {
+	return chk_hitboxes_hurtboxes && chk_hitboxes_hurtboxes->is_pressed();
+}
+
 void ClockGearsDebugOverlay::set_show_player_hp(bool p_show) {
 	if (chk_player_hp) chk_player_hp->set_pressed(p_show);
 	_update_hud();
@@ -970,6 +1062,7 @@ void ClockGearsDebugOverlay::_on_chk_toggled(bool) {
 		world_canvas->set_show_collisions(chk_collisions && chk_collisions->is_pressed());
 		world_canvas->set_show_grid(chk_grid && chk_grid->is_pressed());
 		world_canvas->set_show_bodies_zones(chk_bodies_zones && chk_bodies_zones->is_pressed());
+		world_canvas->set_show_hitboxes_hurtboxes(chk_hitboxes_hurtboxes && chk_hitboxes_hurtboxes->is_pressed());
 		world_canvas->set_show_damage_numbers(chk_damage_numbers && chk_damage_numbers->is_pressed());
 	}
 	_save_settings();
@@ -1017,6 +1110,7 @@ void ClockGearsDebugOverlay::_save_settings() {
 		d["show_collisions"] = chk_collisions ? chk_collisions->is_pressed() : false;
 		d["show_grid"] = chk_grid ? chk_grid->is_pressed() : false;
 		d["show_bodies_zones"] = chk_bodies_zones ? chk_bodies_zones->is_pressed() : false;
+		d["show_hitboxes_hurtboxes"] = chk_hitboxes_hurtboxes ? chk_hitboxes_hurtboxes->is_pressed() : false;
 		d["show_damage_numbers"] = chk_damage_numbers ? chk_damage_numbers->is_pressed() : false;
 		d["show_fps"] = chk_fps ? chk_fps->is_pressed() : false;
 		d["show_player"] = chk_player ? chk_player->is_pressed() : false;
@@ -1050,6 +1144,7 @@ void ClockGearsDebugOverlay::_load_settings() {
 				if (chk_collisions) chk_collisions->set_pressed(bool(d.get("show_collisions", false)));
 				if (chk_grid) chk_grid->set_pressed(bool(d.get("show_grid", false)));
 				if (chk_bodies_zones) chk_bodies_zones->set_pressed(bool(d.get("show_bodies_zones", false)));
+				if (chk_hitboxes_hurtboxes) chk_hitboxes_hurtboxes->set_pressed(bool(d.get("show_hitboxes_hurtboxes", false)));
 				if (chk_damage_numbers) chk_damage_numbers->set_pressed(bool(d.get("show_damage_numbers", false)));
 				if (chk_fps) chk_fps->set_pressed(bool(d.get("show_fps", false)));
 				if (chk_player) chk_player->set_pressed(bool(d.get("show_player", false)));
