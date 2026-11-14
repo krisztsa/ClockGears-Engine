@@ -21,7 +21,10 @@
 #include "scene/gui/margin_container.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
+
+class ClockGearsBattleScene;
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
@@ -212,9 +215,14 @@ private:
 	Button *btn_autoname_troop = nullptr;
 	Button *btn_battle_test_troop = nullptr;
 	Button *btn_change_troop_bg = nullptr;
+	Button *btn_adjust_troop_bg = nullptr;
+	PopupMenu *troop_bg_adjust_menu = nullptr;
 	CheckBox *chk_troop_snap_grid = nullptr;
 	VBoxContainer *troop_placement_col3_box = nullptr;
 	Control *troop_placement_canvas = nullptr;
+	Control *troop_bg_layer_ctrl = nullptr;
+	Control *troop_floor_layer_ctrl = nullptr;
+	Control *troop_enemies_overlay_ctrl = nullptr;
 	int selected_troop_member_idx = 0;
 	bool troop_member_dragging = false;
 	Vector2 troop_drag_offset;
@@ -226,13 +234,46 @@ private:
 	FileDialog *troop_bg_file_dialog = nullptr;
 	int troop_bg_selecting_slot = 0; // 1 = Fondo (battleback1), 2 = Suelo (battleback2)
 
+	// Ventanas "Ajustar Fondo" / "Ajustar Suelo" (una emergente propia por capa)
+	struct AdjustDialogUI {
+		AcceptDialog *dialog = nullptr;
+		Control *canvas = nullptr;
+		Control *bg_layer = nullptr;
+		Control *floor_layer = nullptr;
+		Control *overlay = nullptr;
+		Label *no_img_label = nullptr;
+		Label *info_label = nullptr;
+		Button *mode_btns[4] = { nullptr };
+		CheckBox *chk_integer_scale = nullptr;
+		Button *btn_center = nullptr;
+		Button *btn_reset = nullptr;
+		int slot = 1; // 1=Fondo, 2=Suelo
+		int troop_idx = -1;
+		Dictionary edit_cfg;
+		int drag_mode = 0; // 0=none, 1=move, 2..5=corners TL,TR,BL,BR
+		Vector2 drag_start_mouse;
+		Dictionary drag_start_cfg;
+	};
+	AdjustDialogUI troop_adjust_ui[2];
+
 	// Ranuras con nombre para Enemigos ("Lanzamientos" con nombre y elemento opcional + "Otras" migradas)
 	VBoxContainer *enemy_casts_box = nullptr;
 	VBoxContainer *enemy_casts_rows_vbox = nullptr;
 	Button *btn_add_enemy_cast = nullptr;
 	VBoxContainer *enemy_others_box = nullptr;
 	VBoxContainer *enemy_others_rows_vbox = nullptr;
+
+	// Prueba de batalla + resumen + Reintentar / Continuar / Salir
 	AcceptDialog *battle_test_dialog = nullptr;
+	Control *battle_test_root = nullptr;
+	ClockGearsBattleScene *battle_test_scene = nullptr;
+	PanelContainer *battle_test_summary_panel = nullptr;
+	Label *battle_test_summary_title = nullptr;
+	Label *battle_test_summary_body = nullptr;
+	Button *btn_battle_test_retry = nullptr;
+	Button *btn_battle_test_continue = nullptr;
+	int battle_test_troop_id = 0;
+	int battle_test_last_result = 0;
 
 	// Column 3: Graphic Viewer + Traits / Effects sub-panels
 	VBoxContainer *col3_box = nullptr;
@@ -470,11 +511,40 @@ private:
 	void _on_align_troop_members_pressed();
 	void _on_autoname_troop_pressed();
 	void _on_battle_test_troop_pressed();
+	void _start_battle_test(int p_troop_id);
+	void _on_battle_test_finished(int p_result);
+	void _on_battle_test_retry_pressed();
+	void _on_battle_test_close_pressed();
+	void _on_battle_test_window_input(const Ref<InputEvent> &p_ev);
+
 	void _on_change_troop_bg_pressed();
+	void _on_adjust_troop_bg_pressed();
+	void _on_adjust_troop_bg_menu_id(int p_id);
+	void _build_adjust_dialog(int p_ui_idx, int p_slot);
+	void _open_adjust_dialog(int p_slot);
+	void _sync_adjust_dialog_controls(int p_ui_idx);
+	void _redraw_adjust_dialog(int p_ui_idx);
+	void _on_adjust_mode_selected(int p_mode, int p_ui_idx);
+	void _on_adjust_integer_toggled(bool p_pressed, int p_ui_idx);
+	void _on_adjust_center_pressed(int p_ui_idx);
+	void _on_adjust_reset_pressed(int p_ui_idx);
+	void _on_adjust_confirmed(int p_ui_idx);
+	void _on_adjust_layer_draw(int p_ui_idx, int p_layer_slot);
+	void _on_adjust_overlay_draw(int p_ui_idx);
+	void _on_adjust_canvas_gui_input(const Ref<InputEvent> &p_ev, int p_ui_idx);
+	void _on_adjust_window_input(const Ref<InputEvent> &p_ev, int p_ui_idx);
+
 	void _on_troop_bg_browse_pressed(int p_slot);
 	void _on_troop_bg_clear_pressed(int p_slot);
 	void _on_troop_bg_file_selected(const String &p_path);
+	void _on_editor_filesystem_changed();
+	void _on_editor_resources_reimported(const PackedStringArray &p_resources);
+	void _queue_troop_preview_redraw();
+	void _draw_troop_enemies_preview(Control *p_canvas, const Rect2 &p_vp_rect, const Dictionary &p_troop_dict, bool p_show_selection, bool p_show_grid) const;
 	void _on_troop_placement_canvas_draw();
+	void _on_troop_bg_layer_draw();
+	void _on_troop_floor_layer_draw();
+	void _on_troop_enemies_overlay_draw();
 	void _on_troop_placement_canvas_gui_input(const Ref<InputEvent> &p_ev);
 	void _on_troop_member_enemy_changed(int p_enemy_id, int p_idx);
 	void _on_troop_member_x_changed(double p_val, int p_idx);
@@ -568,6 +638,9 @@ public:
 	bool remove_enemy_other_animation(int p_enemy_idx, const String &p_other_name);
 	void select_anim_slot(const String &p_slot_id);
 	void remove_anim_frame_at(int p_frame_idx);
+	Dictionary get_troop_battleback_cfg(int p_troop_idx, int p_slot) const;
+	void set_troop_battleback_cfg(int p_troop_idx, int p_slot, const Dictionary &p_cfg);
+	String get_formatted_troop_enemy_label(int p_troop_idx, int p_member_idx, float p_max_w = 0.0f) const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

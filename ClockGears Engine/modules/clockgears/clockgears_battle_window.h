@@ -54,8 +54,10 @@ private:
 
 	// UI Layout
 	ColorRect *bg_rect = nullptr;
-	TextureRect *battleback_bg_rect = nullptr;
-	TextureRect *battleback_floor_rect = nullptr;
+	Control *battleback_bg_layer = nullptr;
+	Control *battleback_floor_layer = nullptr;
+	Ref<Texture2D> battleback_bg_tex;
+	Ref<Texture2D> battleback_floor_tex;
 	PanelContainer *main_container = nullptr;
 
 	// Barra de Iniciativa superior
@@ -128,6 +130,8 @@ private:
 	void _on_target_selected(int p_action_type, int p_target_idx, int p_sub_id, const String &p_sub_str);
 
 	void _display_message(const String &p_text);
+	void _on_battleback_bg_layer_draw();
+	void _on_battleback_floor_layer_draw();
 	void _check_battle_state();
 	void _on_message_completed();
 	void _on_hit_executed(const String &p_log);
@@ -139,10 +143,30 @@ protected:
 	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	enum BattlebackMode {
+		BB_MODE_COVER = 0,
+		BB_MODE_FIT = 1,
+		BB_MODE_STRETCH = 2,
+		BB_MODE_TILE = 3,
+	};
+	enum BattlebackAnchor {
+		BB_ANCHOR_CENTER = 0,
+		BB_ANCHOR_BOTTOM = 1,
+	};
+
+	static bool is_texture_ready(const Ref<Texture2D> &p_tex);
+	static bool can_safely_resource_load_image(const String &p_path);
 	static Ref<Texture2D> load_texture_with_fallbacks(const String &p_path);
 	static Ref<Texture2D> create_placeholder_marker_texture();
 	static void resolve_enemy_preview_sprite(const Dictionary &p_enemy_dict, Ref<Texture2D> &r_tex, Rect2 &r_src_region, String &r_source);
-	void setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm = "", ClockGearsMessageWindow *p_msg_window = nullptr);
+
+	static Dictionary default_battleback_cfg(bool p_is_floor, const Size2 &p_tex_size = Size2());
+	static Dictionary normalize_battleback_cfg(const Dictionary &p_cfg, bool p_is_floor, const Size2 &p_tex_size = Size2());
+	static Rect2 compute_battleback_screen_rect(const Rect2 &p_vp_rect, const Size2 &p_tex_size, const Dictionary &p_cfg, bool p_is_floor);
+	static void draw_battleback_layer(Control *p_layer_canvas, const Rect2 &p_vp_rect, const Ref<Texture2D> &p_tex, const Dictionary &p_cfg, bool p_is_floor);
+	static String format_enemy_name_level(const Ref<Font> &p_font, int p_font_sz, const String &p_name, int p_level, float p_max_w);
+
+	void setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm = "", ClockGearsMessageWindow *p_msg_window = nullptr, bool p_test_mode = false);
 	void finish_battle_immediate();
 
 	Ref<ClockGearsBattleController> get_controller() const { return controller; }
@@ -164,6 +188,7 @@ public:
 	String get_enemy_label_text(int p_idx) const;
 	bool is_enemy_hp_bar_visible(int p_idx) const;
 	String get_enemy_current_visual_anim(int p_idx) const;
+	Rect2 get_drawn_battleback_rect(int p_slot) const;
 
 	ClockGearsBattleScene();
 	~ClockGearsBattleScene();

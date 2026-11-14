@@ -8,6 +8,7 @@
 #include "core/io/file_access.h"
 #include "core/io/image_loader.h"
 #include "core/io/resource_loader.h"
+#include "scene/resources/placeholder_textures.h"
 #include "scene/resources/style_box_flat.h"
 
 static String s_fix_mojibake(const String &p_str) {
@@ -39,18 +40,38 @@ static const ClockGearsSpriteAnimation *s_find_animation_ci(const ClockGearsSpri
 	return best_match;
 }
 
+bool ClockGearsBattleScene::is_texture_ready(const Ref<Texture2D> &p_tex) {
+	if (!p_tex.is_valid()) return false;
+	if (Object::cast_to<PlaceholderTexture2D>(p_tex.ptr()) != nullptr) return false;
+	return p_tex->get_width() > 0 && p_tex->get_height() > 0;
+}
+
+bool ClockGearsBattleScene::can_safely_resource_load_image(const String &p_path) {
+	if (!ResourceLoader::exists(p_path)) return false;
+	if (p_path.begins_with("res://")) {
+		String imp_path = p_path + ".import";
+		if (FileAccess::exists(imp_path)) {
+			String imp_txt = FileAccess::get_file_as_string(imp_path);
+			if (imp_txt.find("dest_files=") == -1) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &p_path) {
 	if (p_path.strip_edges().is_empty()) return Ref<Texture2D>();
 
 	String fixed_path = s_fix_mojibake(p_path);
 
-	if (ResourceLoader::exists(fixed_path)) {
+	if (can_safely_resource_load_image(fixed_path)) {
 		Ref<Texture2D> t = ResourceLoader::load(fixed_path);
-		if (t.is_valid()) return t;
+		if (is_texture_ready(t)) return t;
 	}
-	if (fixed_path != p_path && ResourceLoader::exists(p_path)) {
+	if (fixed_path != p_path && can_safely_resource_load_image(p_path)) {
 		Ref<Texture2D> t = ResourceLoader::load(p_path);
-		if (t.is_valid()) return t;
+		if (is_texture_ready(t)) return t;
 	}
 
 	Vector<String> try_paths;
@@ -91,15 +112,22 @@ Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &
 
 	for (int i = 0; i < try_paths.size(); i++) {
 		const String &tp = try_paths[i];
-		if (ResourceLoader::exists(tp)) {
+		if (can_safely_resource_load_image(tp)) {
 			Ref<Texture2D> t = ResourceLoader::load(tp);
-			if (t.is_valid()) return t;
+			if (is_texture_ready(t)) return t;
 		}
-		if (FileAccess::exists(tp)) {
-			Ref<Image> img = Image::load_from_file(tp);
+		String file_read_path = tp;
+		if (tp.begins_with("res://") && ProjectSettings::get_singleton()) {
+			String gp = ProjectSettings::get_singleton()->globalize_path(tp);
+			if (!gp.is_empty() && FileAccess::exists(gp)) {
+				file_read_path = gp;
+			}
+		}
+		if (FileAccess::exists(file_read_path)) {
+			Ref<Image> img = Image::load_from_file(file_read_path);
 			if (img.is_valid() && !img->is_empty()) {
 				Ref<ImageTexture> it = ImageTexture::create_from_image(img);
-				if (it.is_valid()) return it;
+				if (is_texture_ready(it)) return it;
 			}
 		}
 	}
@@ -266,7 +294,7 @@ void ClockGearsBattleScene::resolve_enemy_preview_sprite(const Dictionary &p_ene
 }
 
 void ClockGearsBattleScene::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("setup_battle", "troop_id", "can_escape", "can_lose", "bgm", "msg_window"), &ClockGearsBattleScene::setup_battle, DEFVAL(""), DEFVAL((ClockGearsMessageWindow *)nullptr));
+	ClassDB::bind_method(D_METHOD("setup_battle", "troop_id", "can_escape", "can_lose", "bgm", "msg_window", "test_mode"), &ClockGearsBattleScene::setup_battle, DEFVAL(""), DEFVAL((ClockGearsMessageWindow *)nullptr), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_controller"), &ClockGearsBattleScene::get_controller);
 	ClassDB::bind_method(D_METHOD("advance_time", "delta"), &ClockGearsBattleScene::advance_time);
 	ClassDB::bind_method(D_METHOD("select_action_attack", "target_idx"), &ClockGearsBattleScene::select_action_attack);
@@ -283,6 +311,7 @@ void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_enemy_label_text", "idx"), &ClockGearsBattleScene::get_enemy_label_text);
 	ClassDB::bind_method(D_METHOD("is_enemy_hp_bar_visible", "idx"), &ClockGearsBattleScene::is_enemy_hp_bar_visible);
 	ClassDB::bind_method(D_METHOD("get_enemy_current_visual_anim", "idx"), &ClockGearsBattleScene::get_enemy_current_visual_anim);
+	ClassDB::bind_method(D_METHOD("get_drawn_battleback_rect", "slot"), &ClockGearsBattleScene::get_drawn_battleback_rect);
 
 	ADD_SIGNAL(MethodInfo("battle_finished", PropertyInfo(Variant::INT, "result")));
 }
@@ -299,6 +328,9 @@ void ClockGearsBattleScene::_notification(int p_what) {
 		_refresh_ui();
 	} else if (p_what == NOTIFICATION_PROCESS) {
 		_update_battler_visuals(get_process_delta_time());
+		if (controller.is_valid() && controller->is_finished() && !waiting_finish_confirmation && action_seq_state == SEQ_IDLE) {
+			_check_battle_state();
+		}
 	}
 }
 
@@ -314,32 +346,20 @@ void ClockGearsBattleScene::_setup_ui() {
 	bg_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	add_child(bg_rect);
 
-	// Fondo de la tropa (cubre toda la pantalla sin deformarse)
-	battleback_bg_rect = memnew(TextureRect);
-	battleback_bg_rect->set_anchors_preset(Control::PRESET_FULL_RECT);
-	battleback_bg_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	battleback_bg_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
-	battleback_bg_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-	battleback_bg_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	battleback_bg_rect->hide();
-	add_child(battleback_bg_rect);
+	// Fondo y suelo de la tropa (mismo dibujado compartido que la vista previa y Ajustar)
+	battleback_bg_layer = memnew(Control);
+	battleback_bg_layer->set_anchors_preset(Control::PRESET_FULL_RECT);
+	battleback_bg_layer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	battleback_bg_layer->connect("draw", callable_mp(this, &ClockGearsBattleScene::_on_battleback_bg_layer_draw));
+	battleback_bg_layer->connect("resized", callable_mp((CanvasItem *)battleback_bg_layer, &CanvasItem::queue_redraw));
+	add_child(battleback_bg_layer);
 
-	// Suelo de la tropa (se apoya abajo, escalado sin deformar)
-	battleback_floor_rect = memnew(TextureRect);
-	battleback_floor_rect->set_anchor(SIDE_LEFT, 0.0f);
-	battleback_floor_rect->set_anchor(SIDE_RIGHT, 1.0f);
-	battleback_floor_rect->set_anchor(SIDE_TOP, 0.35f);
-	battleback_floor_rect->set_anchor(SIDE_BOTTOM, 1.0f);
-	battleback_floor_rect->set_offset(SIDE_LEFT, 0.0f);
-	battleback_floor_rect->set_offset(SIDE_RIGHT, 0.0f);
-	battleback_floor_rect->set_offset(SIDE_TOP, 0.0f);
-	battleback_floor_rect->set_offset(SIDE_BOTTOM, 0.0f);
-	battleback_floor_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	battleback_floor_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
-	battleback_floor_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-	battleback_floor_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	battleback_floor_rect->hide();
-	add_child(battleback_floor_rect);
+	battleback_floor_layer = memnew(Control);
+	battleback_floor_layer->set_anchors_preset(Control::PRESET_FULL_RECT);
+	battleback_floor_layer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	battleback_floor_layer->connect("draw", callable_mp(this, &ClockGearsBattleScene::_on_battleback_floor_layer_draw));
+	battleback_floor_layer->connect("resized", callable_mp((CanvasItem *)battleback_floor_layer, &CanvasItem::queue_redraw));
+	add_child(battleback_floor_layer);
 
 	// Campo posicionado libremente para enemigos según la posición guardada en la tropa
 	enemies_field = memnew(Control);
@@ -482,11 +502,13 @@ void ClockGearsBattleScene::_setup_ui() {
 	sub_menu_panel->add_child(sub_menu_vbox);
 }
 
-void ClockGearsBattleScene::setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm, ClockGearsMessageWindow *p_msg_window) {
+void ClockGearsBattleScene::setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm, ClockGearsMessageWindow *p_msg_window, bool p_test_mode) {
 	if (!controller.is_valid()) {
 		controller.instantiate();
 	}
+	controller->set_test_mode(p_test_mode);
 	controller->setup_battle(p_troop_id, p_can_escape, p_can_lose, p_bgm);
+	waiting_finish_confirmation = false;
 
 	// Reutilizar la ventana de mensajes de la Fase 7A
 	if (p_msg_window) {
@@ -888,27 +910,15 @@ void ClockGearsBattleScene::_refresh_ui() {
 	}
 
 	// Actualizar fondo y suelo de la tropa (sin imagen -> fondo oscuro plano)
-	if (battleback_bg_rect) {
-		String bg_path = controller->get_troop_bg_path();
-		Ref<Texture2D> bg_tex = load_texture_with_fallbacks(bg_path);
-		if (bg_tex.is_valid()) {
-			battleback_bg_rect->set_texture(bg_tex);
-			battleback_bg_rect->show();
-		} else {
-			battleback_bg_rect->set_texture(Ref<Texture2D>());
-			battleback_bg_rect->hide();
-		}
+	battleback_bg_tex = load_texture_with_fallbacks(controller->get_troop_bg_path());
+	if (battleback_bg_layer) {
+		battleback_bg_layer->set_visible(is_texture_ready(battleback_bg_tex));
+		battleback_bg_layer->queue_redraw();
 	}
-	if (battleback_floor_rect) {
-		String floor_path = controller->get_troop_floor_path();
-		Ref<Texture2D> floor_tex = load_texture_with_fallbacks(floor_path);
-		if (floor_tex.is_valid()) {
-			battleback_floor_rect->set_texture(floor_tex);
-			battleback_floor_rect->show();
-		} else {
-			battleback_floor_rect->set_texture(Ref<Texture2D>());
-			battleback_floor_rect->hide();
-		}
+	battleback_floor_tex = load_texture_with_fallbacks(controller->get_troop_floor_path());
+	if (battleback_floor_layer) {
+		battleback_floor_layer->set_visible(is_texture_ready(battleback_floor_tex));
+		battleback_floor_layer->queue_redraw();
 	}
 
 	battler_visuals.clear();
@@ -1245,6 +1255,10 @@ void ClockGearsBattleScene::_check_battle_state() {
 		_close_sub_menu();
 
 		int res = controller->get_result();
+		if (controller->get_test_mode()) {
+			finish_battle_immediate();
+			return;
+		}
 		if (res == ClockGearsBattleController::RESULT_VICTORY) {
 			String vic_msg = vformat(String::utf8("¡Victoria! Has ganado %d EXP y %d de Oro."), controller->get_total_exp(), controller->get_total_gold());
 			Array drs = controller->get_dropped_items();
@@ -1643,6 +1657,199 @@ String ClockGearsBattleScene::get_enemy_current_visual_anim(int p_idx) const {
 		}
 	}
 	return String();
+}
+
+Dictionary ClockGearsBattleScene::default_battleback_cfg(bool p_is_floor, const Size2 &p_tex_size) {
+	Dictionary d;
+	int mode = BB_MODE_COVER;
+	if (p_is_floor) {
+		// Comportamiento clásico de suelo: Ajustar si es franja ancha (aspecto <= 16:9), Cubrir abajo si es alta.
+		if (p_tex_size.x > 0.0f && p_tex_size.y > 0.0f && (p_tex_size.y / p_tex_size.x) <= (540.0f / 960.0f)) {
+			mode = BB_MODE_FIT;
+		} else {
+			mode = BB_MODE_COVER;
+		}
+	}
+	d["mode"] = mode;
+	d["anchor"] = p_is_floor ? int(BB_ANCHOR_BOTTOM) : int(BB_ANCHOR_CENTER);
+	d["offset_x"] = 0.0;
+	d["offset_y"] = 0.0;
+	d["scale"] = 1.0;
+	d["integer_scale"] = false;
+	return d;
+}
+
+Dictionary ClockGearsBattleScene::normalize_battleback_cfg(const Dictionary &p_cfg, bool p_is_floor, const Size2 &p_tex_size) {
+	Dictionary def = default_battleback_cfg(p_is_floor, p_tex_size);
+	if (!p_cfg.is_empty()) {
+		if (p_cfg.has("mode")) def["mode"] = CLAMP(int(p_cfg["mode"]), int(BB_MODE_COVER), int(BB_MODE_TILE));
+		if (p_cfg.has("anchor")) def["anchor"] = CLAMP(int(p_cfg["anchor"]), int(BB_ANCHOR_CENTER), int(BB_ANCHOR_BOTTOM));
+		if (p_cfg.has("offset_x")) def["offset_x"] = double(p_cfg["offset_x"]);
+		if (p_cfg.has("offset_y")) def["offset_y"] = double(p_cfg["offset_y"]);
+		if (p_cfg.has("scale")) def["scale"] = CLAMP(double(p_cfg["scale"]), 0.05, 32.0);
+		if (p_cfg.has("integer_scale")) def["integer_scale"] = bool(p_cfg["integer_scale"]);
+	}
+	if (bool(def["integer_scale"])) {
+		def["scale"] = double(MAX(1.0, Math::round(double(def["scale"]))));
+	}
+	return def;
+}
+
+Rect2 ClockGearsBattleScene::compute_battleback_screen_rect(const Rect2 &p_vp_rect, const Size2 &p_tex_size, const Dictionary &p_cfg, bool p_is_floor) {
+	if (p_vp_rect.size.x <= 0.0f || p_vp_rect.size.y <= 0.0f || p_tex_size.x <= 0.0f || p_tex_size.y <= 0.0f) {
+		return Rect2();
+	}
+	Dictionary cfg = normalize_battleback_cfg(p_cfg, p_is_floor, p_tex_size);
+	const float logical_w = 960.0f;
+	const float logical_h = 540.0f;
+	float tw = p_tex_size.x;
+	float th = p_tex_size.y;
+	int mode = int(cfg["mode"]);
+	int anchor = int(cfg["anchor"]);
+	float scale = float(double(cfg["scale"]));
+	float ox = float(double(cfg["offset_x"]));
+	float oy = float(double(cfg["offset_y"]));
+	bool int_scale = bool(cfg["integer_scale"]);
+
+	Size2 draw_size;
+	if (int_scale) {
+		float f = MAX(1.0f, Math::round(scale));
+		draw_size = Size2(tw * f, th * f);
+	} else {
+		switch (mode) {
+			case BB_MODE_COVER: {
+				float bs = MAX(logical_w / tw, logical_h / th);
+				draw_size = Size2(tw * bs * scale, th * bs * scale);
+			} break;
+			case BB_MODE_FIT: {
+				float bs = MIN(logical_w / tw, logical_h / th);
+				draw_size = Size2(tw * bs * scale, th * bs * scale);
+			} break;
+			case BB_MODE_STRETCH: {
+				draw_size = Size2(logical_w * scale, logical_h * scale);
+			} break;
+			case BB_MODE_TILE: {
+				draw_size = Size2(tw * scale, th * scale);
+			} break;
+			default: {
+				float bs = MAX(logical_w / tw, logical_h / th);
+				draw_size = Size2(tw * bs * scale, th * bs * scale);
+			} break;
+		}
+	}
+
+	Point2 base_pos;
+	if (anchor == BB_ANCHOR_BOTTOM) {
+		base_pos = Point2((logical_w - draw_size.x) * 0.5f, logical_h - draw_size.y);
+	} else {
+		base_pos = Point2((logical_w - draw_size.x) * 0.5f, (logical_h - draw_size.y) * 0.5f);
+	}
+	Point2 logical_pos = base_pos + Point2(ox, oy);
+
+	float sx = p_vp_rect.size.x / logical_w;
+	float sy = p_vp_rect.size.y / logical_h;
+	return Rect2(
+			p_vp_rect.position.x + logical_pos.x * sx,
+			p_vp_rect.position.y + logical_pos.y * sy,
+			draw_size.x * sx,
+			draw_size.y * sy);
+}
+
+void ClockGearsBattleScene::draw_battleback_layer(Control *p_layer_canvas, const Rect2 &p_vp_rect, const Ref<Texture2D> &p_tex, const Dictionary &p_cfg, bool p_is_floor) {
+	if (!p_layer_canvas || !is_texture_ready(p_tex)) {
+		return;
+	}
+	if (p_vp_rect.size.x <= 1.0f || p_vp_rect.size.y <= 1.0f) {
+		return;
+	}
+	Size2 tsz = p_tex->get_size();
+	Dictionary cfg = normalize_battleback_cfg(p_cfg, p_is_floor, tsz);
+	bool int_scale = bool(cfg["integer_scale"]);
+	p_layer_canvas->set_texture_filter(int_scale ? CanvasItem::TEXTURE_FILTER_NEAREST : CanvasItem::TEXTURE_FILTER_LINEAR);
+
+	int mode = int(cfg["mode"]);
+	Rect2 screen_rect = compute_battleback_screen_rect(p_vp_rect, tsz, cfg, p_is_floor);
+	if (screen_rect.size.x <= 0.5f || screen_rect.size.y <= 0.5f) {
+		return;
+	}
+
+	auto draw_clipped = [&](const Rect2 &r_dest) {
+		Rect2 clipped = r_dest.intersection(p_vp_rect);
+		if (clipped.size.x <= 0.1f || clipped.size.y <= 0.1f) {
+			return;
+		}
+		float u0 = (clipped.position.x - r_dest.position.x) / r_dest.size.x;
+		float v0 = (clipped.position.y - r_dest.position.y) / r_dest.size.y;
+		float u1 = (clipped.position.x + clipped.size.x - r_dest.position.x) / r_dest.size.x;
+		float v1 = (clipped.position.y + clipped.size.y - r_dest.position.y) / r_dest.size.y;
+		Rect2 src_rect(u0 * tsz.x, v0 * tsz.y, (u1 - u0) * tsz.x, (v1 - v0) * tsz.y);
+		p_layer_canvas->draw_texture_rect_region(p_tex, clipped, src_rect);
+	};
+
+	if (mode == BB_MODE_TILE) {
+		float tw_px = MAX(8.0f, screen_rect.size.x);
+		float th_px = MAX(8.0f, screen_rect.size.y);
+		float start_x = screen_rect.position.x;
+		while (start_x > p_vp_rect.position.x) start_x -= tw_px;
+		while (start_x + tw_px <= p_vp_rect.position.x) start_x += tw_px;
+		float start_y = screen_rect.position.y;
+		while (start_y > p_vp_rect.position.y) start_y -= th_px;
+		while (start_y + th_px <= p_vp_rect.position.y) start_y += th_px;
+
+		float end_x = p_vp_rect.position.x + p_vp_rect.size.x;
+		float end_y = p_vp_rect.position.y + p_vp_rect.size.y;
+		int guard = 0;
+		for (float y = start_y; y < end_y && guard < 400; y += th_px) {
+			for (float x = start_x; x < end_x && guard < 400; x += tw_px) {
+				draw_clipped(Rect2(x, y, tw_px, th_px));
+				guard++;
+			}
+		}
+	} else {
+		draw_clipped(screen_rect);
+	}
+}
+
+String ClockGearsBattleScene::format_enemy_name_level(const Ref<Font> &p_font, int p_font_sz, const String &p_name, int p_level, float p_max_w) {
+	String lvl_suffix = vformat(" Nv %d", MAX(1, p_level));
+	String clean = p_name;
+	String full = clean + lvl_suffix;
+	if (!p_font.is_valid() || p_max_w <= 0.0f) {
+		return full;
+	}
+	if (p_font->get_string_size(full, HORIZONTAL_ALIGNMENT_LEFT, -1, p_font_sz).x <= p_max_w) {
+		return full;
+	}
+	String ell = String::utf8("…");
+	while (clean.length() > 1) {
+		clean = clean.substr(0, clean.length() - 1);
+		String cand = clean + ell + lvl_suffix;
+		if (p_font->get_string_size(cand, HORIZONTAL_ALIGNMENT_LEFT, -1, p_font_sz).x <= p_max_w) {
+			return cand;
+		}
+	}
+	return ell + lvl_suffix;
+}
+
+void ClockGearsBattleScene::_on_battleback_bg_layer_draw() {
+	if (!battleback_bg_layer || !controller.is_valid() || !is_texture_ready(battleback_bg_tex)) return;
+	Rect2 vp_rect(Point2(0, 0), battleback_bg_layer->get_size());
+	draw_battleback_layer(battleback_bg_layer, vp_rect, battleback_bg_tex, controller->get_troop_bg_cfg(), false);
+}
+
+void ClockGearsBattleScene::_on_battleback_floor_layer_draw() {
+	if (!battleback_floor_layer || !controller.is_valid() || !is_texture_ready(battleback_floor_tex)) return;
+	Rect2 vp_rect(Point2(0, 0), battleback_floor_layer->get_size());
+	draw_battleback_layer(battleback_floor_layer, vp_rect, battleback_floor_tex, controller->get_troop_floor_cfg(), true);
+}
+
+Rect2 ClockGearsBattleScene::get_drawn_battleback_rect(int p_slot) const {
+	Control *ctrl = (p_slot == 1) ? battleback_bg_layer : battleback_floor_layer;
+	Ref<Texture2D> tex = (p_slot == 1) ? battleback_bg_tex : battleback_floor_tex;
+	if (!ctrl || !controller.is_valid() || !is_texture_ready(tex)) return Rect2();
+	Rect2 vp_rect(Point2(0, 0), ctrl->get_size());
+	Dictionary cfg = (p_slot == 1) ? controller->get_troop_bg_cfg() : controller->get_troop_floor_cfg();
+	return compute_battleback_screen_rect(vp_rect, tex->get_size(), cfg, p_slot != 1);
 }
 
 ClockGearsBattleScene::ClockGearsBattleScene() {

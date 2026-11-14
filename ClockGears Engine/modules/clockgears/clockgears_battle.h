@@ -242,9 +242,13 @@ private:
 	int troop_id = 1;
 	bool can_escape = true;
 	bool can_lose = false;
+	bool test_mode = false;
 	String battle_bgm;
 	String troop_bg_path;
 	String troop_floor_path;
+	Dictionary troop_bg_cfg;
+	Dictionary troop_floor_cfg;
+	Dictionary test_consumed_items;
 
 	Vector<Ref<ClockGearsBattleUnit>> party;
 	Vector<Ref<ClockGearsBattleUnit>> enemies;
@@ -277,6 +281,12 @@ public:
 	void set_troop_bg_path(const String &p_path) { troop_bg_path = p_path; }
 	String get_troop_floor_path() const { return troop_floor_path; }
 	void set_troop_floor_path(const String &p_path) { troop_floor_path = p_path; }
+	Dictionary get_troop_bg_cfg() const { return troop_bg_cfg; }
+	void set_troop_bg_cfg(const Dictionary &p_cfg) { troop_bg_cfg = p_cfg; }
+	Dictionary get_troop_floor_cfg() const { return troop_floor_cfg; }
+	void set_troop_floor_cfg(const Dictionary &p_cfg) { troop_floor_cfg = p_cfg; }
+	void set_test_mode(bool p_test) { test_mode = p_test; }
+	bool get_test_mode() const { return test_mode; }
 	// Configuración de la batalla
 	void setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm = "");
 	void add_party_unit(const Ref<ClockGearsBattleUnit> &p_unit);

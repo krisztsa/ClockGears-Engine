@@ -18,6 +18,9 @@
 #include "core/os/os.h"
 #include "editor/clockgears_theme.h"
 #include "editor/editor_node.h"
+#ifdef TOOLS_ENABLED
+#include "editor/file_system/editor_file_system.h"
+#endif
 #include "editor/file_system/editor_paths.h"
 #include "editor/themes/editor_scale.h"
 #include "icons/clockgears_icons.h"
@@ -187,11 +190,40 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("remove_enemy_other_animation", "enemy_idx", "other_name"), &ClockGearsDatabaseDialog::remove_enemy_other_animation);
 	ClassDB::bind_method(D_METHOD("select_anim_slot", "slot_id"), &ClockGearsDatabaseDialog::select_anim_slot);
 	ClassDB::bind_method(D_METHOD("remove_anim_frame_at", "frame_idx"), &ClockGearsDatabaseDialog::remove_anim_frame_at);
+	ClassDB::bind_method(D_METHOD("get_troop_battleback_cfg", "troop_idx", "slot"), &ClockGearsDatabaseDialog::get_troop_battleback_cfg);
+	ClassDB::bind_method(D_METHOD("set_troop_battleback_cfg", "troop_idx", "slot", "cfg"), &ClockGearsDatabaseDialog::set_troop_battleback_cfg);
+	ClassDB::bind_method(D_METHOD("get_formatted_troop_enemy_label", "troop_idx", "member_idx", "max_w"), &ClockGearsDatabaseDialog::get_formatted_troop_enemy_label, DEFVAL(0.0f));
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
 void ClockGearsDatabaseDialog::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+#ifdef TOOLS_ENABLED
+			if (EditorFileSystem::get_singleton()) {
+				EditorFileSystem *efs = EditorFileSystem::get_singleton();
+				if (!efs->is_connected("filesystem_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_filesystem_changed))) {
+					efs->connect("filesystem_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_filesystem_changed));
+				}
+				if (!efs->is_connected("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported))) {
+					efs->connect("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported));
+				}
+			}
+#endif
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+#ifdef TOOLS_ENABLED
+			if (EditorFileSystem::get_singleton()) {
+				EditorFileSystem *efs = EditorFileSystem::get_singleton();
+				if (efs->is_connected("filesystem_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_filesystem_changed))) {
+					efs->disconnect("filesystem_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_filesystem_changed));
+				}
+				if (efs->is_connected("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported))) {
+					efs->disconnect("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported));
+				}
+			}
+#endif
+		} break;
 		case NOTIFICATION_PROCESS:
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			if (anim_preview_playing && is_visible()) {
@@ -536,22 +568,30 @@ Ref<Texture2D> ClockGearsDatabaseDialog::_load_texture_from_path(const String &p
 		}
 	}
 
-	Ref<Image> img;
-	img.instantiate();
 	for (int i = 0; i < candidates.size(); i++) {
 		const String &cand = candidates[i];
 		if (cand.is_empty()) continue;
-		if (ResourceLoader::exists(cand)) {
+		if (ClockGearsBattleScene::can_safely_resource_load_image(cand)) {
 			Ref<Texture2D> res = ResourceLoader::load(cand);
-			if (res.is_valid()) {
+			if (ClockGearsBattleScene::is_texture_ready(res)) {
 				return res;
 			}
 		}
-		if (FileAccess::exists(cand)) {
-			if (ImageLoader::load_image(cand, img) == OK && img.is_valid() && !img->is_empty()) {
-				Ref<ImageTexture> itex = ImageTexture::create_from_image(img);
-				itex->set_path(cand, true);
-				return itex;
+		String file_read_path = cand;
+		if (cand.begins_with("res://") && ProjectSettings::get_singleton()) {
+			String gp = ProjectSettings::get_singleton()->globalize_path(cand);
+			if (!gp.is_empty() && FileAccess::exists(gp)) {
+				file_read_path = gp;
+			}
+		}
+		if (FileAccess::exists(file_read_path)) {
+			Ref<Image> local_img;
+			local_img.instantiate();
+			if (ImageLoader::load_image(file_read_path, local_img) == OK && local_img.is_valid() && !local_img->is_empty()) {
+				Ref<ImageTexture> itex = ImageTexture::create_from_image(local_img);
+				if (ClockGearsBattleScene::is_texture_ready(itex)) {
+					return itex;
+				}
 			}
 		}
 	}
@@ -768,7 +808,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		general_section_box->set_visible(!is_system);
 	}
 	if (params_grid) {
-		params_grid->set_visible(!is_system && !is_troops && !is_classes && current_category != CAT_VOCABULARY && current_category != CAT_SWITCHES_VARS);
+		params_grid->set_visible(!is_system && !is_classes && current_category != CAT_VOCABULARY && current_category != CAT_SWITCHES_VARS);
 	}
 	if (system_panel) {
 		system_panel->set_visible(is_system);
@@ -1467,7 +1507,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 
 	Dictionary d = arr[p_index];
 	name_edit->set_text(d.get("name", ""));
-	desc_edit->set_text(d.get("desc", ""));
+	desc_edit->set_text(d.get("desc", d.get("notes", "")));
 	if (current_category == CAT_ACTORS) {
 		int cls_id = int(d.get("class_id", d.get("type", 0)));
 		_select_option_by_id_or_index(type_option, cls_id);
@@ -1854,6 +1894,9 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 	Dictionary d = arr[idx];
 	d["name"] = name_edit->get_text();
 	d["desc"] = desc_edit->get_text();
+	if (current_category == CAT_TROOPS) {
+		d["notes"] = d["desc"];
+	}
 
 	int sel_primary = type_option->get_selected();
 	int primary_id = (sel_primary >= 0) ? type_option->get_item_id(sel_primary) : 0;
@@ -4348,6 +4391,17 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	btn_change_troop_bg->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_change_troop_bg_pressed));
 	t_actions_flow->add_child(btn_change_troop_bg);
 
+	btn_adjust_troop_bg = memnew(Button(CG_DB_TR("Ajustar")));
+	btn_adjust_troop_bg->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	btn_adjust_troop_bg->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_troop_bg_pressed));
+	t_actions_flow->add_child(btn_adjust_troop_bg);
+
+	troop_bg_adjust_menu = memnew(PopupMenu);
+	troop_bg_adjust_menu->add_item(CG_DB_TR("Fondo"), 1);
+	troop_bg_adjust_menu->add_item(CG_DB_TR("Suelo"), 2);
+	troop_bg_adjust_menu->connect("id_pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_troop_bg_menu_id));
+	add_child(troop_bg_adjust_menu);
+
 	btn_battle_test_troop = memnew(Button(CG_DB_TR("Prueba de batalla")));
 	btn_battle_test_troop->set_custom_minimum_size(Size2(130 * EDSCALE, row_h));
 	btn_battle_test_troop->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_troop_pressed));
@@ -4356,6 +4410,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	chk_troop_snap_grid = memnew(CheckBox(CG_DB_TR("Ajustar a rejilla (32)")));
 	chk_troop_snap_grid->set_custom_minimum_size(Size2(0, row_h));
 	chk_troop_snap_grid->set_pressed(false);
+	chk_troop_snap_grid->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_queue_troop_preview_redraw).unbind(1));
 	t_actions_flow->add_child(chk_troop_snap_grid);
 
 	troop_members_list_vbox = memnew(VBoxContainer);
@@ -4775,10 +4830,28 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_placement_canvas->set_custom_minimum_size(Size2(540 * EDSCALE, 304 * EDSCALE));
 	troop_placement_canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	troop_placement_canvas->set_mouse_filter(Control::MOUSE_FILTER_STOP);
-	troop_placement_canvas->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	troop_placement_canvas->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw));
 	troop_placement_canvas->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input));
 	troop_placement_col3_box->add_child(troop_placement_canvas);
+
+	troop_bg_layer_ctrl = memnew(Control);
+	troop_bg_layer_ctrl->set_anchors_preset(Control::PRESET_FULL_RECT);
+	troop_bg_layer_ctrl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	troop_bg_layer_ctrl->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_bg_layer_draw));
+	troop_placement_canvas->add_child(troop_bg_layer_ctrl);
+
+	troop_floor_layer_ctrl = memnew(Control);
+	troop_floor_layer_ctrl->set_anchors_preset(Control::PRESET_FULL_RECT);
+	troop_floor_layer_ctrl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	troop_floor_layer_ctrl->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_floor_layer_draw));
+	troop_placement_canvas->add_child(troop_floor_layer_ctrl);
+
+	troop_enemies_overlay_ctrl = memnew(Control);
+	troop_enemies_overlay_ctrl->set_anchors_preset(Control::PRESET_FULL_RECT);
+	troop_enemies_overlay_ctrl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	troop_enemies_overlay_ctrl->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	troop_enemies_overlay_ctrl->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_enemies_overlay_draw));
+	troop_placement_canvas->add_child(troop_enemies_overlay_ctrl);
 
 	// Ventana "Cambiar fondo" (Fondo + Suelo por tropa)
 	troop_bg_dialog = memnew(AcceptDialog);
@@ -4831,7 +4904,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_bg_file_dialog->clear_filters();
 	troop_bg_file_dialog->add_filter("*.png, *.webp, *.jpg, *.jpeg ; " + CG_DB_TR("Imágenes de Fondo (*.png, *.webp)"));
 	troop_bg_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_bg_file_selected));
-	add_child(troop_bg_file_dialog);
+	troop_bg_dialog->add_child(troop_bg_file_dialog);
+
+	_build_adjust_dialog(0, 1); // Ventana propia para Ajustar Fondo
+	_build_adjust_dialog(1, 2); // Ventana propia para Ajustar Suelo
 
 	// ========================================================================
 	// PESTAÑA ANIMACIONES (Enemigos y Actores: UN SOLO selector desplegable + Tira de frames HFlow + Vista previa 128px)
@@ -5556,13 +5632,13 @@ void ClockGearsDatabaseDialog::_refresh_troop_members_ui() {
 	}
 	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
 	if (sel.is_empty()) {
-		if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+		_queue_troop_preview_redraw();
 		return;
 	}
 	int idx = sel[0];
 	Array &arr = category_data[CAT_TROOPS];
 	if (idx < 0 || idx >= arr.size()) {
-		if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+		_queue_troop_preview_redraw();
 		return;
 	}
 
@@ -5647,9 +5723,7 @@ void ClockGearsDatabaseDialog::_refresh_troop_members_ui() {
 
 		troop_members_list_vbox->add_child(row);
 	}
-	if (troop_placement_canvas) {
-		troop_placement_canvas->queue_redraw();
-	}
+	_queue_troop_preview_redraw();
 }
 
 void ClockGearsDatabaseDialog::_on_add_troop_member_pressed() {
@@ -5823,25 +5897,218 @@ void ClockGearsDatabaseDialog::_on_battle_test_troop_pressed() {
 	_save_database_to_disk();
 	Dictionary d = arr[idx];
 	int troop_id = int(d.get("id", idx + 1));
+	_start_battle_test(troop_id);
+}
+
+void ClockGearsDatabaseDialog::_start_battle_test(int p_troop_id) {
+	battle_test_troop_id = p_troop_id;
+	battle_test_last_result = 0;
 
 	if (!battle_test_dialog) {
 		battle_test_dialog = memnew(AcceptDialog);
 		battle_test_dialog->set_title(CG_DB_TR("Prueba de Batalla - ClockGears Engine"));
 		battle_test_dialog->set_min_size(Size2(960, 560) * EDSCALE);
+		if (battle_test_dialog->get_ok_button()) {
+			battle_test_dialog->get_ok_button()->hide();
+		}
+		battle_test_dialog->connect("canceled", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_close_pressed));
+		battle_test_dialog->connect("window_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_window_input));
 		add_child(battle_test_dialog);
+
+		CanvasLayer *summary_layer = memnew(CanvasLayer);
+		summary_layer->set_layer(70);
+		battle_test_dialog->add_child(summary_layer);
+
+		battle_test_root = memnew(Control);
+		battle_test_root->set_anchors_preset(Control::PRESET_FULL_RECT);
+		battle_test_root->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+		battle_test_root->hide();
+		summary_layer->add_child(battle_test_root);
+
+		ColorRect *dim = memnew(ColorRect);
+		dim->set_anchors_preset(Control::PRESET_FULL_RECT);
+		dim->set_color(Color(0.03f, 0.04f, 0.08f, 0.72f));
+		battle_test_root->add_child(dim);
+
+		CenterContainer *cc = memnew(CenterContainer);
+		cc->set_anchors_preset(Control::PRESET_FULL_RECT);
+		battle_test_root->add_child(cc);
+
+		battle_test_summary_panel = memnew(PanelContainer);
+		battle_test_summary_panel->set_custom_minimum_size(Size2(440, 260) * EDSCALE);
+		Ref<StyleBoxFlat> sb;
+		sb.instantiate();
+		sb->set_bg_color(Color(0.11f, 0.13f, 0.19f, 0.98f));
+		sb->set_border_width_all(2);
+		sb->set_border_color(Color(0.85f, 0.72f, 0.35f, 0.95f));
+		sb->set_corner_radius_all(8);
+		sb->set_content_margin_all(int(18 * EDSCALE));
+		battle_test_summary_panel->add_theme_style_override("panel", sb);
+		cc->add_child(battle_test_summary_panel);
+
+		VBoxContainer *svb = memnew(VBoxContainer);
+		svb->add_theme_constant_override("separation", int(12 * EDSCALE));
+		battle_test_summary_panel->add_child(svb);
+
+		battle_test_summary_title = memnew(Label);
+		battle_test_summary_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		battle_test_summary_title->add_theme_font_size_override("font_size", int(20 * EDSCALE));
+		svb->add_child(battle_test_summary_title);
+
+		svb->add_child(memnew(HSeparator));
+
+		battle_test_summary_body = memnew(Label);
+		battle_test_summary_body->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		battle_test_summary_body->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		svb->add_child(battle_test_summary_body);
+
+		Label *lbl_hint = memnew(Label(CG_DB_TR("Pulsa una tecla o Continuar para cerrar · Esc para salir")));
+		lbl_hint->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		lbl_hint->add_theme_color_override("font_color", Color(0.70f, 0.75f, 0.85f));
+		lbl_hint->add_theme_font_size_override("font_size", int(11 * EDSCALE));
+		svb->add_child(lbl_hint);
+
+		HBoxContainer *shb = memnew(HBoxContainer);
+		shb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+		shb->add_theme_constant_override("separation", int(12 * EDSCALE));
+		svb->add_child(shb);
+
+		btn_battle_test_retry = memnew(Button(CG_DB_TR("Reintentar")));
+		btn_battle_test_retry->set_custom_minimum_size(Size2(130 * EDSCALE, 34 * EDSCALE));
+		btn_battle_test_retry->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_retry_pressed));
+		shb->add_child(btn_battle_test_retry);
+
+		btn_battle_test_continue = memnew(Button(CG_DB_TR("Continuar")));
+		btn_battle_test_continue->set_custom_minimum_size(Size2(130 * EDSCALE, 34 * EDSCALE));
+		btn_battle_test_continue->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_close_pressed));
+		shb->add_child(btn_battle_test_continue);
 	}
-	for (int i = battle_test_dialog->get_child_count() - 1; i >= 0; i--) {
-		ClockGearsBattleScene *old_sc = Object::cast_to<ClockGearsBattleScene>(battle_test_dialog->get_child(i));
-		if (old_sc) {
-			battle_test_dialog->remove_child(old_sc);
-			memdelete(old_sc);
+
+	if (battle_test_scene) {
+		if (battle_test_scene->get_parent()) {
+			battle_test_scene->get_parent()->remove_child(battle_test_scene);
+		}
+		memdelete(battle_test_scene);
+		battle_test_scene = nullptr;
+	}
+	if (battle_test_root) {
+		battle_test_root->hide();
+	}
+
+	battle_test_scene = memnew(ClockGearsBattleScene);
+	battle_test_scene->connect("battle_finished", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_finished));
+	battle_test_dialog->add_child(battle_test_scene);
+	battle_test_dialog->popup_centered(Size2(980, 590) * EDSCALE);
+	// Modo prueba: copias descartables, nunca modifica oro, inventario ni EXP del proyecto
+	battle_test_scene->setup_battle(p_troop_id, true, true, "", nullptr, true);
+}
+
+void ClockGearsDatabaseDialog::_on_battle_test_finished(int p_result) {
+	battle_test_last_result = p_result;
+	if (!battle_test_root || !battle_test_summary_title || !battle_test_summary_body) {
+		_on_battle_test_close_pressed();
+		return;
+	}
+	Ref<ClockGearsBattleController> ctrl = battle_test_scene ? battle_test_scene->get_controller() : Ref<ClockGearsBattleController>();
+	String currency = String(system_config.get("currency", "G"));
+	if (currency.is_empty()) currency = "G";
+
+	if (p_result == ClockGearsBattleController::RESULT_VICTORY) {
+		battle_test_summary_title->set_text(CG_DB_TR("¡Victoria!"));
+		battle_test_summary_title->add_theme_color_override("font_color", Color(0.95f, 0.85f, 0.35f));
+
+		int exp_gained = ctrl.is_valid() ? ctrl->get_total_exp() : 0;
+		int gold_gained = ctrl.is_valid() ? ctrl->get_total_gold() : 0;
+		Array drs = ctrl.is_valid() ? ctrl->get_dropped_items() : Array();
+		Array lvs = ctrl.is_valid() ? ctrl->get_level_up_messages() : Array();
+
+		String drops_str = CG_DB_TR("Ninguno");
+		if (!drs.is_empty()) {
+			drops_str = "";
+			for (int i = 0; i < drs.size(); i++) {
+				drops_str += (i > 0 ? ", " : "") + String(drs[i]);
+			}
+		}
+		String lvs_str = CG_DB_TR("Ninguna");
+		if (!lvs.is_empty()) {
+			lvs_str = "";
+			for (int i = 0; i < lvs.size(); i++) {
+				lvs_str += (i > 0 ? "\n" : "") + String(lvs[i]);
+			}
+		}
+		battle_test_summary_body->set_text(vformat(
+				CG_DB_TR("EXP obtenida: %d\nOro obtenido: %d %s\nObjetos: %s\nSubidas de nivel:\n%s"),
+				exp_gained, gold_gained, currency, drops_str, lvs_str));
+		if (btn_battle_test_continue) {
+			btn_battle_test_continue->set_text(CG_DB_TR("Continuar"));
+		}
+	} else if (p_result == ClockGearsBattleController::RESULT_DEFEAT || p_result == ClockGearsBattleController::RESULT_GAME_OVER) {
+		battle_test_summary_title->set_text(CG_DB_TR("Derrota"));
+		battle_test_summary_title->add_theme_color_override("font_color", Color(0.95f, 0.35f, 0.35f));
+		battle_test_summary_body->set_text(CG_DB_TR("El grupo ha sido derrotado.\nPuedes reintentar el combate o salir."));
+		if (btn_battle_test_continue) {
+			btn_battle_test_continue->set_text(CG_DB_TR("Salir"));
+		}
+	} else {
+		battle_test_summary_title->set_text(CG_DB_TR("Batalla finalizada"));
+		battle_test_summary_title->add_theme_color_override("font_color", Color(0.80f, 0.88f, 1.0f));
+		battle_test_summary_body->set_text(CG_DB_TR("El grupo ha escapado del combate."));
+		if (btn_battle_test_continue) {
+			btn_battle_test_continue->set_text(CG_DB_TR("Continuar"));
 		}
 	}
 
-	ClockGearsBattleScene *bscene = memnew(ClockGearsBattleScene);
-	battle_test_dialog->add_child(bscene);
-	battle_test_dialog->popup_centered(Size2(980, 590) * EDSCALE);
-	bscene->setup_battle(troop_id, true, true);
+	battle_test_root->show();
+	if (btn_battle_test_continue) {
+		btn_battle_test_continue->grab_focus();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_battle_test_retry_pressed() {
+	if (battle_test_troop_id > 0) {
+		_start_battle_test(battle_test_troop_id);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_battle_test_close_pressed() {
+	if (battle_test_root) {
+		battle_test_root->hide();
+	}
+	if (battle_test_dialog) {
+		battle_test_dialog->hide();
+	}
+	if (battle_test_scene) {
+		if (battle_test_scene->get_parent()) {
+			battle_test_scene->get_parent()->remove_child(battle_test_scene);
+		}
+		memdelete(battle_test_scene);
+		battle_test_scene = nullptr;
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_battle_test_window_input(const Ref<InputEvent> &p_ev) {
+	Ref<InputEventKey> k = p_ev;
+	if (!k.is_valid() || !k->is_pressed() || k->is_echo()) {
+		return;
+	}
+	Key kc = k->get_keycode();
+	if (kc == Key::ESCAPE) {
+		_on_battle_test_close_pressed();
+		if (battle_test_dialog) {
+			battle_test_dialog->set_input_as_handled();
+		}
+		return;
+	}
+	if (battle_test_root && battle_test_root->is_visible()) {
+		if (battle_test_last_result == ClockGearsBattleController::RESULT_VICTORY || battle_test_last_result == ClockGearsBattleController::RESULT_ESCAPED) {
+			if (kc != Key::SHIFT && kc != Key::CTRL && kc != Key::ALT && kc != Key::META) {
+				_on_battle_test_close_pressed();
+				if (battle_test_dialog) {
+					battle_test_dialog->set_input_as_handled();
+				}
+			}
+		}
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_change_troop_bg_pressed() {
@@ -5876,6 +6143,52 @@ void ClockGearsDatabaseDialog::_on_troop_bg_browse_pressed(int p_slot) {
 	troop_bg_file_dialog->popup_centered(Size2(680, 460) * EDSCALE);
 }
 
+static Rect2 s_calc_troop_vp_rect(Control *p_canvas) {
+	if (!p_canvas) return Rect2();
+	Size2 avail = p_canvas->get_size();
+	if (avail.x <= 10.0f || avail.y <= 10.0f) return Rect2();
+	const float logical_w = 960.0f;
+	const float logical_h = 540.0f;
+	float max_w = MIN(avail.x, logical_w * EDSCALE);
+	float scale = MIN(max_w / logical_w, avail.y / logical_h);
+	Size2 vp_size(logical_w * scale, logical_h * scale);
+	Point2 vp_pos((avail.x - vp_size.x) * 0.5f, 0.0f);
+	return Rect2(vp_pos, vp_size);
+}
+
+static Vector<Point2> s_get_adjust_handle_points(const Rect2 &p_rect, const Rect2 &p_vp) {
+	Vector<Point2> pts;
+	float x0 = CLAMP(p_rect.position.x, p_vp.position.x + 6.0f, p_vp.position.x + p_vp.size.x - 6.0f);
+	float y0 = CLAMP(p_rect.position.y, p_vp.position.y + 6.0f, p_vp.position.y + p_vp.size.y - 6.0f);
+	float x1 = CLAMP(p_rect.position.x + p_rect.size.x, p_vp.position.x + 6.0f, p_vp.position.x + p_vp.size.x - 6.0f);
+	float y1 = CLAMP(p_rect.position.y + p_rect.size.y, p_vp.position.y + 6.0f, p_vp.position.y + p_vp.size.y - 6.0f);
+	pts.push_back(Point2(x0, y0)); // TL
+	pts.push_back(Point2(x1, y0)); // TR
+	pts.push_back(Point2(x0, y1)); // BL
+	pts.push_back(Point2(x1, y1)); // BR
+	return pts;
+}
+
+void ClockGearsDatabaseDialog::_queue_troop_preview_redraw() {
+	if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+	if (troop_bg_layer_ctrl) troop_bg_layer_ctrl->queue_redraw();
+	if (troop_floor_layer_ctrl) troop_floor_layer_ctrl->queue_redraw();
+	if (troop_enemies_overlay_ctrl) troop_enemies_overlay_ctrl->queue_redraw();
+}
+
+void ClockGearsDatabaseDialog::_on_editor_filesystem_changed() {
+	_queue_troop_preview_redraw();
+	for (int i = 0; i < 2; i++) {
+		if (troop_adjust_ui[i].dialog && troop_adjust_ui[i].dialog->is_visible()) {
+			_redraw_adjust_dialog(i);
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_editor_resources_reimported(const PackedStringArray &p_resources) {
+	_on_editor_filesystem_changed();
+}
+
 void ClockGearsDatabaseDialog::_on_troop_bg_clear_pressed(int p_slot) {
 	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
 	if (sel.is_empty()) return;
@@ -5892,7 +6205,8 @@ void ClockGearsDatabaseDialog::_on_troop_bg_clear_pressed(int p_slot) {
 		if (troop_bg2_edit) troop_bg2_edit->set_text("");
 	}
 	arr[idx] = d;
-	if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+	_queue_troop_preview_redraw();
+	callable_mp(this, &ClockGearsDatabaseDialog::_queue_troop_preview_redraw).call_deferred();
 	_save_database_to_disk();
 }
 
@@ -5927,74 +6241,450 @@ void ClockGearsDatabaseDialog::_on_troop_bg_file_selected(const String &p_path) 
 		if (troop_bg2_edit) troop_bg2_edit->set_text(final_path);
 	}
 	arr[idx] = d;
-	if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
 	_save_database_to_disk();
+
+#ifdef TOOLS_ENABLED
+	if (EditorFileSystem::get_singleton()) {
+		EditorFileSystem *efs = EditorFileSystem::get_singleton();
+		efs->update_file(final_path);
+		if (!efs->is_scanning()) {
+			efs->scan_changes();
+		}
+	}
+#endif
+
+	_queue_troop_preview_redraw();
+	callable_mp(this, &ClockGearsDatabaseDialog::_queue_troop_preview_redraw).call_deferred();
 }
 
-void ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw() {
-	if (!troop_placement_canvas) return;
-	Size2 avail = troop_placement_canvas->get_size();
-	if (avail.x <= 10 || avail.y <= 10) return;
+void ClockGearsDatabaseDialog::_on_adjust_troop_bg_pressed() {
+	if (!troop_bg_adjust_menu || !btn_adjust_troop_bg) return;
+	Vector2 pos = btn_adjust_troop_bg->get_screen_position() + Vector2(0, btn_adjust_troop_bg->get_size().y);
+	troop_bg_adjust_menu->set_position(Vector2i(pos));
+	troop_bg_adjust_menu->reset_size();
+	troop_bg_adjust_menu->popup();
+}
 
-	// Resolución lógica de batalla: 960 x 540 (16:9), a todo el ancho disponible (hasta 960 px), sin hueco encima
-	const float logical_w = 960.0f;
-	const float logical_h = 540.0f;
-	float max_w = MIN(avail.x, logical_w * EDSCALE);
-	float desired_h = max_w * (logical_h / logical_w);
-	if (Math::abs(troop_placement_canvas->get_custom_minimum_size().y - desired_h) > 2.0f) {
-		troop_placement_canvas->set_custom_minimum_size(Size2(0, desired_h));
+void ClockGearsDatabaseDialog::_on_adjust_troop_bg_menu_id(int p_id) {
+	if (p_id == 1 || p_id == 2) {
+		_open_adjust_dialog(p_id);
 	}
-	float scale = MIN(max_w / logical_w, avail.y / logical_h);
-	Size2 vp_size(logical_w * scale, logical_h * scale);
-	Point2 vp_pos((avail.x - vp_size.x) * 0.5f, 0.0f);
-	Rect2 vp_rect(vp_pos, vp_size);
+}
 
-	// Fondo oscuro liso por defecto
-	troop_placement_canvas->draw_rect(vp_rect, Color(0.08f, 0.09f, 0.14f, 1.0f), true);
+void ClockGearsDatabaseDialog::_build_adjust_dialog(int p_ui_idx, int p_slot) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	ui.slot = p_slot;
+
+	ui.dialog = memnew(AcceptDialog);
+	ui.dialog->set_title(p_slot == 1 ? CG_DB_TR("Ajustar Fondo (Fondo)") : CG_DB_TR("Ajustar Suelo (Suelo)"));
+	ui.dialog->get_ok_button()->set_text(CG_DB_TR("Aceptar"));
+	ui.dialog->add_cancel_button(CG_DB_TR("Cancelar"));
+	ui.dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_confirmed).bind(p_ui_idx));
+	ui.dialog->connect("window_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_window_input).bind(p_ui_idx));
+	add_child(ui.dialog);
+
+	VBoxContainer *vb = memnew(VBoxContainer);
+	vb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	ui.dialog->add_child(vb);
+
+	// Barra de opciones sin coordenadas numéricas a mano
+	HFlowContainer *tools = memnew(HFlowContainer);
+	tools->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	tools->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	vb->add_child(tools);
+
+	Ref<ButtonGroup> mode_grp;
+	mode_grp.instantiate();
+	static const char *mode_names[4] = { "Cubrir", "Ajustar", "Estirar", "Mosaico" };
+	for (int m = 0; m < 4; m++) {
+		Button *mb = memnew(Button(CG_DB_TR(mode_names[m])));
+		mb->set_toggle_mode(true);
+		mb->set_button_group(mode_grp);
+		mb->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_mode_selected).bind(m, p_ui_idx));
+		tools->add_child(mb);
+		ui.mode_btns[m] = mb;
+	}
+
+	ui.chk_integer_scale = memnew(CheckBox(CG_DB_TR("Escala entera (pixel art)")));
+	ui.chk_integer_scale->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_integer_toggled).bind(p_ui_idx));
+	tools->add_child(ui.chk_integer_scale);
+
+	ui.btn_center = memnew(Button(CG_DB_TR("Centrar")));
+	ui.btn_center->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_center_pressed).bind(p_ui_idx));
+	tools->add_child(ui.btn_center);
+
+	ui.btn_reset = memnew(Button(CG_DB_TR("Restablecer")));
+	ui.btn_reset->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_reset_pressed).bind(p_ui_idx));
+	tools->add_child(ui.btn_reset);
+
+	// Marco 16:9 interactivo (640x360 escalado)
+	PanelContainer *frame_pc = memnew(PanelContainer);
+	frame_pc->set_custom_minimum_size(Size2(640, 360) * EDSCALE);
+	frame_pc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	frame_pc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	vb->add_child(frame_pc);
+
+	ui.canvas = memnew(Control);
+	ui.canvas->set_custom_minimum_size(Size2(640, 360) * EDSCALE);
+	ui.canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ui.canvas->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	ui.canvas->set_focus_mode(Control::FOCUS_ALL);
+	ui.canvas->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	ui.canvas->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_layer_draw).bind(p_ui_idx, 0));
+	ui.canvas->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_canvas_gui_input).bind(p_ui_idx));
+	frame_pc->add_child(ui.canvas);
+
+	ui.bg_layer = memnew(Control);
+	ui.bg_layer->set_anchors_preset(Control::PRESET_FULL_RECT);
+	ui.bg_layer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	ui.bg_layer->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_layer_draw).bind(p_ui_idx, 1));
+	ui.canvas->add_child(ui.bg_layer);
+
+	ui.floor_layer = memnew(Control);
+	ui.floor_layer->set_anchors_preset(Control::PRESET_FULL_RECT);
+	ui.floor_layer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	ui.floor_layer->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_layer_draw).bind(p_ui_idx, 2));
+	ui.canvas->add_child(ui.floor_layer);
+
+	ui.overlay = memnew(Control);
+	ui.overlay->set_anchors_preset(Control::PRESET_FULL_RECT);
+	ui.overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	ui.overlay->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	ui.overlay->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_overlay_draw).bind(p_ui_idx));
+	ui.canvas->add_child(ui.overlay);
+
+	ui.no_img_label = memnew(Label(CG_DB_TR("No hay imagen asignada en esta capa. Usa 'Cambiar fondo' para elegir una.")));
+	ui.no_img_label->set_anchors_preset(Control::PRESET_CENTER);
+	ui.no_img_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	ui.no_img_label->add_theme_color_override("font_color", Color(0.85f, 0.88f, 0.95f, 0.85f));
+	ui.no_img_label->hide();
+	ui.canvas->add_child(ui.no_img_label);
+
+	ui.info_label = memnew(Label(CG_DB_TR("Arrastra con el ratón para mover · Rueda o esquinas para escalar · Flechas 1 px (Shift 8 px)")));
+	ui.info_label->add_theme_color_override("font_color", Color(0.75f, 0.80f, 0.90f));
+	ui.info_label->add_theme_font_size_override("font_size", int(11 * EDSCALE));
+	vb->add_child(ui.info_label);
+}
+
+void ClockGearsDatabaseDialog::_open_adjust_dialog(int p_slot) {
+	int ui_idx = (p_slot == 1) ? 0 : 1;
+	AdjustDialogUI &ui = troop_adjust_ui[ui_idx];
+	if (!ui.dialog) return;
 
 	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
-	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_TROOPS].size()) {
-		troop_placement_canvas->draw_rect(vp_rect, Color(0.35f, 0.40f, 0.50f, 0.9f), false, 1.0f);
+	if (sel.is_empty()) return;
+	int idx = sel[0];
+	Array &arr = category_data[CAT_TROOPS];
+	if (idx < 0 || idx >= arr.size()) return;
+
+	Dictionary d = arr[idx];
+	String key_cfg = (p_slot == 1) ? "battleback1_cfg" : "battleback2_cfg";
+	String path = (p_slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+	Ref<Texture2D> tex = path.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(path);
+	Size2 tsz = ClockGearsBattleScene::is_texture_ready(tex) ? tex->get_size() : Size2();
+	Variant raw_cfg = d.get(key_cfg, Dictionary());
+	Dictionary cfg_dict = (raw_cfg.get_type() == Variant::DICTIONARY) ? Dictionary(raw_cfg) : Dictionary();
+
+	ui.troop_idx = idx;
+	ui.drag_mode = 0;
+	ui.edit_cfg = ClockGearsBattleScene::normalize_battleback_cfg(cfg_dict, p_slot != 1, tsz);
+	if (ui.no_img_label) {
+		ui.no_img_label->set_visible(!ClockGearsBattleScene::is_texture_ready(tex));
+	}
+	_sync_adjust_dialog_controls(ui_idx);
+	_redraw_adjust_dialog(ui_idx);
+	ui.dialog->popup_centered(Size2(700, 480) * EDSCALE);
+	if (ui.canvas) {
+		ui.canvas->grab_focus();
+	}
+}
+
+void ClockGearsDatabaseDialog::_sync_adjust_dialog_controls(int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	int cfg_mode = CLAMP(int(ui.edit_cfg.get("mode", 0)), 0, 3);
+	updating_ui = true;
+	for (int m = 0; m < 4; m++) {
+		if (ui.mode_btns[m]) {
+			ui.mode_btns[m]->set_pressed(m == cfg_mode);
+		}
+	}
+	if (ui.chk_integer_scale) {
+		ui.chk_integer_scale->set_pressed(bool(ui.edit_cfg.get("integer_scale", false)));
+	}
+	updating_ui = false;
+}
+
+void ClockGearsDatabaseDialog::_redraw_adjust_dialog(int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	if (ui.canvas) ui.canvas->queue_redraw();
+	if (ui.bg_layer) ui.bg_layer->queue_redraw();
+	if (ui.floor_layer) ui.floor_layer->queue_redraw();
+	if (ui.overlay) ui.overlay->queue_redraw();
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_mode_selected(int p_mode, int p_ui_idx) {
+	if (updating_ui) return;
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	ui.edit_cfg["mode"] = CLAMP(p_mode, 0, 3);
+	_redraw_adjust_dialog(p_ui_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_integer_toggled(bool p_pressed, int p_ui_idx) {
+	if (updating_ui) return;
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	bool was_int = bool(ui.edit_cfg.get("integer_scale", false));
+	ui.edit_cfg["integer_scale"] = p_pressed;
+	if (p_pressed && !was_int && ui.troop_idx >= 0 && ui.troop_idx < category_data[CAT_TROOPS].size()) {
+		Dictionary d = category_data[CAT_TROOPS][ui.troop_idx];
+		String path = (ui.slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+		Ref<Texture2D> tex = path.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(path);
+		if (ClockGearsBattleScene::is_texture_ready(tex) && tex->get_width() > 0) {
+			Dictionary prev_cfg = ui.edit_cfg.duplicate();
+			prev_cfg["integer_scale"] = false;
+			Rect2 cur_r = ClockGearsBattleScene::compute_battleback_screen_rect(Rect2(0, 0, 960, 540), tex->get_size(), prev_cfg, ui.slot != 1);
+			double int_f = MAX(1.0, Math::round(double(cur_r.size.x) / double(tex->get_width())));
+			ui.edit_cfg["scale"] = int_f;
+		} else {
+			ui.edit_cfg["scale"] = MAX(1.0, Math::round(double(ui.edit_cfg.get("scale", 1.0))));
+		}
+	} else if (p_pressed) {
+		ui.edit_cfg["scale"] = MAX(1.0, Math::round(double(ui.edit_cfg.get("scale", 1.0))));
+	}
+	_redraw_adjust_dialog(p_ui_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_center_pressed(int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	ui.edit_cfg["offset_x"] = 0.0;
+	ui.edit_cfg["offset_y"] = 0.0;
+	_redraw_adjust_dialog(p_ui_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_reset_pressed(int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	Size2 tsz;
+	if (ui.troop_idx >= 0 && ui.troop_idx < category_data[CAT_TROOPS].size()) {
+		Dictionary d = category_data[CAT_TROOPS][ui.troop_idx];
+		String path = (ui.slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+		Ref<Texture2D> tex = path.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(path);
+		if (ClockGearsBattleScene::is_texture_ready(tex)) {
+			tsz = tex->get_size();
+		}
+	}
+	ui.edit_cfg = ClockGearsBattleScene::default_battleback_cfg(ui.slot != 1, tsz);
+	_sync_adjust_dialog_controls(p_ui_idx);
+	_redraw_adjust_dialog(p_ui_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_confirmed(int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	int idx = ui.troop_idx;
+	Array &arr = category_data[CAT_TROOPS];
+	if (idx < 0 || idx >= arr.size()) return;
+	Dictionary d = arr[idx];
+	String key_cfg = (ui.slot == 1) ? "battleback1_cfg" : "battleback2_cfg";
+	d[key_cfg] = ui.edit_cfg.duplicate(true);
+	arr[idx] = d;
+	_save_database_to_disk();
+	_queue_troop_preview_redraw();
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_layer_draw(int p_ui_idx, int p_layer_slot) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	Control *ctrl = (p_layer_slot == 0) ? ui.canvas : ((p_layer_slot == 1) ? ui.bg_layer : ui.floor_layer);
+	if (!ctrl) return;
+	Rect2 vp_rect = s_calc_troop_vp_rect(ctrl);
+	if (vp_rect.size.x <= 1.0f || vp_rect.size.y <= 1.0f) {
+		vp_rect = Rect2(Point2(0, 0), ctrl->get_size());
+	}
+
+	if (p_layer_slot == 0) {
+		ctrl->draw_rect(vp_rect, Color(0.08f, 0.09f, 0.14f, 1.0f), true);
 		return;
 	}
 
-	Dictionary d = category_data[CAT_TROOPS][sel[0]];
-	String bg1_path = d.get("battleback1", d.get("background", ""));
-	String bg2_path = d.get("battleback2", d.get("floor", ""));
+	if (ui.troop_idx < 0 || ui.troop_idx >= category_data[CAT_TROOPS].size()) return;
+	Dictionary d = category_data[CAT_TROOPS][ui.troop_idx];
+	String path = (p_layer_slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+	if (path.is_empty()) return;
+	Ref<Texture2D> tex = _load_texture_from_path(path);
+	if (!ClockGearsBattleScene::is_texture_ready(tex)) return;
 
-	// 1. Fondo (cubre la pantalla)
-	if (!bg1_path.is_empty()) {
-		Ref<Texture2D> tex1 = _load_texture_from_path(bg1_path);
-		if (tex1.is_valid()) {
-			troop_placement_canvas->draw_texture_rect(tex1, vp_rect, false);
+	Dictionary cfg;
+	if (p_layer_slot == ui.slot) {
+		cfg = ui.edit_cfg;
+	} else {
+		String key_other = (p_layer_slot == 1) ? "battleback1_cfg" : "battleback2_cfg";
+		Variant rv = d.get(key_other, Dictionary());
+		cfg = (rv.get_type() == Variant::DICTIONARY) ? Dictionary(rv) : Dictionary();
+	}
+	ClockGearsBattleScene::draw_battleback_layer(ctrl, vp_rect, tex, cfg, p_layer_slot != 1);
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_overlay_draw(int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	if (!ui.overlay) return;
+	Rect2 vp_rect = s_calc_troop_vp_rect(ui.overlay);
+	if (vp_rect.size.x <= 1.0f || vp_rect.size.y <= 1.0f) {
+		vp_rect = Rect2(Point2(0, 0), ui.overlay->get_size());
+	}
+	if (ui.troop_idx >= 0 && ui.troop_idx < category_data[CAT_TROOPS].size()) {
+		Dictionary d = category_data[CAT_TROOPS][ui.troop_idx];
+		_draw_troop_enemies_preview(ui.overlay, vp_rect, d, false, false);
+
+		String path = (ui.slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+		Ref<Texture2D> tex = path.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(path);
+		if (ClockGearsBattleScene::is_texture_ready(tex)) {
+			Rect2 active_r = ClockGearsBattleScene::compute_battleback_screen_rect(vp_rect, tex->get_size(), ui.edit_cfg, ui.slot != 1);
+			ui.overlay->draw_rect(active_r.intersection(vp_rect), Color(0.35f, 0.85f, 1.0f, 0.75f), false, 1.5f);
+			Vector<Point2> corners = s_get_adjust_handle_points(active_r, vp_rect);
+			for (int i = 0; i < corners.size(); i++) {
+				Rect2 hrect(corners[i] - Point2(5, 5), Size2(10, 10));
+				ui.overlay->draw_rect(hrect, Color(0.95f, 0.85f, 0.25f, 0.98f), true);
+				ui.overlay->draw_rect(hrect, Color(0.10f, 0.12f, 0.16f, 1.0f), false, 1.5f);
+			}
 		}
 	}
-	// 2. Suelo (se apoya abajo, escalado sin deformar)
-	if (!bg2_path.is_empty()) {
-		Ref<Texture2D> tex2 = _load_texture_from_path(bg2_path);
-		if (tex2.is_valid() && tex2->get_width() > 0 && tex2->get_height() > 0) {
-			float aspect = float(tex2->get_height()) / float(tex2->get_width());
-			float floor_h = MIN(vp_size.y, vp_size.x * aspect);
-			Rect2 floor_rect(vp_pos.x, vp_pos.y + vp_size.y - floor_h, vp_size.x, floor_h);
-			troop_placement_canvas->draw_texture_rect(tex2, floor_rect, false);
+	ui.overlay->draw_rect(vp_rect, Color(0.35f, 0.40f, 0.50f, 0.9f), false, 1.0f);
+}
+
+void ClockGearsDatabaseDialog::_on_adjust_canvas_gui_input(const Ref<InputEvent> &p_ev, int p_ui_idx) {
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	if (!ui.canvas) return;
+	Rect2 vp_rect = s_calc_troop_vp_rect(ui.canvas);
+	if (vp_rect.size.x <= 1.0f) return;
+	float vp_scale = vp_rect.size.x / 960.0f;
+	if (vp_scale <= 0.001f) return;
+
+	Ref<InputEventMouseButton> mb = p_ev;
+	Ref<InputEventMouseMotion> mm = p_ev;
+	if (mb.is_valid()) {
+		if (mb->get_button_index() == MouseButton::WHEEL_UP && mb->is_pressed()) {
+			bool is_int = bool(ui.edit_cfg.get("integer_scale", false));
+			double s = double(ui.edit_cfg.get("scale", 1.0));
+			s = is_int ? MIN(16.0, Math::round(s) + 1.0) : MIN(10.0, s * 1.1);
+			ui.edit_cfg["scale"] = s;
+			_redraw_adjust_dialog(p_ui_idx);
+			ui.canvas->accept_event();
+			return;
+		}
+		if (mb->get_button_index() == MouseButton::WHEEL_DOWN && mb->is_pressed()) {
+			bool is_int = bool(ui.edit_cfg.get("integer_scale", false));
+			double s = double(ui.edit_cfg.get("scale", 1.0));
+			s = is_int ? MAX(1.0, Math::round(s) - 1.0) : MAX(0.1, s / 1.1);
+			ui.edit_cfg["scale"] = s;
+			_redraw_adjust_dialog(p_ui_idx);
+			ui.canvas->accept_event();
+			return;
+		}
+		if (mb->get_button_index() == MouseButton::LEFT) {
+			if (mb->is_pressed()) {
+				ui.canvas->grab_focus();
+				ui.drag_start_mouse = mb->get_position();
+				ui.drag_start_cfg = ui.edit_cfg.duplicate(true);
+				ui.drag_mode = 1; // Mover por defecto
+
+				if (ui.troop_idx >= 0 && ui.troop_idx < category_data[CAT_TROOPS].size()) {
+					Dictionary d = category_data[CAT_TROOPS][ui.troop_idx];
+					String path = (ui.slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+					Ref<Texture2D> tex = path.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(path);
+					if (ClockGearsBattleScene::is_texture_ready(tex)) {
+						Rect2 active_r = ClockGearsBattleScene::compute_battleback_screen_rect(vp_rect, tex->get_size(), ui.edit_cfg, ui.slot != 1);
+						Vector<Point2> corners = s_get_adjust_handle_points(active_r, vp_rect);
+						for (int c = 0; c < corners.size(); c++) {
+							if (mb->get_position().distance_to(corners[c]) <= 12.0f) {
+								ui.drag_mode = 2 + c;
+								break;
+							}
+						}
+					}
+				}
+			} else {
+				ui.drag_mode = 0;
+			}
+			ui.canvas->accept_event();
+			return;
 		}
 	}
+	if (mm.is_valid() && ui.drag_mode > 0) {
+		if (ui.drag_mode == 1) {
+			Vector2 delta_l = (mm->get_position() - ui.drag_start_mouse) / vp_scale;
+			ui.edit_cfg["offset_x"] = double(ui.drag_start_cfg.get("offset_x", 0.0)) + delta_l.x;
+			ui.edit_cfg["offset_y"] = double(ui.drag_start_cfg.get("offset_y", 0.0)) + delta_l.y;
+		} else if (ui.drag_mode >= 2 && ui.drag_mode <= 5 && ui.troop_idx >= 0 && ui.troop_idx < category_data[CAT_TROOPS].size()) {
+			Dictionary d = category_data[CAT_TROOPS][ui.troop_idx];
+			String path = (ui.slot == 1) ? String(d.get("battleback1", d.get("background", ""))) : String(d.get("battleback2", d.get("floor", "")));
+			Ref<Texture2D> tex = path.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(path);
+			if (ClockGearsBattleScene::is_texture_ready(tex)) {
+				Rect2 start_r = ClockGearsBattleScene::compute_battleback_screen_rect(vp_rect, tex->get_size(), ui.drag_start_cfg, ui.slot != 1);
+				Point2 center = start_r.get_center();
+				float dist0 = MAX(10.0f, ui.drag_start_mouse.distance_to(center));
+				float dist1 = MAX(5.0f, mm->get_position().distance_to(center));
+				double base_s = double(ui.drag_start_cfg.get("scale", 1.0));
+				bool is_int = bool(ui.edit_cfg.get("integer_scale", false));
+				double ns = base_s * (double(dist1) / double(dist0));
+				ns = is_int ? CLAMP(Math::round(ns), 1.0, 16.0) : CLAMP(ns, 0.1, 10.0);
+				ui.edit_cfg["scale"] = ns;
+			}
+		}
+		_redraw_adjust_dialog(p_ui_idx);
+		ui.canvas->accept_event();
+	}
+}
 
-	// Rejilla opcional (32 px lógicos)
-	if (chk_troop_snap_grid && chk_troop_snap_grid->is_pressed()) {
+void ClockGearsDatabaseDialog::_on_adjust_window_input(const Ref<InputEvent> &p_ev, int p_ui_idx) {
+	Ref<InputEventKey> k = p_ev;
+	if (!k.is_valid() || !k->is_pressed()) return;
+	AdjustDialogUI &ui = troop_adjust_ui[p_ui_idx];
+	double step = k->is_shift_pressed() ? 8.0 : 1.0;
+	bool moved = false;
+	switch (k->get_keycode()) {
+		case Key::LEFT:
+			ui.edit_cfg["offset_x"] = double(ui.edit_cfg.get("offset_x", 0.0)) - step;
+			moved = true;
+			break;
+		case Key::RIGHT:
+			ui.edit_cfg["offset_x"] = double(ui.edit_cfg.get("offset_x", 0.0)) + step;
+			moved = true;
+			break;
+		case Key::UP:
+			ui.edit_cfg["offset_y"] = double(ui.edit_cfg.get("offset_y", 0.0)) - step;
+			moved = true;
+			break;
+		case Key::DOWN:
+			ui.edit_cfg["offset_y"] = double(ui.edit_cfg.get("offset_y", 0.0)) + step;
+			moved = true;
+			break;
+		default:
+			break;
+	}
+	if (moved) {
+		_redraw_adjust_dialog(p_ui_idx);
+		if (ui.dialog) {
+			ui.dialog->set_input_as_handled();
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_draw_troop_enemies_preview(Control *p_canvas, const Rect2 &p_vp_rect, const Dictionary &p_troop_dict, bool p_show_selection, bool p_show_grid) const {
+	if (!p_canvas || p_vp_rect.size.x <= 1.0f || p_vp_rect.size.y <= 1.0f) return;
+	float scale = p_vp_rect.size.x / 960.0f;
+	Point2 vp_pos = p_vp_rect.position;
+	Size2 vp_size = p_vp_rect.size;
+
+	if (p_show_grid && chk_troop_snap_grid && chk_troop_snap_grid->is_pressed()) {
 		float step = 32.0f * scale;
 		if (step >= 4.0f) {
 			for (float gx = vp_pos.x; gx <= vp_pos.x + vp_size.x; gx += step) {
-				troop_placement_canvas->draw_line(Point2(gx, vp_pos.y), Point2(gx, vp_pos.y + vp_size.y), Color(1, 1, 1, 0.10f), 1.0f);
+				p_canvas->draw_line(Point2(gx, vp_pos.y), Point2(gx, vp_pos.y + vp_size.y), Color(1, 1, 1, 0.10f), 1.0f);
 			}
 			for (float gy = vp_pos.y; gy <= vp_pos.y + vp_size.y; gy += step) {
-				troop_placement_canvas->draw_line(Point2(vp_pos.x, gy), Point2(vp_pos.x + vp_size.x, gy), Color(1, 1, 1, 0.10f), 1.0f);
+				p_canvas->draw_line(Point2(vp_pos.x, gy), Point2(vp_pos.x + vp_size.x, gy), Color(1, 1, 1, 0.10f), 1.0f);
 			}
 		}
 	}
 
-	// 3. Dibujar cada miembro de la tropa en su posición (x, y) con su sprite, nombre+nivel y barra de vida
-	Array mems = d.get("members", Array());
+	Array mems = p_troop_dict.get("members", Array());
 	const Array &enemies = category_data[CAT_ENEMIES];
 	Ref<Font> font = get_theme_default_font();
 
@@ -6032,37 +6722,96 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw() {
 		}
 		Rect2 draw_spr_rect(draw_pos - fit_sz * 0.5f, fit_sz);
 
-		if (tex.is_valid()) {
+		if (ClockGearsBattleScene::is_texture_ready(tex)) {
 			if (src_reg.size.x > 0 && src_reg.size.y > 0) {
-				troop_placement_canvas->draw_texture_rect_region(tex, draw_spr_rect, src_reg);
+				p_canvas->draw_texture_rect_region(tex, draw_spr_rect, src_reg);
 			} else {
-				troop_placement_canvas->draw_texture_rect(tex, draw_spr_rect, false);
+				p_canvas->draw_texture_rect(tex, draw_spr_rect, false);
 			}
 		}
 
 		Rect2 sel_rect = draw_spr_rect.grow(3.0f);
-		if (i == selected_troop_member_idx) {
-			troop_placement_canvas->draw_rect(sel_rect, Color(1.0f, 0.85f, 0.25f, 0.95f), false, 2.0f);
+		if (p_show_selection && i == selected_troop_member_idx) {
+			p_canvas->draw_rect(sel_rect, Color(1.0f, 0.85f, 0.25f, 0.95f), false, 2.0f);
 		}
 
-		// Nombre + Nivel debajo del sprite y barra de vida siempre visible, sin pisar el recuadro de selección
-		String title_str = vformat("%s Nv %d", ename, elvl);
+		// Nombre + Nivel siempre visible ("Nv N" nunca se recorta)
 		int font_sz = MAX(9, int(12 * scale));
-		float label_w = MAX(spr_sz.x, 120.0f * scale);
-		float label_x = draw_pos.x - label_w * 0.5f;
+		float label_w = MAX(spr_sz.x, 140.0f * scale);
+		String title_str = ClockGearsBattleScene::format_enemy_name_level(font, font_sz, ename, elvl, label_w);
 		float text_baseline_y = sel_rect.position.y + sel_rect.size.y + float(font_sz) + 2.0f;
 		if (font.is_valid()) {
-			Point2 txt_pos(label_x, text_baseline_y);
-			troop_placement_canvas->draw_string(font, txt_pos + Point2(1, 1), title_str, HORIZONTAL_ALIGNMENT_CENTER, label_w, font_sz, Color(0, 0, 0, 0.85f));
-			troop_placement_canvas->draw_string(font, txt_pos, title_str, HORIZONTAL_ALIGNMENT_CENTER, label_w, font_sz, Color(1.0f, 0.92f, 0.80f));
+			float str_w = font->get_string_size(title_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz).x;
+			Point2 txt_pos(draw_pos.x - str_w * 0.5f, text_baseline_y);
+			p_canvas->draw_string(font, txt_pos + Point2(1, 1), title_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, Color(0, 0, 0, 0.85f));
+			p_canvas->draw_string(font, txt_pos, title_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, Color(1.0f, 0.92f, 0.80f));
 		}
 		float hp_w = spr_sz.x * 0.85f;
 		Rect2 hp_rect(draw_pos.x - hp_w * 0.5f, text_baseline_y + 4.0f, hp_w, MAX(4.0f, 7.0f * scale));
-		troop_placement_canvas->draw_rect(hp_rect, Color(0.15f, 0.05f, 0.05f, 0.9f), true);
-		troop_placement_canvas->draw_rect(hp_rect, Color(0.25f, 0.85f, 0.35f, 0.95f), true);
+		p_canvas->draw_rect(hp_rect, Color(0.15f, 0.05f, 0.05f, 0.9f), true);
+		p_canvas->draw_rect(hp_rect, Color(0.25f, 0.85f, 0.35f, 0.95f), true);
 	}
+}
 
+void ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw() {
+	if (!troop_placement_canvas) return;
+	Size2 avail = troop_placement_canvas->get_size();
+	if (avail.x <= 10 || avail.y <= 10) return;
+
+	const float logical_w = 960.0f;
+	const float logical_h = 540.0f;
+	float max_w = MIN(avail.x, logical_w * EDSCALE);
+	float desired_h = max_w * (logical_h / logical_w);
+	if (Math::abs(troop_placement_canvas->get_custom_minimum_size().y - desired_h) > 2.0f) {
+		troop_placement_canvas->set_custom_minimum_size(Size2(0, desired_h));
+	}
+	Rect2 vp_rect = s_calc_troop_vp_rect(troop_placement_canvas);
+	// Fondo azul oscuro liso por defecto (nunca blanco)
+	troop_placement_canvas->draw_rect(vp_rect, Color(0.08f, 0.09f, 0.14f, 1.0f), true);
 	troop_placement_canvas->draw_rect(vp_rect, Color(0.35f, 0.40f, 0.50f, 0.9f), false, 1.0f);
+}
+
+void ClockGearsDatabaseDialog::_on_troop_bg_layer_draw() {
+	if (!troop_bg_layer_ctrl) return;
+	Rect2 vp_rect = s_calc_troop_vp_rect(troop_bg_layer_ctrl);
+	if (vp_rect.size.x <= 1.0f) return;
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_TROOPS].size()) return;
+	Dictionary d = category_data[CAT_TROOPS][sel[0]];
+	String bg1_path = d.get("battleback1", d.get("background", ""));
+	if (bg1_path.is_empty()) return;
+	Ref<Texture2D> tex1 = _load_texture_from_path(bg1_path);
+	if (!ClockGearsBattleScene::is_texture_ready(tex1)) return;
+	Variant cv = d.get("battleback1_cfg", Dictionary());
+	Dictionary cfg = (cv.get_type() == Variant::DICTIONARY) ? Dictionary(cv) : Dictionary();
+	ClockGearsBattleScene::draw_battleback_layer(troop_bg_layer_ctrl, vp_rect, tex1, cfg, false);
+}
+
+void ClockGearsDatabaseDialog::_on_troop_floor_layer_draw() {
+	if (!troop_floor_layer_ctrl) return;
+	Rect2 vp_rect = s_calc_troop_vp_rect(troop_floor_layer_ctrl);
+	if (vp_rect.size.x <= 1.0f) return;
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_TROOPS].size()) return;
+	Dictionary d = category_data[CAT_TROOPS][sel[0]];
+	String bg2_path = d.get("battleback2", d.get("floor", ""));
+	if (bg2_path.is_empty()) return;
+	Ref<Texture2D> tex2 = _load_texture_from_path(bg2_path);
+	if (!ClockGearsBattleScene::is_texture_ready(tex2)) return;
+	Variant cv = d.get("battleback2_cfg", Dictionary());
+	Dictionary cfg = (cv.get_type() == Variant::DICTIONARY) ? Dictionary(cv) : Dictionary();
+	ClockGearsBattleScene::draw_battleback_layer(troop_floor_layer_ctrl, vp_rect, tex2, cfg, true);
+}
+
+void ClockGearsDatabaseDialog::_on_troop_enemies_overlay_draw() {
+	if (!troop_enemies_overlay_ctrl) return;
+	Rect2 vp_rect = s_calc_troop_vp_rect(troop_enemies_overlay_ctrl);
+	if (vp_rect.size.x <= 1.0f) return;
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_TROOPS].size()) return;
+	Dictionary d = category_data[CAT_TROOPS][sel[0]];
+	_draw_troop_enemies_preview(troop_enemies_overlay_ctrl, vp_rect, d, true, true);
+	troop_enemies_overlay_ctrl->draw_rect(vp_rect, Color(0.35f, 0.40f, 0.50f, 0.9f), false, 1.0f);
 }
 
 void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<InputEvent> &p_ev) {
@@ -6142,7 +6891,7 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 					updating_ui = false;
 				}
 			}
-			troop_placement_canvas->queue_redraw();
+			_queue_troop_preview_redraw();
 		}
 	}
 }
@@ -6173,7 +6922,7 @@ void ClockGearsDatabaseDialog::_on_troop_member_enemy_changed(int p_item_idx, in
 		mems[p_idx] = m;
 		d["members"] = mems;
 		arr[idx] = d;
-		if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+		_queue_troop_preview_redraw();
 		_on_param_changed();
 	}
 }
@@ -6194,7 +6943,7 @@ void ClockGearsDatabaseDialog::_on_troop_member_x_changed(double p_val, int p_id
 		mems[p_idx] = m;
 		d["members"] = mems;
 		arr[idx] = d;
-		if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+		_queue_troop_preview_redraw();
 		_on_param_changed();
 	}
 }
@@ -6215,7 +6964,7 @@ void ClockGearsDatabaseDialog::_on_troop_member_y_changed(double p_val, int p_id
 		mems[p_idx] = m;
 		d["members"] = mems;
 		arr[idx] = d;
-		if (troop_placement_canvas) troop_placement_canvas->queue_redraw();
+		_queue_troop_preview_redraw();
 		_on_param_changed();
 	}
 }
@@ -8075,4 +8824,57 @@ void ClockGearsDatabaseDialog::_on_frame_max_dur_changed(double p_val, int p_idx
 		a.frames_data.write[p_idx].duration_max = (float)p_val;
 		_on_param_changed();
 	}
+}
+
+Dictionary ClockGearsDatabaseDialog::get_troop_battleback_cfg(int p_troop_idx, int p_slot) const {
+	if (p_troop_idx < 0 || p_troop_idx >= category_data[CAT_TROOPS].size()) {
+		return ClockGearsBattleScene::default_battleback_cfg(p_slot != 1);
+	}
+	Dictionary d = category_data[CAT_TROOPS][p_troop_idx];
+	String key_cfg = (p_slot == 1) ? "battleback1_cfg" : "battleback2_cfg";
+	Variant rv = d.get(key_cfg, Dictionary());
+	Dictionary cfg = (rv.get_type() == Variant::DICTIONARY) ? Dictionary(rv) : Dictionary();
+	return ClockGearsBattleScene::normalize_battleback_cfg(cfg, p_slot != 1);
+}
+
+void ClockGearsDatabaseDialog::set_troop_battleback_cfg(int p_troop_idx, int p_slot, const Dictionary &p_cfg) {
+	Array &arr = category_data[CAT_TROOPS];
+	if (p_troop_idx < 0 || p_troop_idx >= arr.size()) return;
+	Dictionary d = arr[p_troop_idx];
+	String key_cfg = (p_slot == 1) ? "battleback1_cfg" : "battleback2_cfg";
+	d[key_cfg] = ClockGearsBattleScene::normalize_battleback_cfg(p_cfg, p_slot != 1);
+	arr[p_troop_idx] = d;
+	_save_database_to_disk();
+	_queue_troop_preview_redraw();
+}
+
+String ClockGearsDatabaseDialog::get_formatted_troop_enemy_label(int p_troop_idx, int p_member_idx, float p_max_w) const {
+	if (p_troop_idx < 0 || p_troop_idx >= category_data[CAT_TROOPS].size()) return String();
+	Dictionary d = category_data[CAT_TROOPS][p_troop_idx];
+	Array mems = d.get("members", Array());
+	if (p_member_idx < 0 || p_member_idx >= mems.size()) return String();
+	Dictionary m = mems[p_member_idx];
+	int eid = int(m.get("enemy_id", 1));
+	const Array &enemies = category_data[CAT_ENEMIES];
+	Dictionary ed;
+	for (int k = 0; k < enemies.size(); k++) {
+		Dictionary cand = enemies[k];
+		if (int(cand.get("id", k + 1)) == eid) {
+			ed = cand;
+			break;
+		}
+	}
+	String ename = ed.get("name", vformat("Enemigo %d", eid));
+	int elvl = MAX(1, int(ed.get("level", 1)));
+	Ref<Font> font = get_theme_default_font();
+	float scale = 1.0f;
+	if (troop_placement_canvas) {
+		Rect2 vp_rect = s_calc_troop_vp_rect(troop_placement_canvas);
+		if (vp_rect.size.x > 1.0f) {
+			scale = vp_rect.size.x / 960.0f;
+		}
+	}
+	int font_sz = MAX(9, int(12 * scale));
+	float max_w = (p_max_w > 0.0f) ? p_max_w : MAX(96.0f * scale, 140.0f * scale);
+	return ClockGearsBattleScene::format_enemy_name_level(font, font_sz, ename, elvl, max_w);
 }

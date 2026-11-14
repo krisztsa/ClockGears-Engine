@@ -409,6 +409,12 @@ void ClockGearsBattleController::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_troop_bg_path", "path"), &ClockGearsBattleController::set_troop_bg_path);
 	ClassDB::bind_method(D_METHOD("get_troop_floor_path"), &ClockGearsBattleController::get_troop_floor_path);
 	ClassDB::bind_method(D_METHOD("set_troop_floor_path", "path"), &ClockGearsBattleController::set_troop_floor_path);
+	ClassDB::bind_method(D_METHOD("get_troop_bg_cfg"), &ClockGearsBattleController::get_troop_bg_cfg);
+	ClassDB::bind_method(D_METHOD("set_troop_bg_cfg", "cfg"), &ClockGearsBattleController::set_troop_bg_cfg);
+	ClassDB::bind_method(D_METHOD("get_troop_floor_cfg"), &ClockGearsBattleController::get_troop_floor_cfg);
+	ClassDB::bind_method(D_METHOD("set_troop_floor_cfg", "cfg"), &ClockGearsBattleController::set_troop_floor_cfg);
+	ClassDB::bind_method(D_METHOD("set_test_mode", "enabled"), &ClockGearsBattleController::set_test_mode);
+	ClassDB::bind_method(D_METHOD("get_test_mode"), &ClockGearsBattleController::get_test_mode);
 
 	ADD_SIGNAL(MethodInfo("hit_executed", PropertyInfo(Variant::STRING, "log")));
 
@@ -472,6 +478,7 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 	battle_result = RESULT_NONE;
 	phase = PHASE_INIT;
 	last_hit_log = "";
+	test_consumed_items.clear();
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 
@@ -564,6 +571,10 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 
 	troop_bg_path = String(troop_rec.get("battleback1", troop_rec.get("bg_path", ""))).strip_edges();
 	troop_floor_path = String(troop_rec.get("battleback2", troop_rec.get("floor_path", ""))).strip_edges();
+	Variant cfg1_var = troop_rec.get("battleback1_cfg", Dictionary());
+	troop_bg_cfg = (cfg1_var.get_type() == Variant::DICTIONARY) ? Dictionary(cfg1_var).duplicate(true) : Dictionary();
+	Variant cfg2_var = troop_rec.get("battleback2_cfg", Dictionary());
+	troop_floor_cfg = (cfg2_var.get_type() == Variant::DICTIONARY) ? Dictionary(cfg2_var).duplicate(true) : Dictionary();
 
 	Array troop_members = troop_rec.get("members", Array());
 	if (troop_members.is_empty() && troop_rec.has("type") && int(troop_rec["type"]) > 0) {
@@ -1043,7 +1054,11 @@ bool ClockGearsBattleController::action_item(const String &p_item_name, int p_ta
 	if (!attacker.is_valid() || !attacker->get_is_actor()) return false;
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm || !dm->has_item(p_item_name, 1)) {
+	if (!dm) {
+		return false;
+	}
+	int used_in_test = test_mode ? int(test_consumed_items.get(p_item_name, 0)) : 0;
+	if (!dm->has_item(p_item_name, used_in_test + 1)) {
 		return false;
 	}
 
@@ -1056,7 +1071,11 @@ bool ClockGearsBattleController::action_item(const String &p_item_name, int p_ta
 	}
 	if (!target.is_valid()) return false;
 
-	dm->change_item(p_item_name, -1);
+	if (test_mode) {
+		test_consumed_items[p_item_name] = used_in_test + 1;
+	} else {
+		dm->change_item(p_item_name, -1);
+	}
 
 	// Efecto estándar: Curar 150 HP
 	int heal = 150;
@@ -1503,14 +1522,14 @@ void ClockGearsBattleController::process_victory_rewards() {
 				if (won) {
 					Dictionary item_rec = dm ? dm->get_record_by_id(CAT_ITEMS, item_id) : Dictionary();
 					String iname = item_rec.get("name", vformat("Item_%d", item_id));
-					if (dm) dm->change_item(iname, 1);
+					if (dm && !test_mode) dm->change_item(iname, 1);
 					dropped_items.push_back(iname);
 				}
 			}
 		}
 	}
 
-	if (dm) {
+	if (dm && !test_mode) {
 		dm->change_gold(total_gold_reward);
 	}
 
@@ -1548,6 +1567,9 @@ void ClockGearsBattleController::process_victory_rewards() {
 }
 
 bool ClockGearsBattleController::check_battle_end() {
+	if (phase == PHASE_FINISHED || battle_result != RESULT_NONE) {
+		return true;
+	}
 	if (is_all_enemies_dead()) {
 		battle_result = RESULT_VICTORY;
 		phase = PHASE_FINISHED;
