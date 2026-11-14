@@ -123,44 +123,10 @@ def make_authors_header(target, source, env):
             close_section()
 
 
-def make_donors_header(target, source, env):
-    SECTIONS = {
-        "Patrons": "DONORS_PATRONS",
-        "Platinum sponsors": "DONORS_SPONSORS_PLATINUM",
-        "Gold sponsors": "DONORS_SPONSORS_GOLD",
-        "Silver sponsors": "DONORS_SPONSORS_SILVER",
-        "Diamond members": "DONORS_MEMBERS_DIAMOND",
-        "Titanium members": "DONORS_MEMBERS_TITANIUM",
-        "Platinum members": "DONORS_MEMBERS_PLATINUM",
-        "Gold members": "DONORS_MEMBERS_GOLD",
-    }
-    buffer = methods.get_buffer(str(source[0]))
-    reading = False
-
-    with methods.generated_wrapper(str(target[0])) as file:
-
-        def close_section():
-            file.write("\tnullptr,\n};\n\n")
-
-        for line in buffer.decode().splitlines():
-            if line.startswith("    ") and reading:
-                file.write(f'\t"{methods.to_escaped_cstring(line).strip()}",\n')
-            elif line.startswith("## "):
-                if reading:
-                    close_section()
-                    reading = False
-                section = SECTIONS.get(line[3:].strip())
-                if section:
-                    file.write(f"inline constexpr const char *{section}[] = {{\n")
-                    reading = True
-
-        if reading:
-            close_section()
-
-
 def make_license_header(target, source, env):
     src_copyright = str(source[0])
     src_license = str(source[1])
+    src_clockgears = str(source[2])
 
     class LicenseReader:
         def __init__(self, license_file: TextIOWrapper):
@@ -219,10 +185,17 @@ def make_license_header(target, source, env):
     with open(src_license, "r", encoding="utf-8") as file:
         license_text = file.read()
 
+    with open(src_clockgears, "r", encoding="utf-8") as file:
+        clockgears_license_text = file.read()
+
     with methods.generated_wrapper(str(target[0])) as file:
         file.write(f"""\
 inline constexpr const char *GODOT_LICENSE_TEXT = {{
 {methods.to_raw_cstring(license_text)}
+}};
+
+inline constexpr const char *CLOCKGEARS_LICENSE_TEXT = {{
+{methods.to_raw_cstring(clockgears_license_text)}
 }};
 
 struct ComponentCopyrightPart {{

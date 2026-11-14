@@ -31,7 +31,6 @@
 #include "credits_roll.h"
 
 #include "core/authors.gen.h"
-#include "core/donors.gen.h"
 #include "core/input/input.h"
 #include "core/license.gen.h"
 #include "core/object/callable_mp.h"
@@ -194,50 +193,10 @@ void CreditsRoll::roll_credits() {
 		_create_label(_build_string(AUTHORS_DEVELOPERS));
 
 		_create_nothing();
-
-		_create_label(TTRC("Patrons"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_PATRONS));
-
-		_create_nothing();
-
-		_create_label(TTRC("Platinum Sponsors"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_SPONSORS_PLATINUM));
-
-		_create_nothing();
-
-		_create_label(TTRC("Gold Sponsors"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_SPONSORS_GOLD));
-
-		_create_nothing();
-
-		_create_label(TTRC("Silver Sponsors"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_SPONSORS_SILVER));
-
-		_create_nothing();
-
-		_create_label(TTRC("Diamond Members"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_MEMBERS_DIAMOND));
-
-		_create_nothing();
-
-		_create_label(TTRC("Titanium Members"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_MEMBERS_TITANIUM));
-
-		_create_nothing();
-
-		_create_label(TTRC("Platinum Members"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_MEMBERS_PLATINUM));
-
-		_create_nothing();
-
-		_create_label(TTRC("Gold Members"), LabelSize::HEADER);
-		_create_label(_build_string(DONORS_MEMBERS_GOLD));
-
-		_create_nothing();
 		_create_label(String::utf8(GODOT_LICENSE_TEXT));
 
 		_create_nothing(400 * EDSCALE);
-		_create_label(TTRC("Thank you for choosing Godot Engine!"), LabelSize::BIG_HEADER);
+		_create_label(TTRC("Thank you for choosing ClockGears Engine!"), LabelSize::BIG_HEADER);
 	}
 	// Needs to be set here, otherwise the starting position will be incorrect.
 	content->set_anchors_and_offsets_preset(Control::PRESET_VCENTER_WIDE);

@@ -4829,6 +4829,10 @@ int Main::start() {
 #endif
 
 				String icon_path = GLOBAL_GET("application/config/icon");
+				// ClockGears Engine: never show the default Godot robot as the window icon.
+				if (!icon_path.is_empty() && icon_path.get_extension().to_lower() == "svg" && FileAccess::get_file_as_string(icon_path).contains("M105 673v33q407 354 814 0v-33z")) {
+					icon_path = String();
+				}
 				if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_ICON) && !icon_path.is_empty() && !has_icon) {
 					Ref<Image> icon;
 					icon.instantiate();

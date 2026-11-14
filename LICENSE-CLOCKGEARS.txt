@@ -1,0 +1,15 @@
+ClockGears Engine
+Copyright (c) 2026 Kris'ZtS / ClockGears Studio. Todos los derechos reservados sobre
+las modificaciones y el código original de ClockGears Studio, es decir, todo lo que
+no proviene de Godot Engine.
+
+PERMITIDO: usar el editor para crear juegos y distribuirlos, venderlos o publicarlos
+(incluido el runtime que forma parte de las exportaciones) sin regalías, sin pagos y
+sin suscripciones a ClockGears Studio. Los juegos pertenecen a sus creadores.
+
+NO PERMITIDO sin permiso escrito de Kris'ZtS: copiar, redistribuir, vender,
+sublicenciar o publicar el editor ClockGears Engine, su código fuente o versiones
+modificadas, en todo o en parte de lo creado por ClockGears Studio.
+
+Esto no limita los derechos sobre el código de Godot Engine, que sigue bajo la
+licencia MIT que aparece a continuación.

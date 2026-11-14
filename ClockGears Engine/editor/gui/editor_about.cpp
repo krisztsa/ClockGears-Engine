@@ -31,7 +31,6 @@
 #include "editor_about.h"
 
 #include "core/authors.gen.h"
-#include "core/donors.gen.h"
 #include "core/license.gen.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
@@ -43,6 +42,7 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/link_button.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
@@ -56,12 +56,9 @@
 void EditorAbout::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			_about_text_label->set_text(
-					String(U"© 2026-present Kris'ZtS. All rights reserved.\n") +
-					TTR("ClockGears Engine - Next-Generation RPG Creation Architecture") + ".\n" +
-					TTR("Created & Architected by Kris'ZtS") + ".\n");
+			_about_text_label->set_text(String::utf8("© 2026 Kris'ZtS · ClockGears Studio · Basado en Godot Engine (licencia MIT)"));
 
-			_project_manager_label->set_text(TTR("Creator & Lead Architect: Kris'ZtS"));
+			_project_manager_label->set_text(TTR("Project Manager", "Job Title"));
 
 			for (ItemList *il : name_lists) {
 				for (int i = 0; i < il->get_item_count(); i++) {
@@ -234,6 +231,11 @@ EditorAbout::EditorAbout() {
 	Control *v_spacer = memnew(Control);
 	version_info_vbc->add_child(v_spacer);
 
+	Label *title_label = memnew(Label(String("ClockGears Engine")));
+	title_label->set_theme_type_variation("HeaderMedium");
+	title_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	version_info_vbc->add_child(title_label);
+
 	version_info_vbc->add_child(memnew(EditorVersionButton(EditorVersionButton::FORMAT_WITH_NAME_AND_BUILD)));
 
 	_about_text_label = memnew(Label);
@@ -241,6 +243,22 @@ EditorAbout::EditorAbout() {
 	_about_text_label->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 	_about_text_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	version_info_vbc->add_child(_about_text_label);
+
+	VBoxContainer *links_hbc = memnew(VBoxContainer);
+	links_hbc->add_theme_constant_override("separation", 2 * EDSCALE);
+	version_info_vbc->add_child(links_hbc);
+
+	LinkButton *github_link = memnew(LinkButton);
+	github_link->set_text("GitHub: https://github.com/krisztsa/ClockGears-Engine");
+	github_link->set_uri("https://github.com/krisztsa/ClockGears-Engine");
+	github_link->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	links_hbc->add_child(github_link);
+
+	LinkButton *youtube_link = memnew(LinkButton);
+	youtube_link->set_text("YouTube: https://www.youtube.com/@KrisZtS");
+	youtube_link->set_uri("https://www.youtube.com/@KrisZtS");
+	youtube_link->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	links_hbc->add_child(youtube_link);
 
 	hbc->add_child(version_info_vbc);
 
@@ -253,7 +271,7 @@ EditorAbout::EditorAbout() {
 
 	{
 		ScrollContainer *sc = memnew(ScrollContainer);
-		sc->set_name(TTRC("Authors"));
+		sc->set_name(String::utf8("Créditos"));
 		sc->set_v_size_flags(Control::SIZE_EXPAND);
 		tc->add_child(sc);
 
@@ -261,34 +279,20 @@ EditorAbout::EditorAbout() {
 		vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		sc->add_child(vb);
 
-		static const char *const CLOCKGEARS_CREATORS[] = { "Kris'ZtS", nullptr };
+		static const char *const CLOCKGEARS_CREATORS[] = { "Kris'ZtS / ClockGears Studio", nullptr };
 		_create_section(vb, TTRC("ClockGears Creator & Lead Architect"), CLOCKGEARS_CREATORS, FLAG_SINGLE_COLUMN);
+
+		Label *godot_credits_label = memnew(Label(String::utf8("Colaboradores de Godot Engine")));
+		godot_credits_label->set_theme_type_variation("HeaderMedium");
+		godot_credits_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+		vb->add_child(godot_credits_label);
+
 		_create_section(vb, TTRC("Project Founders"), AUTHORS_FOUNDERS, FLAG_SINGLE_COLUMN);
 		_create_section(vb, TTRC("Lead Developer"), AUTHORS_LEAD_DEVELOPERS);
 		// The section title will be updated in NOTIFICATION_TRANSLATION_CHANGED.
 		_project_manager_label = _create_section(vb, "", AUTHORS_PROJECT_MANAGERS, FLAG_EASTER_EGG);
 		_project_manager_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		_create_section(vb, TTRC("Developers"), AUTHORS_DEVELOPERS);
-	}
-
-	{
-		ScrollContainer *sc = memnew(ScrollContainer);
-		sc->set_name(TTRC("Donors"));
-		sc->set_v_size_flags(Control::SIZE_EXPAND);
-		tc->add_child(sc);
-
-		VBoxContainer *vb = memnew(VBoxContainer);
-		vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		sc->add_child(vb);
-
-		_create_section(vb, TTRC("Patrons"), DONORS_PATRONS, FLAG_ALLOW_WEBSITE | FLAG_SINGLE_COLUMN);
-		_create_section(vb, TTRC("Platinum Sponsors"), DONORS_SPONSORS_PLATINUM, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Gold Sponsors"), DONORS_SPONSORS_GOLD, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Silver Sponsors"), DONORS_SPONSORS_SILVER, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Diamond Members"), DONORS_MEMBERS_DIAMOND, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Titanium Members"), DONORS_MEMBERS_TITANIUM, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Platinum Members"), DONORS_MEMBERS_PLATINUM, FLAG_ALLOW_WEBSITE);
-		_create_section(vb, TTRC("Gold Members"), DONORS_MEMBERS_GOLD, FLAG_ALLOW_WEBSITE);
 	}
 
 	// License.
@@ -299,7 +303,10 @@ EditorAbout::EditorAbout() {
 	license_text_label->set_name(TTRC("License"));
 	license_text_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	license_text_label->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	license_text_label->set_text(String::utf8(GODOT_LICENSE_TEXT));
+	license_text_label->set_text(
+			String::utf8(CLOCKGEARS_LICENSE_TEXT) +
+			String::utf8("\n\n----------------------------------------\n\nEste software incluye código de Godot Engine, distribuido bajo licencia MIT:\n\n") +
+			String::utf8(GODOT_LICENSE_TEXT));
 	tc->add_child(license_text_label);
 
 	// Thirdparty License.
@@ -309,7 +316,8 @@ EditorAbout::EditorAbout() {
 	license_thirdparty->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tc->add_child(license_thirdparty);
 
-	Label *tpl_label = memnew(Label(TTRC("Godot Engine relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));
+	Label *tpl_label = memnew(Label(String::utf8("ClockGears Engine, basado en Godot Engine, utiliza varias bibliotecas de terceros libres y de código abierto, todas compatibles con los términos de la licencia MIT. A continuación se muestra una lista exhaustiva de todos esos componentes de terceros con sus respectivos avisos de copyright y términos de licencia.")));
+	tpl_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	tpl_label->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	tpl_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tpl_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);

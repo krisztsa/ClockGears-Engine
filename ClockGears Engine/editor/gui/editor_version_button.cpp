@@ -35,28 +35,12 @@
 #include "editor/gui/editor_toaster.h"
 #include "servers/display/display_server.h"
 
-String _get_version_string(EditorVersionButton::VersionFormat p_format) {
-	String main;
-	switch (p_format) {
-		case EditorVersionButton::FORMAT_BASIC: {
-			return GODOT_VERSION_FULL_CONFIG;
-		} break;
-		case EditorVersionButton::FORMAT_WITH_BUILD: {
-			main = "v" GODOT_VERSION_FULL_BUILD;
-		} break;
-		case EditorVersionButton::FORMAT_WITH_NAME_AND_BUILD: {
-			main = GODOT_VERSION_FULL_NAME;
-		} break;
-		default: {
-			ERR_FAIL_V_MSG(GODOT_VERSION_FULL_NAME, "Unexpected format: " + itos(p_format));
-		} break;
-	}
+// ClockGears Engine: only the DISPLAYED version. Internal Godot version numbers
+// (GODOT_VERSION_*) stay untouched for project/export compatibility.
+static const char *CLOCKGEARS_DISPLAY_VERSION = "Alpha-0.0.2";
 
-	String hash = GODOT_VERSION_HASH;
-	if (!hash.is_empty()) {
-		hash = vformat(" [%s]", hash.left(9));
-	}
-	return main + hash;
+String _get_version_string(EditorVersionButton::VersionFormat p_format) {
+	return CLOCKGEARS_DISPLAY_VERSION;
 }
 
 void EditorVersionButton::_notification(int p_what) {
@@ -80,10 +64,10 @@ void EditorVersionButton::_notification(int p_what) {
 }
 
 void EditorVersionButton::pressed() {
-	DisplayServer::get_singleton()->clipboard_set(_get_version_string(FORMAT_WITH_BUILD));
+	DisplayServer::get_singleton()->clipboard_set(String("ClockGears Engine ") + CLOCKGEARS_DISPLAY_VERSION + " (Godot base v" GODOT_VERSION_FULL_BUILD ")");
 	EditorToaster *toaster = EditorToaster::get_singleton();
 	if (toaster) {
-		toaster->popup_str(TTR("Copied Godot editor version."));
+		toaster->popup_str(TTR("Copied ClockGears Engine version."));
 	}
 }
 
