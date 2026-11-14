@@ -1,68 +1,83 @@
-# ⚙️ ClockGears Engine
+⚙️ ClockGears Engine:
 
-![Estado](https://img.shields.io/badge/estado-En%20Desarrollo-brightgreen)
-![Base](https://img.shields.io/badge/base-Godot%20Engine%20(C%2B%2B%20Fork)-478cbf)
-![Estilo](https://img.shields.io/badge/diseño-RPG%20Maker%20MZ-purple)
-![Plataforma](https://img.shields.io/badge/plataforma-Windows%20%7C%20Linux-blue)
-![Licencia](https://img.shields.io/badge/licencia-MIT-lightgrey)
+⚠️ AVISO IMPORTANTE SOBRE GRATUIDAD Y ESTAFAS ClockGears Engine es completamente gratuito. Se creó para que cualquiera pueda desarrollar videojuegos RPG sin pagar licencias ni suscripciones. Solo existe una opción voluntaria de donaciones, fuera del programa. Si alguien te cobró por este motor, has sido estafado. La única vía oficial de descarga es este GitHub.
 
-> ⚠️ **AVISO IMPORTANTE SOBRE GRATUIDAD Y ESTAFAS**
-> **ClockGears Engine NO es de paga en GitHub. Es un motor completamente gratuito creado para facilitar el desarrollo de videojuegos RPG sin tener que pagar licencias, y únicamente cuenta con una opción voluntaria de donaciones fuera del programa. Si alguien te cobró por este motor, has sido estafado. La única vía oficial es nuestro GitHub.**
+📖 ¿Qué es ClockGears Engine?
 
----
+ClockGears Engine es un motor de videojuegos 2D para RPG por rejillas, con un editor visual inspirado en RPG Maker MZ. Está construido en C++ modificando directamente el código fuente de Godot Engine, y avanza fase a fase para convertirse en un motor con identidad propia.
 
-## 📖 ¿Qué es ClockGears Engine?
+Su objetivo es que puedas crear un RPG completo sin programar los sistemas desde cero y sin pagar: mapas, eventos, combates, base de datos, animaciones y pruebas de juego vienen integrados en el mismo programa, con una interfaz pensada para no estorbar.
 
-**ClockGears Engine** es un motor de videojuegos inspirado en **RPG Maker MZ** y construido modificando directamente el código fuente en C++ de **Godot Engine**.
+✅ ¿Ya se puede usar?
 
-Su objetivo principal es **facilitar la creación de videojuegos RPG sin tener que pagar**, integrando de serie todas las herramientas que necesitas para armar tu juego sin programar sistemas desde cero.
+Sí. En su estado actual (Alpha 0.0.2), el motor ya permite hacer RPG sencillos de principio a fin: diseñar los mapas, programar la historia con eventos, definir personajes, objetos y enemigos, combatir por turnos, probar el juego con F5 y exportarlo. Al ser una versión Alpha, todavía hay cosas por pulir y funciones por llegar (consulta la hoja de ruta), así que conviene guardar copias de tus proyectos.
 
-## Créditos y licencia
-Creado por **Kris'ZtS**. Basado en [Godot Engine](https://godotengine.org), distribuido bajo licencia MIT. Conserva el aviso de copyright original de Godot en el repositorio.
+✨ Qué incluye
+🗺️ Mapas y editor
+Flujo de trabajo estilo RPG Maker MZ: árbol de mapas, propiedades de mapa y edición directa sobre cuadrícula.
+Paleta de tiles con autotiles: pintado por capas, tilesets importables y creación de mapas eligiendo su tileset.
+Pasabilidad de tiles: marca cada tile como transitable, bloqueado o dibujado por encima del jugador.
+Pruebas rápidas con F5, con punto de inicio del jugador configurable.
+🎬 Eventos
+Editor de eventos integrado, sin escribir código: varias páginas por evento, condiciones por interruptores (Switches) y variables, rutas de movimiento, diálogos, elecciones, teletransportes y control de flujo.
+Efectos de pantalla: mostrar imágenes, tintes de color y temblor de pantalla.
+⚔️ Combate por turnos
+Comando de evento "Iniciar Batalla" con tropa, fondo y condiciones de victoria, derrota y huida.
+Orden de turnos por AGI, con los comandos Atacar, Habilidad, Objeto, Defender y Huir.
+Fórmulas de daño, estados alterados, 10 elementos con debilidades y resistencias, EXP, oro, drops y subidas de nivel.
+Panel de depuración (F3) para revisar la batalla en tiempo real.
+Editor de tropas con vista previa 16:9, arrastre de enemigos, fondo y suelo ajustables, escala por enemigo y prueba de batalla directamente desde el editor.
+🗃️ Base de datos
+Gestión centralizada de actores, clases, habilidades, objetos, armas, armaduras, accesorios, enemigos, tropas, estados, animaciones, tilesets, flora, fauna y eventos comunes, además de tipos, vocabulario y ajustes del sistema.
+Organizada por capítulos, con ventana redimensionable y sin cortes ni scroll horizontal.
+🎞️ Animaciones de sprites
+Editor de animaciones por ranuras con nombre: Idle, Ataque, Daño, Muerte y Buff, más lanzamientos libres ligados a un elemento.
+Corte de spritesheets en celdas, orden de frames, FPS, bucle, orden aleatorio y botón de prueba.
+🎨 Identidad visual propia
+Iconos de pixel art dibujados a mano para el editor y la base de datos, escalados en múltiplos enteros y sin filtros.
+Interfaz oscura con esquinas redondeadas, pensada para dar aire y mantener cada herramienta legible.
+🚀 Rendimiento
+Nativo en C++: ligero, rápido y compatible con gráficas integradas y dedicadas mediante OpenGL 3 / Vulkan.
+📥 Descarga
 
+Si solo quieres usar el motor, descarga el ejecutable desde la sección de Releases. No necesitas instalar nada más.
 
----
+🛠️ Cómo compilar el motor
 
-## ✨ Qué incluye
+Compilar el motor es posible, siempre dentro de lo que permite la licencia. Necesitas Python 3.8+, SCons (pip install scons) y un compilador C++ (MSVC o MinGW-w64):
 
-* **Interfaz y Flujo de Trabajo estilo RPG Maker MZ:** Árbol de mapas, paleta de tiles con soporte de autotiles, propiedades de mapa y modos de edición directa en cuadrícula.
-* **Editor de Eventos Integrado:** Creación visual de eventos con múltiples páginas, condiciones por interruptores (*Switches*) y variables, rutas de movimiento, diálogos, elecciones, teletransportes y control de flujo sin tocar código.
-* **Sistema de Combates por Turnos:** Motor de batalla por turnos listo para usar con configuración de fórmulas, habilidades, estados alterados, elementos y grupos de enemigos (*Troops*).
-* **Base de Datos RPG Completa:** Gestión centralizada de personajes, clases, habilidades, objetos, armas, armaduras, enemigos, estados, animaciones, tilesets y eventos comunes.
-* **Rendimiento Nativo en C++:** Ligero, rápido y compatible con gráficas integradas y dedicadas mediante OpenGL 3 / Vulkan.
-
----
-
-## 🛠️ Cómo compilar el motor
-
-Si deseas compilar el código fuente por tu cuenta necesitas **Python 3.8+**, **SCons** (`pip install scons`) y un compilador C++ (MSVC o MinGW-w64):
-
-```ash
+bash
 scons platform=windows target=editor arch=x86_64 -j8
-```
+📜 Licencia
 
-Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el ejecutable desde la sección de [**Releases**](https://github.com/krisztsa/ClockGears-Engine/releases).
+ClockGears Engine tiene una licencia propia para lo creado por ClockGears Studio, y conserva la licencia MIT del código de Godot Engine.
 
----
+✅ Permitido, sin pedir permiso:
 
-## 🤝 Estado del Proyecto y Créditos
+Usar el editor para crear juegos y distribuirlos, venderlos o publicarlos, incluido el runtime que forma parte de las exportaciones.
+Sin regalías, sin pagos y sin suscripciones a ClockGears Studio. Los juegos pertenecen a sus creadores.
 
-* **Creado por Kris´ZtS** (ClockGears Studio) usando asistencia de **Claude** sobre la base de código de Godot Engine.
-* **GitHub oficial:** https://github.com/krisztsa/ClockGears-Engine
-* **Canal de YouTube:** https://youtube.com/@kriszts?si=la18fuis0frX-LGA
+⛔ No permitido sin permiso escrito de Kris'ZtS:
 
-**Creado en 2026.**
+Copiar, redistribuir, vender, sublicenciar o publicar el editor ClockGears Engine, su código fuente o versiones modificadas, en todo o en parte de lo creado por ClockGears Studio.
 
-> **ClockGears Engine no es de paga en GitHub y solo tiene una opción de donaciones fuera del programa.**
+🧩 Código de Godot Engine:
 
+Todo lo que proviene de Godot sigue bajo la licencia MIT, con su aviso de copyright original (© 2014-presente Godot Engine contributors, © 2007-2014 Juan Linietsky, Ariel Manzur). Esto no limita los derechos sobre el código de Godot.
 
+El texto completo está en el archivo de licencia del repositorio, y también dentro del editor, en Ayuda → Acerca de → Licencia. Las licencias de las librerías de terceros aparecen en la pestaña Licencia de Terceros.
 
-# 🗺 Hoja de ruta de ClockGears Engine hacia la 1.0
+© 2026 Kris'ZtS / ClockGears Studio. Todos los derechos reservados sobre las modificaciones y el código original de ClockGears Studio.
 
-**ClockGears Engine** es un motor de RPG 2D por rejillas con editor visual al estilo RPG Maker MZ, hecho en C++ por **Kris'ZtS · ClockGears Studio**. Esta es la ruta de 55 fases hasta la versión 1.0.
+🤝 Estado del proyecto y créditos
+Creado por Kris'ZtS (ClockGears Studio), con asistencia de Claude, sobre la base de código de Godot Engine.
+Hoja de ruta: el desarrollo avanza por fases hacia la versión 1.0, y puede cambiar, ampliarse o reajustarse sobre la marcha.
+GitHub oficial: https://github.com/krisztsa/ClockGears-Engine
+Canal de YouTube: https://www.youtube.com/@KrisZtS
 
-> ⚠️ Es una hoja de ruta, no una promesa. El orden y el contenido pueden cambiar según la dificultad y el costo de cada fase.
+Creado en 2026.
 
+ClockGears Engine es gratuito y solo tiene una opción voluntaria de donaciones, fuera del programa.
 **Leyenda:** ✅ Hecha · 🔧 En curso · ⏳ Planeada · 🚀 **Update** (hito grande con mejoras masivas)
 
 ---
