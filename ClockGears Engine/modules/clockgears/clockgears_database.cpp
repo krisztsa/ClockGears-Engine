@@ -34,6 +34,52 @@
 
 #define CG_DB_TR(m_str) String::utf8(m_str)
 
+static int s_get_troop_member_scale(const Dictionary &p_member) {
+	int s = 1;
+	if (p_member.has("escala")) {
+		s = int(p_member["escala"]);
+	} else if (p_member.has("scale")) {
+		s = int(p_member["scale"]);
+	}
+	return CLAMP(s, 1, 6);
+}
+
+static Size2 s_resolve_troop_member_src_size(const Dictionary &p_member, const Array &p_enemies) {
+	int eid = int(p_member.get("enemy_id", 1));
+	Dictionary ed;
+	for (int k = 0; k < p_enemies.size(); k++) {
+		Dictionary cand = p_enemies[k];
+		if (int(cand.get("id", k + 1)) == eid) {
+			ed = cand;
+			break;
+		}
+	}
+	Ref<Texture2D> tex;
+	Rect2 src_reg;
+	String src_kind;
+	ClockGearsBattleScene::resolve_enemy_preview_sprite(ed, tex, src_reg, src_kind);
+	if (src_reg.size.x > 0.0f && src_reg.size.y > 0.0f) {
+		return src_reg.size;
+	}
+	if (tex.is_valid()) {
+		return tex->get_size();
+	}
+	return Size2(64.0f, 64.0f);
+}
+
+static Vector2i s_snap_troop_member_pos_to_grid(float p_fx, float p_fy, const Size2 &p_src_sz, int p_scale) {
+	int m_scale = CLAMP(p_scale, 1, 6);
+	double draw_w = double(p_src_sz.x > 0.0f ? p_src_sz.x : 64.0f) * double(m_scale);
+	double draw_h = double(p_src_sz.y > 0.0f ? p_src_sz.y : 64.0f) * double(m_scale);
+	double spr_left = double(p_fx) + 70.0 - draw_w * 0.5;
+	double spr_top = double(p_fy) + 110.0 - draw_h;
+	double snapped_left = Math::round(spr_left / 32.0) * 32.0;
+	double snapped_top = Math::round(spr_top / 32.0) * 32.0;
+	int nx = int(Math::round(snapped_left + draw_w * 0.5 - 70.0));
+	int ny = int(Math::round(snapped_top + draw_h - 110.0));
+	return Vector2i(nx, ny);
+}
+
 static String s_fix_mojibake(const String &p_str) {
 	if (p_str.find(String::utf8("Ã")) == -1) {
 		return p_str;
@@ -3031,6 +3077,8 @@ bool ClockGearsDatabaseDialog::_has_visible_child_dialog() const {
 		new_anim_dialog,
 		rename_anim_dialog,
 		sheet_importer_dialog,
+		troop_ctx_menu,
+		troop_scale_submenu,
 	};
 	for (const Window *w : children) {
 		if (w && w->is_visible()) {
@@ -4944,6 +4992,20 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_bg_adjust_menu->connect("id_pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_troop_bg_menu_id));
 	add_child(troop_bg_adjust_menu);
 
+	troop_ctx_menu = memnew(PopupMenu);
+	troop_ctx_menu->set_hide_on_item_selection(true);
+	troop_ctx_menu->set_hide_on_checkable_item_selection(true);
+	troop_scale_submenu = memnew(PopupMenu);
+	troop_scale_submenu->set_hide_on_item_selection(true);
+	troop_scale_submenu->set_hide_on_checkable_item_selection(true);
+	for (int s = 1; s <= 6; s++) {
+		troop_scale_submenu->add_radio_check_item(vformat("x%d", s), s);
+	}
+	troop_scale_submenu->connect("id_pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_scale_menu_id_pressed));
+	troop_ctx_menu->add_child(troop_scale_submenu);
+	troop_ctx_menu->add_submenu_node_item(CG_DB_TR("Escala"), troop_scale_submenu, 100);
+	add_child(troop_ctx_menu);
+
 	btn_battle_test_troop = memnew(Button(CG_DB_TR("Prueba de batalla")));
 	btn_battle_test_troop->set_custom_minimum_size(Size2(0, row_h));
 	btn_battle_test_troop->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_troop_pressed));
@@ -5371,6 +5433,8 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_placement_canvas = memnew(Control);
 	troop_placement_canvas->set_custom_minimum_size(Size2(540 * EDSCALE, 304 * EDSCALE));
 	troop_placement_canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	troop_placement_canvas->set_clip_contents(true);
+	troop_placement_canvas->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	troop_placement_canvas->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	troop_placement_canvas->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw));
 	troop_placement_canvas->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input));
@@ -5390,6 +5454,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	troop_enemies_overlay_ctrl = memnew(Control);
 	troop_enemies_overlay_ctrl->set_anchors_preset(Control::PRESET_FULL_RECT);
+	troop_enemies_overlay_ctrl->set_clip_contents(true);
 	troop_enemies_overlay_ctrl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	troop_enemies_overlay_ctrl->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	troop_enemies_overlay_ctrl->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_enemies_overlay_draw));
@@ -6365,6 +6430,7 @@ void ClockGearsDatabaseDialog::_on_add_troop_member_pressed() {
 	new_m["enemy_id"] = enemy_id;
 	new_m["x"] = CLAMP(160 + mems.size() * 96, 64, 896);
 	new_m["y"] = 260;
+	new_m["escala"] = 1;
 	mems.push_back(new_m);
 	selected_troop_member_idx = mems.size() - 1;
 
@@ -6432,26 +6498,20 @@ void ClockGearsDatabaseDialog::_on_align_troop_members_pressed() {
 
 	Rect2 group_box;
 	bool has_box = false;
+	Vector<Size2> src_sizes;
+	Vector<int> member_scales;
+	src_sizes.resize(n);
+	member_scales.resize(n);
+
 	for (int i = 0; i < n; i++) {
 		Dictionary m = mems[i];
-		int eid = int(m.get("enemy_id", 1));
 		Vector2 mpos(float(m.get("x", 200 + i * 110)), float(m.get("y", 260)));
+		Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+		int m_scale = s_get_troop_member_scale(m);
+		src_sizes.write[i] = src_sz;
+		member_scales.write[i] = m_scale;
 
-		Dictionary ed;
-		for (int k = 0; k < enemies.size(); k++) {
-			Dictionary cand = enemies[k];
-			if (int(cand.get("id", k + 1)) == eid) {
-				ed = cand;
-				break;
-			}
-		}
-		Ref<Texture2D> tex;
-		Rect2 src_reg;
-		String src_kind;
-		ClockGearsBattleScene::resolve_enemy_preview_sprite(ed, tex, src_reg, src_kind);
-		Size2 src_sz = (src_reg.size.x > 0 && src_reg.size.y > 0) ? src_reg.size : (tex.is_valid() ? tex->get_size() : Size2(64, 64));
-
-		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, font);
+		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font);
 		if (!has_box) {
 			group_box = layout.full_box;
 			has_box = true;
@@ -6474,8 +6534,9 @@ void ClockGearsDatabaseDialog::_on_align_troop_members_pressed() {
 		int y = int(Math::round(fy));
 		// Con un solo enemigo NO lo movemos del punto de referencia exacto aunque esté activada la rejilla
 		if (snap && n > 1) {
-			x = int(Math::round(double(x) / 32.0)) * 32;
-			y = int(Math::round(double(y) / 32.0)) * 32;
+			Vector2i snapped = s_snap_troop_member_pos_to_grid(fx, fy, src_sizes[i], member_scales[i]);
+			x = snapped.x;
+			y = snapped.y;
 		}
 		m["x"] = CLAMP(x, 0, int(ClockGearsBattleScene::BATTLE_REF_WIDTH));
 		m["y"] = CLAMP(y, 0, int(ClockGearsBattleScene::BATTLE_REF_HEIGHT));
@@ -6880,22 +6941,10 @@ void ClockGearsDatabaseDialog::_update_troop_hud_warning(const Dictionary &p_tro
 	bool any_overlap = false;
 	for (int i = 0; i < mems.size(); i++) {
 		Dictionary m = mems[i];
-		int eid = int(m.get("enemy_id", 1));
 		Vector2 mpos(float(m.get("x", 200 + i * 110)), float(m.get("y", 260)));
-		Dictionary ed;
-		for (int k = 0; k < enemies.size(); k++) {
-			Dictionary cand = enemies[k];
-			if (int(cand.get("id", k + 1)) == eid) {
-				ed = cand;
-				break;
-			}
-		}
-		Ref<Texture2D> tex;
-		Rect2 src_reg;
-		String src_kind;
-		ClockGearsBattleScene::resolve_enemy_preview_sprite(ed, tex, src_reg, src_kind);
-		Size2 src_sz = (src_reg.size.x > 0 && src_reg.size.y > 0) ? src_reg.size : (tex.is_valid() ? tex->get_size() : Size2(64, 64));
-		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, font);
+		Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+		int m_scale = s_get_troop_member_scale(m);
+		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font);
 		if (layout.full_box.intersects(hud_strip)) {
 			any_overlap = true;
 			break;
@@ -7017,6 +7066,42 @@ void ClockGearsDatabaseDialog::_on_adjust_troop_bg_menu_id(int p_id) {
 	if (p_id == 1 || p_id == 2) {
 		_open_adjust_dialog(p_id);
 	}
+}
+
+void ClockGearsDatabaseDialog::_on_troop_scale_menu_id_pressed(int p_id) {
+	int new_scale = CLAMP(p_id, 1, 6);
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty()) return;
+	int rec_idx = sel[0];
+	Array &arr = category_data[CAT_TROOPS];
+	if (rec_idx < 0 || rec_idx >= arr.size()) return;
+
+	Dictionary d = arr[rec_idx];
+	Array mems = d.get("members", Array());
+	int target_idx = (troop_ctx_member_idx >= 0 && troop_ctx_member_idx < mems.size()) ? troop_ctx_member_idx : selected_troop_member_idx;
+	if (target_idx < 0 || target_idx >= mems.size()) return;
+
+	Dictionary m = mems[target_idx];
+	m["escala"] = new_scale;
+	mems[target_idx] = m;
+	d["members"] = mems;
+	arr[rec_idx] = d;
+
+	if (troop_scale_submenu) {
+		for (int s = 1; s <= 6; s++) {
+			int item_idx = troop_scale_submenu->get_item_index(s);
+			if (item_idx >= 0) {
+				troop_scale_submenu->set_item_checked(item_idx, s == new_scale);
+			}
+		}
+	}
+	if (troop_ctx_menu && troop_ctx_menu->is_visible()) {
+		troop_ctx_menu->hide();
+	}
+
+	_update_troop_hud_warning(d);
+	_queue_troop_preview_redraw();
+	_on_param_changed();
 }
 
 void ClockGearsDatabaseDialog::_build_adjust_dialog(int p_ui_idx, int p_slot) {
@@ -7453,8 +7538,8 @@ void ClockGearsDatabaseDialog::_draw_troop_enemies_preview(Control *p_canvas, co
 				src_reg = Rect2(Point2(0, 0), retained_tex->get_size());
 			}
 		} else if (ClockGearsBattleScene::is_texture_ready(tex)) {
-			// Retener Ref<Texture2D> en caché hasta que RenderingServer envíe el frame a GPU.
-			String cache_key = vformat("__enemy_%d_%s", eid, sprite_source);
+			// Retener Ref<Texture2D> por miembro para que dos instancias del mismo enemigo no se sobrescriban y liberen su RID antes del render.
+			String cache_key = vformat("__enemy_%d_%s_m%d", eid, sprite_source, i);
 			troop_preview_tex_cache[cache_key] = tex;
 			retained_tex = tex;
 		} else {
@@ -7471,6 +7556,7 @@ void ClockGearsDatabaseDialog::_draw_troop_enemies_preview(Control *p_canvas, co
 		entry.hp = 100;
 		entry.max_hp = 100;
 		entry.is_dead = false;
+		entry.sprite_scale = s_get_troop_member_scale(m);
 		entry.troop_pos = Vector2(mx, my);
 		entry.texture = retained_tex;
 		entry.src_region = src_reg;
@@ -7573,24 +7659,9 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 			for (int i = mems.size() - 1; i >= 0; i--) {
 				Dictionary m = mems[i];
 				Vector2 mpos(float(m.get("x", 200)), float(m.get("y", 260)));
-				Size2 src_sz(64, 64);
-				int eid = int(m.get("enemy_id", 1));
-				for (int k = 0; k < enemies.size(); k++) {
-					Dictionary cand = enemies[k];
-					if (int(cand.get("id", k + 1)) == eid) {
-						Ref<Texture2D> tex;
-						Rect2 src_reg;
-						String sprite_source;
-						ClockGearsBattleScene::resolve_enemy_preview_sprite(cand, tex, src_reg, sprite_source);
-						if (src_reg.size.x > 0 && src_reg.size.y > 0) {
-							src_sz = src_reg.size;
-						} else if (tex.is_valid()) {
-							src_sz = tex->get_size();
-						}
-						break;
-					}
-				}
-				ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, font);
+				Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+				int m_scale = s_get_troop_member_scale(m);
+				ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font);
 				if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
 					hit_idx = i;
 					troop_drag_offset = mpos - ClockGearsBattleScene::screen_to_troop_pos(mb->get_position(), vp_rect);
@@ -7609,18 +7680,75 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 				_on_param_changed();
 			}
 		}
+	} else if (mb.is_valid() && mb->get_button_index() == MouseButton::RIGHT && mb->is_pressed()) {
+		int hit_idx = -1;
+		for (int i = mems.size() - 1; i >= 0; i--) {
+			Dictionary m = mems[i];
+			Vector2 mpos(float(m.get("x", 200)), float(m.get("y", 260)));
+			Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+			int m_scale = s_get_troop_member_scale(m);
+			ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font);
+			if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
+				hit_idx = i;
+				break;
+			}
+		}
+		if (hit_idx >= 0 && troop_ctx_menu && troop_scale_submenu) {
+			selected_troop_member_idx = hit_idx;
+			troop_ctx_member_idx = hit_idx;
+			_refresh_troop_members_ui();
+
+			int cur_scale = s_get_troop_member_scale(mems[hit_idx]);
+			for (int s = 1; s <= 6; s++) {
+				int item_idx = troop_scale_submenu->get_item_index(s);
+				if (item_idx >= 0) {
+					troop_scale_submenu->set_item_checked(item_idx, s == cur_scale);
+				}
+			}
+
+			if (ClockGearsTheme::get_singleton()) {
+				ClockGearsTheme::get_singleton()->apply_to_window(troop_ctx_menu);
+				ClockGearsTheme::get_singleton()->apply_to_window(troop_scale_submenu);
+			}
+			troop_ctx_menu->reset_size();
+			Size2i menu_sz = troop_ctx_menu->get_contents_minimum_size();
+			if (menu_sz.x <= 0 || menu_sz.y <= 0) {
+				menu_sz = troop_ctx_menu->get_size();
+			}
+			menu_sz.x = MAX(menu_sz.x, 120);
+			menu_sz.y = MAX(menu_sz.y, 40);
+
+			Vector2 scr_pos = troop_placement_canvas->get_screen_position() + mb->get_position();
+			int px = int(Math::round(scr_pos.x));
+			int py = int(Math::round(scr_pos.y));
+			Vector2i db_pos = get_position();
+			Size2i db_sz = get_size();
+			if (db_sz.x > menu_sz.x + 8 && db_sz.y > menu_sz.y + 8) {
+				px = CLAMP(px, db_pos.x + 4, db_pos.x + db_sz.x - menu_sz.x - 4);
+				py = CLAMP(py, db_pos.y + 4, db_pos.y + db_sz.y - menu_sz.y - 4);
+			}
+			Rect2i usable_scr = DisplayServer::get_singleton()->screen_get_usable_rect(DisplayServer::get_singleton()->window_get_current_screen(get_window_id()));
+			if (usable_scr.size.x > menu_sz.x + 8 && usable_scr.size.y > menu_sz.y + 8) {
+				px = CLAMP(px, usable_scr.position.x + 4, usable_scr.position.x + usable_scr.size.x - menu_sz.x - 4);
+				py = CLAMP(py, usable_scr.position.y + 4, usable_scr.position.y + usable_scr.size.y - menu_sz.y - 4);
+			}
+			troop_ctx_menu->popup(Rect2i(Vector2i(px, py), Size2i()));
+		}
 	} else if (mm.is_valid() && troop_member_dragging) {
 		if (selected_troop_member_idx >= 0 && selected_troop_member_idx < mems.size()) {
 			Vector2 mouse_logical = ClockGearsBattleScene::screen_to_troop_pos(mm->get_position(), vp_rect) + troop_drag_offset;
+			Dictionary m = mems[selected_troop_member_idx];
 			int nx = int(Math::round(mouse_logical.x));
 			int ny = int(Math::round(mouse_logical.y));
 			if (chk_troop_snap_grid && chk_troop_snap_grid->is_pressed()) {
-				nx = int(Math::round(double(nx) / 32.0)) * 32;
-				ny = int(Math::round(double(ny) / 32.0)) * 32;
+				Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+				int m_scale = s_get_troop_member_scale(m);
+				Vector2i snapped = s_snap_troop_member_pos_to_grid(mouse_logical.x, mouse_logical.y, src_sz, m_scale);
+				nx = snapped.x;
+				ny = snapped.y;
 			}
 			nx = CLAMP(nx, 0, int(ClockGearsBattleScene::BATTLE_REF_WIDTH));
 			ny = CLAMP(ny, 0, int(ClockGearsBattleScene::BATTLE_REF_HEIGHT));
-			Dictionary m = mems[selected_troop_member_idx];
 			m["x"] = nx;
 			m["y"] = ny;
 			mems[selected_troop_member_idx] = m;

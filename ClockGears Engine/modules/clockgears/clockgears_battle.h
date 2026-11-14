@@ -193,6 +193,10 @@ public:
 	void set_battle_pos(const Vector2 &p_pos) { battle_pos = p_pos; }
 	Vector2 get_battle_pos() const { return battle_pos; }
 
+	int sprite_scale = 1;
+	void set_sprite_scale(int p_scale) { sprite_scale = CLAMP(p_scale, 1, 6); }
+	int get_sprite_scale() const { return sprite_scale; }
+
 	ClockGearsSpriteSheetData sprite_data;
 	void set_sprite_data(const ClockGearsSpriteSheetData &p_data) { sprite_data = p_data; }
 	ClockGearsSpriteSheetData get_sprite_data() const { return sprite_data; }

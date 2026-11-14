@@ -97,6 +97,9 @@ void ClockGearsBattleUnit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_battle_pos", "pos"), &ClockGearsBattleUnit::set_battle_pos);
 	ClassDB::bind_method(D_METHOD("get_battle_pos"), &ClockGearsBattleUnit::get_battle_pos);
 
+	ClassDB::bind_method(D_METHOD("set_sprite_scale", "scale"), &ClockGearsBattleUnit::set_sprite_scale);
+	ClassDB::bind_method(D_METHOD("get_sprite_scale"), &ClockGearsBattleUnit::get_sprite_scale);
+
 	ClassDB::bind_method(D_METHOD("set_sprite_data_dict", "data"), &ClockGearsBattleUnit::set_sprite_data_dict);
 	ClassDB::bind_method(D_METHOD("get_sprite_data_dict"), &ClockGearsBattleUnit::get_sprite_data_dict);
 
@@ -591,11 +594,18 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			int e_id = 1;
 			int pos_x = 200 + i * 160;
 			int pos_y = 260;
+			int sprite_scale = 1;
 			if (item.get_type() == Variant::DICTIONARY) {
 				Dictionary md = item;
 				e_id = int(md.get("enemy_id", md.get("id", 1)));
 				pos_x = int(md.get("x", pos_x));
 				pos_y = int(md.get("y", pos_y));
+				if (md.has("escala")) {
+					sprite_scale = int(md["escala"]);
+				} else if (md.has("scale")) {
+					sprite_scale = int(md["scale"]);
+				}
+				sprite_scale = CLAMP(sprite_scale, 1, 6);
 			} else {
 				e_id = int(item);
 			}
@@ -630,6 +640,7 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			en->set_is_actor(false);
 			en->set_level(MAX(1, int(en_data.get("level", 1))));
 			en->set_battle_pos(Vector2(pos_x, pos_y));
+			en->set_sprite_scale(sprite_scale);
 			en->set_max_hp(MAX(1, int(en_data.get("hp", 120))));
 			en->set_hp(en->get_max_hp());
 			en->set_max_mp(MAX(0, int(en_data.get("mp", 20))));

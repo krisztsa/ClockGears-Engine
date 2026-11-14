@@ -1,5 +1,6 @@
 #include "clockgears_battle_window.h"
 #include "clockgears_debug_panel.h"
+#include "clockgears_fx_manager.h"
 #include "editor/clockgears_theme.h"
 #include "editor/themes/editor_scale.h"
 #include "core/config/project_settings.h"
@@ -38,6 +39,32 @@ static const ClockGearsSpriteAnimation *s_find_animation_ci(const ClockGearsSpri
 		}
 	}
 	return best_match;
+}
+
+static Rect2i s_default_unit_frame_rect(const ClockGearsSpriteSheetData &p_sp, const Ref<Texture2D> &p_tex) {
+	if (!p_tex.is_valid() || p_tex->get_width() <= 0 || p_tex->get_height() <= 0) {
+		return Rect2i(0, 0, 32, 32);
+	}
+	int tw = p_tex->get_width();
+	int th = p_tex->get_height();
+	// Si no hay animaciones configuradas y es una imagen única (w <= h), usar tamaño real completo (ej. 48x48).
+	if (p_sp.animations.is_empty() && tw <= th) {
+		return Rect2i(0, 0, tw, th);
+	}
+	int cols = p_sp.cols > 0 ? p_sp.cols : 4;
+	int fw = p_sp.frame_w > 0 ? p_sp.frame_w : (tw / cols);
+	int fh = p_sp.frame_h > 0 ? p_sp.frame_h : th;
+	if (tw > th && (fw >= tw || fw <= 0)) {
+		fw = th;
+	}
+	if (fw <= 0 || fw > tw) fw = tw;
+	if (fh <= 0 || fh > th) fh = th;
+	if (th > 32 && fh < th) {
+		fh = th;
+		fw = MAX(fw, th);
+		if (fw > tw) fw = tw;
+	}
+	return Rect2i(0, 0, fw, fh);
 }
 
 bool ClockGearsBattleScene::is_texture_ready(const Ref<Texture2D> &p_tex) {
@@ -308,6 +335,8 @@ void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_initiative_bar_visible"), &ClockGearsBattleScene::is_initiative_bar_visible);
 	ClassDB::bind_method(D_METHOD("is_formula_log_visible"), &ClockGearsBattleScene::is_formula_log_visible);
 	ClassDB::bind_method(D_METHOD("get_enemy_node_pos", "idx"), &ClockGearsBattleScene::get_enemy_node_pos);
+	ClassDB::bind_method(D_METHOD("get_enemy_sprite_rect", "idx"), &ClockGearsBattleScene::get_enemy_sprite_rect);
+	ClassDB::bind_method(D_METHOD("get_enemy_effect_center", "idx"), &ClockGearsBattleScene::get_enemy_effect_center);
 	ClassDB::bind_method(D_METHOD("get_enemy_label_text", "idx"), &ClockGearsBattleScene::get_enemy_label_text);
 	ClassDB::bind_method(D_METHOD("is_enemy_hp_bar_visible", "idx"), &ClockGearsBattleScene::is_enemy_hp_bar_visible);
 	ClassDB::bind_method(D_METHOD("get_enemy_current_visual_anim", "idx"), &ClockGearsBattleScene::get_enemy_current_visual_anim);
@@ -364,6 +393,7 @@ void ClockGearsBattleScene::_setup_ui() {
 	// Campo posicionado libremente para enemigos según la posición guardada en la tropa (dibujo unificado con vista previa)
 	enemies_field = memnew(Control);
 	enemies_field->set_anchors_preset(Control::PRESET_FULL_RECT);
+	enemies_field->set_clip_contents(true);
 	enemies_field->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	enemies_field->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	enemies_field->connect("draw", callable_mp(this, &ClockGearsBattleScene::_on_enemies_field_draw));
@@ -549,6 +579,7 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 		battle_log_panel->set_visible(show_f);
 	}
 
+	bool any_reg_size_changed = false;
 	for (int i = 0; i < battler_visuals.size(); i++) {
 		ClockGearsBattlerVisual &vis = battler_visuals.write[i];
 		if (vis.unit.is_valid()) {
@@ -708,23 +739,19 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 			r = f.region;
 		} else {
 			// Si falta una ranura o está vacía, usa el frame 0 sin dar error
-			int cols = vis.sprite_data.cols > 0 ? vis.sprite_data.cols : 4;
-			int fw = vis.sprite_data.frame_w > 0 ? vis.sprite_data.frame_w : (vis.base_texture.is_valid() ? vis.base_texture->get_width() / cols : 32);
-			int fh = vis.sprite_data.frame_h > 0 ? vis.sprite_data.frame_h : (vis.base_texture.is_valid() ? vis.base_texture->get_height() : 32);
-			if (vis.base_texture.is_valid() && vis.base_texture->get_width() > vis.base_texture->get_height() && (fw >= vis.base_texture->get_width() || fw <= 0)) {
-				fw = vis.base_texture->get_height();
-			}
-			if (vis.base_texture.is_valid()) {
-				if (fw <= 0 || fw > vis.base_texture->get_width()) fw = vis.base_texture->get_width();
-				if (fh <= 0 || fh > vis.base_texture->get_height()) fh = vis.base_texture->get_height();
-			}
-			r = Rect2i(0, 0, fw, fh);
+			r = s_default_unit_frame_rect(vis.sprite_data, vis.base_texture);
 		}
 
+		Size2 prev_reg_sz = vis.atlas_texture->get_region().size;
 		vis.atlas_texture->set_region(Rect2(r.position.x, r.position.y, r.size.x, r.size.y));
+		if (!vis.is_actor && prev_reg_sz != Size2(r.size.x, r.size.y)) {
+			any_reg_size_changed = true;
+		}
 	}
 
-	if (enemies_field) {
+	if (any_reg_size_changed) {
+		_sync_enemy_hit_nodes_layout();
+	} else if (enemies_field) {
 		enemies_field->queue_redraw();
 	}
 
@@ -782,6 +809,7 @@ void ClockGearsBattleScene::_step_action_sequence(float p_delta) {
 	if (action_seq_timer <= 0.0f) {
 		if (action_seq_state == SEQ_ATTACK_ANIM) {
 			// 2. Ejecutar acción de daño y reproducir Daño/Muerte en el objetivo
+			int tgt_hp_before = seq_target.is_valid() ? seq_target->get_hp() : 0;
 			if (controller.is_valid()) {
 				if (seq_action_type == 1) {
 					controller->action_attack(seq_target_idx);
@@ -792,6 +820,10 @@ void ClockGearsBattleScene::_step_action_sequence(float p_delta) {
 				}
 			}
 			if (seq_target.is_valid()) {
+				if (seq_action_type != 3) {
+					int delta = tgt_hp_before - seq_target->get_hp();
+					_spawn_enemy_hit_fx(seq_target_idx, Math::abs(delta), delta < 0);
+				}
 				if (seq_target->get_is_dead()) {
 					_trigger_unit_trigger(seq_target, ANIM_TRIGGER_DEATH, "death", 0.6f);
 				} else {
@@ -1000,19 +1032,7 @@ void ClockGearsBattleScene::_refresh_ui() {
 			r = f0.region;
 		} else if (is_texture_ready(base_tex)) {
 			// Frame 0 por defecto si falta una ranura o está vacía
-			int cols = sp_data.cols > 0 ? sp_data.cols : 4;
-			int fw = sp_data.frame_w > 0 ? sp_data.frame_w : (base_tex->get_width() / cols);
-			int fh = sp_data.frame_h > 0 ? sp_data.frame_h : base_tex->get_height();
-			if (base_tex->get_width() > base_tex->get_height() && (fw >= base_tex->get_width() || fw <= 0)) {
-				fw = base_tex->get_height();
-			}
-			if (fw <= 0 || fw > base_tex->get_width()) fw = base_tex->get_width();
-			if (fh <= 0 || fh > base_tex->get_height()) fh = base_tex->get_height();
-			r = Rect2i(0, 0, fw, fh);
-		}
-		if (is_texture_ready(base_tex) && base_tex->get_height() > 32 && r.size.y < base_tex->get_height() && (!cur_anim || cur_anim->get_frame_count() <= 1)) {
-			r.size.y = base_tex->get_height();
-			r.size.x = MAX(r.size.x, base_tex->get_height());
+			r = s_default_unit_frame_rect(sp_data, base_tex);
 		}
 
 		if (is_texture_ready(base_tex)) {
@@ -1028,17 +1048,19 @@ void ClockGearsBattleScene::_refresh_ui() {
 			}
 		}
 
-		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, field_vp, Size2(r.size.x, r.size.y), enemies_field ? enemies_field->get_theme_default_font() : Ref<Font>());
+		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, field_vp, Size2(r.size.x, r.size.y), en->get_sprite_scale(), enemies_field ? enemies_field->get_theme_default_font() : Ref<Font>());
 
 		Control *en_slot = memnew(Control);
 		en_slot->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 		en_slot->set_position(layout.block_origin);
 		en_slot->set_size(layout.full_box.size);
 
-		// Efecto visual sobre el objetivo (animación propia de la habilidad)
+		// Efecto visual sobre el objetivo (centrado sobre el sprite escalado)
 		TextureRect *eff_rect = memnew(TextureRect);
-		eff_rect->set_position(layout.sprite_box.position - layout.block_origin);
-		eff_rect->set_size(layout.sprite_box.size);
+		float vp_s = (field_vp.size.x > 0.0f && field_vp.size.y > 0.0f) ? MIN(field_vp.size.x / BATTLE_REF_WIDTH, field_vp.size.y / BATTLE_REF_HEIGHT) : 1.0f;
+		Size2 eff_sz(MAX(48.0f * vp_s, layout.draw_spr_rect.size.x), MAX(48.0f * vp_s, layout.draw_spr_rect.size.y));
+		eff_rect->set_position(layout.draw_spr_rect.get_center() - eff_sz * 0.5f - layout.block_origin);
+		eff_rect->set_size(eff_sz);
 		eff_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
 		eff_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 		eff_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
@@ -1515,8 +1537,11 @@ bool ClockGearsBattleScene::select_action_attack(int p_target_idx) {
 	if (p_target_idx >= 0 && p_target_idx < targets.size()) {
 		tgt = targets[p_target_idx];
 	}
+	int tgt_hp_before = tgt.is_valid() ? tgt->get_hp() : 0;
 	bool res = controller->action_attack(p_target_idx);
 	if (tgt.is_valid()) {
+		int delta = tgt_hp_before - tgt->get_hp();
+		_spawn_enemy_hit_fx(p_target_idx, Math::abs(delta), delta < 0);
 		if (tgt->get_is_dead()) {
 			_trigger_unit_trigger(tgt, ANIM_TRIGGER_DEATH, "death", 0.6f);
 		} else {
@@ -1539,8 +1564,11 @@ bool ClockGearsBattleScene::select_action_skill(int p_skill_id, int p_target_idx
 	if (p_target_idx >= 0 && p_target_idx < targets.size()) {
 		tgt = targets[p_target_idx];
 	}
+	int tgt_hp_before = tgt.is_valid() ? tgt->get_hp() : 0;
 	bool res = controller->action_skill(p_skill_id, p_target_idx);
 	if (tgt.is_valid()) {
+		int delta = tgt_hp_before - tgt->get_hp();
+		_spawn_enemy_hit_fx(p_target_idx, Math::abs(delta), delta < 0);
 		if (tgt->get_is_dead()) {
 			_trigger_unit_trigger(tgt, ANIM_TRIGGER_DEATH, "death", 0.6f);
 		} else {
@@ -1605,6 +1633,59 @@ Vector2 ClockGearsBattleScene::get_enemy_node_pos(int p_idx) const {
 		return enemy_nodes[p_idx]->get_position();
 	}
 	return Vector2();
+}
+
+Rect2 ClockGearsBattleScene::get_enemy_sprite_rect(int p_idx) const {
+	if (!controller.is_valid()) return Rect2();
+	Array ens = controller->get_enemy_units();
+	if (p_idx < 0 || p_idx >= ens.size()) return Rect2();
+	Ref<ClockGearsBattleUnit> en = ens[p_idx];
+	if (!en.is_valid()) return Rect2();
+
+	Rect2 vp_rect(Point2(0, 0), enemies_field ? enemies_field->get_size() : Size2(BATTLE_REF_WIDTH, BATTLE_REF_HEIGHT));
+	if (vp_rect.size.x <= 1.0f || vp_rect.size.y <= 1.0f) {
+		vp_rect.size = Size2(BATTLE_REF_WIDTH, BATTLE_REF_HEIGHT);
+	}
+	Vector2 bpos = en->get_battle_pos();
+	if (bpos.x <= 0.0f && bpos.y <= 0.0f) {
+		bpos = Vector2(220.0f + p_idx * 160.0f, 180.0f);
+	}
+	Size2 src_sz(64.0f, 64.0f);
+	for (int b = 0; b < battler_visuals.size(); b++) {
+		const ClockGearsBattlerVisual &vis = battler_visuals[b];
+		if (!vis.is_actor && vis.unit == en) {
+			if (vis.atlas_texture.is_valid()) {
+				Rect2 reg = vis.atlas_texture->get_region();
+				if (reg.size.x > 0.0f && reg.size.y > 0.0f) {
+					src_sz = reg.size;
+				}
+			} else if (vis.base_texture.is_valid()) {
+				src_sz = vis.base_texture->get_size();
+			}
+			break;
+		}
+	}
+	Ref<Font> font = enemies_field ? enemies_field->get_theme_default_font() : Ref<Font>();
+	EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, vp_rect, src_sz, en->get_sprite_scale(), font);
+	return layout.draw_spr_rect;
+}
+
+Point2 ClockGearsBattleScene::get_enemy_effect_center(int p_idx) const {
+	Rect2 spr_r = get_enemy_sprite_rect(p_idx);
+	if (spr_r.size.x <= 0.0f && spr_r.size.y <= 0.0f) {
+		return Point2();
+	}
+	return spr_r.get_center();
+}
+
+void ClockGearsBattleScene::_spawn_enemy_hit_fx(int p_enemy_idx, int p_damage, bool p_heal) {
+	if (!enemies_field || !controller.is_valid()) return;
+	Point2 center = get_enemy_effect_center(p_enemy_idx);
+	if (center == Point2()) return;
+	Point2 global_pos = enemies_field->get_position() + center;
+	int dmg_val = p_heal ? -Math::abs(p_damage) : Math::abs(p_damage);
+	// Agregar al CanvasLayer de batalla para que _refresh_ui no borre el FX flotante al recrear nodos de enemies_field.
+	ClockGearsFXManager::spawn_impact_fx(this, global_pos, dmg_val, false, 0, false, false);
 }
 
 String ClockGearsBattleScene::get_enemy_label_text(int p_idx) const {
@@ -1836,39 +1917,37 @@ Rect2 ClockGearsBattleScene::get_battle_hud_strip_rect(const Rect2 &p_vp_rect) {
 	return Rect2(p_vp_rect.position.x, p_vp_rect.position.y + p_vp_rect.size.y - hud_h, p_vp_rect.size.x, hud_h);
 }
 
-ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, const Ref<Font> &p_font) {
+ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale, const Ref<Font> &p_font) {
 	EnemyVisualLayout layout;
 	float sx = (p_vp_rect.size.x > 0.0f) ? (p_vp_rect.size.x / BATTLE_REF_WIDTH) : 1.0f;
 	float sy = (p_vp_rect.size.y > 0.0f) ? (p_vp_rect.size.y / BATTLE_REF_HEIGHT) : 1.0f;
 	float scale = MIN(sx, sy);
+	int m_scale = CLAMP(p_member_scale, 1, 6);
 
 	layout.block_origin = troop_pos_to_screen(p_troop_pos, p_vp_rect);
 	float block_w = 140.0f * scale;
-	float spr_box_sz = 110.0f * scale;
-	layout.sprite_box = Rect2(layout.block_origin + Point2((block_w - spr_box_sz) * 0.5f, 0.0f), Size2(spr_box_sz, spr_box_sz));
+	// Base fija en el centro de los pies para que al escalar crezca hacia arriba y a los lados sin saltar de posición.
+	Point2 feet_scr = layout.block_origin + Point2(70.0f * scale, 110.0f * scale);
 
 	float src_w = (p_src_size.x > 0.0f) ? p_src_size.x : 64.0f;
 	float src_h = (p_src_size.y > 0.0f) ? p_src_size.y : 64.0f;
-	float aspect = src_w / src_h;
-	Size2 fit_sz(spr_box_sz, spr_box_sz);
-	if (aspect > 1.0f) {
-		fit_sz.y = spr_box_sz / aspect;
-	} else if (aspect < 1.0f && aspect > 0.001f) {
-		fit_sz.x = spr_box_sz * aspect;
-	}
-	Point2 spr_center = layout.sprite_box.get_center();
-	layout.draw_spr_rect = Rect2(spr_center - fit_sz * 0.5f, fit_sz);
+	float draw_w = src_w * float(m_scale) * scale;
+	float draw_h = src_h * float(m_scale) * scale;
+
+	layout.draw_spr_rect = Rect2(feet_scr.x - draw_w * 0.5f, feet_scr.y - draw_h, draw_w, draw_h);
+	layout.sprite_box = layout.draw_spr_rect;
 
 	layout.font_sz = MAX(9, int(13.0f * scale));
-	layout.label_max_w = block_w;
-	layout.label_baseline_y = layout.sprite_box.position.y + layout.sprite_box.size.y + float(layout.font_sz) + 3.0f * scale;
+	layout.label_max_w = MAX(block_w, draw_w + 24.0f * scale);
+	layout.label_baseline_y = feet_scr.y + float(layout.font_sz) + 3.0f * scale;
 
-	float hp_w = 110.0f * scale;
+	float hp_w = CLAMP(MAX(110.0f * scale, draw_w), 72.0f * scale, 240.0f * scale);
 	float hp_h = MAX(6.0f, 10.0f * scale);
-	layout.hp_rect = Rect2(layout.block_origin.x + (block_w - hp_w) * 0.5f, layout.label_baseline_y + 5.0f * scale, hp_w, hp_h);
+	layout.hp_rect = Rect2(feet_scr.x - hp_w * 0.5f, layout.label_baseline_y + 5.0f * scale, hp_w, hp_h);
 
-	float total_h = (layout.hp_rect.position.y + layout.hp_rect.size.y) - layout.block_origin.y;
-	layout.full_box = Rect2(layout.block_origin, Size2(block_w, MAX(spr_box_sz, total_h)));
+	Rect2 union_r = layout.draw_spr_rect.merge(layout.hp_rect);
+	union_r = union_r.merge(Rect2(layout.block_origin, Size2(block_w, 110.0f * scale)));
+	layout.full_box = union_r;
 	return layout;
 }
 
@@ -1897,25 +1976,42 @@ void ClockGearsBattleScene::draw_troop_enemies(Control *p_canvas, const Rect2 &p
 		Size2 src_sz = (e.src_region.size.x > 0.0f && e.src_region.size.y > 0.0f)
 				? e.src_region.size
 				: (e.texture.is_valid() ? e.texture->get_size() : Size2(64.0f, 64.0f));
-		EnemyVisualLayout layout = compute_enemy_visual_layout(e.troop_pos, p_vp_rect, src_sz, p_font);
+		EnemyVisualLayout layout = compute_enemy_visual_layout(e.troop_pos, p_vp_rect, src_sz, e.sprite_scale, p_font);
 
 		if (is_texture_ready(e.texture)) {
-			if (e.src_region.size.x > 0.0f && e.src_region.size.y > 0.0f) {
-				p_canvas->draw_texture_rect_region(e.texture, layout.draw_spr_rect, e.src_region, e.modulate);
-			} else {
-				p_canvas->draw_texture_rect(e.texture, layout.draw_spr_rect, false, e.modulate);
+			Rect2 vis_r = layout.draw_spr_rect.intersection(p_vp_rect);
+			if (vis_r.size.x > 0.0f && vis_r.size.y > 0.0f) {
+				Rect2 full_src = (e.src_region.size.x > 0.0f && e.src_region.size.y > 0.0f)
+						? e.src_region
+						: Rect2(Point2(0, 0), e.texture->get_size());
+				if (vis_r == layout.draw_spr_rect) {
+					p_canvas->draw_texture_rect_region(e.texture, layout.draw_spr_rect, full_src, e.modulate);
+				} else {
+					float u0 = (vis_r.position.x - layout.draw_spr_rect.position.x) / layout.draw_spr_rect.size.x;
+					float v0 = (vis_r.position.y - layout.draw_spr_rect.position.y) / layout.draw_spr_rect.size.y;
+					float u1 = (vis_r.position.x + vis_r.size.x - layout.draw_spr_rect.position.x) / layout.draw_spr_rect.size.x;
+					float v1 = (vis_r.position.y + vis_r.size.y - layout.draw_spr_rect.position.y) / layout.draw_spr_rect.size.y;
+					Rect2 clip_src(
+							full_src.position.x + full_src.size.x * u0,
+							full_src.position.y + full_src.size.y * v0,
+							full_src.size.x * (u1 - u0),
+							full_src.size.y * (v1 - v0));
+					p_canvas->draw_texture_rect_region(e.texture, vis_r, clip_src, e.modulate);
+				}
 			}
 		}
 
 		if (p_show_selection && i == p_selected_idx) {
-			Rect2 sel_rect = layout.draw_spr_rect.grow(3.0f);
-			p_canvas->draw_rect(sel_rect, Color(1.0f, 0.85f, 0.25f, 0.95f), false, 2.0f);
+			Rect2 sel_rect = layout.draw_spr_rect.grow(3.0f).intersection(p_vp_rect);
+			if (sel_rect.size.x > 0.0f && sel_rect.size.y > 0.0f) {
+				p_canvas->draw_rect(sel_rect, Color(1.0f, 0.85f, 0.25f, 0.95f), false, 2.0f);
+			}
 		}
 
 		String title_str = format_enemy_name_level(p_font, layout.font_sz, e.name, e.level, layout.label_max_w);
 		if (p_font.is_valid()) {
 			float str_w = p_font->get_string_size(title_str, HORIZONTAL_ALIGNMENT_LEFT, -1, layout.font_sz).x;
-			float center_x = layout.sprite_box.get_center().x;
+			float center_x = layout.draw_spr_rect.get_center().x;
 			Point2 txt_pos(center_x - str_w * 0.5f, layout.label_baseline_y);
 			Color text_col = e.is_dead ? Color(0.65f, 0.65f, 0.65f, 0.85f) : Color(1.0f, 0.94f, 0.86f, 1.0f);
 			p_canvas->draw_string(p_font, txt_pos + Point2(1, 1), title_str, HORIZONTAL_ALIGNMENT_LEFT, -1, layout.font_sz, Color(0, 0, 0, 0.88f));
@@ -1957,14 +2053,16 @@ void ClockGearsBattleScene::_sync_enemy_hit_nodes_layout() {
 				break;
 			}
 		}
-		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, vp_rect, src_sz, font);
+		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, vp_rect, src_sz, en->get_sprite_scale(), font);
 		node->set_position(layout.block_origin);
 		node->set_size(layout.full_box.size);
 		if (node->get_child_count() > 0) {
 			TextureRect *eff_rect = Object::cast_to<TextureRect>(node->get_child(0));
 			if (eff_rect) {
-				eff_rect->set_position(layout.sprite_box.position - layout.block_origin);
-				eff_rect->set_size(layout.sprite_box.size);
+				float vp_s = (vp_rect.size.x > 0.0f && vp_rect.size.y > 0.0f) ? MIN(vp_rect.size.x / BATTLE_REF_WIDTH, vp_rect.size.y / BATTLE_REF_HEIGHT) : 1.0f;
+				Size2 eff_sz(MAX(48.0f * vp_s, layout.draw_spr_rect.size.x), MAX(48.0f * vp_s, layout.draw_spr_rect.size.y));
+				eff_rect->set_position(layout.draw_spr_rect.get_center() - eff_sz * 0.5f - layout.block_origin);
+				eff_rect->set_size(eff_sz);
 			}
 		}
 	}
@@ -1988,6 +2086,7 @@ void ClockGearsBattleScene::_on_enemies_field_draw() {
 		entry.hp = en->get_hp();
 		entry.max_hp = MAX(1, en->get_max_hp());
 		entry.is_dead = en->get_is_dead();
+		entry.sprite_scale = en->get_sprite_scale();
 		Vector2 bpos = en->get_battle_pos();
 		if (bpos.x <= 0.0f && bpos.y <= 0.0f) {
 			bpos = Vector2(220.0f + i * 160.0f, 180.0f);

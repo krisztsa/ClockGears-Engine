@@ -221,6 +221,9 @@ private:
 	Button *btn_change_troop_bg = nullptr;
 	Button *btn_adjust_troop_bg = nullptr;
 	PopupMenu *troop_bg_adjust_menu = nullptr;
+	PopupMenu *troop_ctx_menu = nullptr;
+	PopupMenu *troop_scale_submenu = nullptr;
+	int troop_ctx_member_idx = -1;
 	CheckBox *chk_troop_snap_grid = nullptr;
 	VBoxContainer *troop_placement_col3_box = nullptr;
 	Control *troop_placement_canvas = nullptr;
@@ -548,6 +551,7 @@ private:
 	void _on_change_troop_bg_pressed();
 	void _on_adjust_troop_bg_pressed();
 	void _on_adjust_troop_bg_menu_id(int p_id);
+	void _on_troop_scale_menu_id_pressed(int p_id);
 	void _build_adjust_dialog(int p_ui_idx, int p_slot);
 	void _open_adjust_dialog(int p_slot);
 	void _sync_adjust_dialog_controls(int p_ui_idx);

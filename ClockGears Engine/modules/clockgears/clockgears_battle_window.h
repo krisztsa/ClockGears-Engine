@@ -134,6 +134,7 @@ private:
 	void _on_battleback_floor_layer_draw();
 	void _on_enemies_field_draw();
 	void _sync_enemy_hit_nodes_layout();
+	void _spawn_enemy_hit_fx(int p_enemy_idx, int p_damage, bool p_heal = false);
 	void _check_battle_state();
 	void _on_message_completed();
 	void _on_hit_executed(const String &p_log);
@@ -170,6 +171,7 @@ public:
 		int hp = 1;
 		int max_hp = 1;
 		bool is_dead = false;
+		int sprite_scale = 1;
 		Vector2 troop_pos;
 		Ref<Texture2D> texture;
 		Rect2 src_region;
@@ -196,7 +198,7 @@ public:
 	static Point2 troop_pos_to_screen(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect);
 	static Vector2 screen_to_troop_pos(const Point2 &p_screen_pos, const Rect2 &p_vp_rect);
 	static Rect2 get_battle_hud_strip_rect(const Rect2 &p_vp_rect);
-	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, const Ref<Font> &p_font = Ref<Font>());
+	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale = 1, const Ref<Font> &p_font = Ref<Font>());
 	static void draw_troop_enemies(Control *p_canvas, const Rect2 &p_vp_rect, const Vector<TroopEnemyDrawEntry> &p_entries, int p_selected_idx, bool p_show_selection, bool p_show_grid, const Ref<Font> &p_font);
 
 	static Dictionary default_battleback_cfg(bool p_is_floor, const Size2 &p_tex_size = Size2());
@@ -224,6 +226,8 @@ public:
 	bool is_initiative_bar_visible() const;
 	bool is_formula_log_visible() const;
 	Vector2 get_enemy_node_pos(int p_idx) const;
+	Rect2 get_enemy_sprite_rect(int p_idx) const;
+	Point2 get_enemy_effect_center(int p_idx) const;
 	String get_enemy_label_text(int p_idx) const;
 	bool is_enemy_hp_bar_visible(int p_idx) const;
 	String get_enemy_current_visual_anim(int p_idx) const;
