@@ -18,7 +18,10 @@ class ClockGearsMap : public Node2D {
 private:
 	int grid_resolution = GRID_32X32;
 	bool snap_to_grid = true;
-	int combat_mode = COMBAT_MODE_TURN_BASED;
+	int combat_mode = COMBAT_MODE_INHERIT;
+	int respawn_mode = RESPAWN_ON_REENTER;
+	double respawn_minutes = 5.0;
+	String map_state_id;
 	int map_width = 25;
 	int map_height = 20;
 	String map_name = "Mapa001";
@@ -75,6 +78,20 @@ public:
 
 	void set_combat_mode(int p_mode) { combat_mode = p_mode; }
 	int get_combat_mode() const { return combat_mode; }
+	int get_effective_combat_mode() const;
+	bool is_arpg_effective() const;
+
+	void set_respawn_mode(int p_mode) { respawn_mode = p_mode; }
+	int get_respawn_mode() const { return respawn_mode; }
+
+	void set_respawn_minutes(double p_minutes) { respawn_minutes = MAX(0.0, p_minutes); }
+	double get_respawn_minutes() const { return respawn_minutes; }
+
+	void set_map_state_id(const String &p_id) { map_state_id = p_id; }
+	String get_map_state_id() const { return map_state_id; }
+	String get_respawn_state_key() const;
+	void apply_enemy_respawns_on_enter();
+	void refresh_enemy_respawns();
 
 	void set_map_name(const String &p_name) { map_name = p_name; }
 	String get_map_name() const { return map_name; }

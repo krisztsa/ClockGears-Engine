@@ -62,6 +62,9 @@ private:
 	Dictionary runtime_variables;
 	Dictionary runtime_inventory;
 	Dictionary runtime_arpg_equips;
+	Dictionary runtime_actor_states;
+	Dictionary runtime_defeated_enemies;
+	double runtime_playtime_sec = 0.0;
 	int runtime_gold = 0;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
@@ -122,11 +125,33 @@ public:
 	int get_variable(const String &p_name) const;
 	void set_variable(const String &p_name, int p_val);
 	bool has_item(const String &p_name, int p_min_qty = 1) const;
+	int get_item_qty(const String &p_name) const;
+	Dictionary get_runtime_inventory() const { return runtime_inventory.duplicate(true); }
 	void change_item(const String &p_name, int p_amount);
 	int get_gold() const { return runtime_gold; }
 	void set_gold(int p_gold) { runtime_gold = MAX(0, p_gold); }
 	void change_gold(int p_amount) { runtime_gold = MAX(0, runtime_gold + p_amount); }
 	void reset_runtime_state();
+
+	// Estado persistente de actor, combate ARPG, drops y respawn (Tanda 3C-1)
+	static float evaluate_traits_element_rate(const Array &p_traits, int p_element_id, const String &p_element_name = String());
+	static int resolve_traits_attack_element_id(const Array &p_traits, String &r_element_key);
+	int get_actor_arpg_attack_element_id(int p_actor_id, String &r_element_key) const;
+	Dictionary get_actor_runtime_state(int p_actor_id);
+	void set_actor_runtime_hp(int p_actor_id, int p_hp);
+	int get_actor_runtime_hp(int p_actor_id);
+	int get_actor_runtime_max_hp(int p_actor_id);
+	int get_actor_runtime_level(int p_actor_id);
+	int64_t get_actor_runtime_exp(int p_actor_id);
+	Array grant_party_exp(int64_t p_exp_amount);
+	Array resolve_arpg_enemy_drops(const Dictionary &p_enemy_rec);
+
+	void advance_runtime_clock(double p_delta_sec);
+	double get_runtime_clock_sec() const { return runtime_playtime_sec; }
+	void set_runtime_clock_sec(double p_sec) { runtime_playtime_sec = MAX(0.0, p_sec); }
+	void mark_arpg_enemy_defeated(const String &p_map_key, int p_event_id);
+	bool is_arpg_enemy_defeated(const String &p_map_key, int p_event_id) const;
+	Array process_map_respawns(const String &p_map_key, int p_respawn_mode, double p_respawn_minutes, bool p_is_entering_map);
 
 	// Equipo ARPG por actor (Tanda 1C)
 	static Array get_default_arpg_equip_slots();

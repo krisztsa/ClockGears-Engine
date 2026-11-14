@@ -1,5 +1,6 @@
 #include "clockgears_event.h"
 #include "clockgears_animation.h"
+#include "clockgears_debug_panel.h"
 #include "clockgears_map.h"
 #include "core/clockgears_data_manager.h"
 #include "core/config/engine.h"
@@ -122,6 +123,26 @@ void ClockGearsEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_astar_no_path"), &ClockGearsEvent::has_astar_no_path);
 	ClassDB::bind_method(D_METHOD("execute_zone_actions", "actions", "target"), &ClockGearsEvent::execute_zone_actions, DEFVAL(Variant()));
 
+	ClassDB::bind_method(D_METHOD("get_arpg_hp"), &ClockGearsEvent::get_arpg_hp);
+	ClassDB::bind_method(D_METHOD("get_arpg_max_hp"), &ClockGearsEvent::get_arpg_max_hp);
+	ClassDB::bind_method(D_METHOD("get_arpg_atk"), &ClockGearsEvent::get_arpg_atk);
+	ClassDB::bind_method(D_METHOD("get_arpg_def"), &ClockGearsEvent::get_arpg_def);
+	ClassDB::bind_method(D_METHOD("get_arpg_knockback_resist"), &ClockGearsEvent::get_arpg_knockback_resist);
+	ClassDB::bind_method(D_METHOD("set_knockback_duration", "dur"), &ClockGearsEvent::set_knockback_duration);
+	ClassDB::bind_method(D_METHOD("get_knockback_duration"), &ClockGearsEvent::get_knockback_duration);
+	ClassDB::bind_method(D_METHOD("is_arpg_dying"), &ClockGearsEvent::is_arpg_dying);
+	ClassDB::bind_method(D_METHOD("is_arpg_dead"), &ClockGearsEvent::is_arpg_dead);
+	ClassDB::bind_method(D_METHOD("is_arpg_alive"), &ClockGearsEvent::is_arpg_alive);
+	ClassDB::bind_method(D_METHOD("get_arpg_hitstop_remaining"), &ClockGearsEvent::get_arpg_hitstop_remaining);
+	ClassDB::bind_method(D_METHOD("get_arpg_knockback_remaining"), &ClockGearsEvent::get_arpg_knockback_remaining);
+	ClassDB::bind_method(D_METHOD("get_arpg_world_center"), &ClockGearsEvent::get_arpg_world_center);
+	ClassDB::bind_method(D_METHOD("get_arpg_effective_hurtbox"), &ClockGearsEvent::get_arpg_effective_hurtbox);
+	ClassDB::bind_method(D_METHOD("get_arpg_enemy_record"), &ClockGearsEvent::get_arpg_enemy_record);
+	ClassDB::bind_method(D_METHOD("get_arpg_anim_frame"), &ClockGearsEvent::get_arpg_anim_frame);
+	ClassDB::bind_method(D_METHOD("take_arpg_hit", "damage", "knockback_force", "hit_dir", "hitstop_ms", "is_crit"), &ClockGearsEvent::take_arpg_hit, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("sync_arpg_defeated_state"), &ClockGearsEvent::sync_arpg_defeated_state);
+	ClassDB::bind_method(D_METHOD("respawn_arpg_enemy"), &ClockGearsEvent::respawn_arpg_enemy);
+
 	ClassDB::bind_method(D_METHOD("set_pages", "pages"), &ClockGearsEvent::set_pages);
 	ClassDB::bind_method(D_METHOD("get_pages"), &ClockGearsEvent::get_pages);
 
@@ -167,6 +188,8 @@ void ClockGearsEvent::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "condition_actor_name"), "set_condition_actor_name", "get_condition_actor_name");
 
 	ADD_SIGNAL(MethodInfo("event_triggered", PropertyInfo(Variant::OBJECT, "event")));
+	ADD_SIGNAL(MethodInfo("arpg_damaged", PropertyInfo(Variant::INT, "damage"), PropertyInfo(Variant::BOOL, "is_crit")));
+	ADD_SIGNAL(MethodInfo("arpg_defeated"));
 }
 
 void ClockGearsEvent::serialize_to_meta() {
@@ -611,6 +634,9 @@ void ClockGearsEvent::update_active_page() {
 		}
 	}
 	set_commands(ap.get("commands", Array()));
+	if (using_db_behavior && behavior_type == 3) {
+		sync_arpg_defeated_state();
+	}
 	queue_redraw();
 }
 
@@ -804,6 +830,22 @@ void ClockGearsEvent::_apply_behavior_record_config(const Dictionary &p_rec, flo
 	}
 	cached_directional_idle = bool(p_rec.get("directional_idle", false));
 	cached_slot_textures.clear();
+
+	if (behavior_type == 3) {
+		arpg_max_hp = MAX(1, int(p_rec.get("hp", 50)));
+		arpg_atk = MAX(0, int(p_rec.get("atk", 10)));
+		arpg_def = MAX(0, int(p_rec.get("def", 0)));
+		arpg_exp_reward = MAX(0, int(p_rec.get("exp", 0)));
+		arpg_gold_reward = MAX(0, int(p_rec.get("gold", 0)));
+		arpg_knockback_resist = MAX(0.0f, float(p_rec.get("knockback_resist", 0.0)));
+		if (!arpg_stats_initialized || cached_behavior_ref_id != behavior_ref_id) {
+			arpg_hp = arpg_max_hp;
+			arpg_stats_initialized = true;
+			cached_behavior_ref_id = behavior_ref_id;
+		} else {
+			arpg_hp = CLAMP(arpg_hp, 0, arpg_max_hp);
+		}
+	}
 }
 
 void ClockGearsEvent::_clear_runtime_entity_components() {
@@ -841,9 +883,11 @@ void ClockGearsEvent::_sync_runtime_entity_components() {
 			add_child(entity_body);
 		}
 		entity_body->set_position(half_tile);
-		entity_body->set_collision_layer((behavior_type == 3) ? CG_PHYSICS_LAYER_ENEMY : CG_PHYSICS_LAYER_NPC);
+		_apply_entity_body_collision_state();
 		ClockGearsShapeGeometry::populate_collision_object_shapes(entity_body, entity_body_shape_owner, body_shape, Vector2());
 		cached_body_sig = body_sig;
+	} else {
+		_apply_entity_body_collision_state();
 	}
 
 	String zones_sig = JSON::stringify(detection_zones_cfg) + ":" + String::num_int64(ts);
@@ -951,17 +995,35 @@ void ClockGearsEvent::_advance_behavior_animation(float p_delta) {
 	bool freeze_f0 = false;
 	String res_slot;
 	if (!reg->resolve_actor_animation(cached_sprite_data, cached_directional_idle, ev_action_state, direction, resolved_anim, freeze_f0, res_slot)) {
+		if (arpg_dying && ev_action_state == "morir") {
+			arpg_dying = false;
+			arpg_dead = true;
+			set_visible(false);
+			_apply_entity_body_collision_state();
+		}
 		return;
 	}
 	ev_resolved_slot = res_slot;
 	int fcount = resolved_anim.get_frame_count();
 	if (fcount <= 0) {
+		if (arpg_dying && ev_action_state == "morir") {
+			arpg_dying = false;
+			arpg_dead = true;
+			set_visible(false);
+			_apply_entity_body_collision_state();
+		}
 		return;
 	}
 	if (freeze_f0) {
 		ev_anim_frame = 0;
 		ev_anim_timer = 0.0f;
 		_update_behavior_visual_frame();
+		if (arpg_dying && ev_action_state == "morir") {
+			arpg_dying = false;
+			arpg_dead = true;
+			set_visible(false);
+			_apply_entity_body_collision_state();
+		}
 		return;
 	}
 	if (ev_anim_frame >= fcount) {
@@ -977,7 +1039,15 @@ void ClockGearsEvent::_advance_behavior_animation(float p_delta) {
 		ev_anim_timer -= dur;
 		if (ev_anim_frame + 1 < fcount) {
 			ev_anim_frame++;
-		} else if (resolved_anim.loop && ev_action_state != "atacar") {
+		} else if (ev_action_state == "morir" && arpg_dying) {
+			arpg_dying = false;
+			arpg_dead = true;
+			ev_anim_frame = 0;
+			ev_anim_timer = 0.0f;
+			set_visible(false);
+			_apply_entity_body_collision_state();
+			return;
+		} else if (resolved_anim.loop && ev_action_state != "atacar" && ev_action_state != "morir") {
 			ev_anim_frame = 0;
 		} else if (ev_action_state == "atacar") {
 			ev_action_state = "quieto";
@@ -1200,8 +1270,173 @@ Vector2 ClockGearsEvent::_compute_move_toward(ClockGearsMap *p_map, const Vector
 	return direct.normalized();
 }
 
+void ClockGearsEvent::_apply_entity_body_collision_state() {
+	bool disable_col = arpg_dying || arpg_dead || !is_visible();
+	if (entity_body) {
+		entity_body->set_collision_layer(disable_col ? 0 : ((behavior_type == 3) ? CG_PHYSICS_LAYER_ENEMY : CG_PHYSICS_LAYER_NPC));
+		if (entity_body_shape_owner != 0) {
+			entity_body->shape_owner_set_disabled(entity_body_shape_owner, disable_col);
+		}
+	}
+	for (int i = 0; i < zone_nodes.size(); i++) {
+		if (zone_nodes[i]) {
+			zone_nodes[i]->set_monitoring(!disable_col);
+		}
+	}
+}
+
+Vector2 ClockGearsEvent::get_arpg_world_center() const {
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
+	if (sprite && sprite->is_region_enabled()) {
+		Size2 rsz = sprite->get_region_rect().size;
+		if (rsz.x > 0.0f && rsz.y > 0.0f) {
+			return get_position() + sprite->get_position() + rsz * 0.5f;
+		}
+	}
+	return get_position() + Vector2(ts * 0.5f, ts * 0.5f);
+}
+
+Dictionary ClockGearsEvent::get_arpg_effective_hurtbox() const {
+	if (!is_arpg_alive()) {
+		ClockGearsHurtboxData off;
+		off.enabled = false;
+		return off.to_dict();
+	}
+	ClockGearsHurtboxData hb = cached_sprite_data.get_effective_hurtbox(ev_resolved_slot, ev_anim_frame);
+	return hb.to_dict();
+}
+
+void ClockGearsEvent::_grant_arpg_kill_rewards() {
+	if (arpg_rewards_granted) {
+		return;
+	}
+	arpg_rewards_granted = true;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	if (dm) {
+		if (map && event_id > 0) {
+			dm->mark_arpg_enemy_defeated(map->get_respawn_state_key(), event_id);
+		}
+		if (arpg_gold_reward > 0) {
+			dm->change_gold(arpg_gold_reward);
+		}
+		if (arpg_exp_reward > 0) {
+			dm->grant_party_exp(arpg_exp_reward);
+		}
+		dm->resolve_arpg_enemy_drops(cached_db_rec);
+	}
+	emit_signal("arpg_defeated");
+}
+
+void ClockGearsEvent::_begin_arpg_death() {
+	if (arpg_dying || arpg_dead) {
+		return;
+	}
+	arpg_dying = true;
+	saved_body_through_before_death = body_through;
+	body_through = true;
+	ev_attack_timer = 0.0f;
+	wander_has_target = false;
+	astar_path.clear();
+	ev_action_state = "morir";
+	ev_anim_frame = 0;
+	ev_anim_timer = 0.0f;
+	_apply_entity_body_collision_state();
+	_grant_arpg_kill_rewards();
+	_update_behavior_visual_frame();
+}
+
+bool ClockGearsEvent::take_arpg_hit(int p_damage, float p_knockback_force, const Vector2 &p_hit_dir, int p_hitstop_ms, bool p_is_crit) {
+	if (!is_arpg_alive()) {
+		return false;
+	}
+	int dmg = MAX(1, p_damage);
+	arpg_hp = MAX(0, arpg_hp - dmg);
+
+	if (ClockGearsDebugOverlay *dbg = ClockGearsDebugOverlay::get_singleton()) {
+		dbg->push_damage_number(get_arpg_world_center() + Vector2(0.0f, -16.0f), dmg, p_is_crit);
+	}
+	emit_signal("arpg_damaged", dmg, p_is_crit);
+
+	if (p_hitstop_ms > 0) {
+		arpg_hitstop_timer = float(p_hitstop_ms) / 1000.0f;
+	}
+
+	float eff_kb = MAX(0.0f, p_knockback_force - arpg_knockback_resist);
+	if (eff_kb > 0.0f) {
+		Vector2 dir_n = p_hit_dir;
+		if (dir_n.length_squared() < 0.0001f) {
+			dir_n = Vector2(ClockGearsPlayer::direction_to_vector(ClockGearsPlayer::opposite_direction(direction))).normalized();
+		} else {
+			dir_n = dir_n.normalized();
+		}
+		float dur = MAX(0.02f, knockback_duration);
+		arpg_knockback_timer = dur;
+		arpg_knockback_velocity = dir_n * (eff_kb / dur);
+		ev_attack_timer = 0.0f;
+		wander_has_target = false;
+		astar_path.clear();
+		if (arpg_hp > 0) {
+			ev_action_state = "golpeado";
+			ev_anim_frame = 0;
+			ev_anim_timer = 0.0f;
+			_update_behavior_visual_frame();
+		}
+	}
+
+	if (arpg_hp <= 0) {
+		_begin_arpg_death();
+	}
+	return true;
+}
+
+void ClockGearsEvent::sync_arpg_defeated_state() {
+	if (behavior_type != 3 || event_id <= 0) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	if (dm && map && dm->is_arpg_enemy_defeated(map->get_respawn_state_key(), event_id)) {
+		if (!arpg_dead && !arpg_dying) {
+			saved_body_through_before_death = body_through;
+		}
+		arpg_dead = true;
+		arpg_dying = false;
+		body_through = true;
+		arpg_hp = 0;
+		arpg_knockback_timer = 0.0f;
+		arpg_hitstop_timer = 0.0f;
+		set_visible(false);
+		_apply_entity_body_collision_state();
+	}
+}
+
+void ClockGearsEvent::respawn_arpg_enemy() {
+	if (behavior_type != 3) {
+		return;
+	}
+	arpg_dead = false;
+	arpg_dying = false;
+	arpg_rewards_granted = false;
+	body_through = saved_body_through_before_death;
+	arpg_knockback_timer = 0.0f;
+	arpg_hitstop_timer = 0.0f;
+	arpg_hp = MAX(1, arpg_max_hp);
+	if (spawn_origin_set) {
+		set_position(spawn_origin_px);
+		direction = spawn_direction;
+	}
+	ev_action_state = "quieto";
+	ev_anim_frame = 0;
+	ev_anim_timer = 0.0f;
+	set_visible(true);
+	_apply_entity_body_collision_state();
+	_update_behavior_visual_frame();
+}
+
 void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
-	if (p_delta <= 0.0f || !is_visible()) {
+	if (p_delta <= 0.0f || arpg_dead || !is_visible()) {
 		return;
 	}
 	if (!spawn_origin_set) {
@@ -1210,6 +1445,47 @@ void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 
 	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
 	int ts = map ? MAX(16, map->get_grid_resolution()) : 32;
+
+	// Hitstop: solo pausa animación y movimiento si hitstop_ms > 0
+	if (arpg_hitstop_timer > 0.0f) {
+		arpg_hitstop_timer -= p_delta;
+		if (arpg_hitstop_timer > 0.0f) {
+			return;
+		}
+		arpg_hitstop_timer = 0.0f;
+	}
+
+	// Muerte ARPG: terminar animación morir antes de desaparecer
+	if (arpg_dying) {
+		if (arpg_knockback_timer > 0.0f) {
+			float step_dt = MIN(p_delta, arpg_knockback_timer);
+			Vector2 prev_pos = get_position();
+			Vector2 next_pos = ClockGearsEntityNav::move_entity_with_slide(map, body_shape, direction, prev_pos, arpg_knockback_velocity * step_dt, through || body_through, this, ts);
+			set_position(next_pos);
+			arpg_knockback_timer = MAX(0.0f, arpg_knockback_timer - p_delta);
+		}
+		_advance_behavior_animation(p_delta);
+		return;
+	}
+
+	// Empuje por retroceso (respeta colisiones e interrumpe movimiento de IA)
+	if (arpg_knockback_timer > 0.0f) {
+		float step_dt = MIN(p_delta, arpg_knockback_timer);
+		Vector2 prev_pos = get_position();
+		Vector2 next_pos = ClockGearsEntityNav::move_entity_with_slide(map, body_shape, direction, prev_pos, arpg_knockback_velocity * step_dt, through || body_through, this, ts);
+		set_position(next_pos);
+		arpg_knockback_timer -= p_delta;
+		if (arpg_knockback_timer <= 0.0f) {
+			arpg_knockback_timer = 0.0f;
+			if (ev_action_state == "golpeado") {
+				ev_action_state = "quieto";
+				ev_anim_frame = 0;
+				ev_anim_timer = 0.0f;
+			}
+		}
+		_advance_behavior_animation(p_delta);
+		return;
+	}
 
 	// 1. Pausar si el intérprete de eventos está ejecutando este evento
 	ClockGearsEventInterpreter *interp = map ? map->get_runtime_interpreter() : nullptr;

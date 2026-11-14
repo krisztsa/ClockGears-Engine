@@ -79,6 +79,10 @@ private:
 	bool diag_key_blocked_printed = false;
 	bool arpg_block_held = false;
 
+	Ref<ClockGearsAttackSwingTracker> swing_tracker;
+	int64_t current_swing_id = 0;
+	float hitstop_timer = 0.0f;
+
 	Sprite2D *sprite = nullptr;
 	HashMap<String, Sprite2D *> arpg_layer_sprites;
 	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
@@ -96,6 +100,10 @@ private:
 	void _sync_locomotion_state();
 	void _end_temporary_action_to_locomotion();
 	void _advance_slot_animation(float p_delta);
+	void _begin_attack_swing();
+	void _end_attack_swing();
+	void _collect_active_attack_hitboxes(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const;
+	void _process_active_attack_hits();
 	void _update_body_sprite_frame();
 	void _update_sprite_frame();
 	void _refresh_actor_speeds_from_dm();
@@ -116,6 +124,18 @@ protected:
 public:
 	void setup_on_map(ClockGearsMap *p_map, ClockGearsFollowerManager *p_followers = nullptr, ClockGearsEventInterpreter *p_interpreter = nullptr);
 	void load_actor_data(int p_actor_id);
+	int get_actor_id() const { return actor_id; }
+	int get_arpg_hp() const;
+	int get_arpg_max_hp() const;
+	int get_arpg_level() const;
+	int64_t get_arpg_exp() const;
+	float get_arpg_hitstop_remaining() const { return hitstop_timer; }
+	Vector2 get_arpg_world_center() const;
+	void reload_actor_arpg_data() {
+		if (actor_id > 0) {
+			load_actor_data(actor_id);
+		}
+	}
 
 	void set_grid_cell_immediate(const Vector2i &p_cell, int p_dir = 2);
 	Vector2i get_grid_cell() const { return grid_cell; }
@@ -172,6 +192,7 @@ public:
 
 	static void ensure_default_arpg_input_actions();
 	static bool is_arpg_combat_mode();
+	bool is_arpg_active_here() const;
 	bool is_arpg_action_allowed() const;
 	bool should_handle_arpg_input(const Ref<InputEvent> &p_event, String &r_action_out) const;
 

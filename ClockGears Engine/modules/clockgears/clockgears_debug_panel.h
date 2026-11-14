@@ -30,6 +30,17 @@ private:
 	bool show_collisions = false;
 	bool show_grid = false;
 	bool show_bodies_zones = false;
+	bool show_damage_numbers = true;
+
+	struct FloatingDamageEntry {
+		Vector2 world_pos;
+		int amount = 0;
+		bool is_crit = false;
+		float remaining = 0.85f;
+		float max_time = 0.85f;
+	};
+	Vector<FloatingDamageEntry> floating_damages;
+	Array recent_damage_log;
 
 protected:
 	static void _bind_methods();
@@ -49,6 +60,12 @@ public:
 
 	void set_show_bodies_zones(bool p_show);
 	bool is_show_bodies_zones() const { return show_bodies_zones; }
+
+	void set_show_damage_numbers(bool p_show);
+	bool is_show_damage_numbers() const { return show_damage_numbers; }
+	void push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit = false);
+	Array get_recent_damage_numbers() const { return recent_damage_log.duplicate(true); }
+	void clear_damage_numbers();
 
 	ClockGearsDebugWorldCanvas();
 };
@@ -157,6 +174,12 @@ public:
 
 	void set_show_bodies_zones(bool p_show);
 	bool is_show_bodies_zones() const;
+
+	void push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit = false);
+	Array get_recent_damage_numbers() const;
+	void clear_damage_numbers();
+	Dictionary get_player_hp_debug_info() const;
+	String get_player_hp_summary() const;
 
 	ClockGearsDebugWorldCanvas *get_world_canvas() const { return world_canvas; }
 

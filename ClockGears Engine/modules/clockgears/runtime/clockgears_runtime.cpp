@@ -3,6 +3,7 @@
 #include "../clockgears_battle_window.h"
 #include "../clockgears_debug_panel.h"
 #include "../core/clockgears_data_manager.h"
+#include "../core/clockgears_formulas.h"
 #include "../core/clockgears_system_catalog.h"
 #include "core/config/engine.h"
 #include "core/input/input.h"
@@ -169,6 +170,15 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_arpg_equip_layer_info"), &ClockGearsPlayer::get_arpg_equip_layer_info);
 	ClassDB::bind_method(D_METHOD("debug_advance_animation", "delta"), &ClockGearsPlayer::debug_advance_animation);
 	ClassDB::bind_method(D_METHOD("load_actor_data", "actor_id"), &ClockGearsPlayer::load_actor_data);
+	ClassDB::bind_method(D_METHOD("get_actor_id"), &ClockGearsPlayer::get_actor_id);
+	ClassDB::bind_method(D_METHOD("get_arpg_hp"), &ClockGearsPlayer::get_arpg_hp);
+	ClassDB::bind_method(D_METHOD("get_arpg_max_hp"), &ClockGearsPlayer::get_arpg_max_hp);
+	ClassDB::bind_method(D_METHOD("get_arpg_level"), &ClockGearsPlayer::get_arpg_level);
+	ClassDB::bind_method(D_METHOD("get_arpg_exp"), &ClockGearsPlayer::get_arpg_exp);
+	ClassDB::bind_method(D_METHOD("get_arpg_hitstop_remaining"), &ClockGearsPlayer::get_arpg_hitstop_remaining);
+	ClassDB::bind_method(D_METHOD("get_arpg_world_center"), &ClockGearsPlayer::get_arpg_world_center);
+	ClassDB::bind_method(D_METHOD("reload_actor_arpg_data"), &ClockGearsPlayer::reload_actor_arpg_data);
+	ClassDB::bind_method(D_METHOD("is_arpg_active_here"), &ClockGearsPlayer::is_arpg_active_here);
 	ClassDB::bind_method(D_METHOD("setup_on_map", "map", "followers", "interpreter"), &ClockGearsPlayer::setup_on_map, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("set_body_shape", "shape"), &ClockGearsPlayer::set_body_shape);
 	ClassDB::bind_method(D_METHOD("get_body_shape"), &ClockGearsPlayer::get_body_shape);
@@ -228,16 +238,42 @@ Ref<Texture2D> ClockGearsPlayer::_get_cached_slot_texture(const String &p_path) 
 	return tex;
 }
 
+void ClockGearsPlayer::_begin_attack_swing() {
+	if (swing_tracker.is_null()) {
+		swing_tracker.instantiate();
+	}
+	if (current_swing_id > 0) {
+		swing_tracker->end_swing(current_swing_id);
+	}
+	current_swing_id = swing_tracker->start_new_swing();
+}
+
+void ClockGearsPlayer::_end_attack_swing() {
+	if (swing_tracker.is_valid() && current_swing_id > 0) {
+		swing_tracker->end_swing(current_swing_id);
+	}
+	current_swing_id = 0;
+}
+
 void ClockGearsPlayer::set_action_state(const String &p_state_id) {
 	String clean = p_state_id.strip_edges().to_lower();
 	if (clean.is_empty()) {
 		clean = "quieto";
 	}
 	if (action_state_id != clean) {
+		if (action_state_id == "atacar") {
+			_end_attack_swing();
+		}
 		action_state_id = clean;
 		slot_anim_timer = 0.0f;
 		slot_anim_frame_idx = 0;
+		if (clean == "atacar") {
+			_begin_attack_swing();
+		}
 		_update_sprite_frame();
+		if (clean == "atacar") {
+			_process_active_attack_hits();
+		}
 	}
 }
 
@@ -265,6 +301,7 @@ void ClockGearsPlayer::_sync_locomotion_state() {
 }
 
 void ClockGearsPlayer::_end_temporary_action_to_locomotion() {
+	_end_attack_swing();
 	action_state_id = moving_step ? (dashing ? "correr" : "caminar") : "quieto";
 	slot_anim_timer = 0.0f;
 	slot_anim_frame_idx = 0;
@@ -272,6 +309,14 @@ void ClockGearsPlayer::_end_temporary_action_to_locomotion() {
 }
 
 void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
+	if (hitstop_timer > 0.0f) {
+		if (p_delta <= hitstop_timer) {
+			hitstop_timer -= p_delta;
+			return;
+		}
+		p_delta -= hitstop_timer;
+		hitstop_timer = 0.0f;
+	}
 	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
 	if (!reg) {
 		return;
@@ -299,7 +344,7 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 	int cur_idx = CLAMP(slot_anim_frame_idx, 0, total - 1);
 	float target_dur = anim.get_frame_duration(cur_idx);
 	float effective_delta = p_delta;
-	if (is_attack && is_arpg_combat_mode()) {
+	if (is_attack && is_arpg_active_here()) {
 		effective_delta *= (MAX(1.0f, attack_speed_pct) / 100.0f);
 	}
 	slot_anim_timer += effective_delta;
@@ -309,6 +354,10 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 		slot_anim_timer -= target_dur;
 		if (slot_anim_frame_idx + 1 < total) {
 			slot_anim_frame_idx++;
+			if (is_attack) {
+				_update_sprite_frame();
+				_process_active_attack_hits();
+			}
 		} else if (allow_loop) {
 			slot_anim_frame_idx = 0;
 		} else if (is_attack) {
@@ -324,6 +373,186 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 	}
 	if (changed) {
 		_update_sprite_frame();
+	}
+}
+
+void ClockGearsPlayer::_collect_active_attack_hitboxes(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const {
+	r_hitboxes.clear();
+	if (action_state_id != "atacar") {
+		return;
+	}
+	int cur_fi = active_freeze_frame0 ? 0 : MAX(0, slot_anim_frame_idx);
+
+	// 1) Hitbox en el propio slot del actor
+	if (ClockGearsSpriteAnimation::is_attack_slot_name(active_resolved_slot) && actor_sprite_data.animations.has(active_resolved_slot)) {
+		const ClockGearsSpriteAnimation &a = actor_sprite_data.animations[active_resolved_slot];
+		if (cur_fi >= 0 && cur_fi < a.frames_data.size() && !a.frames_data[cur_fi].hitbox.is_empty()) {
+			r_hitboxes.push_back(a.frames_data[cur_fi].hitbox);
+		}
+	}
+
+	// 2) Hitboxes en el arma ARPG equipada (si define animación de ataque con formas)
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!dm || !reg || actor_id <= 0) {
+		return;
+	}
+	Array slots = dm->get_actor_arpg_equip_slots(actor_id);
+	for (int s = 0; s < slots.size(); s++) {
+		if (slots[s].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sd = slots[s];
+		int pid = int(sd.get("piece_id", 0));
+		if (pid <= 0) {
+			continue;
+		}
+		String slot_id = String(sd.get("slot", "")).strip_edges().to_lower();
+		int cat = ClockGearsDataManager::get_category_from_key(String(sd.get("category", "")));
+		if (slot_id != "arma" && cat != CAT_ARPG_WEAPONS && cat != CAT_WEAPONS) {
+			continue;
+		}
+		Dictionary piece = dm->get_record_by_id(cat, pid);
+		if (piece.is_empty()) {
+			continue;
+		}
+		Dictionary sp_dict;
+		if (piece.has("sprite_data") && piece["sprite_data"].get_type() == Variant::DICTIONARY) {
+			sp_dict = Dictionary(piece["sprite_data"]);
+		} else if (piece.has("animations") && piece["animations"].get_type() == Variant::DICTIONARY) {
+			sp_dict["animations"] = Dictionary(piece["animations"]);
+		}
+		if (sp_dict.is_empty()) {
+			continue;
+		}
+		ClockGearsSpriteSheetData p_sheet;
+		p_sheet.from_dict(sp_dict);
+		ClockGearsSpriteAnimation p_anim;
+		bool p_freeze = false;
+		String p_slot;
+		if (reg->resolve_actor_animation(p_sheet, false, "atacar", direction, p_anim, p_freeze, p_slot) && !p_freeze && p_anim.get_frame_count() > 0) {
+			int wfi = CLAMP(cur_fi, 0, p_anim.get_frame_count() - 1);
+			if (wfi < p_anim.frames_data.size() && !p_anim.frames_data[wfi].hitbox.is_empty()) {
+				r_hitboxes.push_back(p_anim.frames_data[wfi].hitbox);
+			}
+		}
+	}
+}
+
+void ClockGearsPlayer::_process_active_attack_hits() {
+	if (action_state_id != "atacar" || !current_map || !is_arpg_active_here()) {
+		return;
+	}
+	if (swing_tracker.is_null() || current_swing_id <= 0) {
+		_begin_attack_swing();
+	}
+	Vector<ClockGearsFrameHitboxData> hitboxes;
+	_collect_active_attack_hitboxes(hitboxes);
+	if (hitboxes.is_empty()) {
+		return;
+	}
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	ClockGearsFormulas *fm = ClockGearsFormulas::get_singleton();
+
+	Dictionary eff_stats = (dm && actor_id > 0) ? dm->get_actor_effective_stats(actor_id) : Dictionary();
+	Dictionary attacker_dict;
+	attacker_dict["atk"] = eff_stats.is_empty() ? 10 : MAX(0, int(eff_stats.get("atk", 10)));
+	attacker_dict["def"] = eff_stats.is_empty() ? 0 : MAX(0, int(eff_stats.get("def", 0)));
+	attacker_dict["mat"] = eff_stats.is_empty() ? 10 : MAX(0, int(eff_stats.get("mat", 10)));
+	attacker_dict["mdf"] = eff_stats.is_empty() ? 10 : MAX(0, int(eff_stats.get("mdf", 10)));
+	attacker_dict["luk"] = eff_stats.is_empty() ? 10 : MAX(0, int(eff_stats.get("luk", 10)));
+
+	String atk_elem_key = "fisico";
+	int atk_elem_id = (dm && actor_id > 0) ? dm->get_actor_arpg_attack_element_id(actor_id, atk_elem_key) : 0;
+
+	Vector2 atk_origin = get_arpg_world_center();
+	Vector<ClockGearsEvent *> events = _cg_get_map_events(current_map);
+
+	for (int ei = 0; ei < events.size(); ei++) {
+		ClockGearsEvent *ev = events[ei];
+		if (!ev || !ev->is_arpg_alive()) {
+			continue;
+		}
+		int64_t tid = int64_t(ev->get_instance_id());
+		if (swing_tracker->has_hit_target(current_swing_id, tid)) {
+			continue;
+		}
+
+		Dictionary hurt_dict = ev->get_arpg_effective_hurtbox();
+		Vector2 target_origin = ev->get_arpg_world_center();
+
+		for (int hi = 0; hi < hitboxes.size(); hi++) {
+			const ClockGearsFrameHitboxData &hb = hitboxes[hi];
+			Array shapes_arr;
+			shapes_arr.resize(hb.shapes.size());
+			for (int si = 0; si < hb.shapes.size(); si++) {
+				shapes_arr[si] = hb.shapes[si].to_dict();
+			}
+			if (!ClockGearsShapeGeometry::check_attack_hits_hurtbox(shapes_arr, atk_origin, direction, hurt_dict, target_origin, ev->get_direction(), 0, 0)) {
+				continue;
+			}
+
+			swing_tracker->register_hit(current_swing_id, tid);
+
+			bool is_crit = false;
+			int64_t base_dmg = 1;
+			Dictionary defender_dict;
+			defender_dict["def"] = ev->get_arpg_def();
+			defender_dict["atk"] = ev->get_arpg_atk();
+
+			if (fm) {
+				double crit_chance = fm->calculate_critical_chance(double(int(attacker_dict["luk"])) * 0.005, 0.0);
+				is_crit = (crit_chance > 0.0) ? (fm->rand_float() <= crit_chance) : false;
+				Dictionary ctx;
+				ctx["is_critical"] = is_crit;
+				ctx["critical_multiplier"] = 2.0;
+				ctx["variance"] = 20.0;
+				base_dmg = fm->calculate_damage("max(a.atk * 4 - b.def * 2, 0)", attacker_dict, defender_dict, ctx);
+			} else {
+				base_dmg = MAX(int64_t(0), int64_t(attacker_dict["atk"]) * 4 - int64_t(ev->get_arpg_def()) * 2);
+			}
+			if (base_dmg <= 0) {
+				base_dmg = 1;
+			}
+
+			float elem_mult = 1.0f;
+			Dictionary en_rec = ev->get_arpg_enemy_record();
+			Variant tr_v = en_rec.get("traits", Array());
+			if (tr_v.get_type() == Variant::ARRAY) {
+				elem_mult = ClockGearsDataManager::evaluate_traits_element_rate(Array(tr_v), atk_elem_id, atk_elem_key);
+			}
+
+			double hurt_mult_pct = MAX(0.0, double(hurt_dict.get("damage_mult_pct", 100.0)));
+			double hb_mult_pct = MAX(0.0, double(hb.damage_mult_pct));
+			double total_dmg = double(base_dmg) * double(elem_mult) * (hb_mult_pct / 100.0) * (hurt_mult_pct / 100.0);
+			int final_dmg = (elem_mult <= 0.0f || hb_mult_pct <= 0.0 || hurt_mult_pct <= 0.0) ? 0 : MAX(1, int(Math::round(total_dmg)));
+
+			Vector2 hit_dir = target_origin - atk_origin;
+			if (hit_dir.length_squared() < 1.0f) {
+				hit_dir = Vector2(direction_to_vector(direction));
+			} else {
+				hit_dir = hit_dir.normalized();
+			}
+
+			ev->take_arpg_hit(final_dmg, hb.knockback, hit_dir, hb.hitstop_ms, is_crit);
+			if (hb.hitstop_ms > 0) {
+				hitstop_timer = MAX(hitstop_timer, float(hb.hitstop_ms) / 1000.0f);
+			}
+
+			String hit_log = vformat("[ARPG] %s -> %s: %d dmg | Elem: %s (x%.2f)%s | HP: %d/%d",
+					actor_name.is_empty() ? String("Jugador") : actor_name,
+					ev->get_event_name(),
+					final_dmg,
+					atk_elem_key,
+					elem_mult,
+					is_crit ? String(" [CRIT]") : String(),
+					ev->get_arpg_hp(),
+					ev->get_arpg_max_hp());
+			print_line(hit_log);
+			ClockGearsDebugOverlay::log_battle(hit_log);
+			break;
+		}
 	}
 }
 
@@ -534,8 +763,41 @@ Vector2 ClockGearsPlayer::move_with_collision(const Vector2 &p_delta) {
 }
 
 void ClockGearsPlayer::debug_advance_animation(float p_delta) {
+	if (action_state_id == "atacar") {
+		_process_active_attack_hits();
+	}
 	_advance_slot_animation(p_delta);
 	refresh_arpg_equip_layers();
+}
+
+int ClockGearsPlayer::get_arpg_hp() const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	return (dm && actor_id > 0) ? dm->get_actor_runtime_hp(actor_id) : 0;
+}
+
+int ClockGearsPlayer::get_arpg_max_hp() const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	return (dm && actor_id > 0) ? dm->get_actor_runtime_max_hp(actor_id) : 1;
+}
+
+int ClockGearsPlayer::get_arpg_level() const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	return (dm && actor_id > 0) ? dm->get_actor_runtime_level(actor_id) : 1;
+}
+
+int64_t ClockGearsPlayer::get_arpg_exp() const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	return (dm && actor_id > 0) ? dm->get_actor_runtime_exp(actor_id) : 0;
+}
+
+Vector2 ClockGearsPlayer::get_arpg_world_center() const {
+	if (sprite && sprite->is_region_enabled()) {
+		Size2 rsz = sprite->get_region_rect().size;
+		if (rsz.x > 0.0f && rsz.y > 0.0f) {
+			return get_position() + sprite->get_position() + rsz * 0.5f;
+		}
+	}
+	return get_position() + Vector2(tile_size * 0.5f, tile_size * 0.5f);
 }
 
 void ClockGearsPlayer::_refresh_actor_speeds_from_dm() {
@@ -576,7 +838,7 @@ void ClockGearsPlayer::refresh_arpg_equip_layers() {
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
-	if (!dm || !reg || !is_arpg_combat_mode() || actor_id <= 0) {
+	if (!dm || !reg || !is_arpg_active_here() || actor_id <= 0) {
 		hide_all_layers();
 		return;
 	}
@@ -1039,6 +1301,15 @@ void ClockGearsPlayer::_notification(int p_what) {
 				action_cooldown -= dt;
 			}
 
+			if (hitstop_timer > 0.0f) {
+				if (dt <= hitstop_timer) {
+					hitstop_timer -= dt;
+					return;
+				}
+				dt -= hitstop_timer;
+				hitstop_timer = 0.0f;
+			}
+
 			if (action_state_id == "bloquear") {
 				if (!arpg_block_held || !is_arpg_action_allowed()) {
 					arpg_block_held = false;
@@ -1052,6 +1323,9 @@ void ClockGearsPlayer::_notification(int p_what) {
 				float act_spd_mult = 1.0f;
 				bool can_move_now = _can_move_during_current_action(act_spd_mult);
 				_advance_slot_animation(dt);
+				if (action_state_id == "atacar") {
+					_process_active_attack_hits();
+				}
 				if (can_move_now) {
 					Vector2 diff = step_target_px - step_exact_px;
 					float dist = diff.length();
@@ -1083,6 +1357,9 @@ void ClockGearsPlayer::_notification(int p_what) {
 			} else {
 				_sync_locomotion_state();
 				_advance_slot_animation(dt);
+				if (action_state_id == "atacar") {
+					_process_active_attack_hits();
+				}
 			}
 
 			if (!moving_step && inp && (!event_interpreter || !event_interpreter->is_blocking_player())) {
@@ -1172,8 +1449,15 @@ bool ClockGearsPlayer::is_arpg_combat_mode() {
 	return int(dm->get_system_config().get("combat_mode", COMBAT_MODE_TURN_BASED)) == COMBAT_MODE_ACTION_RPG;
 }
 
+bool ClockGearsPlayer::is_arpg_active_here() const {
+	if (current_map) {
+		return current_map->is_arpg_effective();
+	}
+	return is_arpg_combat_mode();
+}
+
 bool ClockGearsPlayer::is_arpg_action_allowed() const {
-	if (!is_arpg_combat_mode()) {
+	if (!is_arpg_active_here()) {
 		return false;
 	}
 	if (event_interpreter && event_interpreter->is_blocking_player()) {
@@ -2605,6 +2889,7 @@ void ClockGearsEventInterpreter::_perform_map_transfer(const String &p_map_path,
 		follower_manager->gather_followers(target_cell, p_dir);
 	}
 
+	bool changing_scene = false;
 	if (!p_map_path.is_empty() && current_map && is_inside_tree()) {
 		String path = p_map_path;
 		if (!path.begins_with("res://")) {
@@ -2614,6 +2899,7 @@ void ClockGearsEventInterpreter::_perform_map_transfer(const String &p_map_path,
 			path = "res://maps/" + path.get_file();
 		}
 		if (ResourceLoader::exists(path) && path != current_map->get_scene_file_path()) {
+			changing_scene = true;
 			ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 			if (dm) {
 				Dictionary sys = dm->get_system_config();
@@ -2625,6 +2911,9 @@ void ClockGearsEventInterpreter::_perform_map_transfer(const String &p_map_path,
 			}
 			get_tree()->change_scene_to_file(path);
 		}
+	}
+	if (!changing_scene && current_map) {
+		current_map->apply_enemy_respawns_on_enter();
 	}
 }
 

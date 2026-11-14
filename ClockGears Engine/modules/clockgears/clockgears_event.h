@@ -113,6 +113,29 @@ private:
 	bool was_interpreter_running_me = false;
 	bool paused_by_event = false;
 
+	// Estado de combate ARPG para Enemigos (behavior_type == 3) - Tanda 3C-1
+	bool arpg_stats_initialized = false;
+	int cached_behavior_ref_id = 0;
+	int arpg_hp = 0;
+	int arpg_max_hp = 50;
+	int arpg_atk = 10;
+	int arpg_def = 0;
+	int arpg_exp_reward = 0;
+	int arpg_gold_reward = 0;
+	float arpg_knockback_resist = 0.0f;
+	float knockback_duration = 0.16f;
+	bool arpg_dying = false;
+	bool arpg_dead = false;
+	bool arpg_rewards_granted = false;
+	bool saved_body_through_before_death = false;
+	float arpg_knockback_timer = 0.0f;
+	Vector2 arpg_knockback_velocity;
+	float arpg_hitstop_timer = 0.0f;
+
+	void _begin_arpg_death();
+	void _grant_arpg_kill_rewards();
+	void _apply_entity_body_collision_state();
+
 	void _apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed);
 	void _sync_runtime_entity_components();
 	void _clear_runtime_entity_components();
@@ -220,6 +243,27 @@ public:
 
 	void notify_zone_sight(bool p_in, Node *p_target);
 	void execute_zone_actions(const Array &p_actions, Node *p_target);
+
+	// Combate ARPG (Tanda 3C-1)
+	int get_arpg_hp() const { return arpg_hp; }
+	int get_arpg_max_hp() const { return arpg_max_hp; }
+	int get_arpg_atk() const { return arpg_atk; }
+	int get_arpg_def() const { return arpg_def; }
+	float get_arpg_knockback_resist() const { return arpg_knockback_resist; }
+	void set_knockback_duration(float p_dur) { knockback_duration = MAX(0.02f, p_dur); }
+	float get_knockback_duration() const { return knockback_duration; }
+	bool is_arpg_dying() const { return arpg_dying; }
+	bool is_arpg_dead() const { return arpg_dead; }
+	bool is_arpg_alive() const { return behavior_type == 3 && !arpg_dying && !arpg_dead && is_visible(); }
+	float get_arpg_hitstop_remaining() const { return arpg_hitstop_timer; }
+	float get_arpg_knockback_remaining() const { return arpg_knockback_timer; }
+	Vector2 get_arpg_world_center() const;
+	Dictionary get_arpg_effective_hurtbox() const;
+	Dictionary get_arpg_enemy_record() const { return cached_db_rec; }
+	int get_arpg_anim_frame() const { return ev_anim_frame; }
+	bool take_arpg_hit(int p_damage, float p_knockback_force, const Vector2 &p_hit_dir, int p_hitstop_ms, bool p_is_crit = false);
+	void sync_arpg_defeated_state();
+	void respawn_arpg_enemy();
 
 	int get_active_page_index() const { return active_page_index; }
 	void update_active_page();

@@ -42,8 +42,15 @@ enum ClockGearsThemePreset {
 };
 
 enum ClockGearsCombatMode {
+	COMBAT_MODE_INHERIT = -1,
 	COMBAT_MODE_TURN_BASED = 0,
 	COMBAT_MODE_ACTION_RPG = 1,
+};
+
+enum ClockGearsMapRespawnMode {
+	RESPAWN_ON_REENTER = 0,
+	RESPAWN_NEVER = 1,
+	RESPAWN_AFTER_MINUTES = 2,
 };
 
 enum ClockGearsElement {

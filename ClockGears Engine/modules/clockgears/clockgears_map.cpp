@@ -30,6 +30,18 @@ void ClockGearsMap::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_combat_mode", "mode"), &ClockGearsMap::set_combat_mode);
 	ClassDB::bind_method(D_METHOD("get_combat_mode"), &ClockGearsMap::get_combat_mode);
+	ClassDB::bind_method(D_METHOD("get_effective_combat_mode"), &ClockGearsMap::get_effective_combat_mode);
+	ClassDB::bind_method(D_METHOD("is_arpg_effective"), &ClockGearsMap::is_arpg_effective);
+
+	ClassDB::bind_method(D_METHOD("set_respawn_mode", "mode"), &ClockGearsMap::set_respawn_mode);
+	ClassDB::bind_method(D_METHOD("get_respawn_mode"), &ClockGearsMap::get_respawn_mode);
+	ClassDB::bind_method(D_METHOD("set_respawn_minutes", "minutes"), &ClockGearsMap::set_respawn_minutes);
+	ClassDB::bind_method(D_METHOD("get_respawn_minutes"), &ClockGearsMap::get_respawn_minutes);
+	ClassDB::bind_method(D_METHOD("set_map_state_id", "id"), &ClockGearsMap::set_map_state_id);
+	ClassDB::bind_method(D_METHOD("get_map_state_id"), &ClockGearsMap::get_map_state_id);
+	ClassDB::bind_method(D_METHOD("get_respawn_state_key"), &ClockGearsMap::get_respawn_state_key);
+	ClassDB::bind_method(D_METHOD("apply_enemy_respawns_on_enter"), &ClockGearsMap::apply_enemy_respawns_on_enter);
+	ClassDB::bind_method(D_METHOD("refresh_enemy_respawns"), &ClockGearsMap::refresh_enemy_respawns);
 
 	ClassDB::bind_method(D_METHOD("set_map_name", "name"), &ClockGearsMap::set_map_name);
 	ClassDB::bind_method(D_METHOD("get_map_name"), &ClockGearsMap::get_map_name);
@@ -78,7 +90,10 @@ void ClockGearsMap::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "grid_resolution", PROPERTY_HINT_ENUM, "16x16:16,32x32:32,48x48:48"), "set_grid_resolution", "get_grid_resolution");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "snap_to_grid"), "set_snap_to_grid", "is_snap_to_grid");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "combat_mode", PROPERTY_HINT_ENUM, "Por Turnos:0,Action RPG (Tiempo Real):1"), "set_combat_mode", "get_combat_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "combat_mode", PROPERTY_HINT_ENUM, "Heredar:-1,Por Turnos:0,Action RPG (Tiempo Real):1"), "set_combat_mode", "get_combat_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "respawn_mode", PROPERTY_HINT_ENUM, "Al volver a entrar:0,Nunca:1,Pasados X minutos:2"), "set_respawn_mode", "get_respawn_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "respawn_minutes", PROPERTY_HINT_RANGE, "0,1440,0.5"), "set_respawn_minutes", "get_respawn_minutes");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "map_state_id"), "set_map_state_id", "get_map_state_id");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "map_name"), "set_map_name", "get_map_name");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tileset_id"), "set_tileset_id", "get_tileset_id");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "map_size"), "set_map_size", "get_map_size");
@@ -192,9 +207,83 @@ void ClockGearsMap::_notification(int p_what) {
 				setup_tileset_from_database(tileset_id);
 			}
 			if (p_what == NOTIFICATION_READY && !Engine::get_singleton()->is_editor_hint()) {
+				set_physics_process(true);
 				init_runtime_session();
 			}
 		} break;
+		case NOTIFICATION_PHYSICS_PROCESS: {
+			if (!Engine::get_singleton()->is_editor_hint()) {
+				if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+					dm->advance_runtime_clock(get_physics_process_delta_time());
+				}
+				refresh_enemy_respawns();
+			}
+		} break;
+	}
+}
+
+int ClockGearsMap::get_effective_combat_mode() const {
+	if (combat_mode == COMBAT_MODE_TURN_BASED || combat_mode == COMBAT_MODE_ACTION_RPG) {
+		return combat_mode;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm) {
+		int sys_mode = int(dm->get_system_config().get("combat_mode", COMBAT_MODE_TURN_BASED));
+		if (sys_mode == COMBAT_MODE_ACTION_RPG) {
+			return COMBAT_MODE_ACTION_RPG;
+		}
+	}
+	return COMBAT_MODE_TURN_BASED;
+}
+
+bool ClockGearsMap::is_arpg_effective() const {
+	return get_effective_combat_mode() == COMBAT_MODE_ACTION_RPG;
+}
+
+String ClockGearsMap::get_respawn_state_key() const {
+	if (!map_state_id.strip_edges().is_empty()) {
+		return map_state_id.strip_edges();
+	}
+	String sf = get_scene_file_path();
+	if (!sf.is_empty()) {
+		return sf;
+	}
+	return map_name.is_empty() ? String("Mapa001") : map_name;
+}
+
+void ClockGearsMap::apply_enemy_respawns_on_enter() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	dm->process_map_respawns(get_respawn_state_key(), respawn_mode, respawn_minutes, true);
+	if (events_container) {
+		for (int i = 0; i < events_container->get_child_count(); i++) {
+			ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(events_container->get_child(i));
+			if (ev) {
+				ev->sync_arpg_defeated_state();
+			}
+		}
+	}
+}
+
+void ClockGearsMap::refresh_enemy_respawns() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || respawn_mode != RESPAWN_AFTER_MINUTES) {
+		return;
+	}
+	Array respawned = dm->process_map_respawns(get_respawn_state_key(), respawn_mode, respawn_minutes, false);
+	if (respawned.is_empty() || !events_container) {
+		return;
+	}
+	for (int r = 0; r < respawned.size(); r++) {
+		int target_id = int(respawned[r]);
+		for (int i = 0; i < events_container->get_child_count(); i++) {
+			ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(events_container->get_child(i));
+			if (ev && ev->get_event_id() == target_id) {
+				ev->respawn_arpg_enemy();
+			}
+		}
 	}
 }
 
@@ -1159,6 +1248,9 @@ void ClockGearsMap::init_runtime_session() {
 
 	start_cell.x = CLAMP(start_cell.x, 0, MAX(0, map_width - 1));
 	start_cell.y = CLAMP(start_cell.y, 0, MAX(0, map_height - 1));
+
+	// Aplicar política de reaparición al entrar en el mapa antes de evaluar eventos
+	apply_enemy_respawns_on_enter();
 
 	// Evaluar páginas iniciales de todos los eventos del mapa
 	if (events_container) {

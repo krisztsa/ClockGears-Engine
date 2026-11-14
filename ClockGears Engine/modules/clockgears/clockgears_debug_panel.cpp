@@ -62,6 +62,11 @@ void ClockGearsDebugWorldCanvas::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_grid"), &ClockGearsDebugWorldCanvas::is_show_grid);
 	ClassDB::bind_method(D_METHOD("set_show_bodies_zones", "show"), &ClockGearsDebugWorldCanvas::set_show_bodies_zones);
 	ClassDB::bind_method(D_METHOD("is_show_bodies_zones"), &ClockGearsDebugWorldCanvas::is_show_bodies_zones);
+	ClassDB::bind_method(D_METHOD("set_show_damage_numbers", "show"), &ClockGearsDebugWorldCanvas::set_show_damage_numbers);
+	ClassDB::bind_method(D_METHOD("is_show_damage_numbers"), &ClockGearsDebugWorldCanvas::is_show_damage_numbers);
+	ClassDB::bind_method(D_METHOD("push_damage_number", "world_pos", "amount", "is_crit"), &ClockGearsDebugWorldCanvas::push_damage_number, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_recent_damage_numbers"), &ClockGearsDebugWorldCanvas::get_recent_damage_numbers);
+	ClassDB::bind_method(D_METHOD("clear_damage_numbers"), &ClockGearsDebugWorldCanvas::clear_damage_numbers);
 }
 
 ClockGearsDebugWorldCanvas::ClockGearsDebugWorldCanvas() {
@@ -91,6 +96,37 @@ void ClockGearsDebugWorldCanvas::set_show_grid(bool p_show) {
 
 void ClockGearsDebugWorldCanvas::set_show_bodies_zones(bool p_show) {
 	show_bodies_zones = p_show;
+	queue_redraw();
+}
+
+void ClockGearsDebugWorldCanvas::set_show_damage_numbers(bool p_show) {
+	show_damage_numbers = p_show;
+	queue_redraw();
+}
+
+void ClockGearsDebugWorldCanvas::push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit) {
+	FloatingDamageEntry entry;
+	entry.world_pos = p_world_pos;
+	entry.amount = p_amount;
+	entry.is_crit = p_is_crit;
+	entry.remaining = 0.85f;
+	entry.max_time = 0.85f;
+	floating_damages.push_back(entry);
+
+	Dictionary d;
+	d["pos"] = p_world_pos;
+	d["amount"] = p_amount;
+	d["is_crit"] = p_is_crit;
+	recent_damage_log.push_back(d);
+	if (recent_damage_log.size() > 24) {
+		recent_damage_log.remove_at(0);
+	}
+	queue_redraw();
+}
+
+void ClockGearsDebugWorldCanvas::clear_damage_numbers() {
+	floating_damages.clear();
+	recent_damage_log.clear();
 	queue_redraw();
 }
 
@@ -153,7 +189,18 @@ static void s_draw_hit_shape(CanvasItem *p_ci, const ClockGearsHitShape &p_shape
 
 void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
-		if (show_events || show_collisions || show_grid || show_bodies_zones) {
+		bool need_redraw = (show_events || show_collisions || show_grid || show_bodies_zones);
+		if (!floating_damages.is_empty()) {
+			float dt = get_process_delta_time();
+			for (int i = floating_damages.size() - 1; i >= 0; i--) {
+				floating_damages.write[i].remaining -= dt;
+				if (floating_damages[i].remaining <= 0.0f) {
+					floating_damages.remove_at(i);
+				}
+			}
+			need_redraw = true;
+		}
+		if (need_redraw) {
 			queue_redraw();
 		}
 	} else if (p_what == NOTIFICATION_DRAW) {
@@ -308,6 +355,20 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				}
 			}
 		}
+
+		// 5. Números de daño flotantes recientes (Tanda 3C-1)
+		if (show_damage_numbers && !floating_damages.is_empty() && font.is_valid()) {
+			for (int i = 0; i < floating_damages.size(); i++) {
+				const FloatingDamageEntry &fe = floating_damages[i];
+				float t = 1.0f - CLAMP(fe.remaining / MAX(0.01f, fe.max_time), 0.0f, 1.0f);
+				float alpha = CLAMP(fe.remaining * 2.0f, 0.0f, 1.0f);
+				Vector2 draw_pos = fe.world_pos + Vector2(-8.0f, -t * 18.0f);
+				Color col = fe.is_crit ? Color(1.0f, 0.85f, 0.25f, alpha) : Color(1.0f, 0.35f, 0.35f, alpha);
+				String txt = fe.is_crit ? vformat("%d!", fe.amount) : vformat("%d", fe.amount);
+				draw_string(font, draw_pos + Vector2(1, 1), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0, 0, 0, alpha * 0.85f));
+				draw_string(font, draw_pos, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col);
+			}
+		}
 	}
 }
 
@@ -342,6 +403,11 @@ void ClockGearsDebugOverlay::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("clear_battle_log"), &ClockGearsDebugOverlay::clear_battle_log);
 	ClassDB::bind_method(D_METHOD("setup_overlay", "map", "player", "camera"), &ClockGearsDebugOverlay::setup_overlay, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("get_world_canvas"), &ClockGearsDebugOverlay::get_world_canvas);
+	ClassDB::bind_method(D_METHOD("push_damage_number", "world_pos", "amount", "is_crit"), &ClockGearsDebugOverlay::push_damage_number, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_recent_damage_numbers"), &ClockGearsDebugOverlay::get_recent_damage_numbers);
+	ClassDB::bind_method(D_METHOD("clear_damage_numbers"), &ClockGearsDebugOverlay::clear_damage_numbers);
+	ClassDB::bind_method(D_METHOD("get_player_hp_debug_info"), &ClockGearsDebugOverlay::get_player_hp_debug_info);
+	ClassDB::bind_method(D_METHOD("get_player_hp_summary"), &ClockGearsDebugOverlay::get_player_hp_summary);
 }
 
 bool ClockGearsDebugOverlay::is_playtest_mode() {
@@ -1142,7 +1208,12 @@ void ClockGearsDebugOverlay::_update_hud() {
 			int dir = player ? player->get_direction() : 2;
 			const char *dir_name = (dir == 2) ? "Abajo" : ((dir == 4) ? "Izquierda" : ((dir == 6) ? "Derecha" : "Arriba"));
 			String map_name = map ? map->get_map_name() : "Mapa";
-			lbl_player->set_text(vformat("Jugador: (%d, %d) | Dir: %s | Mapa: %s", cell.x, cell.y, dir_name, map_name));
+			String hp_str = get_player_hp_summary();
+			if (hp_str.is_empty()) {
+				lbl_player->set_text(vformat("Jugador: (%d, %d) | Dir: %s | Mapa: %s", cell.x, cell.y, dir_name, map_name));
+			} else {
+				lbl_player->set_text(vformat("Jugador: (%d, %d) | %s | Dir: %s | Mapa: %s", cell.x, cell.y, hp_str, dir_name, map_name));
+			}
 		}
 	}
 
@@ -1158,6 +1229,45 @@ void ClockGearsDebugOverlay::_update_hud() {
 			lbl_camera->set_text(vformat("Cámara: Zoom %.1fx | Rect: (%.0f, %.0f, %.0f, %.0f)", z, vis_rect.position.x, vis_rect.position.y, vis_rect.size.x, vis_rect.size.y));
 		}
 	}
+}
+
+void ClockGearsDebugOverlay::push_damage_number(const Vector2 &p_world_pos, int p_amount, bool p_is_crit) {
+	if (world_canvas) {
+		world_canvas->push_damage_number(p_world_pos, p_amount, p_is_crit);
+	}
+}
+
+Array ClockGearsDebugOverlay::get_recent_damage_numbers() const {
+	return world_canvas ? world_canvas->get_recent_damage_numbers() : Array();
+}
+
+void ClockGearsDebugOverlay::clear_damage_numbers() {
+	if (world_canvas) {
+		world_canvas->clear_damage_numbers();
+	}
+}
+
+Dictionary ClockGearsDebugOverlay::get_player_hp_debug_info() const {
+	Dictionary out;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	int aid = player ? player->get_actor_id() : 0;
+	if (dm && aid > 0) {
+		Dictionary st = dm->get_actor_runtime_state(aid);
+		out["actor_id"] = aid;
+		out["hp"] = int(st.get("hp", 0));
+		out["max_hp"] = int(st.get("max_hp", 1));
+		out["level"] = int(st.get("level", 1));
+		out["exp"] = int64_t(st.get("exp", 0));
+	}
+	return out;
+}
+
+String ClockGearsDebugOverlay::get_player_hp_summary() const {
+	Dictionary info = get_player_hp_debug_info();
+	if (info.is_empty()) {
+		return String();
+	}
+	return vformat("HP: %d/%d (Nv.%d)", int(info.get("hp", 0)), int(info.get("max_hp", 1)), int(info.get("level", 1)));
 }
 
 void ClockGearsDebugOverlay::_notification(int p_what) {
