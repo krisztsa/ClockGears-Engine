@@ -2,6 +2,7 @@
 
 #include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/templates/hash_map.h"
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/typed_array.h"
@@ -167,6 +168,7 @@ private:
 
 	PackedStringArray elements;
 	PackedStringArray element_keys;
+	HashMap<int, int> legacy_element_id_map;
 	PackedStringArray weapon_types;
 	PackedStringArray armor_types;
 	PackedStringArray equip_slots;
@@ -202,6 +204,8 @@ public:
 	int resolve_element_id(const Variant &p_id_or_name) const;
 	String get_element_name(int p_element_id) const;
 	String get_element_key(int p_element_id) const;
+	int map_legacy_element_id(int p_old_id) const;
+	void migrate_record_elements(Dictionary &r_record) const;
 
 	PackedStringArray get_weapon_types() const { return weapon_types; }
 	void set_weapon_types(const PackedStringArray &p_types) { weapon_types = p_types; }

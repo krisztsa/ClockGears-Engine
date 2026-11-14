@@ -278,51 +278,53 @@ String ClockGearsBattleUnit::resolve_slot_animation_name(const String &p_slot_ty
 		st = "attack";
 	}
 
-	if (st == "idle" || st == "reposo") {
+	if (st == "idle" || st == "inactivo" || st == "reposo") {
 		String cand = get_combat_animation(ANIM_TRIGGER_IDLE, "");
 		String f = _find_anim_key_ci(sprite_data, cand);
+		if (!f.is_empty() && sprite_data.animations[f].get_frame_count() > 0) return f;
+		f = _find_anim_key_ci(sprite_data, "idle");
 		if (!f.is_empty()) return f;
-		f = _find_anim_key_ci(sprite_data, "Idle");
+		f = _find_anim_key_ci(sprite_data, "Inactivo");
 		if (!f.is_empty()) return f;
 		return !cand.is_empty() ? cand : "idle";
 	}
-	if (st == "attack" || st == "ataque") {
+	if (st == "attack" || st == "ataque" || st == "atacar") {
 		String cand = get_combat_animation(ANIM_TRIGGER_ATTACK, "");
 		String f = _find_anim_key_ci(sprite_data, cand);
+		if (!f.is_empty() && sprite_data.animations[f].get_frame_count() > 0) return f;
+		f = _find_anim_key_ci(sprite_data, "attack");
 		if (!f.is_empty()) return f;
 		f = _find_anim_key_ci(sprite_data, "Ataque");
 		if (!f.is_empty()) return f;
-		f = _find_anim_key_ci(sprite_data, "attack");
-		if (!f.is_empty()) return f;
 		return !cand.is_empty() ? cand : "attack";
 	}
-	if (st == "damage" || st == "hurt" || st == String::utf8("daño") || st == "dano") {
+	if (st == "damage" || st == "hurt" || st == String::utf8("daño") || st == "dano" || st == "herido") {
 		String cand = get_combat_animation(ANIM_TRIGGER_DAMAGE, "");
 		String f = _find_anim_key_ci(sprite_data, cand);
+		if (!f.is_empty() && sprite_data.animations[f].get_frame_count() > 0) return f;
+		f = _find_anim_key_ci(sprite_data, "hurt");
 		if (!f.is_empty()) return f;
 		f = _find_anim_key_ci(sprite_data, String::utf8("Daño"));
 		if (!f.is_empty()) return f;
 		f = _find_anim_key_ci(sprite_data, "damage");
 		if (!f.is_empty()) return f;
-		f = _find_anim_key_ci(sprite_data, "hurt");
-		if (!f.is_empty()) return f;
-		return !cand.is_empty() ? cand : "damage";
+		return !cand.is_empty() ? cand : "hurt";
 	}
-	if (st == "death" || st == "muerte") {
+	if (st == "death" || st == "muerte" || st == "morir" || st == "dead") {
 		String cand = get_combat_animation(ANIM_TRIGGER_DEATH, "");
 		String f = _find_anim_key_ci(sprite_data, cand);
+		if (!f.is_empty() && sprite_data.animations[f].get_frame_count() > 0) return f;
+		f = _find_anim_key_ci(sprite_data, "death");
 		if (!f.is_empty()) return f;
 		f = _find_anim_key_ci(sprite_data, "Muerte");
 		if (!f.is_empty()) return f;
-		f = _find_anim_key_ci(sprite_data, "death");
-		if (!f.is_empty()) return f;
 		return !cand.is_empty() ? cand : "death";
 	}
-	if (st == "buff") {
+	if (st == "buff" || st == "apoyo") {
 		String cand = get_combat_animation(ANIM_TRIGGER_SKILL, "");
-		String f = _find_anim_key_ci(sprite_data, "Buff");
+		String f = _find_anim_key_ci(sprite_data, "buff");
 		if (!f.is_empty()) return f;
-		f = _find_anim_key_ci(sprite_data, "buff");
+		f = _find_anim_key_ci(sprite_data, "Buff");
 		if (!f.is_empty()) return f;
 		f = _find_anim_key_ci(sprite_data, cand);
 		if (!f.is_empty()) return f;
@@ -599,6 +601,13 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 				}
 			}
 
+			if (!en_data.is_empty()) {
+				ClockGearsSpriteSheetData::migrate_enemy_record(en_data);
+				if (ClockGearsSystemCatalog::get_singleton()) {
+					ClockGearsSystemCatalog::get_singleton()->migrate_record_elements(en_data);
+				}
+			}
+
 			Ref<ClockGearsBattleUnit> en;
 			en.instantiate();
 			en->set_id(e_id);
@@ -628,12 +637,17 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			en->set_cast_animations(en_data.get("cast_animations", en_data.get("lanzamientos", Array())));
 			en->set_graphic_path(en_data.get("graphic_path", ""));
 			if (en_data.has("sprite_data") && en_data["sprite_data"].get_type() == Variant::DICTIONARY && !Dictionary(en_data["sprite_data"]).is_empty()) {
-				en->set_sprite_data_dict(en_data.get("sprite_data", Dictionary()));
+				Dictionary sp = en_data.get("sprite_data", Dictionary());
+				if (!sp.has("graphic_path") && !en->get_graphic_path().is_empty()) {
+					sp["graphic_path"] = en->get_graphic_path();
+				}
+				en->set_sprite_data_dict(sp);
 			} else if (en_data.has("animations") && en_data["animations"].get_type() == Variant::DICTIONARY && !Dictionary(en_data["animations"]).is_empty()) {
 				Dictionary sp;
 				sp["animations"] = en_data.get("animations", Dictionary());
 				sp["cols"] = int(en_data.get("cols", 4));
 				sp["rows"] = 1;
+				sp["graphic_path"] = en->get_graphic_path();
 				en->set_sprite_data_dict(sp);
 			} else if (en_data.has("battler_frames") || en_data.has("battler_fps")) {
 				// Migración de datos antiguos de Frames Battler / FPS Battler

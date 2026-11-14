@@ -312,36 +312,156 @@ void ClockGearsSystemCatalog::_init_system_defaults() {
 	}
 }
 
+static int _match_canonical_element_index(const String &p_str) {
+	String s = p_str.strip_edges().to_lower();
+	if (s.is_empty()) {
+		return -1;
+	}
+	if (s == "agua" || s == "water" || s == "aqua") {
+		return 0;
+	}
+	if (s == "fuego" || s == "fire" || s == "piro" || s == "llama") {
+		return 1;
+	}
+	if (s == "hielo" || s == "ice" || s == "crio" || s == "escarcha") {
+		return 2;
+	}
+	if (s == "electricidad" || s == "rayo" || s == "trueno" || s == "electro" || s == "relampago" || s == String::utf8("relámpago") || s == "thunder" || s == "lightning") {
+		return 3;
+	}
+	if (s == "viento" || s == "aire" || s == "aero" || s == "wind") {
+		return 4;
+	}
+	if (s == "luz" || s == "sagrado" || s == "santo" || s == "holy" || s == "light") {
+		return 5;
+	}
+	if (s == "oscuridad" || s == "sombra" || s == "tinieblas" || s == "dark" || s == "darkness") {
+		return 6;
+	}
+	if (s == "astral" || s == "cosmos" || s == "arcano" || s == "estelar") {
+		return 7;
+	}
+	if (s == "tierra" || s == "roca" || s == "piedra" || s == "geo" || s == "earth") {
+		return 8;
+	}
+	if (s == "naturaleza" || s == "planta" || s == "flora" || s == "bosque" || s == "hierba" || s == "nature") {
+		return 9;
+	}
+	return -1;
+}
+
+static bool _is_legacy_alias_name(const String &p_name, int p_canonical_idx) {
+	String s = p_name.strip_edges().to_lower();
+	switch (p_canonical_idx) {
+		case 3:
+			return (s == "rayo" || s == "trueno" || s == "relampago" || s == String::utf8("relámpago"));
+		case 5:
+			return (s == "sagrado" || s == "santo");
+		case 6:
+			return (s == "sombra" || s == "tinieblas");
+		case 9:
+			return (s == "planta" || s == "hierba");
+		default:
+			return false;
+	}
+}
+
 void ClockGearsSystemCatalog::reset_to_defaults() {
+	legacy_element_id_map.clear();
 	_init_system_defaults();
 }
 
 void ClockGearsSystemCatalog::set_elements(const PackedStringArray &p_elements) {
-	elements = p_elements;
-	if (elements.is_empty()) {
+	const char *def_keys[] = {
+		"agua", "fuego", "hielo", "electricidad", "viento", "luz", "oscuridad", "astral", "tierra", "naturaleza"
+	};
+	const char *def_names[] = {
+		"Agua", "Fuego", "Hielo", "Electricidad", "Viento", "Luz", "Oscuridad", "Astral", "Tierra", "Naturaleza"
+	};
+
+	if (p_elements.is_empty()) {
 		ensure_default_elements_if_empty();
 		return;
 	}
-	while (element_keys.size() < elements.size()) {
-		int idx = element_keys.size();
-		String k = elements[idx].to_lower().strip_edges().replace(" ", "_");
-		if (k.is_empty()) {
-			k = vformat("elem_%d", idx + 1);
+
+	// Check if p_elements is already aligned with the 10 canonical elements (e.g. user edited a display name)
+	bool already_canonical_order = (p_elements.size() == 10 && element_keys.size() == 10);
+	if (already_canonical_order) {
+		int matched_in_place = 0;
+		bool looks_like_shifted_legacy = false;
+		for (int i = 0; i < 10; i++) {
+			int m = _match_canonical_element_index(p_elements[i]);
+			if (m == i) {
+				matched_in_place++;
+			} else if (m >= 0 && m != i) {
+				// If multiple standard element names sit at wrong indices (e.g. Fuego at index 0), it's legacy order
+				looks_like_shifted_legacy = true;
+			}
 		}
-		element_keys.push_back(k);
+		if (!looks_like_shifted_legacy && matched_in_place >= 7) {
+			element_keys.clear();
+			elements.clear();
+			for (int i = 0; i < 10; i++) {
+				element_keys.push_back(String::utf8(def_keys[i]));
+				String nm = p_elements[i].strip_edges();
+				elements.push_back(nm.is_empty() ? String::utf8(def_names[i]) : nm);
+			}
+			return;
+		}
 	}
+
+	// Migrate legacy element list by name into the 10 fixed internal keys
+	PackedStringArray final_keys;
+	PackedStringArray final_names;
+	Vector<bool> slot_assigned;
+	for (int i = 0; i < 10; i++) {
+		final_keys.push_back(String::utf8(def_keys[i]));
+		final_names.push_back(String::utf8(def_names[i]));
+		slot_assigned.push_back(false);
+	}
+
+	legacy_element_id_map.clear();
+	for (int i = 0; i < p_elements.size(); i++) {
+		String raw_name = p_elements[i].strip_edges();
+		if (raw_name.is_empty()) {
+			continue;
+		}
+		int c_idx = _match_canonical_element_index(raw_name);
+		if (c_idx >= 0) {
+			int old_id_1based = i + 1;
+			legacy_element_id_map[old_id_1based] = c_idx + 1;
+			if (!slot_assigned[c_idx]) {
+				slot_assigned.write[c_idx] = true;
+				if (!_is_legacy_alias_name(raw_name, c_idx)) {
+					final_names.write[c_idx] = raw_name;
+				}
+			}
+		}
+	}
+
+	element_keys = final_keys;
+	elements = final_names;
 }
 
 void ClockGearsSystemCatalog::ensure_default_elements_if_empty() {
-	if (!elements.is_empty()) {
-		while (element_keys.size() < elements.size()) {
-			int idx = element_keys.size();
-			String k = elements[idx].to_lower().strip_edges().replace(" ", "_");
-			if (k.is_empty()) {
-				k = vformat("elem_%d", idx + 1);
+	if (elements.size() == 10 && element_keys.size() == 10) {
+		const char *def_keys[] = {
+			"agua", "fuego", "hielo", "electricidad", "viento", "luz", "oscuridad", "astral", "tierra", "naturaleza"
+		};
+		bool keys_ok = true;
+		for (int i = 0; i < 10; i++) {
+			if (element_keys[i] != String::utf8(def_keys[i])) {
+				keys_ok = false;
+				break;
 			}
-			element_keys.push_back(k);
 		}
+		if (keys_ok) {
+			return;
+		}
+	}
+	if (!elements.is_empty()) {
+		PackedStringArray copy = elements;
+		set_elements(copy);
 		return;
 	}
 	const char *def_keys[] = {
@@ -373,11 +493,14 @@ Array ClockGearsSystemCatalog::get_element_records() const {
 }
 
 void ClockGearsSystemCatalog::sync_elements_from_records(const Array &p_records) {
-	PackedStringArray new_elems;
-	PackedStringArray new_keys;
 	const char *def_keys[] = {
 		"agua", "fuego", "hielo", "electricidad", "viento", "luz", "oscuridad", "astral", "tierra", "naturaleza"
 	};
+	const char *def_names[] = {
+		"Agua", "Fuego", "Hielo", "Electricidad", "Viento", "Luz", "Oscuridad", "Astral", "Tierra", "Naturaleza"
+	};
+
+	Vector<Dictionary> elem_recs;
 	for (int i = 0; i < p_records.size(); i++) {
 		if (p_records[i].get_type() != Variant::DICTIONARY) {
 			continue;
@@ -386,24 +509,81 @@ void ClockGearsSystemCatalog::sync_elements_from_records(const Array &p_records)
 		if (int(d.get("type", 0)) != 0) {
 			continue;
 		}
-		String nm = String(d.get("name", "")).strip_edges();
-		String ky = String(d.get("key", "")).strip_edges();
-		if (ky.is_empty()) {
-			int idx = new_keys.size();
-			ky = (idx < 10) ? String::utf8(def_keys[idx]) : nm.to_lower().replace(" ", "_");
-		}
-		if (nm.is_empty()) {
-			nm = ky.capitalize();
-		}
-		new_keys.push_back(ky);
-		new_elems.push_back(nm);
+		elem_recs.push_back(d);
 	}
-	if (!new_elems.is_empty()) {
-		elements = new_elems;
-		element_keys = new_keys;
-	} else {
+
+	if (elem_recs.is_empty()) {
 		ensure_default_elements_if_empty();
+		return;
 	}
+
+	// Check if records already have all 10 canonical keys in exact order
+	bool has_exact_canonical_keys = (elem_recs.size() == 10);
+	if (has_exact_canonical_keys) {
+		for (int i = 0; i < 10; i++) {
+			String ky = String(elem_recs[i].get("key", "")).strip_edges().to_lower();
+			if (ky != String::utf8(def_keys[i])) {
+				has_exact_canonical_keys = false;
+				break;
+			}
+			// Also verify it wasn't a blind key stamp over legacy order (e.g. key="agua" with name="Fuego")
+			String nm = String(elem_recs[i].get("name", "")).strip_edges();
+			int nm_idx = _match_canonical_element_index(nm);
+			if (nm_idx >= 0 && nm_idx != i) {
+				has_exact_canonical_keys = false;
+				break;
+			}
+		}
+	}
+
+	if (has_exact_canonical_keys) {
+		element_keys.clear();
+		elements.clear();
+		for (int i = 0; i < 10; i++) {
+			element_keys.push_back(String::utf8(def_keys[i]));
+			String nm = String(elem_recs[i].get("name", "")).strip_edges();
+			elements.push_back(nm.is_empty() ? String::utf8(def_names[i]) : nm);
+		}
+		return;
+	}
+
+	// Migrate legacy records by name/key into the 10 fixed internal keys
+	PackedStringArray final_keys;
+	PackedStringArray final_names;
+	Vector<bool> slot_assigned;
+	for (int i = 0; i < 10; i++) {
+		final_keys.push_back(String::utf8(def_keys[i]));
+		final_names.push_back(String::utf8(def_names[i]));
+		slot_assigned.push_back(false);
+	}
+
+	legacy_element_id_map.clear();
+	for (int i = 0; i < elem_recs.size(); i++) {
+		Dictionary d = elem_recs[i];
+		String nm = String(d.get("name", "")).strip_edges();
+		String ky = String(d.get("key", "")).strip_edges().to_lower();
+		int old_id = int(d.get("id", i + 1));
+		if (old_id <= 0) {
+			old_id = i + 1;
+		}
+
+		int c_idx = _match_canonical_element_index(nm);
+		if (c_idx < 0 && !ky.is_empty()) {
+			c_idx = _match_canonical_element_index(ky);
+		}
+		if (c_idx >= 0) {
+			legacy_element_id_map[old_id] = c_idx + 1;
+			if (!slot_assigned[c_idx]) {
+				slot_assigned.write[c_idx] = true;
+				if (!nm.is_empty() && !_is_legacy_alias_name(nm, c_idx)) {
+					final_names.write[c_idx] = nm;
+				}
+			}
+		}
+	}
+
+	element_keys = final_keys;
+	elements = final_names;
 }
 
 int ClockGearsSystemCatalog::resolve_element_id(const Variant &p_id_or_name) const {
@@ -426,7 +606,67 @@ int ClockGearsSystemCatalog::resolve_element_id(const Variant &p_id_or_name) con
 			return i + 1;
 		}
 	}
+	int c_idx = _match_canonical_element_index(s);
+	if (c_idx >= 0 && c_idx < elements.size()) {
+		return c_idx + 1;
+	}
 	return 0;
+}
+
+int ClockGearsSystemCatalog::map_legacy_element_id(int p_old_id) const {
+	if (legacy_element_id_map.has(p_old_id)) {
+		return legacy_element_id_map[p_old_id];
+	}
+	if (p_old_id >= 1 && p_old_id <= elements.size()) {
+		return p_old_id;
+	}
+	return 0;
+}
+
+void ClockGearsSystemCatalog::migrate_record_elements(Dictionary &r_record) const {
+	if (r_record.has("traits") && r_record["traits"].get_type() == Variant::ARRAY) {
+		Array traits = r_record["traits"];
+		bool changed = false;
+		for (int i = 0; i < traits.size(); i++) {
+			if (traits[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary tr = traits[i];
+			int code = int(tr.get("code", 0));
+			if (code == CG_TRAIT_ELEMENT_RATE || code == CG_TRAIT_ATTACK_ELEMENT) {
+				int new_id = 0;
+				String elem_key = String(tr.get("element_key", "")).strip_edges();
+				String elem_name = String(tr.get("element_name", "")).strip_edges();
+				if (!elem_key.is_empty()) {
+					new_id = resolve_element_id(elem_key);
+				}
+				if (new_id <= 0 && !elem_name.is_empty()) {
+					new_id = resolve_element_id(elem_name);
+				}
+				if (new_id <= 0) {
+					int old_id = int(tr.get("data_id", 0));
+					bool already_migrated = bool(tr.get("element_migrated", false));
+					if (!already_migrated && legacy_element_id_map.has(old_id)) {
+						new_id = legacy_element_id_map[old_id];
+					} else if (old_id >= 1 && old_id <= elements.size()) {
+						new_id = old_id;
+					} else if (old_id == 0 && !already_migrated && legacy_element_id_map.has(1)) {
+						new_id = legacy_element_id_map[1];
+					}
+				}
+				if (new_id >= 1 && new_id <= elements.size()) {
+					tr["data_id"] = new_id;
+					tr["element_key"] = get_element_key(new_id);
+					tr["element_migrated"] = true;
+					traits[i] = tr;
+					changed = true;
+				}
+			}
+		}
+		if (changed) {
+			r_record["traits"] = traits;
+		}
+	}
 }
 
 String ClockGearsSystemCatalog::get_element_name(int p_element_id) const {
@@ -461,11 +701,10 @@ void ClockGearsSystemCatalog::from_dict(const Dictionary &p_dict) {
 	if (p_dict.has("element_records") && p_dict["element_records"].get_type() == Variant::ARRAY) {
 		sync_elements_from_records(p_dict["element_records"]);
 	} else if (p_dict.has("elements")) {
-		elements = p_dict["elements"];
 		if (p_dict.has("element_keys")) {
 			element_keys = p_dict["element_keys"];
 		}
-		ensure_default_elements_if_empty();
+		set_elements(p_dict["elements"]);
 	} else {
 		ensure_default_elements_if_empty();
 	}

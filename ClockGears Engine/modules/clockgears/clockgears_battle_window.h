@@ -140,6 +140,8 @@ protected:
 
 public:
 	static Ref<Texture2D> load_texture_with_fallbacks(const String &p_path);
+	static Ref<Texture2D> create_placeholder_marker_texture();
+	static void resolve_enemy_preview_sprite(const Dictionary &p_enemy_dict, Ref<Texture2D> &r_tex, Rect2 &r_src_region, String &r_source);
 	void setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm = "", ClockGearsMessageWindow *p_msg_window = nullptr);
 	void finish_battle_immediate();
 

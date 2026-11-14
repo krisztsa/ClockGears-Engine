@@ -208,10 +208,12 @@ private:
 	FileDialog *troop_bg_file_dialog = nullptr;
 	int troop_bg_selecting_slot = 0; // 1 = Fondo (battleback1), 2 = Suelo (battleback2)
 
-	// Ranuras con nombre para Enemigos ("Lanzamientos" con nombre y elemento opcional)
+	// Ranuras con nombre para Enemigos ("Lanzamientos" con nombre y elemento opcional + "Otras" migradas)
 	VBoxContainer *enemy_casts_box = nullptr;
 	VBoxContainer *enemy_casts_rows_vbox = nullptr;
 	Button *btn_add_enemy_cast = nullptr;
+	VBoxContainer *enemy_others_box = nullptr;
+	VBoxContainer *enemy_others_rows_vbox = nullptr;
 	AcceptDialog *battle_test_dialog = nullptr;
 
 	// Column 3: Graphic Viewer + Traits / Effects sub-panels
@@ -463,8 +465,13 @@ private:
 	void _ensure_enemy_fixed_anim_slots(Dictionary &r_enemy_dict);
 	void _refresh_enemy_casts_ui();
 	void _on_add_enemy_cast_pressed();
+	void _on_rename_enemy_cast_pressed(int p_idx);
 	void _on_remove_enemy_cast_pressed(int p_idx);
 	void _on_enemy_cast_element_changed(int p_sel_idx, int p_idx);
+	void _refresh_enemy_others_ui();
+	void _on_reassign_enemy_other_selected(int p_opt_idx, int p_other_idx);
+	void _on_remove_enemy_other_pressed(int p_other_idx);
+	void _update_current_anim_slot_labels();
 
 	// Callbacks del Editor de Sprites y Animaciones (SpriteFrames Style - Fase 8A)
 	String _get_active_anim_name() const;
@@ -532,6 +539,12 @@ public:
 	void set_remembered_window_size(const Vector2i &p_size);
 	Vector2i get_remembered_window_size() const;
 	Dictionary check_layout_fits_window(const Vector2i &p_window_size) const;
+	Dictionary get_troop_member_preview_info(int p_troop_idx, int p_member_idx) const;
+	Dictionary get_enemy_anim_slot_info(int p_enemy_idx, const String &p_slot_id) const;
+	bool reassign_enemy_other_animation(int p_enemy_idx, const String &p_other_name, const String &p_target_slot);
+	bool remove_enemy_other_animation(int p_enemy_idx, const String &p_other_name);
+	void select_anim_slot(const String &p_slot_id);
+	void remove_anim_frame_at(int p_frame_idx);
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

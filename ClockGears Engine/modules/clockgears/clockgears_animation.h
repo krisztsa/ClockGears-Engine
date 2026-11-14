@@ -154,7 +154,25 @@ struct ClockGearsSpriteAnimation {
 	ClockGearsAnimationFrame get_frame(int p_idx, int p_tex_w = 0, int p_tex_h = 0) const {
 		if (p_idx >= 0 && p_idx < frames_data.size()) {
 			ClockGearsAnimationFrame f = frames_data[p_idx];
-			if (f.sheet_path.is_empty()) f.sheet_path = spritesheet_path;
+			if (f.sheet_path.is_empty()) {
+				f.sheet_path = spritesheet_path;
+			}
+			int eff_cols = cols > 0 ? cols : 4;
+			int eff_rows = rows > 0 ? rows : 1;
+			bool needs_dynamic_region = (f.region.size.x <= 0 || f.region.size.y <= 0);
+			if (!needs_dynamic_region && p_tex_w > 0 && p_tex_h > 0 && f.region.size == Vector2i(32, 32)) {
+				if (p_tex_w != eff_cols * 32 || p_tex_h != eff_rows * 32) {
+					needs_dynamic_region = true;
+				}
+			}
+			if (needs_dynamic_region && p_tex_w > 0 && p_tex_h > 0) {
+				int fn = (p_idx < frames.size()) ? frames[p_idx] : p_idx;
+				int fw = MAX(1, p_tex_w / eff_cols);
+				int fh = MAX(1, p_tex_h / eff_rows);
+				int c = fn % eff_cols;
+				int r = fn / eff_cols;
+				f.region = Rect2i(c * fw, r * fh, fw, fh);
+			}
 			return f;
 		}
 		ClockGearsAnimationFrame f;
@@ -211,7 +229,10 @@ struct ClockGearsSpriteAnimation {
 
 	void from_dict(const Dictionary &p_d) {
 		name = p_d.get("name", name);
-		spritesheet_path = p_d.get("spritesheet_path", spritesheet_path);
+		String sp_in = String(p_d.get("spritesheet_path", "")).strip_edges();
+		if (!sp_in.is_empty()) {
+			spritesheet_path = sp_in;
+		}
 		frame_w = int(p_d.get("frame_w", frame_w > 0 ? frame_w : 32));
 		frame_h = int(p_d.get("frame_h", frame_h > 0 ? frame_h : 32));
 		cols = int(p_d.get("cols", cols > 0 ? cols : 4));
@@ -229,6 +250,9 @@ struct ClockGearsSpriteAnimation {
 				if (arr[i].get_type() == Variant::DICTIONARY) {
 					ClockGearsAnimationFrame f;
 					f.from_dict(Dictionary(arr[i]));
+					if (f.sheet_path.is_empty()) {
+						f.sheet_path = spritesheet_path;
+					}
 					frames_data.push_back(f);
 				}
 			}
@@ -239,6 +263,9 @@ struct ClockGearsSpriteAnimation {
 			if (legacy[i].get_type() == Variant::DICTIONARY) {
 				ClockGearsAnimationFrame f;
 				f.from_dict(Dictionary(legacy[i]));
+				if (f.sheet_path.is_empty()) {
+					f.sheet_path = spritesheet_path;
+				}
 				if (frames_data.size() <= i) {
 					frames_data.push_back(f);
 				}
@@ -317,6 +344,7 @@ struct ClockGearsSpriteSheetData {
 		rows = int(p_d.get("rows", rows));
 		margin = int(p_d.get("margin", margin));
 		spacing = int(p_d.get("spacing", spacing));
+		String default_sheet = String(p_d.get("spritesheet_path", p_d.get("graphic_path", ""))).strip_edges();
 		animations.clear();
 		Dictionary anims = p_d.get("animations", Dictionary());
 		Array keys = anims.keys();
@@ -325,9 +353,203 @@ struct ClockGearsSpriteSheetData {
 			Dictionary ad = anims[k];
 			ClockGearsSpriteAnimation a;
 			a.name = k;
+			a.spritesheet_path = default_sheet;
+			a.frame_w = frame_w;
+			a.frame_h = frame_h;
+			a.cols = cols;
+			a.rows = rows;
 			a.from_dict(ad);
 			animations[k] = a;
 		}
+	}
+
+	static String map_enemy_anim_to_fixed_slot(const String &p_anim_name) {
+		String s = p_anim_name.strip_edges().to_lower();
+		if (s == "idle" || s == "inactivo" || s == "reposo") {
+			return "idle";
+		}
+		if (s == "attack" || s == "atacar" || s == "ataque") {
+			return "attack";
+		}
+		if (s == "hurt" || s == String::utf8("daño") || s == "dano" || s == "damage" || s == "herido") {
+			return "hurt";
+		}
+		if (s == "death" || s == "muerte" || s == "morir" || s == "dead") {
+			return "death";
+		}
+		if (s == "buff" || s == "apoyo") {
+			return "buff";
+		}
+		return "";
+	}
+
+	static String get_enemy_fixed_slot_label(const String &p_slot_id) {
+		String s = p_slot_id.strip_edges().to_lower();
+		if (s == "idle") return "Idle";
+		if (s == "attack") return "Ataque";
+		if (s == "hurt") return String::utf8("Daño");
+		if (s == "death") return "Muerte";
+		if (s == "buff") return "Buff";
+		return p_slot_id;
+	}
+
+	static int get_anim_dict_frame_count(const Dictionary &p_ad) {
+		int c1 = 0;
+		int c2 = 0;
+		if (p_ad.has("frames_data") && p_ad["frames_data"].get_type() == Variant::ARRAY) {
+			c1 = Array(p_ad["frames_data"]).size();
+		}
+		if (p_ad.has("frames") && p_ad["frames"].get_type() == Variant::ARRAY) {
+			c2 = Array(p_ad["frames"]).size();
+		}
+		return MAX(c1, c2);
+	}
+
+	static void migrate_enemy_record(Dictionary &r_enemy_dict) {
+		String main_graphic = String(r_enemy_dict.get("graphic_path", "")).strip_edges();
+		Dictionary sp = r_enemy_dict.get("sprite_data", Dictionary());
+		int sp_fw = int(sp.get("frame_w", r_enemy_dict.get("frame_w", 32)));
+		int sp_fh = int(sp.get("frame_h", r_enemy_dict.get("frame_h", 32)));
+		int sp_cols = int(sp.get("cols", r_enemy_dict.get("battler_frames", 4)));
+		int sp_rows = int(sp.get("rows", 1));
+		if (sp_fw <= 0) sp_fw = 32;
+		if (sp_fh <= 0) sp_fh = 32;
+		if (sp_cols <= 0) sp_cols = 4;
+		if (sp_rows <= 0) sp_rows = 1;
+		sp["frame_w"] = sp_fw;
+		sp["frame_h"] = sp_fh;
+		sp["cols"] = sp_cols;
+		sp["rows"] = sp_rows;
+
+		Array casts = r_enemy_dict.get("cast_animations", Array());
+		Vector<String> cast_names;
+		for (int i = 0; i < casts.size(); i++) {
+			if (casts[i].get_type() == Variant::DICTIONARY) {
+				String cn = String(Dictionary(casts[i]).get("name", "")).strip_edges();
+				if (!cn.is_empty()) {
+					cast_names.push_back(cn);
+				}
+			}
+		}
+
+		Array others = r_enemy_dict.get("other_animations", Array());
+		Dictionary old_anims = sp.get("animations", Dictionary());
+		Dictionary new_anims;
+
+		auto normalize_anim = [&](const Dictionary &p_ad, const String &p_target_name, bool p_def_loop) -> Dictionary {
+			ClockGearsSpriteAnimation a;
+			a.name = p_target_name;
+			a.frame_w = sp_fw;
+			a.frame_h = sp_fh;
+			a.cols = sp_cols;
+			a.rows = sp_rows;
+			a.loop = p_def_loop;
+			String anim_sheet = String(p_ad.get("spritesheet_path", "")).strip_edges();
+			if (anim_sheet.is_empty() && !main_graphic.is_empty() && get_anim_dict_frame_count(p_ad) > 0) {
+				anim_sheet = main_graphic;
+			}
+			a.spritesheet_path = anim_sheet;
+			a.from_dict(p_ad);
+			a.name = p_target_name;
+			if (a.spritesheet_path.is_empty() && !anim_sheet.is_empty()) {
+				a.spritesheet_path = anim_sheet;
+			}
+			for (int fi = 0; fi < a.frames_data.size(); fi++) {
+				if (a.frames_data[fi].sheet_path.is_empty() && !a.spritesheet_path.is_empty()) {
+					a.frames_data.write[fi].sheet_path = a.spritesheet_path;
+				}
+			}
+			return a.to_dict();
+		};
+
+		Array keys = old_anims.keys();
+		for (int i = 0; i < keys.size(); i++) {
+			String k = String(keys[i]);
+			if (old_anims[k].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary ad = old_anims[k];
+			String fixed_slot = map_enemy_anim_to_fixed_slot(k);
+			if (!fixed_slot.is_empty()) {
+				bool def_loop = (fixed_slot == "idle");
+				Dictionary norm = normalize_anim(ad, fixed_slot, def_loop);
+				if (!new_anims.has(fixed_slot)) {
+					new_anims[fixed_slot] = norm;
+				} else {
+					Dictionary existing = new_anims[fixed_slot];
+					int old_cnt = get_anim_dict_frame_count(existing);
+					int new_cnt = get_anim_dict_frame_count(norm);
+					if (new_cnt > old_cnt || (new_cnt == old_cnt && String(existing.get("spritesheet_path", "")).is_empty() && !String(norm.get("spritesheet_path", "")).is_empty())) {
+						new_anims[fixed_slot] = norm;
+					}
+				}
+			} else if (cast_names.has(k)) {
+				new_anims[k] = normalize_anim(ad, k, false);
+			} else {
+				Dictionary norm = normalize_anim(ad, k, bool(ad.get("loop", true)));
+				new_anims[k] = norm;
+				bool found_in_others = false;
+				for (int oi = 0; oi < others.size(); oi++) {
+					String oi_name = (others[oi].get_type() == Variant::DICTIONARY)
+							? String(Dictionary(others[oi]).get("name", "")).strip_edges()
+							: String(others[oi]).strip_edges();
+					if (oi_name == k) {
+						others[oi] = norm;
+						found_in_others = true;
+						break;
+					}
+				}
+				if (!found_in_others) {
+					others.push_back(norm);
+				}
+			}
+		}
+
+		// Ensure any entry in other_animations also exists in new_anims so it can be edited/previewed before reassigning
+		for (int oi = 0; oi < others.size(); oi++) {
+			if (others[oi].get_type() == Variant::DICTIONARY) {
+				Dictionary od = others[oi];
+				String ok = String(od.get("name", "")).strip_edges();
+				if (!ok.is_empty() && !new_anims.has(ok)) {
+					new_anims[ok] = normalize_anim(od, ok, bool(od.get("loop", true)));
+				}
+			}
+		}
+
+		const char *fixed_ids[] = { "idle", "attack", "hurt", "death", "buff" };
+		for (int i = 0; i < 5; i++) {
+			String fid = String::utf8(fixed_ids[i]);
+			if (!new_anims.has(fid)) {
+				ClockGearsSpriteAnimation empty_a;
+				empty_a.name = fid;
+				empty_a.frame_w = sp_fw;
+				empty_a.frame_h = sp_fh;
+				empty_a.cols = sp_cols;
+				empty_a.rows = sp_rows;
+				empty_a.fps = 6.0f;
+				empty_a.loop = (fid == "idle");
+				new_anims[fid] = empty_a.to_dict();
+			}
+		}
+
+		for (int i = 0; i < cast_names.size(); i++) {
+			String cn = cast_names[i];
+			if (!new_anims.has(cn)) {
+				ClockGearsSpriteAnimation empty_c;
+				empty_c.name = cn;
+				empty_c.frame_w = sp_fw;
+				empty_c.frame_h = sp_fh;
+				empty_c.cols = sp_cols;
+				empty_c.rows = sp_rows;
+				empty_c.fps = 6.0f;
+				empty_c.loop = false;
+				new_anims[cn] = empty_c.to_dict();
+			}
+		}
+
+		sp["animations"] = new_anims;
+		r_enemy_dict["sprite_data"] = sp;
+		r_enemy_dict["other_animations"] = others;
 	}
 };
 

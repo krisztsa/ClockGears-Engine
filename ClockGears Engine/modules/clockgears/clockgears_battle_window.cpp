@@ -130,6 +130,141 @@ Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &
 	return Ref<Texture2D>();
 }
 
+Ref<Texture2D> ClockGearsBattleScene::create_placeholder_marker_texture() {
+	const int W = 64;
+	const int H = 64;
+	Ref<Image> img = Image::create_empty(W, H, false, Image::FORMAT_RGBA8);
+	img->fill(Color(0, 0, 0, 0));
+
+	Color sil_fill(0.14f, 0.16f, 0.22f, 0.92f);
+	Color sil_outline(0.45f, 0.52f, 0.68f, 0.95f);
+
+	// Draw silhouette bust (head circle + shoulders arc)
+	Vector2 head_c(32.0f, 20.0f);
+	float head_r = 10.5f;
+	Vector2 body_c(32.0f, 54.0f);
+	float body_rx = 20.0f;
+	float body_ry = 20.0f;
+
+	for (int y = 0; y < H; y++) {
+		for (int x = 0; x < W; x++) {
+			Vector2 p(x + 0.5f, y + 0.5f);
+			float dh = p.distance_to(head_c);
+			float dx = (p.x - body_c.x) / body_rx;
+			float dy = (p.y - body_c.y) / body_ry;
+			float db = Math::sqrt(dx * dx + dy * dy);
+			bool in_head = (dh <= head_r);
+			bool in_body = (p.y >= 31.0f && p.y <= 58.0f && db <= 1.0f);
+			if (in_head || in_body) {
+				bool edge = (in_head && dh >= head_r - 1.5f) || (in_body && (db >= 0.92f || p.y >= 56.5f));
+				img->set_pixel(x, y, edge ? sil_outline : sil_fill);
+			}
+		}
+	}
+
+	// Draw crisp "?" bitmap in the center of the silhouette
+	const char *q_rows[11] = {
+		"  #####  ",
+		" ####### ",
+		"##     ##",
+		"      ## ",
+		"     ##  ",
+		"   ###   ",
+		"   ##    ",
+		"   ##    ",
+		"         ",
+		"   ##    ",
+		"   ##    "
+	};
+	Color q_col(0.95f, 0.82f, 0.35f, 1.0f);
+	int qx0 = 32 - 9;
+	int qy0 = 26;
+	for (int ry = 0; ry < 11; ry++) {
+		for (int rx = 0; rx < 9; rx++) {
+			if (q_rows[ry][rx] == '#') {
+				for (int sy = 0; sy < 2; sy++) {
+					for (int sx = 0; sx < 2; sx++) {
+						int px = qx0 + rx * 2 + sx;
+						int py = qy0 + ry * 2 + sy;
+						if (px >= 0 && px < W && py >= 0 && py < H) {
+							img->set_pixel(px, py, q_col);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return ImageTexture::create_from_image(img);
+}
+
+void ClockGearsBattleScene::resolve_enemy_preview_sprite(const Dictionary &p_enemy_dict, Ref<Texture2D> &r_tex, Rect2 &r_src_region, String &r_source) {
+	r_tex = Ref<Texture2D>();
+	r_src_region = Rect2();
+	r_source = "placeholder";
+
+	Dictionary ed = p_enemy_dict.duplicate(true);
+	ClockGearsSpriteSheetData::migrate_enemy_record(ed);
+
+	String main_graphic = String(ed.get("graphic_path", "")).strip_edges();
+	Dictionary sp_dict = ed.get("sprite_data", Dictionary());
+	if (!main_graphic.is_empty() && !sp_dict.has("graphic_path")) {
+		sp_dict["graphic_path"] = main_graphic;
+	}
+	ClockGearsSpriteSheetData sp_data;
+	sp_data.from_dict(sp_dict);
+
+	// 1. Primer frame de la ranura Idle (si tiene frames y textura válida)
+	const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(sp_data, "idle");
+	if (idle_anim && idle_anim->get_frame_count() > 0) {
+		String sheet_path = idle_anim->spritesheet_path.strip_edges();
+		if (!idle_anim->frames_data.is_empty() && !idle_anim->frames_data[0].sheet_path.strip_edges().is_empty()) {
+			sheet_path = idle_anim->frames_data[0].sheet_path.strip_edges();
+		}
+		if (sheet_path.is_empty()) {
+			sheet_path = main_graphic;
+		}
+		Ref<Texture2D> idle_tex = load_texture_with_fallbacks(sheet_path);
+		if (idle_tex.is_valid() && idle_tex->get_width() > 0 && idle_tex->get_height() > 0) {
+			ClockGearsAnimationFrame f0 = idle_anim->get_frame(0, idle_tex->get_width(), idle_tex->get_height());
+			Rect2 reg(f0.region.position.x, f0.region.position.y, f0.region.size.x, f0.region.size.y);
+			if (reg.size.x <= 0 || reg.size.y <= 0 || reg.position.x >= idle_tex->get_width() || reg.position.y >= idle_tex->get_height()) {
+				int cols = MAX(1, idle_anim->cols > 0 ? idle_anim->cols : (sp_data.cols > 0 ? sp_data.cols : 4));
+				int rows = MAX(1, idle_anim->rows > 0 ? idle_anim->rows : (sp_data.rows > 0 ? sp_data.rows : 1));
+				reg = Rect2(0, 0, MAX(1, idle_tex->get_width() / cols), MAX(1, idle_tex->get_height() / rows));
+			}
+			if (reg.position.x + reg.size.x > idle_tex->get_width()) {
+				reg.size.x = MAX(1.0f, float(idle_tex->get_width()) - reg.position.x);
+			}
+			if (reg.position.y + reg.size.y > idle_tex->get_height()) {
+				reg.size.y = MAX(1.0f, float(idle_tex->get_height()) - reg.position.y);
+			}
+			r_tex = idle_tex;
+			r_src_region = reg;
+			r_source = "idle";
+			return;
+		}
+	}
+
+	// 2. Si no hay Idle con frames, el gráfico principal del enemigo
+	if (!main_graphic.is_empty()) {
+		Ref<Texture2D> main_tex = load_texture_with_fallbacks(main_graphic);
+		if (main_tex.is_valid() && main_tex->get_width() > 0 && main_tex->get_height() > 0) {
+			r_tex = main_tex;
+			r_src_region = Rect2(0, 0, main_tex->get_width(), main_tex->get_height());
+			r_source = "graphic_path";
+			return;
+		}
+	}
+
+	// 3. Si tampoco hay gráfico principal, icono de marcador (silueta con '?'), nunca un cuadrado blanco
+	r_tex = create_placeholder_marker_texture();
+	if (r_tex.is_valid()) {
+		r_src_region = Rect2(0, 0, r_tex->get_width(), r_tex->get_height());
+	}
+	r_source = "placeholder";
+}
+
 void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup_battle", "troop_id", "can_escape", "can_lose", "bgm", "msg_window"), &ClockGearsBattleScene::setup_battle, DEFVAL(""), DEFVAL((ClockGearsMessageWindow *)nullptr));
 	ClassDB::bind_method(D_METHOD("get_controller"), &ClockGearsBattleScene::get_controller);
@@ -895,6 +1030,15 @@ void ClockGearsBattleScene::_refresh_ui() {
 			atlas->set_atlas(base_tex);
 			atlas->set_region(Rect2(r.position.x, r.position.y, r.size.x, r.size.y));
 			trect->set_texture(atlas);
+		} else {
+			Ref<Texture2D> ph_tex = create_placeholder_marker_texture();
+			if (ph_tex.is_valid()) {
+				base_tex = ph_tex;
+				r = Rect2i(0, 0, ph_tex->get_width(), ph_tex->get_height());
+				atlas->set_atlas(base_tex);
+				atlas->set_region(Rect2(r.position.x, r.position.y, r.size.x, r.size.y));
+				trect->set_texture(atlas);
+			}
 		}
 
 		ClockGearsBattlerVisual vis;

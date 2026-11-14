@@ -1,4 +1,5 @@
 #include "clockgears_data_manager.h"
+#include "../clockgears_animation.h"
 #include "clockgears_id_registry.h"
 #include "clockgears_system_catalog.h"
 #include "clockgears_time_manager.h"
@@ -208,10 +209,8 @@ bool ClockGearsDataManager::_read_json_with_backup(const String &p_file_path, Va
 }
 
 void ClockGearsDataManager::_migrate_schema_if_needed(int p_from_version) {
-	if (p_from_version >= CURRENT_SCHEMA_VERSION) {
-		return;
-	}
-	// Garantiza que registros de versiones previas tengan todos los campos esperados con valores por defecto seguros
+	ClockGearsSystemCatalog *cat_sys = ClockGearsSystemCatalog::get_singleton();
+	// Garantiza que registros de versiones previas tengan todos los campos esperados y migra ranuras/elementos
 	for (int cat = 0; cat < CAT_MAX; cat++) {
 		Array &arr = category_data[cat];
 		for (int i = 0; i < arr.size(); i++) {
@@ -219,17 +218,25 @@ void ClockGearsDataManager::_migrate_schema_if_needed(int p_from_version) {
 				continue;
 			}
 			Dictionary rec = arr[i];
-			if (!rec.has("id")) {
-				rec["id"] = i + 1;
+			if (p_from_version < CURRENT_SCHEMA_VERSION) {
+				if (!rec.has("id")) {
+					rec["id"] = i + 1;
+				}
+				if (!rec.has("name")) {
+					rec["name"] = "";
+				}
+				if (!rec.has("desc")) {
+					rec["desc"] = "";
+				}
+				if (!rec.has("traits")) {
+					rec["traits"] = Array();
+				}
 			}
-			if (!rec.has("name")) {
-				rec["name"] = "";
+			if (cat == CAT_ENEMIES) {
+				ClockGearsSpriteSheetData::migrate_enemy_record(rec);
 			}
-			if (!rec.has("desc")) {
-				rec["desc"] = "";
-			}
-			if (!rec.has("traits")) {
-				rec["traits"] = Array();
+			if (cat_sys) {
+				cat_sys->migrate_record_elements(rec);
 			}
 			arr[i] = rec;
 		}
@@ -340,12 +347,48 @@ Array ClockGearsDataManager::get_category_array(int p_category) const {
 void ClockGearsDataManager::set_category_array(int p_category, const Array &p_array) {
 	ERR_FAIL_INDEX(p_category, CAT_MAX);
 	category_data[p_category] = p_array.duplicate(true);
-	if (p_category == CAT_TYPES && ClockGearsSystemCatalog::get_singleton()) {
+	ClockGearsSystemCatalog *cat_sys = ClockGearsSystemCatalog::get_singleton();
+	if (p_category == CAT_TYPES && cat_sys) {
 		if (category_data[CAT_TYPES].is_empty()) {
-			ClockGearsSystemCatalog::get_singleton()->ensure_default_elements_if_empty();
-			category_data[CAT_TYPES] = ClockGearsSystemCatalog::get_singleton()->get_element_records();
+			cat_sys->ensure_default_elements_if_empty();
+			category_data[CAT_TYPES] = cat_sys->get_element_records();
 		} else {
-			ClockGearsSystemCatalog::get_singleton()->sync_elements_from_records(category_data[CAT_TYPES]);
+			cat_sys->sync_elements_from_records(category_data[CAT_TYPES]);
+			Array merged = cat_sys->get_element_records();
+			for (int i = 0; i < category_data[CAT_TYPES].size(); i++) {
+				if (category_data[CAT_TYPES][i].get_type() == Variant::DICTIONARY) {
+					Dictionary d = category_data[CAT_TYPES][i];
+					if (int(d.get("type", 0)) != 0) {
+						merged.push_back(d);
+					}
+				}
+			}
+			category_data[CAT_TYPES] = merged;
+		}
+		// Migrate element traits in already-loaded categories if legacy element map changed
+		for (int cat = 0; cat < CAT_MAX; cat++) {
+			Array &arr = category_data[cat];
+			for (int i = 0; i < arr.size(); i++) {
+				if (arr[i].get_type() == Variant::DICTIONARY) {
+					Dictionary rec = arr[i];
+					cat_sys->migrate_record_elements(rec);
+					arr[i] = rec;
+				}
+			}
+		}
+	} else {
+		Array &arr = category_data[p_category];
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() == Variant::DICTIONARY) {
+				Dictionary rec = arr[i];
+				if (p_category == CAT_ENEMIES) {
+					ClockGearsSpriteSheetData::migrate_enemy_record(rec);
+				}
+				if (cat_sys) {
+					cat_sys->migrate_record_elements(rec);
+				}
+				arr[i] = rec;
+			}
 		}
 	}
 	if (ClockGearsIdRegistry::get_singleton()) {
@@ -390,6 +433,12 @@ int ClockGearsDataManager::create_record(int p_category, const Dictionary &p_ini
 	if (!rec.has("name")) {
 		rec["name"] = "";
 	}
+	if (p_category == CAT_ENEMIES) {
+		ClockGearsSpriteSheetData::migrate_enemy_record(rec);
+	}
+	if (ClockGearsSystemCatalog::get_singleton()) {
+		ClockGearsSystemCatalog::get_singleton()->migrate_record_elements(rec);
+	}
 	category_data[p_category].push_back(rec);
 	dirty = true;
 	emit_signal("data_changed", key, new_id);
@@ -406,6 +455,12 @@ bool ClockGearsDataManager::update_record(int p_category, int p_id, const Dictio
 			if (int(d.get("id", 0)) == p_id) {
 				Dictionary updated = p_record.duplicate(true);
 				updated["id"] = p_id;
+				if (p_category == CAT_ENEMIES) {
+					ClockGearsSpriteSheetData::migrate_enemy_record(updated);
+				}
+				if (ClockGearsSystemCatalog::get_singleton()) {
+					ClockGearsSystemCatalog::get_singleton()->migrate_record_elements(updated);
+				}
 				arr[i] = updated;
 				dirty = true;
 				emit_signal("data_changed", get_category_key(p_category), p_id);

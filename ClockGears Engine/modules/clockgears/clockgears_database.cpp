@@ -178,6 +178,12 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_remembered_window_size", "size"), &ClockGearsDatabaseDialog::set_remembered_window_size);
 	ClassDB::bind_method(D_METHOD("get_remembered_window_size"), &ClockGearsDatabaseDialog::get_remembered_window_size);
 	ClassDB::bind_method(D_METHOD("check_layout_fits_window", "window_size"), &ClockGearsDatabaseDialog::check_layout_fits_window);
+	ClassDB::bind_method(D_METHOD("get_troop_member_preview_info", "troop_idx", "member_idx"), &ClockGearsDatabaseDialog::get_troop_member_preview_info);
+	ClassDB::bind_method(D_METHOD("get_enemy_anim_slot_info", "enemy_idx", "slot_id"), &ClockGearsDatabaseDialog::get_enemy_anim_slot_info);
+	ClassDB::bind_method(D_METHOD("reassign_enemy_other_animation", "enemy_idx", "other_name", "target_slot"), &ClockGearsDatabaseDialog::reassign_enemy_other_animation);
+	ClassDB::bind_method(D_METHOD("remove_enemy_other_animation", "enemy_idx", "other_name"), &ClockGearsDatabaseDialog::remove_enemy_other_animation);
+	ClassDB::bind_method(D_METHOD("select_anim_slot", "slot_id"), &ClockGearsDatabaseDialog::select_anim_slot);
+	ClassDB::bind_method(D_METHOD("remove_anim_frame_at", "frame_idx"), &ClockGearsDatabaseDialog::remove_anim_frame_at);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -360,16 +366,17 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 		d["exp"] = 0;
 		d["gold"] = 0;
 		Dictionary ca;
-		ca["idle"] = "Idle";
-		ca["attack"] = "Ataque";
-		ca["damage"] = "Daño";
-		ca["death"] = "Muerte";
-		ca["buff"] = "Buff";
-		ca["defend"] = "Idle";
+		ca["idle"] = "idle";
+		ca["attack"] = "attack";
+		ca["damage"] = "hurt";
+		ca["death"] = "death";
+		ca["buff"] = "buff";
+		ca["defend"] = "idle";
 		d["combat_animations"] = ca;
 		d["cast_animations"] = Array();
+		d["other_animations"] = Array();
 		ClockGearsSpriteSheetData sp_init;
-		const char *fixed_slots[] = { "Idle", "Ataque", "Daño", "Muerte", "Buff" };
+		const char *fixed_slots[] = { "idle", "attack", "hurt", "death", "buff" };
 		for (size_t fs = 0; fs < 5; fs++) {
 			ClockGearsSpriteAnimation sa;
 			sa.name = String::utf8(fixed_slots[fs]);
@@ -570,6 +577,15 @@ void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 	if (p_category < 0 || p_category >= CAT_MAX) {
 		return;
 	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm) {
+		for (int i = 0; i < CAT_MAX; i++) {
+			Array dm_arr = dm->get_category_array(i);
+			if (!dm_arr.is_empty() || category_data[i].is_empty()) {
+				category_data[i] = dm_arr;
+			}
+		}
+	}
 	current_category = p_category;
 	for (int i = 0; i < category_buttons.size(); i++) {
 		category_buttons[i]->set_pressed_no_signal(i == current_category);
@@ -659,6 +675,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	}
 	if (enemy_casts_box) {
 		enemy_casts_box->set_visible(current_category == CAT_ENEMIES);
+	}
+	if (enemy_others_box) {
+		enemy_others_box->set_visible(current_category == CAT_ENEMIES);
 	}
 	if (combat_anims_box) {
 		combat_anims_box->set_visible(current_category == CAT_ACTORS);
@@ -1432,38 +1451,48 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		}
 		_refresh_troop_members_ui();
 	} else if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
-		Dictionary sp_dict = d.get("sprite_data", Dictionary());
-		if (!sp_dict.is_empty()) {
-			current_sprite_data.from_dict(sp_dict);
-		} else {
-			int old_frames = int(d.get("battler_frames", 1));
-			float old_fps = float(d.get("battler_fps", 8));
-			current_sprite_data = ClockGearsSpriteSheetData();
-			current_sprite_data.cols = MAX(1, old_frames);
-			current_sprite_data.rows = 1;
-			ClockGearsSpriteAnimation idle_anim;
-			idle_anim.name = (current_category == CAT_ENEMIES) ? "Idle" : "idle";
-			idle_anim.spritesheet_path = d.get("graphic_path", "");
-			idle_anim.fps = old_fps > 0 ? old_fps : 6.0f;
-			idle_anim.loop = true;
-			for (int f = 0; f < old_frames; f++) {
-				idle_anim.frames.push_back(f);
-			}
-			current_sprite_data.animations[idle_anim.name] = idle_anim;
-		}
-
 		if (current_category == CAT_ENEMIES) {
+			ClockGearsSpriteSheetData::migrate_enemy_record(d);
+			Dictionary sp_dict = d.get("sprite_data", Dictionary());
+			sp_dict["graphic_path"] = d.get("graphic_path", "");
+			current_sprite_data.from_dict(sp_dict);
 			_ensure_enemy_fixed_anim_slots(d);
 			arr[p_index] = d;
+			if (ClockGearsDataManager::get_singleton()) {
+				ClockGearsDataManager::get_singleton()->set_category_array(CAT_ENEMIES, arr);
+			}
 			_refresh_enemy_casts_ui();
-		} else if (current_sprite_data.animations.is_empty()) {
-			ClockGearsSpriteAnimation idle_anim;
-			idle_anim.name = "idle";
-			idle_anim.spritesheet_path = d.get("graphic_path", "");
-			idle_anim.fps = 6.0f;
-			idle_anim.loop = true;
-			idle_anim.frames.push_back(0);
-			current_sprite_data.animations["idle"] = idle_anim;
+			_refresh_enemy_others_ui();
+		} else {
+			Dictionary sp_dict = d.get("sprite_data", Dictionary());
+			if (!sp_dict.is_empty()) {
+				sp_dict["graphic_path"] = d.get("graphic_path", "");
+				current_sprite_data.from_dict(sp_dict);
+			} else {
+				int old_frames = int(d.get("battler_frames", 1));
+				float old_fps = float(d.get("battler_fps", 8));
+				current_sprite_data = ClockGearsSpriteSheetData();
+				current_sprite_data.cols = MAX(1, old_frames);
+				current_sprite_data.rows = 1;
+				ClockGearsSpriteAnimation idle_anim;
+				idle_anim.name = "idle";
+				idle_anim.spritesheet_path = d.get("graphic_path", "");
+				idle_anim.fps = old_fps > 0 ? old_fps : 6.0f;
+				idle_anim.loop = true;
+				for (int f = 0; f < old_frames; f++) {
+					idle_anim.frames.push_back(f);
+				}
+				current_sprite_data.animations[idle_anim.name] = idle_anim;
+			}
+			if (current_sprite_data.animations.is_empty()) {
+				ClockGearsSpriteAnimation idle_anim;
+				idle_anim.name = "idle";
+				idle_anim.spritesheet_path = d.get("graphic_path", "");
+				idle_anim.fps = 6.0f;
+				idle_anim.loop = true;
+				idle_anim.frames.push_back(0);
+				current_sprite_data.animations["idle"] = idle_anim;
+			}
 		}
 
 		_refresh_anim_track_options();
@@ -1770,12 +1799,12 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
 		Dictionary ca = d.get("combat_animations", Dictionary());
 		if (current_category == CAT_ENEMIES) {
-			ca["idle"] = "Idle";
-			ca["attack"] = "Ataque";
-			ca["damage"] = "Daño";
-			ca["death"] = "Muerte";
-			ca["buff"] = "Buff";
-			ca["defend"] = "Idle";
+			ca["idle"] = "idle";
+			ca["attack"] = "attack";
+			ca["damage"] = "hurt";
+			ca["death"] = "death";
+			ca["buff"] = "buff";
+			ca["defend"] = "idle";
 		} else {
 			if (opt_anim_idle) {
 				ca["idle"] = opt_anim_idle->get_selected() > 0 ? opt_anim_idle->get_item_text(opt_anim_idle->get_selected()) : "";
@@ -4715,6 +4744,23 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	enemy_casts_rows_vbox->add_theme_constant_override("separation", 4);
 	enemy_casts_box->add_child(enemy_casts_rows_vbox);
 
+	enemy_others_box = memnew(VBoxContainer);
+	enemy_others_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	enemy_others_box->add_theme_constant_override("separation", 6);
+	enemy_others_box->hide();
+	sprite_anim_editor_box->add_child(enemy_others_box);
+
+	enemy_others_box->add_child(memnew(HSeparator));
+	Label *lbl_eo_hdr = memnew(Label(CG_DB_TR("Otras (Animaciones migradas para reasignar o borrar):")));
+	lbl_eo_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_eo_hdr->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
+	enemy_others_box->add_child(lbl_eo_hdr);
+
+	enemy_others_rows_vbox = memnew(VBoxContainer);
+	enemy_others_rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	enemy_others_rows_vbox->add_theme_constant_override("separation", 4);
+	enemy_others_box->add_child(enemy_others_rows_vbox);
+
 	// ==========================================
 	// VENTANA: "AÑADIR FRAMES DESDE SPRITESHEET" (Modal estilo Godot)
 	// ==========================================
@@ -5605,57 +5651,50 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw() {
 		}
 		String ename = ed.get("name", vformat("Enemigo %d", eid));
 		int elvl = MAX(1, int(ed.get("level", 1)));
-		String gpath = ed.get("graphic_path", "");
 
-		// Buscar frame 0 de Idle si tiene sprite_data
+		Ref<Texture2D> tex;
 		Rect2 src_reg;
-		bool has_reg = false;
-		Dictionary sp_dict = ed.get("sprite_data", Dictionary());
-		if (!sp_dict.is_empty()) {
-			ClockGearsSpriteSheetData spd;
-			spd.from_dict(sp_dict);
-			String idle_key = spd.animations.has("Idle") ? "Idle" : (spd.animations.has("idle") ? "idle" : "");
-			if (!idle_key.is_empty() && spd.animations[idle_key].get_frame_count() > 0) {
-				ClockGearsAnimationFrame f0 = spd.animations[idle_key].get_frame(0, 0, 0);
-				if (!f0.sheet_path.is_empty()) gpath = f0.sheet_path;
-				if (f0.region.size.x > 0 && f0.region.size.y > 0) {
-					src_reg = Rect2(f0.region);
-					has_reg = true;
-				}
-			}
-		}
+		String sprite_source;
+		ClockGearsBattleScene::resolve_enemy_preview_sprite(ed, tex, src_reg, sprite_source);
 
 		Point2 draw_pos = vp_pos + Point2(mx * scale, my * scale);
 		Size2 spr_sz(96.0f * scale, 96.0f * scale);
-		Rect2 spr_rect(draw_pos - Point2(spr_sz.x * 0.5f, spr_sz.y * 0.5f), spr_sz);
+		Size2 reg_sz = (src_reg.size.x > 0 && src_reg.size.y > 0) ? src_reg.size : (tex.is_valid() ? tex->get_size() : Size2(64, 64));
+		float aspect = (reg_sz.y > 0.0f) ? (reg_sz.x / reg_sz.y) : 1.0f;
+		Size2 fit_sz = spr_sz;
+		if (aspect > 1.0f) {
+			fit_sz.y = spr_sz.x / aspect;
+		} else if (aspect < 1.0f && aspect > 0.001f) {
+			fit_sz.x = spr_sz.y * aspect;
+		}
+		Rect2 draw_spr_rect(draw_pos - fit_sz * 0.5f, fit_sz);
 
-		Ref<Texture2D> tex = _load_texture_from_path(gpath);
 		if (tex.is_valid()) {
-			if (!has_reg && tex->get_width() > tex->get_height() && tex->get_height() > 0 && (tex->get_width() % tex->get_height() == 0)) {
-				src_reg = Rect2(0, 0, tex->get_height(), tex->get_height());
-				has_reg = true;
-			}
-			if (has_reg) {
-				troop_placement_canvas->draw_texture_rect_region(tex, spr_rect, src_reg);
+			if (src_reg.size.x > 0 && src_reg.size.y > 0) {
+				troop_placement_canvas->draw_texture_rect_region(tex, draw_spr_rect, src_reg);
 			} else {
-				troop_placement_canvas->draw_texture_rect(tex, spr_rect, false);
+				troop_placement_canvas->draw_texture_rect(tex, draw_spr_rect, false);
 			}
-		} else {
-			troop_placement_canvas->draw_rect(spr_rect, Color(0.55f, 0.20f, 0.22f, 0.65f), true);
 		}
 
+		Rect2 sel_rect = draw_spr_rect.grow(3.0f);
 		if (i == selected_troop_member_idx) {
-			troop_placement_canvas->draw_rect(spr_rect.grow(2.0f), Color(1.0f, 0.85f, 0.25f, 0.95f), false, 2.0f);
+			troop_placement_canvas->draw_rect(sel_rect, Color(1.0f, 0.85f, 0.25f, 0.95f), false, 2.0f);
 		}
 
-		// Nombre + Nivel debajo del sprite y barra de vida siempre visible
-		String title_str = vformat("#%d %s Nv %d", i + 1, ename, elvl);
+		// Nombre + Nivel debajo del sprite y barra de vida siempre visible, sin pisar el recuadro de selección
+		String title_str = vformat("%s Nv %d", ename, elvl);
+		int font_sz = MAX(9, int(12 * scale));
+		float label_w = MAX(spr_sz.x, 120.0f * scale);
+		float label_x = draw_pos.x - label_w * 0.5f;
+		float text_baseline_y = sel_rect.position.y + sel_rect.size.y + float(font_sz) + 2.0f;
 		if (font.is_valid()) {
-			Point2 txt_pos(spr_rect.position.x, spr_rect.position.y + spr_rect.size.y + 12.0f * scale);
-			troop_placement_canvas->draw_string(font, txt_pos + Point2(1, 1), title_str, HORIZONTAL_ALIGNMENT_CENTER, spr_rect.size.x, MAX(9, int(12 * scale)), Color(0, 0, 0, 0.85f));
-			troop_placement_canvas->draw_string(font, txt_pos, title_str, HORIZONTAL_ALIGNMENT_CENTER, spr_rect.size.x, MAX(9, int(12 * scale)), Color(1.0f, 0.92f, 0.80f));
+			Point2 txt_pos(label_x, text_baseline_y);
+			troop_placement_canvas->draw_string(font, txt_pos + Point2(1, 1), title_str, HORIZONTAL_ALIGNMENT_CENTER, label_w, font_sz, Color(0, 0, 0, 0.85f));
+			troop_placement_canvas->draw_string(font, txt_pos, title_str, HORIZONTAL_ALIGNMENT_CENTER, label_w, font_sz, Color(1.0f, 0.92f, 0.80f));
 		}
-		Rect2 hp_rect(spr_rect.position.x + spr_rect.size.x * 0.1f, spr_rect.position.y + spr_rect.size.y + 16.0f * scale, spr_rect.size.x * 0.8f, MAX(4.0f, 7.0f * scale));
+		float hp_w = spr_sz.x * 0.85f;
+		Rect2 hp_rect(draw_pos.x - hp_w * 0.5f, text_baseline_y + 4.0f, hp_w, MAX(4.0f, 7.0f * scale));
 		troop_placement_canvas->draw_rect(hp_rect, Color(0.15f, 0.05f, 0.05f, 0.9f), true);
 		troop_placement_canvas->draw_rect(hp_rect, Color(0.25f, 0.85f, 0.35f, 0.95f), true);
 	}
@@ -5842,14 +5881,18 @@ void ClockGearsDatabaseDialog::_refresh_enemy_element_rates_ui() {
 	}
 	Array traits = d.get("traits", Array());
 
-	for (int i = 1; i < elems.size(); i++) {
-		int elem_id = i;
+	for (int i = 0; i < elems.size(); i++) {
+		int elem_id = i + 1;
 		String elem_name = elems[i];
+		String elem_key = cat ? cat->get_element_key(elem_id) : elem_name.to_lower();
 		double rate_pct = 100.0;
 		for (int t = 0; t < traits.size(); t++) {
 			if (traits[t].get_type() != Variant::DICTIONARY) continue;
 			Dictionary tr = traits[t];
-			if (int(tr.get("code", 0)) == CG_TRAIT_ELEMENT_RATE && int(tr.get("data_id", -1)) == elem_id) {
+			if (int(tr.get("code", 0)) != CG_TRAIT_ELEMENT_RATE) continue;
+			String tr_key = String(tr.get("element_key", "")).strip_edges().to_lower();
+			int tr_id = int(tr.get("data_id", -1));
+			if ((!tr_key.is_empty() && tr_key == elem_key.to_lower()) || tr_id == elem_id) {
 				rate_pct = double(tr.get("value", 100.0));
 				break;
 			}
@@ -5940,11 +5983,15 @@ void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, d
 
 	Dictionary d = category_data[CAT_ENEMIES][rec_idx];
 	Array traits = d.get("traits", Array());
+	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
+	String elem_key = cat ? cat->get_element_key(p_elem_id) : "";
 	int found_idx = -1;
 	for (int i = 0; i < traits.size(); i++) {
 		if (traits[i].get_type() != Variant::DICTIONARY) continue;
 		Dictionary tr = traits[i];
-		if (int(tr.get("code", 0)) == CG_TRAIT_ELEMENT_RATE && int(tr.get("data_id", -1)) == p_elem_id) {
+		if (int(tr.get("code", 0)) != CG_TRAIT_ELEMENT_RATE) continue;
+		String tr_key = String(tr.get("element_key", "")).strip_edges().to_lower();
+		if ((!tr_key.is_empty() && tr_key == elem_key.to_lower()) || int(tr.get("data_id", -1)) == p_elem_id) {
 			found_idx = i;
 			break;
 		}
@@ -5958,6 +6005,8 @@ void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, d
 		Dictionary tr;
 		tr["code"] = int(CG_TRAIT_ELEMENT_RATE);
 		tr["data_id"] = p_elem_id;
+		tr["element_key"] = elem_key;
+		tr["element_migrated"] = true;
 		tr["value"] = p_rate_pct;
 		if (found_idx >= 0) {
 			traits[found_idx] = tr;
@@ -5973,42 +6022,25 @@ void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, d
 }
 
 void ClockGearsDatabaseDialog::_ensure_enemy_fixed_anim_slots(Dictionary &r_enemy_dict) {
-	String gpath = r_enemy_dict.get("graphic_path", "");
-	// Migrar "idle" minúscula a "Idle" si existía
-	if (current_sprite_data.animations.has("idle") && !current_sprite_data.animations.has("Idle")) {
-		ClockGearsSpriteAnimation old_idle = current_sprite_data.animations["idle"];
-		old_idle.name = "Idle";
-		current_sprite_data.animations.erase("idle");
-		current_sprite_data.animations["Idle"] = old_idle;
-	}
-	const char *fixed_names[] = { "Idle", "Ataque", "Daño", "Muerte", "Buff" };
-	for (size_t i = 0; i < 5; i++) {
-		String sname = String::utf8(fixed_names[i]);
-		if (!current_sprite_data.animations.has(sname)) {
-			ClockGearsSpriteAnimation sa;
-			sa.name = sname;
-			sa.spritesheet_path = gpath;
-			sa.fps = 6.0f;
-			sa.loop = (i == 0);
-			current_sprite_data.animations[sname] = sa;
-		}
-	}
-	// Asegurar que cada entrada en cast_animations tenga también su ranura en current_sprite_data.animations
-	Array casts = r_enemy_dict.get("cast_animations", Array());
-	for (int i = 0; i < casts.size(); i++) {
-		if (casts[i].get_type() != Variant::DICTIONARY) continue;
-		Dictionary cd = casts[i];
-		String cname = String(cd.get("name", "")).strip_edges();
-		if (!cname.is_empty() && !current_sprite_data.animations.has(cname)) {
-			ClockGearsSpriteAnimation sa;
-			sa.name = cname;
-			sa.spritesheet_path = gpath;
-			sa.fps = 6.0f;
-			sa.loop = false;
-			current_sprite_data.animations[cname] = sa;
-		}
-	}
 	r_enemy_dict["sprite_data"] = current_sprite_data.to_dict();
+	ClockGearsSpriteSheetData::migrate_enemy_record(r_enemy_dict);
+	current_sprite_data.from_dict(r_enemy_dict.get("sprite_data", Dictionary()));
+}
+
+static String s_format_enemy_slot_display_label(const String &p_key, const String &p_base_label, const ClockGearsSpriteSheetData &p_sprite_data) {
+	int fc = 0;
+	if (p_sprite_data.animations.has(p_key)) {
+		fc = p_sprite_data.animations[p_key].get_frame_count();
+	}
+	if (fc > 0) {
+		return vformat(String::utf8("%s (%d %s)"), p_base_label, fc, fc == 1 ? "frame" : "frames");
+	}
+	return vformat(String::utf8("%s (vacía)"), p_base_label);
+}
+
+static bool s_is_enemy_fixed_slot_name(const String &p_name) {
+	String low = p_name.strip_edges().to_lower();
+	return (low == "idle" || low == "attack" || low == "hurt" || low == "death" || low == "buff");
 }
 
 void ClockGearsDatabaseDialog::_refresh_enemy_casts_ui() {
@@ -6037,34 +6069,180 @@ void ClockGearsDatabaseDialog::_refresh_enemy_casts_ui() {
 		row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		row->add_theme_constant_override("separation", 4);
 
-		Button *btn_edit_slot = memnew(Button(cname));
+		String btn_label = s_format_enemy_slot_display_label(cname, cname, current_sprite_data);
+		Button *btn_edit_slot = memnew(Button(btn_label));
 		btn_edit_slot->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		btn_edit_slot->set_tooltip_text(CG_DB_TR("Clic para editar los frames de esta ranura de Lanzamiento"));
-		btn_edit_slot->connect("pressed", callable_mp_static(+[](ClockGearsDatabaseDialog *p_self, String p_slot_name) {
-			if (p_self && p_self->anim_track_opt) {
-				for (int k = 0; k < p_self->anim_track_opt->get_item_count(); k++) {
-					if (p_self->anim_track_opt->get_item_text(k) == p_slot_name) {
-						p_self->anim_track_opt->select(k);
-						p_self->_on_anim_track_selected(k);
-						break;
-					}
-				}
-			}
-		}).bind(this, cname));
+		btn_edit_slot->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::select_anim_slot).bind(cname));
 		row->add_child(btn_edit_slot);
 
 		OptionButton *opt_el = memnew(OptionButton);
 		opt_el->set_custom_minimum_size(Size2(110 * EDSCALE, 0));
-		_populate_catalog_option(opt_el, elems);
-		_select_option_by_id_or_index(opt_el, celem);
+		opt_el->add_item(CG_DB_TR("(Ninguno)"), 0);
+		for (int e = 0; e < elems.size(); e++) {
+			opt_el->add_item(elems[e], e + 1);
+		}
+		int idx_to_sel = opt_el->get_item_index(celem);
+		opt_el->select(idx_to_sel >= 0 ? idx_to_sel : 0);
 		opt_el->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_enemy_cast_element_changed).bind(i));
 		row->add_child(opt_el);
 
+		Button *btn_ren = memnew(Button(String::utf8("✏")));
+		btn_ren->set_tooltip_text(CG_DB_TR("Renombrar este lanzamiento"));
+		btn_ren->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_rename_enemy_cast_pressed).bind(i));
+		row->add_child(btn_ren);
+
 		Button *btn_del = memnew(Button("-"));
+		btn_del->set_tooltip_text(CG_DB_TR("Eliminar este lanzamiento"));
 		btn_del->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_enemy_cast_pressed).bind(i));
 		row->add_child(btn_del);
 
 		enemy_casts_rows_vbox->add_child(row);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_rename_enemy_cast_pressed(int p_idx) {
+	if (current_category != CAT_ENEMIES) return;
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_ENEMIES].size()) return;
+	Dictionary d = category_data[CAT_ENEMIES][sel[0]];
+	Array casts = d.get("cast_animations", Array());
+	if (p_idx < 0 || p_idx >= casts.size() || casts[p_idx].get_type() != Variant::DICTIONARY) return;
+	Dictionary cd = casts[p_idx];
+	String cname = cd.get("name", "");
+	if (cname.is_empty()) return;
+	if (rename_anim_dialog && rename_anim_name_edit) {
+		rename_anim_name_edit->set_text(cname);
+		rename_anim_name_edit->set_meta("old_anim_name", cname);
+		rename_anim_dialog->popup_centered();
+		rename_anim_name_edit->grab_focus();
+		rename_anim_name_edit->select_all();
+	}
+}
+
+void ClockGearsDatabaseDialog::_refresh_enemy_others_ui() {
+	if (!enemy_others_rows_vbox) return;
+	while (enemy_others_rows_vbox->get_child_count() > 0) {
+		Node *c = enemy_others_rows_vbox->get_child(0);
+		enemy_others_rows_vbox->remove_child(c);
+		memdelete(c);
+	}
+	if (current_category != CAT_ENEMIES) {
+		if (enemy_others_box) enemy_others_box->set_visible(false);
+		return;
+	}
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_ENEMIES].size()) {
+		if (enemy_others_box) enemy_others_box->set_visible(false);
+		return;
+	}
+
+	Dictionary d = category_data[CAT_ENEMIES][sel[0]];
+	Array others = d.get("other_animations", Array());
+	Array casts = d.get("cast_animations", Array());
+	if (enemy_others_box) {
+		enemy_others_box->set_visible(!others.is_empty());
+	}
+	if (others.is_empty()) return;
+
+	for (int i = 0; i < others.size(); i++) {
+		String oname;
+		if (others[i].get_type() == Variant::DICTIONARY) {
+			oname = String(Dictionary(others[i]).get("name", "")).strip_edges();
+		} else {
+			oname = String(others[i]).strip_edges();
+		}
+		if (oname.is_empty()) continue;
+
+		HBoxContainer *row = memnew(HBoxContainer);
+		row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		row->add_theme_constant_override("separation", 4);
+
+		String btn_label = s_format_enemy_slot_display_label(oname, oname, current_sprite_data);
+		Button *btn_sel = memnew(Button(btn_label));
+		btn_sel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		btn_sel->set_tooltip_text(CG_DB_TR("Clic para ver los frames de esta animación migrada"));
+		btn_sel->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::select_anim_slot).bind(oname));
+		row->add_child(btn_sel);
+
+		OptionButton *opt_reassign = memnew(OptionButton);
+		opt_reassign->set_custom_minimum_size(Size2(140 * EDSCALE, 0));
+		opt_reassign->add_item(CG_DB_TR("Reasignar a..."), 0);
+		opt_reassign->set_item_metadata(0, "");
+		const char *fixed_ids[] = { "idle", "attack", "hurt", "death", "buff" };
+		for (int f = 0; f < 5; f++) {
+			String fid = fixed_ids[f];
+			opt_reassign->add_item(ClockGearsSpriteSheetData::get_enemy_fixed_slot_label(fid), f + 1);
+			opt_reassign->set_item_metadata(f + 1, fid);
+		}
+		int next_idx = 6;
+		opt_reassign->add_item(CG_DB_TR("+ Como Lanzamiento"), next_idx);
+		opt_reassign->set_item_metadata(next_idx, "__new_cast__");
+		next_idx++;
+		for (int c = 0; c < casts.size(); c++) {
+			if (casts[c].get_type() != Variant::DICTIONARY) continue;
+			String cname = String(Dictionary(casts[c]).get("name", "")).strip_edges();
+			if (!cname.is_empty()) {
+				opt_reassign->add_item(vformat("Lanzamiento: %s", cname), next_idx);
+				opt_reassign->set_item_metadata(next_idx, cname);
+				next_idx++;
+			}
+		}
+		opt_reassign->select(0);
+		opt_reassign->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_reassign_enemy_other_selected).bind(i));
+		row->add_child(opt_reassign);
+
+		Button *btn_del = memnew(Button("-"));
+		btn_del->set_tooltip_text(CG_DB_TR("Borrar esta animación de 'Otras'"));
+		btn_del->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_enemy_other_pressed).bind(i));
+		row->add_child(btn_del);
+
+		enemy_others_rows_vbox->add_child(row);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_reassign_enemy_other_selected(int p_opt_idx, int p_other_idx) {
+	if (updating_ui || current_category != CAT_ENEMIES || p_opt_idx <= 0) return;
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_ENEMIES].size()) return;
+	Dictionary d = category_data[CAT_ENEMIES][sel[0]];
+	Array others = d.get("other_animations", Array());
+	if (p_other_idx < 0 || p_other_idx >= others.size()) return;
+	String oname = (others[p_other_idx].get_type() == Variant::DICTIONARY)
+			? String(Dictionary(others[p_other_idx]).get("name", "")).strip_edges()
+			: String(others[p_other_idx]).strip_edges();
+	if (oname.is_empty()) return;
+
+	String target_slot;
+	if (p_opt_idx >= 1 && p_opt_idx <= 5) {
+		const char *fixed_ids[] = { "idle", "attack", "hurt", "death", "buff" };
+		target_slot = fixed_ids[p_opt_idx - 1];
+	} else if (p_opt_idx == 6) {
+		target_slot = oname; // Convertir en Lanzamiento con su propio nombre
+	} else {
+		Array casts = d.get("cast_animations", Array());
+		int c_idx = p_opt_idx - 7;
+		if (c_idx >= 0 && c_idx < casts.size() && casts[c_idx].get_type() == Variant::DICTIONARY) {
+			target_slot = String(Dictionary(casts[c_idx]).get("name", "")).strip_edges();
+		}
+	}
+	if (!target_slot.is_empty()) {
+		reassign_enemy_other_animation(sel[0], oname, target_slot);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_remove_enemy_other_pressed(int p_other_idx) {
+	if (current_category != CAT_ENEMIES) return;
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_ENEMIES].size()) return;
+	Dictionary d = category_data[CAT_ENEMIES][sel[0]];
+	Array others = d.get("other_animations", Array());
+	if (p_other_idx < 0 || p_other_idx >= others.size()) return;
+	String oname = (others[p_other_idx].get_type() == Variant::DICTIONARY)
+			? String(Dictionary(others[p_other_idx]).get("name", "")).strip_edges()
+			: String(others[p_other_idx]).strip_edges();
+	if (!oname.is_empty()) {
+		remove_enemy_other_animation(sel[0], oname);
 	}
 }
 
@@ -6091,7 +6269,7 @@ void ClockGearsDatabaseDialog::_on_remove_enemy_cast_pressed(int p_idx) {
 		Dictionary cd = casts[p_idx];
 		String cname = cd.get("name", "");
 		casts.remove_at(p_idx);
-		if (!cname.is_empty() && current_sprite_data.animations.has(cname)) {
+		if (!cname.is_empty() && current_sprite_data.animations.has(cname) && !s_is_enemy_fixed_slot_name(cname)) {
 			current_sprite_data.animations.erase(cname);
 		}
 		d["cast_animations"] = casts;
@@ -6116,7 +6294,8 @@ void ClockGearsDatabaseDialog::_on_enemy_cast_element_changed(int p_sel_idx, int
 		cd["element_id"] = p_sel_idx;
 		ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
 		PackedStringArray elems = cat ? cat->get_elements() : PackedStringArray();
-		cd["element"] = (p_sel_idx > 0 && p_sel_idx < elems.size()) ? elems[p_sel_idx] : "";
+		cd["element"] = (p_sel_idx >= 1 && p_sel_idx <= elems.size()) ? elems[p_sel_idx - 1] : "";
+		cd["element_key"] = (cat && p_sel_idx >= 1) ? cat->get_element_key(p_sel_idx) : "";
 		casts[p_idx] = cd;
 		d["cast_animations"] = casts;
 		category_data[CAT_ENEMIES][rec_idx] = d;
@@ -6125,24 +6304,49 @@ void ClockGearsDatabaseDialog::_on_enemy_cast_element_changed(int p_sel_idx, int
 }
 
 // ============================================================================
-// Métodos del Editor de Sprites y Animaciones (Fase 8A)
-// ============================================================================
-
-// ============================================================================
 // Métodos del Editor de Sprites y Animaciones (SpriteFrames Style - Fase 8A)
 // ============================================================================
 
 String ClockGearsDatabaseDialog::_get_active_anim_name() const {
 	if (anim_track_opt && anim_track_opt->get_selected() >= 0 && anim_track_opt->get_selected() < anim_track_opt->get_item_count()) {
-		return anim_track_opt->get_item_text(anim_track_opt->get_selected());
+		int sel_idx = anim_track_opt->get_selected();
+		Variant meta = anim_track_opt->get_item_metadata(sel_idx);
+		if (meta.get_type() == Variant::STRING && !String(meta).is_empty()) {
+			return String(meta);
+		}
+		return anim_track_opt->get_item_text(sel_idx);
 	}
 	if (anim_item_list) {
 		Vector<int> sel = anim_item_list->get_selected_items();
 		if (!sel.is_empty() && sel[0] >= 0 && sel[0] < anim_item_list->get_item_count()) {
+			Variant meta = anim_item_list->get_item_metadata(sel[0]);
+			if (meta.get_type() == Variant::STRING && !String(meta).is_empty()) {
+				return String(meta);
+			}
 			return anim_item_list->get_item_text(sel[0]);
 		}
 	}
 	return "";
+}
+
+void ClockGearsDatabaseDialog::_update_current_anim_slot_labels() {
+	if (current_category != CAT_ENEMIES) return;
+	if (anim_track_opt) {
+		for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
+			String key = String(anim_track_opt->get_item_metadata(i));
+			if (key.is_empty()) continue;
+			String base_lbl = s_is_enemy_fixed_slot_name(key)
+					? ClockGearsSpriteSheetData::get_enemy_fixed_slot_label(key)
+					: key;
+			String disp = s_format_enemy_slot_display_label(key, base_lbl, current_sprite_data);
+			anim_track_opt->set_item_text(i, disp);
+			if (anim_item_list && i < anim_item_list->get_item_count()) {
+				anim_item_list->set_item_text(i, disp);
+			}
+		}
+	}
+	_refresh_enemy_casts_ui();
+	_refresh_enemy_others_ui();
 }
 
 void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
@@ -6158,15 +6362,69 @@ void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
 
 	int idx = 0;
 	int sel_idx = 0;
-	for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
-		anim_track_opt->add_item(E.key, idx);
-		if (anim_item_list) {
-			anim_item_list->add_item(E.key);
+
+	if (current_category == CAT_ENEMIES) {
+		auto add_enemy_slot_item = [&](const String &p_key, const String &p_base_label) {
+			if (!current_sprite_data.animations.has(p_key)) return;
+			String disp = s_format_enemy_slot_display_label(p_key, p_base_label, current_sprite_data);
+			anim_track_opt->add_item(disp, idx);
+			anim_track_opt->set_item_metadata(idx, p_key);
+			if (anim_item_list) {
+				anim_item_list->add_item(disp);
+				anim_item_list->set_item_metadata(idx, p_key);
+			}
+			if (p_key == prev_sel || (prev_sel.is_empty() && p_key == "idle")) {
+				sel_idx = idx;
+			}
+			idx++;
+		};
+
+		// 1. 5 ranuras fijas en orden estable
+		const char *fixed_ids[] = { "idle", "attack", "hurt", "death", "buff" };
+		for (int f = 0; f < 5; f++) {
+			String fid = fixed_ids[f];
+			add_enemy_slot_item(fid, ClockGearsSpriteSheetData::get_enemy_fixed_slot_label(fid));
 		}
-		if (E.key == prev_sel || (prev_sel.is_empty() && E.key.to_lower() == "idle")) {
-			sel_idx = idx;
+
+		// 2. Lanzamientos y Otras animaciones
+		Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+		Dictionary enemy_d;
+		if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ENEMIES].size()) {
+			enemy_d = category_data[CAT_ENEMIES][sel[0]];
 		}
-		idx++;
+		Array casts = enemy_d.get("cast_animations", Array());
+		for (int c = 0; c < casts.size(); c++) {
+			if (casts[c].get_type() != Variant::DICTIONARY) continue;
+			String cname = String(Dictionary(casts[c]).get("name", "")).strip_edges();
+			if (!cname.is_empty() && !s_is_enemy_fixed_slot_name(cname)) {
+				add_enemy_slot_item(cname, cname);
+			}
+		}
+		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
+			bool already_added = false;
+			for (int k = 0; k < anim_track_opt->get_item_count(); k++) {
+				if (String(anim_track_opt->get_item_metadata(k)) == E.key) {
+					already_added = true;
+					break;
+				}
+			}
+			if (!already_added) {
+				add_enemy_slot_item(E.key, E.key);
+			}
+		}
+	} else {
+		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
+			anim_track_opt->add_item(E.key, idx);
+			anim_track_opt->set_item_metadata(idx, E.key);
+			if (anim_item_list) {
+				anim_item_list->add_item(E.key);
+				anim_item_list->set_item_metadata(idx, E.key);
+			}
+			if (E.key == prev_sel || (prev_sel.is_empty() && E.key.to_lower() == "idle")) {
+				sel_idx = idx;
+			}
+			idx++;
+		}
 	}
 
 	if (anim_track_opt->get_item_count() > 0) {
@@ -6192,7 +6450,10 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	if (!anim_track_opt || p_idx < 0 || p_idx >= anim_track_opt->get_item_count()) {
 		return;
 	}
-	String anim_name = anim_track_opt->get_item_text(p_idx);
+	Variant meta = anim_track_opt->get_item_metadata(p_idx);
+	String anim_name = (meta.get_type() == Variant::STRING && !String(meta).is_empty())
+			? String(meta)
+			: anim_track_opt->get_item_text(p_idx);
 	if (!current_sprite_data.animations.has(anim_name)) {
 		return;
 	}
@@ -6204,14 +6465,28 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
 	if (anim_item_list) {
 		for (int i = 0; i < anim_item_list->get_item_count(); i++) {
-			if (anim_item_list->get_item_text(i) == anim_name) {
+			Variant item_meta = anim_item_list->get_item_metadata(i);
+			String item_key = (item_meta.get_type() == Variant::STRING && !String(item_meta).is_empty())
+					? String(item_meta)
+					: anim_item_list->get_item_text(i);
+			if (item_key == anim_name) {
 				anim_item_list->select(i);
 				break;
 			}
 		}
 	}
+	bool is_fixed_enemy_slot = (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(anim_name));
+	if (btn_rename_anim) {
+		btn_rename_anim->set_disabled(is_fixed_enemy_slot);
+	}
+	if (btn_remove_anim) {
+		btn_remove_anim->set_disabled(is_fixed_enemy_slot);
+	}
+
+	sheet_importer_selected_frames.clear();
 	anim_preview_playing = false;
 	anim_preview_timer = 0.0f;
+	anim_preview_frame_idx = 0;
 	if (btn_anim_play) {
 		btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
 	}
@@ -6226,10 +6501,17 @@ void ClockGearsDatabaseDialog::_on_anim_item_selected(int p_idx) {
 	if (!anim_item_list || p_idx < 0 || p_idx >= anim_item_list->get_item_count()) {
 		return;
 	}
-	String anim_name = anim_item_list->get_item_text(p_idx);
+	Variant meta = anim_item_list->get_item_metadata(p_idx);
+	String anim_name = (meta.get_type() == Variant::STRING && !String(meta).is_empty())
+			? String(meta)
+			: anim_item_list->get_item_text(p_idx);
 	if (anim_track_opt) {
 		for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
-			if (anim_track_opt->get_item_text(i) == anim_name) {
+			Variant tmeta = anim_track_opt->get_item_metadata(i);
+			String tkey = (tmeta.get_type() == Variant::STRING && !String(tmeta).is_empty())
+					? String(tmeta)
+					: anim_track_opt->get_item_text(i);
+			if (tkey == anim_name) {
 				anim_track_opt->select(i);
 				break;
 			}
@@ -6238,16 +6520,14 @@ void ClockGearsDatabaseDialog::_on_anim_item_selected(int p_idx) {
 	}
 }
 
-static bool s_is_enemy_fixed_slot_name(const String &p_name) {
-	String low = p_name.strip_edges().to_lower();
-	return (low == "idle" || low == "ataque" || low == String::utf8("daño") || low == "dano" || low == "muerte" || low == "buff");
-}
-
 void ClockGearsDatabaseDialog::_on_anim_item_activated(int p_idx) {
 	if (!anim_item_list || p_idx < 0 || p_idx >= anim_item_list->get_item_count()) return;
-	String old_name = anim_item_list->get_item_text(p_idx);
+	Variant meta = anim_item_list->get_item_metadata(p_idx);
+	String old_name = (meta.get_type() == Variant::STRING && !String(meta).is_empty())
+			? String(meta)
+			: anim_item_list->get_item_text(p_idx);
 	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(old_name)) {
-		return; // Las 5 ranuras fijas (Idle, Ataque, Daño, Muerte, Buff) no se renombran
+		return; // Las 5 ranuras fijas (idle, attack, hurt, death, buff) no se renombran
 	}
 	if (rename_anim_dialog && rename_anim_name_edit) {
 		rename_anim_name_edit->set_text(old_name);
@@ -6274,9 +6554,9 @@ void ClockGearsDatabaseDialog::_on_new_anim_dialog_confirmed() {
 		new_anim_name_edit->set_meta("is_enemy_cast_slot", false);
 	}
 	String anim_name = new_anim_name_edit ? new_anim_name_edit->get_text().strip_edges() : "";
-	if (anim_name.is_empty()) {
+	if (anim_name.is_empty() || (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(anim_name))) {
 		int c = 1;
-		String prefix = is_cast ? "Lanzar_" : "anim_";
+		String prefix = is_cast ? "Lanzar " : "anim_";
 		anim_name = vformat("%s%d", prefix, c);
 		while (current_sprite_data.animations.has(anim_name)) {
 			c++;
@@ -6310,6 +6590,7 @@ void ClockGearsDatabaseDialog::_on_new_anim_dialog_confirmed() {
 				cd["name"] = anim_name;
 				cd["element_id"] = 0;
 				cd["element"] = "";
+				cd["element_key"] = "";
 				casts.push_back(cd);
 				d["cast_animations"] = casts;
 				category_data[CAT_ENEMIES][rec_idx] = d;
@@ -6319,13 +6600,7 @@ void ClockGearsDatabaseDialog::_on_new_anim_dialog_confirmed() {
 	}
 
 	_refresh_anim_track_options();
-	for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
-		if (anim_track_opt->get_item_text(i) == anim_name) {
-			anim_track_opt->select(i);
-			_on_anim_track_selected(i);
-			break;
-		}
-	}
+	select_anim_slot(anim_name);
 	_on_param_changed();
 }
 
@@ -6349,7 +6624,7 @@ void ClockGearsDatabaseDialog::_on_rename_anim_dialog_confirmed() {
 	String old_name = rename_anim_name_edit->get_meta("old_anim_name", "");
 	String new_name = rename_anim_name_edit->get_text().strip_edges();
 	if (new_name.is_empty() || new_name == old_name) return;
-	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(old_name)) return;
+	if (current_category == CAT_ENEMIES && (s_is_enemy_fixed_slot_name(old_name) || s_is_enemy_fixed_slot_name(new_name))) return;
 
 	if (current_sprite_data.animations.has(old_name)) {
 		ClockGearsSpriteAnimation a = current_sprite_data.animations[old_name];
@@ -6371,19 +6646,27 @@ void ClockGearsDatabaseDialog::_on_rename_anim_dialog_confirmed() {
 					}
 				}
 				d["cast_animations"] = casts;
+				Array others = d.get("other_animations", Array());
+				for (int i = 0; i < others.size(); i++) {
+					if (others[i].get_type() == Variant::DICTIONARY) {
+						Dictionary od = others[i];
+						if (String(od.get("name", "")) == old_name) {
+							od["name"] = new_name;
+							others[i] = od;
+						}
+					} else if (String(others[i]) == old_name) {
+						others[i] = new_name;
+					}
+				}
+				d["other_animations"] = others;
 				category_data[CAT_ENEMIES][rec_idx] = d;
 				_refresh_enemy_casts_ui();
+				_refresh_enemy_others_ui();
 			}
 		}
 
 		_refresh_anim_track_options();
-		for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
-			if (anim_track_opt->get_item_text(i) == new_name) {
-				anim_track_opt->select(i);
-				_on_anim_track_selected(i);
-				break;
-			}
-		}
+		select_anim_slot(new_name);
 		_on_param_changed();
 	}
 }
@@ -6394,13 +6677,7 @@ void ClockGearsDatabaseDialog::_on_remove_anim_pressed() {
 		return;
 	}
 	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(name_to_remove)) {
-		// En ranura fija de enemigo, '-' vacía sus frames en lugar de borrar la ranura fija
-		ClockGearsSpriteAnimation &a = current_sprite_data.animations[name_to_remove];
-		a.frames_data.clear();
-		a.frames.clear();
-		_refresh_frames_timeline();
-		_refresh_anim_preview();
-		_on_param_changed();
+		// Las 5 ranuras fijas del enemigo no se pueden borrar.
 		return;
 	}
 	current_sprite_data.animations.erase(name_to_remove);
@@ -6417,8 +6694,19 @@ void ClockGearsDatabaseDialog::_on_remove_anim_pressed() {
 				}
 			}
 			d["cast_animations"] = casts;
+			Array others = d.get("other_animations", Array());
+			for (int i = others.size() - 1; i >= 0; i--) {
+				String oname = (others[i].get_type() == Variant::DICTIONARY)
+						? String(Dictionary(others[i]).get("name", ""))
+						: String(others[i]);
+				if (oname == name_to_remove) {
+					others.remove_at(i);
+				}
+			}
+			d["other_animations"] = others;
 			category_data[CAT_ENEMIES][rec_idx] = d;
 			_refresh_enemy_casts_ui();
+			_refresh_enemy_others_ui();
 		}
 	}
 	_refresh_anim_track_options();
@@ -6694,6 +6982,7 @@ void ClockGearsDatabaseDialog::_on_sheet_importer_add_confirmed() {
 
 	sheet_importer_dialog->hide();
 
+	_update_current_anim_slot_labels();
 	callable_mp(this, &ClockGearsDatabaseDialog::_refresh_frames_timeline).call_deferred();
 	callable_mp(this, &ClockGearsDatabaseDialog::_refresh_anim_preview).call_deferred();
 	_on_param_changed();
@@ -6721,8 +7010,25 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 		return;
 	}
 
+	String fallback_sheet = a.spritesheet_path;
+	if (fallback_sheet.is_empty()) {
+		Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+		if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[current_category].size()) {
+			Dictionary rec_d = category_data[current_category][sel[0]];
+			fallback_sheet = rec_d.get("graphic_path", "");
+		}
+	}
+
 	for (int s = 0; s < total_frames; s++) {
-		ClockGearsAnimationFrame frame = a.get_frame(s, 0, 0);
+		ClockGearsAnimationFrame raw_f = a.get_frame(s, 0, 0);
+		String spath = raw_f.sheet_path.is_empty() ? fallback_sheet : raw_f.sheet_path;
+		Ref<Texture2D> tex = _load_texture_from_path(spath);
+		int tw = tex.is_valid() ? tex->get_width() : 0;
+		int th = tex.is_valid() ? tex->get_height() : 0;
+		ClockGearsAnimationFrame frame = a.get_frame(s, tw, th);
+		if (frame.sheet_path.is_empty()) {
+			frame.sheet_path = spath;
+		}
 		PanelContainer *pnl = memnew(PanelContainer);
 		pnl->set_custom_minimum_size(Size2(64 * EDSCALE, 145 * EDSCALE));
 
@@ -6749,12 +7055,15 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 		tr->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
 		tr->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 
-		Ref<Texture2D> tex = _load_texture_from_path(frame.sheet_path);
 		if (tex.is_valid()) {
 			Ref<AtlasTexture> at;
 			at.instantiate();
 			at->set_atlas(tex);
-			at->set_region(Rect2(frame.region));
+			Rect2 reg(frame.region);
+			if (reg.size.x <= 0 || reg.size.y <= 0 || reg.position.x + reg.size.x > tw || reg.position.y + reg.size.y > th) {
+				reg = Rect2(0, 0, tw, th);
+			}
+			at->set_region(reg);
 			tr->set_texture(at);
 		}
 		vb->add_child(tr);
@@ -6864,12 +7173,24 @@ void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 		if (btn_anim_play) btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
 		return;
 	}
-	ClockGearsAnimationFrame f0 = a.get_frame(0, 0, 0);
-	Ref<Texture2D> tex = _load_texture_from_path(f0.sheet_path);
+	ClockGearsAnimationFrame raw_f0 = a.get_frame(0, 0, 0);
+	String spath = raw_f0.sheet_path.is_empty() ? a.spritesheet_path : raw_f0.sheet_path;
+	if (spath.is_empty()) {
+		Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+		if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[current_category].size()) {
+			spath = Dictionary(category_data[current_category][sel[0]]).get("graphic_path", "");
+		}
+	}
+	Ref<Texture2D> tex = _load_texture_from_path(spath);
 	if (tex.is_valid()) {
+		ClockGearsAnimationFrame f0 = a.get_frame(0, tex->get_width(), tex->get_height());
 		if (anim_preview_atlas.is_null()) anim_preview_atlas.instantiate();
 		anim_preview_atlas->set_atlas(tex);
-		anim_preview_atlas->set_region(Rect2(f0.region));
+		Rect2 reg(f0.region);
+		if (reg.size.x <= 0 || reg.size.y <= 0 || reg.position.x + reg.size.x > tex->get_width() || reg.position.y + reg.size.y > tex->get_height()) {
+			reg = Rect2(0, 0, tex->get_width(), tex->get_height());
+		}
+		anim_preview_atlas->set_region(reg);
 		if (anim_preview_rect) anim_preview_rect->set_texture(anim_preview_atlas);
 	} else {
 		if (anim_preview_rect) anim_preview_rect->set_texture(Ref<Texture2D>());
@@ -6932,6 +7253,7 @@ void ClockGearsDatabaseDialog::_on_frame_remove(int p_step_idx) {
 		if (p_step_idx < a.frames.size()) {
 			a.frames.remove_at(p_step_idx);
 		}
+		_update_current_anim_slot_labels();
 		callable_mp(this, &ClockGearsDatabaseDialog::_refresh_frames_timeline).call_deferred();
 		callable_mp(this, &ClockGearsDatabaseDialog::_refresh_anim_preview).call_deferred();
 		_on_param_changed();
@@ -7002,18 +7324,233 @@ void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 		anim_preview_frame_target_dur = next_f.get_duration();
 	}
 
-	ClockGearsAnimationFrame f = a.get_frame(anim_preview_frame_idx, 0, 0);
-	Ref<Texture2D> tex = _load_texture_from_path(f.sheet_path);
+	ClockGearsAnimationFrame raw_f = a.get_frame(anim_preview_frame_idx, 0, 0);
+	String spath = raw_f.sheet_path.is_empty() ? a.spritesheet_path : raw_f.sheet_path;
+	Ref<Texture2D> tex = _load_texture_from_path(spath);
 	if (tex.is_valid()) {
+		ClockGearsAnimationFrame f = a.get_frame(anim_preview_frame_idx, tex->get_width(), tex->get_height());
 		if (anim_preview_atlas.is_null()) anim_preview_atlas.instantiate();
 		if (anim_preview_atlas->get_atlas() != tex) {
 			anim_preview_atlas->set_atlas(tex);
 		}
-		anim_preview_atlas->set_region(Rect2(f.region));
+		Rect2 reg(f.region);
+		if (reg.size.x <= 0 || reg.size.y <= 0 || reg.position.x + reg.size.x > tex->get_width() || reg.position.y + reg.size.y > tex->get_height()) {
+			reg = Rect2(0, 0, tex->get_width(), tex->get_height());
+		}
+		anim_preview_atlas->set_region(reg);
 		if (anim_preview_rect) {
 			anim_preview_rect->set_texture(anim_preview_atlas);
 		}
 	}
+}
+
+Dictionary ClockGearsDatabaseDialog::get_troop_member_preview_info(int p_troop_idx, int p_member_idx) const {
+	Dictionary info;
+	info["source"] = "";
+	info["has_texture"] = false;
+	info["texture_w"] = 0;
+	info["texture_h"] = 0;
+	info["region"] = Rect2();
+	info["enemy_id"] = 0;
+	info["enemy_name"] = "";
+	info["enemy_level"] = 1;
+	if (p_troop_idx < 0 || p_troop_idx >= category_data[CAT_TROOPS].size()) {
+		return info;
+	}
+	Dictionary td = category_data[CAT_TROOPS][p_troop_idx];
+	Array members = td.get("members", Array());
+	if (p_member_idx < 0 || p_member_idx >= members.size() || members[p_member_idx].get_type() != Variant::DICTIONARY) {
+		return info;
+	}
+	Dictionary m = members[p_member_idx];
+	int eid = m.get("enemy_id", 1);
+	info["enemy_id"] = eid;
+
+	Dictionary enemy_rec;
+	for (int k = 0; k < category_data[CAT_ENEMIES].size(); k++) {
+		Dictionary ed = category_data[CAT_ENEMIES][k];
+		if (int(ed.get("id", k + 1)) == eid) {
+			enemy_rec = ed.duplicate(true);
+			break;
+		}
+	}
+	if (enemy_rec.is_empty()) {
+		enemy_rec["name"] = vformat("Enemigo #%d", eid);
+		enemy_rec["level"] = 1;
+	}
+	info["enemy_name"] = String(enemy_rec.get("name", vformat("Enemigo #%d", eid)));
+	info["enemy_level"] = int(enemy_rec.get("level", 1));
+
+	Ref<Texture2D> tex;
+	Rect2 src_rect;
+	String src_mode;
+	ClockGearsBattleScene::resolve_enemy_preview_sprite(enemy_rec, tex, src_rect, src_mode);
+	info["source"] = src_mode;
+	info["has_texture"] = tex.is_valid();
+	if (tex.is_valid()) {
+		info["texture_w"] = tex->get_width();
+		info["texture_h"] = tex->get_height();
+		info["texture"] = tex;
+	}
+	info["region"] = src_rect;
+	return info;
+}
+
+Dictionary ClockGearsDatabaseDialog::get_enemy_anim_slot_info(int p_enemy_idx, const String &p_slot_key) const {
+	Dictionary info;
+	info["exists"] = false;
+	info["frame_count"] = 0;
+	info["fps"] = 6.0f;
+	info["loop"] = false;
+	info["spritesheet_path"] = "";
+	if (p_enemy_idx < 0 || p_enemy_idx >= category_data[CAT_ENEMIES].size()) {
+		return info;
+	}
+	Dictionary ed = Dictionary(category_data[CAT_ENEMIES][p_enemy_idx]).duplicate(true);
+	ClockGearsSpriteSheetData::migrate_enemy_record(ed);
+	ClockGearsSpriteSheetData sd;
+	sd.from_dict(ed.get("sprite_data", Dictionary()));
+	if (sd.animations.has(p_slot_key)) {
+		const ClockGearsSpriteAnimation &a = sd.animations[p_slot_key];
+		info["exists"] = true;
+		info["frame_count"] = a.get_frame_count();
+		info["fps"] = a.fps;
+		info["loop"] = a.loop;
+		info["random_order"] = a.random_order;
+		info["spritesheet_path"] = a.spritesheet_path;
+	}
+	return info;
+}
+
+bool ClockGearsDatabaseDialog::reassign_enemy_other_animation(int p_enemy_idx, const String &p_other_name, const String &p_target_slot) {
+	if (p_enemy_idx < 0 || p_enemy_idx >= category_data[CAT_ENEMIES].size()) {
+		return false;
+	}
+	String oname = p_other_name.strip_edges();
+	String target = p_target_slot.strip_edges();
+	if (oname.is_empty() || target.is_empty()) {
+		return false;
+	}
+	Dictionary d = Dictionary(category_data[CAT_ENEMIES][p_enemy_idx]).duplicate(true);
+	ClockGearsSpriteSheetData::migrate_enemy_record(d);
+	ClockGearsSpriteSheetData sd;
+	sd.from_dict(d.get("sprite_data", Dictionary()));
+	if (!sd.animations.has(oname)) {
+		return false;
+	}
+
+	ClockGearsSpriteAnimation moved = sd.animations[oname];
+	sd.animations.erase(oname);
+	moved.name = target;
+	moved.loop = (target == "idle");
+	sd.animations[target] = moved;
+
+	// Quitar de other_animations
+	Array others = d.get("other_animations", Array());
+	for (int i = others.size() - 1; i >= 0; i--) {
+		String cur = (others[i].get_type() == Variant::DICTIONARY)
+				? String(Dictionary(others[i]).get("name", "")).strip_edges()
+				: String(others[i]).strip_edges();
+		if (cur == oname) {
+			others.remove_at(i);
+		}
+	}
+	d["other_animations"] = others;
+
+	// Si el destino no es una de las 5 ranuras fijas, asegurar que esté en cast_animations
+	if (!s_is_enemy_fixed_slot_name(target)) {
+		Array casts = d.get("cast_animations", Array());
+		bool found = false;
+		for (int i = 0; i < casts.size(); i++) {
+			if (casts[i].get_type() == Variant::DICTIONARY && String(Dictionary(casts[i]).get("name", "")) == target) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			Dictionary cd;
+			cd["name"] = target;
+			cd["element_id"] = 0;
+			cd["element"] = "";
+			cd["element_key"] = "";
+			casts.push_back(cd);
+			d["cast_animations"] = casts;
+		}
+	}
+
+	d["sprite_data"] = sd.to_dict();
+	category_data[CAT_ENEMIES][p_enemy_idx] = d;
+
+	if (current_category == CAT_ENEMIES) {
+		Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+		if (!sel.is_empty() && sel[0] == p_enemy_idx) {
+			current_sprite_data = sd;
+			_refresh_enemy_casts_ui();
+			_refresh_enemy_others_ui();
+			_refresh_anim_track_options();
+			select_anim_slot(target);
+		}
+	}
+	_save_database_to_disk();
+	return true;
+}
+
+bool ClockGearsDatabaseDialog::remove_enemy_other_animation(int p_enemy_idx, const String &p_other_name) {
+	if (p_enemy_idx < 0 || p_enemy_idx >= category_data[CAT_ENEMIES].size()) {
+		return false;
+	}
+	String oname = p_other_name.strip_edges();
+	if (oname.is_empty() || s_is_enemy_fixed_slot_name(oname)) {
+		return false;
+	}
+	Dictionary d = Dictionary(category_data[CAT_ENEMIES][p_enemy_idx]).duplicate(true);
+	ClockGearsSpriteSheetData::migrate_enemy_record(d);
+	ClockGearsSpriteSheetData sd;
+	sd.from_dict(d.get("sprite_data", Dictionary()));
+	sd.animations.erase(oname);
+
+	Array others = d.get("other_animations", Array());
+	for (int i = others.size() - 1; i >= 0; i--) {
+		String cur = (others[i].get_type() == Variant::DICTIONARY)
+				? String(Dictionary(others[i]).get("name", "")).strip_edges()
+				: String(others[i]).strip_edges();
+		if (cur == oname) {
+			others.remove_at(i);
+		}
+	}
+	d["other_animations"] = others;
+	d["sprite_data"] = sd.to_dict();
+	category_data[CAT_ENEMIES][p_enemy_idx] = d;
+
+	if (current_category == CAT_ENEMIES) {
+		Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+		if (!sel.is_empty() && sel[0] == p_enemy_idx) {
+			current_sprite_data = sd;
+			_refresh_enemy_others_ui();
+			_refresh_anim_track_options();
+		}
+	}
+	_save_database_to_disk();
+	return true;
+}
+
+void ClockGearsDatabaseDialog::select_anim_slot(const String &p_slot_key) {
+	if (!anim_track_opt) return;
+	for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
+		Variant meta = anim_track_opt->get_item_metadata(i);
+		String key = (meta.get_type() == Variant::STRING && !String(meta).is_empty())
+				? String(meta)
+				: anim_track_opt->get_item_text(i);
+		if (key == p_slot_key) {
+			anim_track_opt->select(i);
+			_on_anim_track_selected(i);
+			break;
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::remove_anim_frame_at(int p_step_idx) {
+	_on_frame_remove(p_step_idx);
 }
 
 void ClockGearsDatabaseDialog::_setup_combat_anims_ui() {
