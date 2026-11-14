@@ -40,6 +40,7 @@
 #include "runtime/clockgears_title_screen.h"
 #include "runtime/clockgears_game_menu.h"
 #include "runtime/clockgears_credits.h"
+#include "runtime/clockgears_hud.h"
 #include "runtime/clockgears_window_style.h"
 #include "clockgears_debug_panel.h"
 
@@ -185,6 +186,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(ClockGearsOptionsBox);
 		GDREGISTER_CLASS(ClockGearsCreditsPlayer);
 		GDREGISTER_CLASS(ClockGearsGameMenu);
+		GDREGISTER_CLASS(ClockGearsHudOverlay);
 		GDREGISTER_CLASS(ClockGearsWindowStyleBox);
 		GDREGISTER_CLASS(ClockGearsWindowStyleManager);
 

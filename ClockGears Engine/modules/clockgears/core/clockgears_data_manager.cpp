@@ -133,6 +133,9 @@ void ClockGearsDataManager::init_empty() {
 	title_menu_config = get_default_title_menu_config();
 	game_menu_config = get_default_game_menu_config();
 	credits_config = get_default_credits_config();
+	hud_config = get_default_hud_config();
+	runtime_hud_visible = true;
+	runtime_hud_widget_visibility.clear();
 	ensure_default_window_types_registered();
 	window_styles_config = get_default_window_styles_config();
 	if (!player_options_loaded) {
@@ -1310,6 +1313,10 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 	if (!_write_json_atomic(p_dir_path.path_join("credits.json"), credits_config)) {
 		return false;
 	}
+	hud_config = normalize_hud_config(hud_config);
+	if (!_write_json_atomic(p_dir_path.path_join("hud.json"), hud_config)) {
+		return false;
+	}
 
 	// 5c-bis. Guardar estilos de ventana (window_styles.json)
 	window_styles_config = normalize_window_styles_config(window_styles_config);
@@ -1449,6 +1456,17 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		window_styles_config = get_default_window_styles_config();
 	}
 
+	// Migración de HUD (hud.json; proyectos antiguos o vacíos inician con 0 widgets para no cambiar nada visualmente)
+	Variant hud_var;
+	if (_read_json_with_backup(p_dir_path.path_join("hud.json"), hud_var) && hud_var.get_type() == Variant::DICTIONARY) {
+		hud_config = normalize_hud_config(Dictionary(hud_var));
+	} else if (system_config.has("hud") && system_config["hud"].get_type() == Variant::DICTIONARY) {
+		hud_config = normalize_hud_config(Dictionary(system_config["hud"]));
+	} else {
+		hud_config = get_default_hud_config();
+	}
+	system_config.erase("hud");
+
 	Variant sw_var;
 	if (_read_json_with_backup(p_dir_path.path_join("switches_vars.json"), sw_var) && sw_var.get_type() == Variant::DICTIONARY) {
 		Dictionary d = sw_var;
@@ -1513,7 +1531,12 @@ bool ClockGearsDataManager::get_switch(const String &p_name) const {
 }
 
 void ClockGearsDataManager::set_switch(const String &p_name, bool p_val) {
+	bool had = runtime_switches.has(p_name);
+	bool prev = had ? bool(runtime_switches[p_name]) : false;
 	runtime_switches[p_name] = p_val;
+	if (!had || prev != p_val) {
+		emit_signal("runtime_state_changed", "switch", p_name);
+	}
 }
 
 int ClockGearsDataManager::get_variable(const String &p_name) const {
@@ -1524,7 +1547,28 @@ int ClockGearsDataManager::get_variable(const String &p_name) const {
 }
 
 void ClockGearsDataManager::set_variable(const String &p_name, int p_val) {
+	bool had = runtime_variables.has(p_name);
+	int prev = had ? int(runtime_variables[p_name]) : 0;
 	runtime_variables[p_name] = p_val;
+	if (!had || prev != p_val) {
+		emit_signal("runtime_state_changed", "variable", p_name);
+	}
+}
+
+void ClockGearsDataManager::set_gold(int p_gold) {
+	int next = MAX(0, p_gold);
+	if (runtime_gold != next) {
+		runtime_gold = next;
+		emit_signal("runtime_state_changed", "gold", String());
+	}
+}
+
+void ClockGearsDataManager::change_gold(int p_amount) {
+	int next = MAX(0, runtime_gold + p_amount);
+	if (runtime_gold != next) {
+		runtime_gold = next;
+		emit_signal("runtime_state_changed", "gold", String());
+	}
 }
 
 bool ClockGearsDataManager::has_item(const String &p_name, int p_min_qty) const {
@@ -1649,6 +1693,9 @@ void ClockGearsDataManager::change_item(const String &p_name, int p_amount) {
 		runtime_inventory.erase(p_name);
 	} else {
 		runtime_inventory[p_name] = next;
+	}
+	if (next != cur) {
+		emit_signal("runtime_state_changed", "item", p_name);
 	}
 }
 
@@ -1903,6 +1950,8 @@ void ClockGearsDataManager::reset_runtime_state() {
 	runtime_window_style_overrides.clear();
 	runtime_playtime_sec = 0.0;
 	runtime_game_menu_disabled = false;
+	runtime_hud_visible = true;
+	runtime_hud_widget_visibility.clear();
 	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
 	PackedStringArray sys_slots = cat ? cat->get_equip_slots() : PackedStringArray();
 	for (int i = 0; i < category_data[CAT_ACTORS].size(); i++) {
@@ -1937,6 +1986,7 @@ void ClockGearsDataManager::reset_runtime_state() {
 			runtime_equips[String::num_int64(aid)] = norm_slots;
 		}
 	}
+	emit_signal("runtime_state_changed", "all", String());
 }
 
 float ClockGearsDataManager::evaluate_traits_element_rate(const Array &p_traits, int p_element_id, const String &p_element_name) {
@@ -2219,11 +2269,16 @@ void ClockGearsDataManager::set_actor_runtime_hp(int p_actor_id, int p_hp) {
 		return;
 	}
 	Dictionary st = get_actor_runtime_state(p_actor_id);
+	int prev_hp = int(st.get("hp", 0));
 	int eff_mhp = MAX(1, int(st.get("max_hp", 100)));
-	st["hp"] = CLAMP(p_hp, 0, eff_mhp);
+	int next_hp = CLAMP(p_hp, 0, eff_mhp);
+	st["hp"] = next_hp;
 	st.erase("max_hp");
 	st.erase("max_mp");
 	runtime_actor_states[String::num_int64(p_actor_id)] = st;
+	if (next_hp != prev_hp) {
+		emit_signal("runtime_state_changed", "actor_hp", String::num_int64(p_actor_id));
+	}
 }
 
 int ClockGearsDataManager::get_actor_runtime_hp(int p_actor_id) {
@@ -2239,11 +2294,16 @@ void ClockGearsDataManager::set_actor_runtime_mp(int p_actor_id, int p_mp) {
 		return;
 	}
 	Dictionary st = get_actor_runtime_state(p_actor_id);
+	int prev_mp = int(st.get("mp", 0));
 	int eff_mmp = MAX(0, int(st.get("max_mp", 20)));
-	st["mp"] = CLAMP(p_mp, 0, eff_mmp);
+	int next_mp = CLAMP(p_mp, 0, eff_mmp);
+	st["mp"] = next_mp;
 	st.erase("max_hp");
 	st.erase("max_mp");
 	runtime_actor_states[String::num_int64(p_actor_id)] = st;
+	if (next_mp != prev_mp) {
+		emit_signal("runtime_state_changed", "actor_mp", String::num_int64(p_actor_id));
+	}
 }
 
 int ClockGearsDataManager::get_actor_runtime_mp(int p_actor_id) {
@@ -2360,6 +2420,9 @@ Array ClockGearsDataManager::grant_party_exp(int64_t p_exp_amount) {
 		st["hp"] = cur_hp;
 		st.erase("max_hp");
 		runtime_actor_states[key] = st;
+	}
+	if (p_exp_amount != 0) {
+		emit_signal("runtime_state_changed", "actor_exp", String());
 	}
 	return msgs;
 }
@@ -2607,6 +2670,7 @@ bool ClockGearsDataManager::set_actor_arpg_equip(int p_actor_id, const String &p
 	slots[target_idx] = sd;
 	runtime_arpg_equips[String::num_int64(p_actor_id)] = slots;
 	emit_signal("data_changed", "arpg_equip", p_actor_id);
+	emit_signal("runtime_state_changed", "actor_stats", String::num_int64(p_actor_id));
 	return true;
 }
 
@@ -2978,6 +3042,7 @@ bool ClockGearsDataManager::equip_actor_piece(int p_actor_id, int p_slot_idx, co
 		runtime_equips[String::num_int64(p_actor_id)] = slots;
 		emit_signal("data_changed", "equip", p_actor_id);
 	}
+	emit_signal("runtime_state_changed", "actor_stats", String::num_int64(p_actor_id));
 	return true;
 }
 
@@ -3013,6 +3078,7 @@ bool ClockGearsDataManager::unequip_actor_slot(int p_actor_id, int p_slot_idx, i
 		runtime_equips[String::num_int64(p_actor_id)] = slots;
 		emit_signal("data_changed", "equip", p_actor_id);
 	}
+	emit_signal("runtime_state_changed", "actor_stats", String::num_int64(p_actor_id));
 	return true;
 }
 
@@ -3181,6 +3247,8 @@ Dictionary ClockGearsDataManager::export_runtime_state() const {
 	d["playtime_sec"] = runtime_playtime_sec;
 	d["game_menu_disabled"] = runtime_game_menu_disabled;
 	d["window_style_overrides"] = runtime_window_style_overrides.duplicate(true);
+	d["hud_visible"] = runtime_hud_visible;
+	d["hud_widget_visibility"] = runtime_hud_widget_visibility.duplicate(true);
 	return d;
 }
 
@@ -3241,6 +3309,18 @@ void ClockGearsDataManager::import_runtime_state(const Dictionary &p_state) {
 			}
 		}
 	}
+	runtime_hud_visible = p_state.has("hud_visible") ? bool(p_state["hud_visible"]) : true;
+	runtime_hud_widget_visibility.clear();
+	if (p_state.has("hud_widget_visibility") && p_state["hud_widget_visibility"].get_type() == Variant::DICTIONARY) {
+		Dictionary hvw = p_state["hud_widget_visibility"];
+		for (const Variant &k : hvw.keys()) {
+			String key = String(k).strip_edges().to_lower();
+			if (!key.is_empty()) {
+				runtime_hud_widget_visibility[key] = bool(hvw[k]);
+			}
+		}
+	}
+	emit_signal("runtime_state_changed", "all", String());
 }
 
 String ClockGearsDataManager::format_text(const String &p_text) const {
@@ -3844,10 +3924,494 @@ void ClockGearsDataManager::set_runtime_window_style_override(const String &p_wi
 	} else {
 		runtime_window_style_overrides[wt] = sid;
 	}
+	emit_signal("runtime_state_changed", "window_style", wt);
 }
 
 void ClockGearsDataManager::clear_runtime_window_style_overrides() {
 	runtime_window_style_overrides.clear();
+	emit_signal("runtime_state_changed", "window_style", String());
+}
+
+namespace {
+static String _cg_norm_hud_color(const Variant &p_val, const String &p_default) {
+	if (p_val.get_type() == Variant::COLOR) {
+		return "#" + Color(p_val).to_html(true).to_upper();
+	}
+	String s = String(p_val).strip_edges();
+	if (!s.is_empty() && Color::html_is_valid(s)) {
+		return "#" + Color::html(s).to_html(true).to_upper();
+	}
+	return p_default;
+}
+
+static String _cg_norm_hud_anchor(const Variant &p_val) {
+	String a = String(p_val).strip_edges().to_lower();
+	if (a == "top_left" || a == "top_center" || a == "top_right" ||
+			a == "middle_left" || a == "center" || a == "middle_right" ||
+			a == "bottom_left" || a == "bottom_center" || a == "bottom_right") {
+		return a;
+	}
+	return "top_left";
+}
+
+static String _cg_norm_hud_type(const Variant &p_val) {
+	String t = String(p_val).strip_edges().to_lower();
+	if (t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "text" || t == "image") {
+		return t;
+	}
+	return "bar";
+}
+
+static String _cg_slugify_hud_id(const String &p_raw) {
+	String lower = p_raw.strip_edges().to_lower();
+	String out;
+	bool last_us = false;
+	for (int i = 0; i < lower.length(); i++) {
+		char32_t c = lower[i];
+		if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			out += c;
+			last_us = false;
+		} else if (!last_us && !out.is_empty()) {
+			out += '_';
+			last_us = true;
+		}
+	}
+	while (out.ends_with("_")) {
+		out = out.substr(0, out.length() - 1);
+	}
+	return out;
+}
+} // namespace
+
+Array ClockGearsDataManager::get_hud_anchor_ids() {
+	Array out;
+	out.push_back("top_left");
+	out.push_back("top_center");
+	out.push_back("top_right");
+	out.push_back("middle_left");
+	out.push_back("center");
+	out.push_back("middle_right");
+	out.push_back("bottom_left");
+	out.push_back("bottom_center");
+	out.push_back("bottom_right");
+	return out;
+}
+
+Dictionary ClockGearsDataManager::make_default_hud_widget(const String &p_type) {
+	String wtype = _cg_norm_hud_type(p_type);
+	Dictionary w;
+	w["id"] = "";
+	w["type"] = wtype;
+	w["anchor"] = "top_left";
+	w["offset_x"] = 16;
+	w["offset_y"] = 16;
+	w["layer_order"] = 0;
+	w["window_style_id"] = "";
+	w["visibility_mode"] = "always";
+	w["visibility_switch"] = "";
+	w["hide_during_messages_and_menus"] = true;
+	w["pixel_art"] = true;
+
+	if (wtype == "bar") {
+		w["name"] = "Barra";
+		w["width"] = 220;
+		w["height"] = 34;
+		w["value_source"] = "hp";
+		w["variable_name"] = "";
+		w["variable_max"] = 100;
+		w["bg_color"] = "#1A1E2ECC";
+		w["fill_color"] = "#D93B3BFF";
+		w["border_color"] = "#E2E8F0FF";
+		w["bg_image_path"] = "";
+		w["fill_image_path"] = "";
+		w["show_numbers"] = true;
+		w["label_text"] = "";
+		w["font_size"] = 13;
+		w["font_color"] = "#FFFFFFFF";
+	} else if (wtype == "hearts") {
+		w["name"] = "Corazones";
+		w["width"] = 220;
+		w["height"] = 48;
+		w["hp_per_heart"] = 20;
+		w["full_image_path"] = "";
+		w["half_image_path"] = "";
+		w["empty_image_path"] = "";
+		w["heart_size"] = 20;
+		w["spacing"] = 4;
+		w["max_hearts_per_row"] = 10;
+		w["max_rows"] = 2;
+	} else if (wtype == "currency") {
+		w["name"] = "Monedas";
+		w["anchor"] = "top_right";
+		w["offset_x"] = -16;
+		w["offset_y"] = 16;
+		w["width"] = 160;
+		w["height"] = 36;
+		w["icon_path"] = "";
+		w["show_icon"] = true;
+		w["show_currency_name"] = true;
+		w["font_size"] = 15;
+		w["font_color"] = "#FDE047FF";
+	} else if (wtype == "item") {
+		w["name"] = "Objeto";
+		w["anchor"] = "bottom_left";
+		w["offset_x"] = 16;
+		w["offset_y"] = -16;
+		w["width"] = 140;
+		w["height"] = 38;
+		w["item_key"] = "";
+		w["icon_path"] = "";
+		w["hide_when_zero"] = false;
+		w["show_name"] = false;
+		w["font_size"] = 15;
+		w["font_color"] = "#FFFFFFFF";
+	} else if (wtype == "text") {
+		w["name"] = "Texto";
+		w["width"] = 200;
+		w["height"] = 36;
+		w["text_mode"] = "fixed";
+		w["text"] = "Texto";
+		w["variable_name"] = "";
+		w["font_size"] = 16;
+		w["font_color"] = "#FFFFFFFF";
+		w["align"] = "left";
+	} else {
+		w["name"] = "Imagen";
+		w["width"] = 96;
+		w["height"] = 96;
+		w["image_path"] = "";
+		w["scale_mode"] = "fit";
+		w["opacity"] = 1.0;
+	}
+	return w;
+}
+
+Dictionary ClockGearsDataManager::normalize_hud_widget(const Dictionary &p_widget, int p_index_hint) {
+	String wtype = _cg_norm_hud_type(p_widget.get("type", "bar"));
+	Dictionary def = make_default_hud_widget(wtype);
+	Dictionary out;
+
+	String raw_name = String(p_widget.get("name", def["name"])).strip_edges();
+	if (raw_name.is_empty()) {
+		raw_name = String(def["name"]) + " " + itos(MAX(1, p_index_hint));
+	}
+	String raw_id = _cg_slugify_hud_id(String(p_widget.get("id", "")));
+	if (raw_id.is_empty()) {
+		raw_id = _cg_slugify_hud_id(raw_name);
+	}
+	if (raw_id.is_empty()) {
+		raw_id = "widget_" + itos(MAX(1, p_index_hint));
+	}
+
+	out["id"] = raw_id;
+	out["name"] = raw_name;
+	out["type"] = wtype;
+	out["anchor"] = _cg_norm_hud_anchor(p_widget.get("anchor", def["anchor"]));
+	out["offset_x"] = CLAMP(int(p_widget.get("offset_x", def["offset_x"])), -960, 960);
+	out["offset_y"] = CLAMP(int(p_widget.get("offset_y", def["offset_y"])), -540, 540);
+	out["width"] = CLAMP(int(p_widget.get("width", def["width"])), 16, 960);
+	out["height"] = CLAMP(int(p_widget.get("height", def["height"])), 16, 540);
+	out["layer_order"] = CLAMP(int(p_widget.get("layer_order", def["layer_order"])), -100, 1000);
+
+	String ws = String(p_widget.get("window_style_id", def["window_style_id"])).strip_edges().to_lower();
+	if (ws == "none") {
+		ws = "";
+	}
+	out["window_style_id"] = ws;
+
+	String vmode = String(p_widget.get("visibility_mode", def["visibility_mode"])).strip_edges().to_lower();
+	if (vmode != "switch") {
+		vmode = "always";
+	}
+	out["visibility_mode"] = vmode;
+	out["visibility_switch"] = String(p_widget.get("visibility_switch", def["visibility_switch"])).strip_edges();
+	out["hide_during_messages_and_menus"] = p_widget.has("hide_during_messages_and_menus") ? bool(p_widget["hide_during_messages_and_menus"]) : true;
+	out["pixel_art"] = p_widget.has("pixel_art") ? bool(p_widget["pixel_art"]) : bool(def["pixel_art"]);
+
+	if (wtype == "bar") {
+		String vs = String(p_widget.get("value_source", def["value_source"])).strip_edges().to_lower();
+		if (vs != "hp" && vs != "mp" && vs != "exp" && vs != "variable") {
+			vs = "hp";
+		}
+		out["value_source"] = vs;
+		out["variable_name"] = String(p_widget.get("variable_name", def["variable_name"])).strip_edges();
+		out["variable_max"] = CLAMP(int(p_widget.get("variable_max", def["variable_max"])), 1, 99999999);
+		out["bg_color"] = _cg_norm_hud_color(p_widget.get("bg_color", def["bg_color"]), String(def["bg_color"]));
+		String default_fill = (vs == "mp") ? String("#3B82F6FF") : ((vs == "exp") ? String("#EAB308FF") : String(def["fill_color"]));
+		out["fill_color"] = _cg_norm_hud_color(p_widget.get("fill_color", default_fill), default_fill);
+		out["border_color"] = _cg_norm_hud_color(p_widget.get("border_color", def["border_color"]), String(def["border_color"]));
+		out["bg_image_path"] = String(p_widget.get("bg_image_path", "")).strip_edges();
+		out["fill_image_path"] = String(p_widget.get("fill_image_path", "")).strip_edges();
+		out["show_numbers"] = p_widget.has("show_numbers") ? bool(p_widget["show_numbers"]) : bool(def["show_numbers"]);
+		out["label_text"] = String(p_widget.get("label_text", ""));
+		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 48);
+		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
+	} else if (wtype == "hearts") {
+		out["hp_per_heart"] = CLAMP(int(p_widget.get("hp_per_heart", def["hp_per_heart"])), 1, 99999);
+		out["full_image_path"] = String(p_widget.get("full_image_path", "")).strip_edges();
+		out["half_image_path"] = String(p_widget.get("half_image_path", "")).strip_edges();
+		out["empty_image_path"] = String(p_widget.get("empty_image_path", "")).strip_edges();
+		out["heart_size"] = CLAMP(int(p_widget.get("heart_size", def["heart_size"])), 8, 128);
+		out["spacing"] = CLAMP(int(p_widget.get("spacing", def["spacing"])), 0, 64);
+		out["max_hearts_per_row"] = CLAMP(int(p_widget.get("max_hearts_per_row", def["max_hearts_per_row"])), 1, 50);
+		out["max_rows"] = CLAMP(int(p_widget.get("max_rows", def["max_rows"])), 1, 20);
+	} else if (wtype == "currency") {
+		out["icon_path"] = String(p_widget.get("icon_path", "")).strip_edges();
+		out["show_icon"] = p_widget.has("show_icon") ? bool(p_widget["show_icon"]) : true;
+		out["show_currency_name"] = p_widget.has("show_currency_name") ? bool(p_widget["show_currency_name"]) : true;
+		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 48);
+		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
+	} else if (wtype == "item") {
+		out["item_key"] = String(p_widget.get("item_key", "")).strip_edges();
+		out["icon_path"] = String(p_widget.get("icon_path", "")).strip_edges();
+		out["hide_when_zero"] = p_widget.has("hide_when_zero") ? bool(p_widget["hide_when_zero"]) : false;
+		out["show_name"] = p_widget.has("show_name") ? bool(p_widget["show_name"]) : false;
+		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 48);
+		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
+	} else if (wtype == "text") {
+		String tm = String(p_widget.get("text_mode", def["text_mode"])).strip_edges().to_lower();
+		if (tm != "variable") {
+			tm = "fixed";
+		}
+		out["text_mode"] = tm;
+		out["text"] = String(p_widget.get("text", def["text"]));
+		out["variable_name"] = String(p_widget.get("variable_name", "")).strip_edges();
+		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 64);
+		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
+		String al = String(p_widget.get("align", def["align"])).strip_edges().to_lower();
+		if (al != "center" && al != "right") {
+			al = "left";
+		}
+		out["align"] = al;
+	} else {
+		out["image_path"] = String(p_widget.get("image_path", "")).strip_edges();
+		String sm = String(p_widget.get("scale_mode", def["scale_mode"])).strip_edges().to_lower();
+		if (sm != "stretch" && sm != "tile" && sm != "native") {
+			sm = "fit";
+		}
+		out["scale_mode"] = sm;
+		out["opacity"] = CLAMP(double(p_widget.get("opacity", def["opacity"])), 0.0, 1.0);
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_default_hud_config() {
+	Dictionary out;
+	out["schema_version"] = 1;
+	out["widgets"] = Array();
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_hud_config(const Dictionary &p_cfg) {
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+	Array norm_widgets;
+	HashSet<String> seen_ids;
+	if (p_cfg.has("widgets") && p_cfg["widgets"].get_type() == Variant::ARRAY) {
+		Array raw = p_cfg["widgets"];
+		for (int i = 0; i < raw.size(); i++) {
+			if (raw[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary nw = normalize_hud_widget(Dictionary(raw[i]), i + 1);
+			String base_id = String(nw["id"]);
+			String unique_id = base_id;
+			int suffix = 2;
+			while (seen_ids.has(unique_id)) {
+				unique_id = base_id + "_" + itos(suffix++);
+			}
+			seen_ids.insert(unique_id);
+			nw["id"] = unique_id;
+			norm_widgets.push_back(nw);
+		}
+	}
+	out["widgets"] = norm_widgets;
+	return out;
+}
+
+void ClockGearsDataManager::set_hud_config(const Dictionary &p_cfg) {
+	hud_config = normalize_hud_config(p_cfg);
+	dirty = true;
+	emit_signal("data_changed", "hud", 0);
+	emit_signal("runtime_state_changed", "hud", String());
+}
+
+Array ClockGearsDataManager::get_hud_widgets() const {
+	Dictionary norm = normalize_hud_config(hud_config);
+	return Array(norm.get("widgets", Array())).duplicate(true);
+}
+
+Dictionary ClockGearsDataManager::get_hud_widget(const String &p_widget_id) const {
+	String target = p_widget_id.strip_edges().to_lower();
+	Array widgets = get_hud_widgets();
+	for (int i = 0; i < widgets.size(); i++) {
+		Dictionary w = widgets[i];
+		if (String(w.get("id", "")).to_lower() == target || String(w.get("name", "")).strip_edges().to_lower() == target) {
+			return w;
+		}
+	}
+	return Dictionary();
+}
+
+String ClockGearsDataManager::create_hud_widget(const Dictionary &p_widget) {
+	Dictionary norm = normalize_hud_config(hud_config);
+	Array widgets = Array(norm.get("widgets", Array())).duplicate(true);
+	Dictionary nw = normalize_hud_widget(p_widget, widgets.size() + 1);
+	String base_id = String(nw["id"]);
+	String unique_id = base_id;
+	int suffix = 2;
+	HashSet<String> existing;
+	for (int i = 0; i < widgets.size(); i++) {
+		existing.insert(String(Dictionary(widgets[i]).get("id", "")));
+	}
+	while (existing.has(unique_id)) {
+		unique_id = base_id + "_" + itos(suffix++);
+	}
+	nw["id"] = unique_id;
+	widgets.push_back(nw);
+	norm["widgets"] = widgets;
+	set_hud_config(norm);
+	return unique_id;
+}
+
+bool ClockGearsDataManager::update_hud_widget(const String &p_widget_id, const Dictionary &p_widget) {
+	String target = p_widget_id.strip_edges().to_lower();
+	Dictionary norm = normalize_hud_config(hud_config);
+	Array widgets = Array(norm.get("widgets", Array())).duplicate(true);
+	for (int i = 0; i < widgets.size(); i++) {
+		Dictionary cur = widgets[i];
+		if (String(cur.get("id", "")).to_lower() == target) {
+			Dictionary merged = p_widget.duplicate(true);
+			if (!merged.has("id") || String(merged["id"]).strip_edges().is_empty()) {
+				merged["id"] = cur["id"];
+			}
+			Dictionary nw = normalize_hud_widget(merged, i + 1);
+			nw["id"] = cur["id"]; // Conservar ID estable en ediciones desde UI
+			widgets[i] = nw;
+			norm["widgets"] = widgets;
+			set_hud_config(norm);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::delete_hud_widget(const String &p_widget_id) {
+	String target = p_widget_id.strip_edges().to_lower();
+	Dictionary norm = normalize_hud_config(hud_config);
+	Array widgets = Array(norm.get("widgets", Array())).duplicate(true);
+	for (int i = 0; i < widgets.size(); i++) {
+		if (String(Dictionary(widgets[i]).get("id", "")).to_lower() == target) {
+			widgets.remove_at(i);
+			norm["widgets"] = widgets;
+			set_hud_config(norm);
+			return true;
+		}
+	}
+	return false;
+}
+
+String ClockGearsDataManager::duplicate_hud_widget(const String &p_source_id, const String &p_new_name) {
+	Dictionary src = get_hud_widget(p_source_id);
+	if (src.is_empty()) {
+		return String();
+	}
+	Dictionary copy = src.duplicate(true);
+	copy["id"] = "";
+	String nn = p_new_name.strip_edges();
+	if (nn.is_empty()) {
+		nn = String(src.get("name", "Widget")) + " (Copia)";
+	}
+	copy["name"] = nn;
+	copy["offset_x"] = CLAMP(int(copy.get("offset_x", 16)) + 16, -960, 960);
+	copy["offset_y"] = CLAMP(int(copy.get("offset_y", 16)) + 16, -540, 540);
+	return create_hud_widget(copy);
+}
+
+bool ClockGearsDataManager::move_hud_widget(const String &p_widget_id, int p_delta) {
+	if (p_delta == 0) {
+		return false;
+	}
+	String target = p_widget_id.strip_edges().to_lower();
+	Dictionary norm = normalize_hud_config(hud_config);
+	Array widgets = Array(norm.get("widgets", Array())).duplicate(true);
+	int idx = -1;
+	for (int i = 0; i < widgets.size(); i++) {
+		if (String(Dictionary(widgets[i]).get("id", "")).to_lower() == target) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx < 0) {
+		return false;
+	}
+	int new_idx = CLAMP(idx + p_delta, 0, widgets.size() - 1);
+	if (new_idx == idx) {
+		return false;
+	}
+	Variant item = widgets[idx];
+	widgets.remove_at(idx);
+	widgets.insert(new_idx, item);
+	norm["widgets"] = widgets;
+	set_hud_config(norm);
+	return true;
+}
+
+void ClockGearsDataManager::set_hud_runtime_visible(bool p_visible) {
+	if (runtime_hud_visible != p_visible) {
+		runtime_hud_visible = p_visible;
+		emit_signal("runtime_state_changed", "hud_visibility", String());
+	}
+}
+
+void ClockGearsDataManager::set_hud_widget_runtime_visible(const String &p_widget_name_or_id, bool p_visible) {
+	String key = p_widget_name_or_id.strip_edges().to_lower();
+	if (key.is_empty()) {
+		return;
+	}
+	bool had = runtime_hud_widget_visibility.has(key);
+	bool prev = had ? bool(runtime_hud_widget_visibility[key]) : true;
+	runtime_hud_widget_visibility[key] = p_visible;
+	if (!had || prev != p_visible) {
+		emit_signal("runtime_state_changed", "hud_visibility", key);
+	}
+}
+
+void ClockGearsDataManager::clear_hud_widget_runtime_visibility(const String &p_widget_name_or_id) {
+	String key = p_widget_name_or_id.strip_edges().to_lower();
+	if (key.is_empty()) {
+		if (!runtime_hud_widget_visibility.is_empty()) {
+			runtime_hud_widget_visibility.clear();
+			emit_signal("runtime_state_changed", "hud_visibility", String());
+		}
+		return;
+	}
+	if (runtime_hud_widget_visibility.has(key)) {
+		runtime_hud_widget_visibility.erase(key);
+		emit_signal("runtime_state_changed", "hud_visibility", key);
+	}
+}
+
+bool ClockGearsDataManager::is_hud_widget_runtime_visible(const String &p_widget_id, const String &p_widget_name) const {
+	if (!runtime_hud_visible) {
+		return false;
+	}
+	String kid = p_widget_id.strip_edges().to_lower();
+	if (!kid.is_empty() && runtime_hud_widget_visibility.has(kid)) {
+		return bool(runtime_hud_widget_visibility[kid]);
+	}
+	String kname = p_widget_name.strip_edges().to_lower();
+	if (!kname.is_empty() && runtime_hud_widget_visibility.has(kname)) {
+		return bool(runtime_hud_widget_visibility[kname]);
+	}
+	return true;
+}
+
+Dictionary ClockGearsDataManager::get_hud_runtime_visibility_state() const {
+	Dictionary out;
+	out["hud_visible"] = runtime_hud_visible;
+	out["widget_visibility"] = runtime_hud_widget_visibility.duplicate(true);
+	return out;
 }
 
 // --- Estilos de Ventana y Botones (9B Tanda 2) ---
@@ -4120,6 +4684,7 @@ void ClockGearsDataManager::ensure_default_window_types_registered() {
 	register_window_type("options", "Opciones");
 	register_window_type("save_list", "Lista de partidas");
 	register_window_type("game_menu", String::utf8("Menú del juego"));
+	register_window_type("hud", "HUD y Widgets");
 }
 
 void ClockGearsDataManager::register_window_type(const String &p_id, const String &p_label) {
@@ -4565,6 +5130,7 @@ void ClockGearsDataManager::set_currency_unit(const String &p_unit) {
 	vocabulary_config.erase("gold");
 	dirty = true;
 	emit_signal("data_changed", "system", 0);
+	emit_signal("runtime_state_changed", "currency_unit", String());
 }
 
 Dictionary ClockGearsDataManager::get_default_player_options() {
@@ -5094,6 +5660,26 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_runtime_window_style_override", "window_type_id", "style_id"), &ClockGearsDataManager::set_runtime_window_style_override);
 	ClassDB::bind_method(D_METHOD("clear_runtime_window_style_overrides"), &ClockGearsDataManager::clear_runtime_window_style_overrides);
 	ClassDB::bind_method(D_METHOD("get_runtime_window_style_overrides"), &ClockGearsDataManager::get_runtime_window_style_overrides);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_hud_anchor_ids"), &ClockGearsDataManager::get_hud_anchor_ids);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_hud_config"), &ClockGearsDataManager::get_default_hud_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("make_default_hud_widget", "type"), &ClockGearsDataManager::make_default_hud_widget, DEFVAL("bar"));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_hud_widget", "widget", "index_hint"), &ClockGearsDataManager::normalize_hud_widget, DEFVAL(1));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_hud_config", "cfg"), &ClockGearsDataManager::normalize_hud_config);
+	ClassDB::bind_method(D_METHOD("get_hud_config"), &ClockGearsDataManager::get_hud_config);
+	ClassDB::bind_method(D_METHOD("set_hud_config", "cfg"), &ClockGearsDataManager::set_hud_config);
+	ClassDB::bind_method(D_METHOD("get_hud_widgets"), &ClockGearsDataManager::get_hud_widgets);
+	ClassDB::bind_method(D_METHOD("get_hud_widget", "widget_id"), &ClockGearsDataManager::get_hud_widget);
+	ClassDB::bind_method(D_METHOD("create_hud_widget", "widget"), &ClockGearsDataManager::create_hud_widget);
+	ClassDB::bind_method(D_METHOD("update_hud_widget", "widget_id", "widget"), &ClockGearsDataManager::update_hud_widget);
+	ClassDB::bind_method(D_METHOD("delete_hud_widget", "widget_id"), &ClockGearsDataManager::delete_hud_widget);
+	ClassDB::bind_method(D_METHOD("duplicate_hud_widget", "source_id", "new_name"), &ClockGearsDataManager::duplicate_hud_widget, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("move_hud_widget", "widget_id", "delta"), &ClockGearsDataManager::move_hud_widget);
+	ClassDB::bind_method(D_METHOD("is_hud_runtime_visible"), &ClockGearsDataManager::is_hud_runtime_visible);
+	ClassDB::bind_method(D_METHOD("set_hud_runtime_visible", "visible"), &ClockGearsDataManager::set_hud_runtime_visible);
+	ClassDB::bind_method(D_METHOD("set_hud_widget_runtime_visible", "widget_name_or_id", "visible"), &ClockGearsDataManager::set_hud_widget_runtime_visible);
+	ClassDB::bind_method(D_METHOD("clear_hud_widget_runtime_visibility", "widget_name_or_id"), &ClockGearsDataManager::clear_hud_widget_runtime_visibility, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("is_hud_widget_runtime_visible", "widget_id", "widget_name"), &ClockGearsDataManager::is_hud_widget_runtime_visible, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("get_hud_runtime_visibility_state"), &ClockGearsDataManager::get_hud_runtime_visibility_state);
 	ClassDB::bind_method(D_METHOD("get_gold"), &ClockGearsDataManager::get_gold);
 	ClassDB::bind_method(D_METHOD("set_gold", "gold"), &ClockGearsDataManager::set_gold);
 	ClassDB::bind_method(D_METHOD("change_gold", "amount"), &ClockGearsDataManager::change_gold);
@@ -5159,6 +5745,7 @@ void ClockGearsDataManager::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("actor_leveled_up", PropertyInfo(Variant::INT, "actor_id"), PropertyInfo(Variant::INT, "new_level")));
 	ADD_SIGNAL(MethodInfo("player_options_changed"));
 	ADD_SIGNAL(MethodInfo("save_slots_changed"));
+	ADD_SIGNAL(MethodInfo("runtime_state_changed", PropertyInfo(Variant::STRING, "topic"), PropertyInfo(Variant::STRING, "key")));
 }
 
 void ClockGearsDataManager::set_editor_map(Node *p_map) {

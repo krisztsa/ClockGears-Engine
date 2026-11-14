@@ -269,6 +269,7 @@ void ClockGearsSystemCatalog::_init_system_defaults() {
 	command_definitions.push_back(_make_def(CG_CMD_SHOW_CREDITS, "Mostrar Créditos...", "Escena"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_MENU_ACCESS, "Bloquear / Permitir Menú del Juego...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_WINDOW_STYLE, "Cambiar Estilo de Ventana...", "Sistema"));
+	command_definitions.push_back(_make_def(CG_CMD_CHANGE_HUD_VISIBILITY, "Mostrar / Ocultar HUD...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_TILESET, "Cambiar Tileset...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_BATTLE_BG, "Cambiar Fondo de Batalla...", "Sistema"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_SYSTEM_OPTIONS, "Cambiar Opciones del Sistema...", "Sistema"));

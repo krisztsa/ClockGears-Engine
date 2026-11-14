@@ -60,6 +60,7 @@ private:
 	Dictionary game_menu_config;
 	Dictionary credits_config;
 	Dictionary window_styles_config;
+	Dictionary hud_config;
 	Dictionary player_options;
 	bool player_options_loaded = false;
 	String player_options_path_override;
@@ -83,6 +84,8 @@ private:
 	double runtime_playtime_sec = 0.0;
 	int runtime_gold = 0;
 	bool runtime_game_menu_disabled = false;
+	bool runtime_hud_visible = true;
+	Dictionary runtime_hud_widget_visibility;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
 
@@ -159,6 +162,28 @@ public:
 	void set_runtime_window_style_override(const String &p_window_type_id, const String &p_style_id);
 	void clear_runtime_window_style_overrides();
 	Dictionary get_runtime_window_style_overrides() const { return runtime_window_style_overrides.duplicate(true); }
+
+	// HUD y Widgets (9B Tanda 5)
+	static Array get_hud_anchor_ids();
+	static Dictionary get_default_hud_config();
+	static Dictionary make_default_hud_widget(const String &p_type = "bar");
+	static Dictionary normalize_hud_widget(const Dictionary &p_widget, int p_index_hint = 1);
+	static Dictionary normalize_hud_config(const Dictionary &p_cfg);
+	Dictionary get_hud_config() const { return hud_config.duplicate(true); }
+	void set_hud_config(const Dictionary &p_cfg);
+	Array get_hud_widgets() const;
+	Dictionary get_hud_widget(const String &p_widget_id) const;
+	String create_hud_widget(const Dictionary &p_widget);
+	bool update_hud_widget(const String &p_widget_id, const Dictionary &p_widget);
+	bool delete_hud_widget(const String &p_widget_id);
+	String duplicate_hud_widget(const String &p_source_id, const String &p_new_name = "");
+	bool move_hud_widget(const String &p_widget_id, int p_delta);
+	bool is_hud_runtime_visible() const { return runtime_hud_visible; }
+	void set_hud_runtime_visible(bool p_visible);
+	void set_hud_widget_runtime_visible(const String &p_widget_name_or_id, bool p_visible);
+	void clear_hud_widget_runtime_visibility(const String &p_widget_name_or_id = "");
+	bool is_hud_widget_runtime_visible(const String &p_widget_id, const String &p_widget_name = "") const;
+	Dictionary get_hud_runtime_visibility_state() const;
 
 	// Estilos de ventana y botones (9B Tanda 2)
 	static void ensure_default_window_types_registered();
@@ -243,8 +268,8 @@ public:
 	bool use_item_on_actor(const String &p_item_key, int p_target_actor_id);
 	Array get_party_actor_ids() const;
 	int get_gold() const { return runtime_gold; }
-	void set_gold(int p_gold) { runtime_gold = MAX(0, p_gold); }
-	void change_gold(int p_amount) { runtime_gold = MAX(0, runtime_gold + p_amount); }
+	void set_gold(int p_gold);
+	void change_gold(int p_amount);
 	void reset_runtime_state();
 
 	// Estado persistente de actor, combate ARPG, drops y respawn (Tanda 3C-1)

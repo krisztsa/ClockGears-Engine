@@ -2,6 +2,7 @@
 #include "clockgears_credits.h"
 #include "clockgears_entity_ai.h"
 #include "clockgears_game_menu.h"
+#include "clockgears_hud.h"
 #include "clockgears_title_screen.h"
 #include "../clockgears_battle_window.h"
 #include "../clockgears_debug_panel.h"
@@ -2446,6 +2447,8 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_cutscene_player"), &ClockGearsEventInterpreter::get_cutscene_player);
 	ClassDB::bind_method(D_METHOD("get_game_menu"), &ClockGearsEventInterpreter::get_game_menu);
 	ClassDB::bind_method(D_METHOD("get_credits_player"), &ClockGearsEventInterpreter::get_credits_player);
+	ClassDB::bind_method(D_METHOD("get_hud_layer"), &ClockGearsEventInterpreter::get_hud_layer);
+	ClassDB::bind_method(D_METHOD("get_hud_overlay"), &ClockGearsEventInterpreter::get_hud_overlay);
 	ClassDB::bind_method(D_METHOD("has_active_battle"), &ClockGearsEventInterpreter::has_active_battle);
 	ClassDB::bind_method(D_METHOD("has_active_credits"), &ClockGearsEventInterpreter::has_active_credits);
 	ClassDB::bind_method(D_METHOD("was_return_to_title_requested"), &ClockGearsEventInterpreter::was_return_to_title_requested);
@@ -2478,6 +2481,7 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("message_shown", PropertyInfo(Variant::STRING, "text")));
 	ADD_SIGNAL(MethodInfo("return_to_title_requested"));
 	ADD_SIGNAL(MethodInfo("window_style_changed", PropertyInfo(Variant::STRING, "window_type_id"), PropertyInfo(Variant::STRING, "style_id")));
+	ADD_SIGNAL(MethodInfo("hud_visibility_changed", PropertyInfo(Variant::STRING, "scope"), PropertyInfo(Variant::STRING, "widget_name"), PropertyInfo(Variant::BOOL, "visible")));
 }
 
 void ClockGearsEventInterpreter::_build_runtime_ui() {
@@ -2500,6 +2504,17 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 		screen_tint_rect->set_position(Vector2(0, 0));
 		screen_tint_rect->set_size(init_vsz);
 		screen_tint_layer->add_child(screen_tint_rect);
+	}
+
+	if (!hud_layer) {
+		hud_layer = memnew(CanvasLayer);
+		hud_layer->set_name("ClockGearsHudLayer");
+		hud_layer->set_layer(50);
+		add_child(hud_layer);
+	}
+	if (!hud_overlay) {
+		hud_overlay = memnew(ClockGearsHudOverlay);
+		hud_layer->add_child(hud_overlay);
 	}
 
 	if (ui_layer) {
@@ -2552,6 +2567,7 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 	// 6. Menú del Juego en Runtime (9B Tanda 3)
 	if (!game_menu) {
 		game_menu = memnew(ClockGearsGameMenu);
+		game_menu->connect("menu_opened", callable_mp(this, &ClockGearsEventInterpreter::_on_game_menu_opened));
 		game_menu->connect("menu_closed", callable_mp(this, &ClockGearsEventInterpreter::_on_game_menu_closed));
 		add_child(game_menu);
 	}
@@ -2578,6 +2594,10 @@ void ClockGearsEventInterpreter::setup_interpreter(ClockGearsMap *p_map, ClockGe
 	if (game_menu) {
 		game_menu->setup_game_menu(this, current_map, player);
 	}
+	if (hud_overlay && player && player->get_actor_id() > 0) {
+		hud_overlay->set_leader_actor_id(player->get_actor_id());
+	}
+	_sync_hud_context_visibility();
 	_refresh_all_map_events();
 }
 
@@ -2710,6 +2730,11 @@ void ClockGearsEventInterpreter::_on_credits_player_finished(bool p_cancelled) {
 		}
 		_execute_next_commands();
 	}
+	_sync_hud_context_visibility();
+}
+
+void ClockGearsEventInterpreter::_on_game_menu_opened() {
+	_sync_hud_context_visibility();
 }
 
 void ClockGearsEventInterpreter::_on_game_menu_closed() {
@@ -2721,6 +2746,20 @@ void ClockGearsEventInterpreter::_on_game_menu_closed() {
 		}
 		_execute_next_commands();
 	}
+	_sync_hud_context_visibility();
+}
+
+void ClockGearsEventInterpreter::_sync_hud_context_visibility() {
+	if (!hud_overlay) {
+		return;
+	}
+	bool blocked = (state == STATE_WAITING_MESSAGE || state == STATE_WAITING_CHOICE ||
+			state == STATE_WAITING_NUMBER || state == STATE_WAITING_BATTLE ||
+			state == STATE_WAITING_CREDITS || state == STATE_WAITING_MENU ||
+			(game_menu && game_menu->is_menu_open()) ||
+			(credits_player && credits_player->is_playing()) ||
+			(message_window && message_window->is_busy()));
+	hud_overlay->set_context_blocked(blocked);
 }
 
 void ClockGearsEventInterpreter::_on_battle_scene_finished(int p_result) {
@@ -2731,6 +2770,7 @@ void ClockGearsEventInterpreter::_on_battle_scene_finished(int p_result) {
 
 	if (p_result == 4 /* RESULT_GAME_OVER */ || (p_result == 2 /* RESULT_DEFEAT */ && !battle_can_lose_flag)) {
 		state = STATE_GAME_OVER;
+		_sync_hud_context_visibility();
 		print_line("[ClockGears Event] Batalla terminada en GAME OVER.");
 		return;
 	}
@@ -2741,6 +2781,7 @@ void ClockGearsEventInterpreter::_on_battle_scene_finished(int p_result) {
 		player->lock_action_key();
 	}
 	_execute_next_commands();
+	_sync_hud_context_visibility();
 }
 
 void ClockGearsEventInterpreter::advance_message_or_choice(int p_choice_idx) {
@@ -2771,6 +2812,7 @@ void ClockGearsEventInterpreter::_execute_next_commands() {
 		if (!_execute_single_command(cmd)) {
 			// El comando pausó el intérprete (ej. Mostrar Mensaje, Mostrar Opciones, Esperar, Transferir)
 			// Solo al llegar a CLOSED se hace command_index++ (una única vez) y sigue.
+			_sync_hud_context_visibility();
 			return;
 		}
 		command_index++;
@@ -2791,6 +2833,7 @@ void ClockGearsEventInterpreter::_execute_next_commands() {
 			emit_signal("event_finished", finished_ev);
 		}
 	}
+	_sync_hud_context_visibility();
 }
 
 bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd) {
@@ -3491,7 +3534,39 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		if (game_menu) {
 			game_menu->refresh_window_styles();
 		}
+		if (hud_overlay) {
+			hud_overlay->refresh_window_styles();
+		}
 		emit_signal("window_style_changed", wtype, sid);
+		return true;
+	}
+
+	// --- Mostrar / Ocultar HUD o Widget (9B Tanda 5) ---
+	if (type == "change_hud_visibility" || type == "hud_visibility" || type == "show_hide_hud" || code == CG_CMD_CHANGE_HUD_VISIBILITY) {
+		String scope = String(p_cmd.get("scope", "")).strip_edges().to_lower();
+		String wtarget = String(p_cmd.get("widget_name", p_cmd.get("widget_id", p_cmd.get("widget", p_cmd.get("target", ""))))).strip_edges();
+		if (scope.is_empty()) {
+			scope = wtarget.is_empty() ? String("all") : String("widget");
+		}
+		bool vis = true;
+		if (p_cmd.has("visible")) {
+			vis = bool(p_cmd["visible"]);
+		} else if (p_cmd.has("show")) {
+			vis = bool(p_cmd["show"]);
+		} else if (p_cmd.has("hidden")) {
+			vis = !bool(p_cmd["hidden"]);
+		} else if (p_cmd.has("action")) {
+			String act = String(p_cmd["action"]).strip_edges().to_lower();
+			vis = !(act == "hide" || act == "ocultar" || act == "off" || act == "false");
+		}
+		if (dm) {
+			if (scope == "widget" && !wtarget.is_empty()) {
+				dm->set_hud_widget_runtime_visible(wtarget, vis);
+			} else {
+				dm->set_hud_runtime_visible(vis);
+			}
+		}
+		emit_signal("hud_visibility_changed", scope, wtarget, vis);
 		return true;
 	}
 
