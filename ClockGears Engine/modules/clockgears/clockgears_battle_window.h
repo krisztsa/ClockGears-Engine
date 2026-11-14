@@ -132,6 +132,8 @@ private:
 	void _display_message(const String &p_text);
 	void _on_battleback_bg_layer_draw();
 	void _on_battleback_floor_layer_draw();
+	void _on_enemies_field_draw();
+	void _sync_enemy_hit_nodes_layout();
 	void _check_battle_state();
 	void _on_message_completed();
 	void _on_hit_executed(const String &p_log);
@@ -143,6 +145,37 @@ protected:
 	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	static constexpr float BATTLE_REF_WIDTH = 960.0f;
+	static constexpr float BATTLE_REF_HEIGHT = 540.0f;
+	static constexpr float BATTLE_HUD_BOTTOM_PX = 199.0f;
+	// Punto de alineación de tropas derivado de Tropa 001 (x=395, y=178) en área 960x540:
+	// bloque lógico (140x141) -> centro (465, 248.5) => (0.484375, 0.460185)
+	static constexpr float BATTLE_ALIGN_POINT_FX = 465.0f / 960.0f;
+	static constexpr float BATTLE_ALIGN_POINT_FY = 248.5f / 540.0f;
+
+	struct EnemyVisualLayout {
+		Point2 block_origin;
+		Rect2 sprite_box;
+		Rect2 draw_spr_rect;
+		float label_baseline_y = 0.0f;
+		float label_max_w = 140.0f;
+		int font_sz = 12;
+		Rect2 hp_rect;
+		Rect2 full_box;
+	};
+
+	struct TroopEnemyDrawEntry {
+		String name;
+		int level = 1;
+		int hp = 1;
+		int max_hp = 1;
+		bool is_dead = false;
+		Vector2 troop_pos;
+		Ref<Texture2D> texture;
+		Rect2 src_region;
+		Color modulate = Color(1, 1, 1, 1);
+	};
+
 	enum BattlebackMode {
 		BB_MODE_COVER = 0,
 		BB_MODE_FIT = 1,
@@ -159,6 +192,12 @@ public:
 	static Ref<Texture2D> load_texture_with_fallbacks(const String &p_path);
 	static Ref<Texture2D> create_placeholder_marker_texture();
 	static void resolve_enemy_preview_sprite(const Dictionary &p_enemy_dict, Ref<Texture2D> &r_tex, Rect2 &r_src_region, String &r_source);
+
+	static Point2 troop_pos_to_screen(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect);
+	static Vector2 screen_to_troop_pos(const Point2 &p_screen_pos, const Rect2 &p_vp_rect);
+	static Rect2 get_battle_hud_strip_rect(const Rect2 &p_vp_rect);
+	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, const Ref<Font> &p_font = Ref<Font>());
+	static void draw_troop_enemies(Control *p_canvas, const Rect2 &p_vp_rect, const Vector<TroopEnemyDrawEntry> &p_entries, int p_selected_idx, bool p_show_selection, bool p_show_grid, const Ref<Font> &p_font);
 
 	static Dictionary default_battleback_cfg(bool p_is_floor, const Size2 &p_tex_size = Size2());
 	static Dictionary normalize_battleback_cfg(const Dictionary &p_cfg, bool p_is_floor, const Size2 &p_tex_size = Size2());

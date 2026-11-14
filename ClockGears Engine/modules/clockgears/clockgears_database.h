@@ -227,6 +227,11 @@ private:
 	Control *troop_bg_layer_ctrl = nullptr;
 	Control *troop_floor_layer_ctrl = nullptr;
 	Control *troop_enemies_overlay_ctrl = nullptr;
+	Label *troop_hud_warning_label = nullptr;
+	mutable HashMap<String, Ref<Texture2D>> troop_preview_tex_cache;
+	mutable Ref<Texture2D> troop_placeholder_tex_cache;
+	mutable bool troop_waiting_tex_ready = false;
+	float troop_tex_poll_timer = 0.0f;
 	int selected_troop_member_idx = 0;
 	bool troop_member_dragging = false;
 	Vector2 troop_drag_offset;
@@ -541,6 +546,10 @@ private:
 	void _on_troop_bg_browse_pressed(int p_slot);
 	void _on_troop_bg_clear_pressed(int p_slot);
 	void _on_troop_bg_file_selected(const String &p_path);
+	Ref<Texture2D> _retain_troop_texture(const String &p_path) const;
+	Ref<Texture2D> _get_troop_placeholder_texture() const;
+	void _clear_troop_texture_cache() const;
+	void _update_troop_hud_warning(const Dictionary &p_troop_dict);
 	void _on_editor_filesystem_changed();
 	void _on_editor_resources_reimported(const PackedStringArray &p_resources);
 	void _queue_troop_preview_redraw();
