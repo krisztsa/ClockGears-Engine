@@ -240,6 +240,7 @@ private:
 	PopupMenu *troop_bg_adjust_menu = nullptr;
 	PopupMenu *troop_ctx_menu = nullptr;
 	PopupMenu *troop_scale_submenu = nullptr;
+	PopupMenu *troop_hp_bar_submenu = nullptr;
 	int troop_ctx_member_idx = -1;
 	CheckBox *chk_troop_snap_grid = nullptr;
 	VBoxContainer *troop_placement_col3_box = nullptr;
@@ -255,6 +256,8 @@ private:
 	int selected_troop_member_idx = 0;
 	bool troop_member_dragging = false;
 	Vector2 troop_drag_offset;
+	bool troop_hp_bar_dragging = false;
+	Vector2 troop_hp_drag_offset;
 
 	// Ventana "Cambiar fondo" (Fondo + Suelo por tropa)
 	AcceptDialog *troop_bg_dialog = nullptr;
@@ -615,6 +618,7 @@ private:
 	void _on_adjust_troop_bg_pressed();
 	void _on_adjust_troop_bg_menu_id(int p_id);
 	void _on_troop_scale_menu_id_pressed(int p_id);
+	void _on_troop_hp_bar_menu_id_pressed(int p_id);
 	void _build_adjust_dialog(int p_ui_idx, int p_slot);
 	void _open_adjust_dialog(int p_slot);
 	void _sync_adjust_dialog_controls(int p_ui_idx);
@@ -759,6 +763,8 @@ public:
 	Vector2i get_remembered_window_size() const;
 	Dictionary check_layout_fits_window(const Vector2i &p_window_size) const;
 	Dictionary get_troop_member_preview_info(int p_troop_idx, int p_member_idx) const;
+	Rect2 get_troop_preview_viewport_rect() const;
+	Dictionary get_troop_preview_enemy_layout(int p_member_idx) const;
 	Dictionary get_enemy_anim_slot_info(int p_enemy_idx, const String &p_slot_id) const;
 	bool reassign_enemy_other_animation(int p_enemy_idx, const String &p_other_name, const String &p_target_slot);
 	bool remove_enemy_other_animation(int p_enemy_idx, const String &p_other_name);

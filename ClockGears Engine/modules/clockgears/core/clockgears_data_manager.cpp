@@ -1,5 +1,6 @@
 #include "clockgears_data_manager.h"
 #include "../clockgears_animation.h"
+#include "../clockgears_battle.h"
 #include "clockgears_id_registry.h"
 #include "clockgears_system_catalog.h"
 #include "clockgears_time_manager.h"
@@ -251,6 +252,20 @@ void ClockGearsDataManager::_migrate_schema_if_needed(int p_from_version) {
 			}
 			if (cat == CAT_ENEMIES) {
 				ClockGearsSpriteSheetData::migrate_enemy_record(rec);
+			}
+			if (cat == CAT_TROOPS) {
+				Array mems = rec.get("members", Array());
+				for (int m_i = 0; m_i < mems.size(); m_i++) {
+					if (mems[m_i].get_type() != Variant::DICTIONARY) {
+						continue;
+					}
+					Dictionary md = mems[m_i];
+					md["hp_bar_mode"] = ClockGearsBattleUnit::normalize_hp_bar_mode(String(md.get("hp_bar_mode", "abajo")));
+					md["hp_bar_offset_x"] = md.has("hp_bar_offset_x") ? int(md["hp_bar_offset_x"]) : 0;
+					md["hp_bar_offset_y"] = md.has("hp_bar_offset_y") ? int(md["hp_bar_offset_y"]) : 0;
+					mems[m_i] = md;
+				}
+				rec["members"] = mems;
 			}
 			if (cat_sys) {
 				cat_sys->migrate_record_elements(rec);

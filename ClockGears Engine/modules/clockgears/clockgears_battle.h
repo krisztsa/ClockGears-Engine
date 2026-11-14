@@ -197,6 +197,20 @@ public:
 	void set_sprite_scale(int p_scale) { sprite_scale = CLAMP(p_scale, 1, 6); }
 	int get_sprite_scale() const { return sprite_scale; }
 
+	String hp_bar_mode = "abajo";
+	Vector2i hp_bar_offset = Vector2i(0, 0);
+	static String normalize_hp_bar_mode(const String &p_mode) {
+		String clean = p_mode.strip_edges().to_lower();
+		if (clean == "arriba" || clean == "abajo" || clean == "libre" || clean == "oculta") {
+			return clean;
+		}
+		return "abajo";
+	}
+	void set_hp_bar_mode(const String &p_mode) { hp_bar_mode = normalize_hp_bar_mode(p_mode); }
+	String get_hp_bar_mode() const { return hp_bar_mode; }
+	void set_hp_bar_offset(const Vector2i &p_off) { hp_bar_offset = p_off; }
+	Vector2i get_hp_bar_offset() const { return hp_bar_offset; }
+
 	ClockGearsSpriteSheetData sprite_data;
 	void set_sprite_data(const ClockGearsSpriteSheetData &p_data) { sprite_data = p_data; }
 	ClockGearsSpriteSheetData get_sprite_data() const { return sprite_data; }

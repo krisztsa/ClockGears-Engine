@@ -162,7 +162,11 @@ public:
 		float label_max_w = 140.0f;
 		int font_sz = 12;
 		Rect2 hp_rect;
+		Rect2 hud_group_box;
 		Rect2 full_box;
+		String hp_bar_mode = "abajo";
+		bool hp_bar_visible = true;
+		float group_center_x = 0.0f;
 	};
 
 	struct TroopEnemyDrawEntry {
@@ -176,6 +180,9 @@ public:
 		Ref<Texture2D> texture;
 		Rect2 src_region;
 		Color modulate = Color(1, 1, 1, 1);
+		String hp_bar_mode = "abajo";
+		Vector2i hp_bar_offset = Vector2i(0, 0);
+		bool highlight_hud_group = false;
 	};
 
 	enum BattlebackMode {
@@ -198,7 +205,7 @@ public:
 	static Point2 troop_pos_to_screen(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect);
 	static Vector2 screen_to_troop_pos(const Point2 &p_screen_pos, const Rect2 &p_vp_rect);
 	static Rect2 get_battle_hud_strip_rect(const Rect2 &p_vp_rect);
-	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale = 1, const Ref<Font> &p_font = Ref<Font>());
+	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale = 1, const Ref<Font> &p_font = Ref<Font>(), const String &p_hp_bar_mode = "abajo", const Vector2i &p_hp_bar_offset = Vector2i());
 	static void draw_troop_enemies(Control *p_canvas, const Rect2 &p_vp_rect, const Vector<TroopEnemyDrawEntry> &p_entries, int p_selected_idx, bool p_show_selection, bool p_show_grid, const Ref<Font> &p_font);
 
 	static Dictionary default_battleback_cfg(bool p_is_floor, const Size2 &p_tex_size = Size2());
@@ -226,7 +233,11 @@ public:
 	bool is_initiative_bar_visible() const;
 	bool is_formula_log_visible() const;
 	Vector2 get_enemy_node_pos(int p_idx) const;
+	EnemyVisualLayout _get_enemy_visual_layout(int p_idx) const;
 	Rect2 get_enemy_sprite_rect(int p_idx) const;
+	Rect2 get_enemy_hud_group_rect(int p_idx) const;
+	Rect2 get_enemy_hp_bar_rect(int p_idx) const;
+	Rect2 get_battle_field_rect() const;
 	Point2 get_enemy_effect_center(int p_idx) const;
 	String get_enemy_label_text(int p_idx) const;
 	bool is_enemy_hp_bar_visible(int p_idx) const;

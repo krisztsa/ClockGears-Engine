@@ -45,6 +45,21 @@ static int s_get_troop_member_scale(const Dictionary &p_member) {
 	return CLAMP(s, 1, 6);
 }
 
+static String s_get_troop_member_hp_bar_mode(const Dictionary &p_member) {
+	return ClockGearsBattleUnit::normalize_hp_bar_mode(String(p_member.get("hp_bar_mode", "abajo")));
+}
+
+static Vector2i s_get_troop_member_hp_bar_offset(const Dictionary &p_member) {
+	return Vector2i(int(p_member.get("hp_bar_offset_x", 0)), int(p_member.get("hp_bar_offset_y", 0)));
+}
+
+static int s_hp_bar_mode_to_menu_id(const String &p_mode) {
+	if (p_mode == "arriba") return 1;
+	if (p_mode == "libre") return 3;
+	if (p_mode == "oculta") return 4;
+	return 2; // abajo
+}
+
 static Size2 s_resolve_troop_member_src_size(const Dictionary &p_member, const Array &p_enemies) {
 	int eid = int(p_member.get("enemy_id", 1));
 	Dictionary ed;
@@ -395,6 +410,8 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_remembered_window_size"), &ClockGearsDatabaseDialog::get_remembered_window_size);
 	ClassDB::bind_method(D_METHOD("check_layout_fits_window", "window_size"), &ClockGearsDatabaseDialog::check_layout_fits_window);
 	ClassDB::bind_method(D_METHOD("get_troop_member_preview_info", "troop_idx", "member_idx"), &ClockGearsDatabaseDialog::get_troop_member_preview_info);
+	ClassDB::bind_method(D_METHOD("get_troop_preview_viewport_rect"), &ClockGearsDatabaseDialog::get_troop_preview_viewport_rect);
+	ClassDB::bind_method(D_METHOD("get_troop_preview_enemy_layout", "member_idx"), &ClockGearsDatabaseDialog::get_troop_preview_enemy_layout);
 	ClassDB::bind_method(D_METHOD("get_enemy_anim_slot_info", "enemy_idx", "slot_id"), &ClockGearsDatabaseDialog::get_enemy_anim_slot_info);
 	ClassDB::bind_method(D_METHOD("reassign_enemy_other_animation", "enemy_idx", "other_name", "target_slot"), &ClockGearsDatabaseDialog::reassign_enemy_other_animation);
 	ClassDB::bind_method(D_METHOD("remove_enemy_other_animation", "enemy_idx", "other_name"), &ClockGearsDatabaseDialog::remove_enemy_other_animation);
@@ -1772,6 +1789,8 @@ void ClockGearsDatabaseDialog::_refresh_record_list() {
 
 void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 	updating_ui = true;
+	troop_member_dragging = false;
+	troop_hp_bar_dragging = false;
 	Array &arr = category_data[current_category];
 	bool valid = (p_index >= 0 && p_index < arr.size());
 
@@ -3376,6 +3395,7 @@ bool ClockGearsDatabaseDialog::_has_visible_child_dialog() const {
 		sheet_importer_dialog,
 		troop_ctx_menu,
 		troop_scale_submenu,
+		troop_hp_bar_submenu,
 		record_event_editor,
 	};
 	for (const Window *w : children) {
@@ -5694,6 +5714,19 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_scale_submenu->connect("id_pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_scale_menu_id_pressed));
 	troop_ctx_menu->add_child(troop_scale_submenu);
 	troop_ctx_menu->add_submenu_node_item(CG_DB_TR("Escala"), troop_scale_submenu, 100);
+
+	troop_hp_bar_submenu = memnew(PopupMenu);
+	troop_hp_bar_submenu->set_hide_on_item_selection(true);
+	troop_hp_bar_submenu->set_hide_on_checkable_item_selection(true);
+	troop_hp_bar_submenu->add_radio_check_item(CG_DB_TR("Arriba"), 1);
+	troop_hp_bar_submenu->add_radio_check_item(CG_DB_TR("Abajo"), 2);
+	troop_hp_bar_submenu->add_radio_check_item(CG_DB_TR("Mover libremente"), 3);
+	troop_hp_bar_submenu->add_radio_check_item(CG_DB_TR("Ocultar barra"), 4);
+	troop_hp_bar_submenu->add_separator();
+	troop_hp_bar_submenu->add_item(CG_DB_TR("Restablecer"), 5);
+	troop_hp_bar_submenu->connect("id_pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_hp_bar_menu_id_pressed));
+	troop_ctx_menu->add_child(troop_hp_bar_submenu);
+	troop_ctx_menu->add_submenu_node_item(CG_DB_TR("Ajustar barra de vida"), troop_hp_bar_submenu, 101);
 	add_child(troop_ctx_menu);
 
 	btn_battle_test_troop = memnew(Button(CG_DB_TR("Prueba de batalla")));
@@ -7305,6 +7338,9 @@ void ClockGearsDatabaseDialog::_on_add_troop_member_pressed() {
 	new_m["x"] = CLAMP(160 + mems.size() * 96, 64, 896);
 	new_m["y"] = 260;
 	new_m["escala"] = 1;
+	new_m["hp_bar_mode"] = "abajo";
+	new_m["hp_bar_offset_x"] = 0;
+	new_m["hp_bar_offset_y"] = 0;
 	mems.push_back(new_m);
 	selected_troop_member_idx = mems.size() - 1;
 
@@ -7385,7 +7421,7 @@ void ClockGearsDatabaseDialog::_on_align_troop_members_pressed() {
 		src_sizes.write[i] = src_sz;
 		member_scales.write[i] = m_scale;
 
-		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font);
+		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font, s_get_troop_member_hp_bar_mode(m), s_get_troop_member_hp_bar_offset(m));
 		if (!has_box) {
 			group_box = layout.full_box;
 			has_box = true;
@@ -7818,7 +7854,7 @@ void ClockGearsDatabaseDialog::_update_troop_hud_warning(const Dictionary &p_tro
 		Vector2 mpos(float(m.get("x", 200 + i * 110)), float(m.get("y", 260)));
 		Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 		int m_scale = s_get_troop_member_scale(m);
-		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font);
+		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font, s_get_troop_member_hp_bar_mode(m), s_get_troop_member_hp_bar_offset(m));
 		if (layout.full_box.intersects(hud_strip)) {
 			any_overlap = true;
 			break;
@@ -7969,6 +8005,77 @@ void ClockGearsDatabaseDialog::_on_troop_scale_menu_id_pressed(int p_id) {
 			}
 		}
 	}
+	if (troop_ctx_menu && troop_ctx_menu->is_visible()) {
+		troop_ctx_menu->hide();
+	}
+
+	_update_troop_hud_warning(d);
+	_queue_troop_preview_redraw();
+	_on_param_changed();
+}
+
+static void s_update_hp_bar_submenu_checks(PopupMenu *p_sub, const String &p_mode) {
+	if (!p_sub) return;
+	int active_id = s_hp_bar_mode_to_menu_id(ClockGearsBattleUnit::normalize_hp_bar_mode(p_mode));
+	for (int id = 1; id <= 4; id++) {
+		int item_idx = p_sub->get_item_index(id);
+		if (item_idx >= 0) {
+			p_sub->set_item_checked(item_idx, id == active_id);
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_troop_hp_bar_menu_id_pressed(int p_id) {
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty()) return;
+	int rec_idx = sel[0];
+	Array &arr = category_data[CAT_TROOPS];
+	if (rec_idx < 0 || rec_idx >= arr.size()) return;
+
+	Dictionary d = arr[rec_idx];
+	Array mems = d.get("members", Array());
+	int target_idx = (troop_ctx_member_idx >= 0 && troop_ctx_member_idx < mems.size()) ? troop_ctx_member_idx : selected_troop_member_idx;
+	if (target_idx < 0 || target_idx >= mems.size()) return;
+
+	Dictionary m = mems[target_idx];
+	String prev_mode = s_get_troop_member_hp_bar_mode(m);
+	String next_mode = prev_mode;
+	if (p_id == 5) {
+		next_mode = "abajo";
+		m["hp_bar_offset_x"] = 0;
+		m["hp_bar_offset_y"] = 0;
+		troop_hp_bar_dragging = false;
+	} else if (p_id == 3) {
+		next_mode = "libre";
+		if (prev_mode != "libre") {
+			const Rect2 ref_vp(Point2(0, 0), Size2(ClockGearsBattleScene::BATTLE_REF_WIDTH, ClockGearsBattleScene::BATTLE_REF_HEIGHT));
+			int mx = int(m.get("x", 200));
+			int my = int(m.get("y", 260));
+			Size2 src_sz = s_resolve_troop_member_src_size(m, category_data[CAT_ENEMIES]);
+			int m_scale = s_get_troop_member_scale(m);
+			Ref<Font> font = get_theme_default_font();
+			ClockGearsBattleScene::EnemyVisualLayout cur_lay = ClockGearsBattleScene::compute_enemy_visual_layout(
+					Vector2(float(mx), float(my)), ref_vp, src_sz, m_scale, font, prev_mode, s_get_troop_member_hp_bar_offset(m));
+			float grp_h = float(cur_lay.font_sz) + 3.0f + 5.0f + MAX(6.0f, 10.0f);
+			float half_w = cur_lay.hud_group_box.size.x * 0.5f;
+			int clamped_cx = int(Math::round(CLAMP(cur_lay.group_center_x, half_w, ClockGearsBattleScene::BATTLE_REF_WIDTH - half_w)));
+			int clamped_ty = int(Math::round(CLAMP(cur_lay.label_baseline_y - float(cur_lay.font_sz) - 3.0f, 0.0f, MAX(0.0f, ClockGearsBattleScene::BATTLE_REF_HEIGHT - grp_h))));
+			m["hp_bar_offset_x"] = clamped_cx - mx;
+			m["hp_bar_offset_y"] = clamped_ty - my;
+		}
+	} else if (p_id == 1) {
+		next_mode = "arriba";
+	} else if (p_id == 4) {
+		next_mode = "oculta";
+	} else {
+		next_mode = "abajo";
+	}
+	m["hp_bar_mode"] = next_mode;
+	mems[target_idx] = m;
+	d["members"] = mems;
+	arr[rec_idx] = d;
+
+	s_update_hp_bar_submenu_checks(troop_hp_bar_submenu, next_mode);
 	if (troop_ctx_menu && troop_ctx_menu->is_visible()) {
 		troop_ctx_menu->hide();
 	}
@@ -8431,6 +8538,9 @@ void ClockGearsDatabaseDialog::_draw_troop_enemies_preview(Control *p_canvas, co
 		entry.max_hp = 100;
 		entry.is_dead = false;
 		entry.sprite_scale = s_get_troop_member_scale(m);
+		entry.hp_bar_mode = s_get_troop_member_hp_bar_mode(m);
+		entry.hp_bar_offset = s_get_troop_member_hp_bar_offset(m);
+		entry.highlight_hud_group = (p_show_selection && troop_hp_bar_dragging && i == selected_troop_member_idx);
 		entry.troop_pos = Vector2(mx, my);
 		entry.texture = retained_tex;
 		entry.src_region = src_reg;
@@ -8529,25 +8639,60 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 
 	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
 		if (mb->is_pressed()) {
-			int hit_idx = -1;
+			int hit_hp_idx = -1;
 			for (int i = mems.size() - 1; i >= 0; i--) {
 				Dictionary m = mems[i];
+				String hp_mode = s_get_troop_member_hp_bar_mode(m);
+				if (hp_mode != "libre") {
+					continue;
+				}
 				Vector2 mpos(float(m.get("x", 200)), float(m.get("y", 260)));
 				Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 				int m_scale = s_get_troop_member_scale(m);
-				ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font);
-				if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
-					hit_idx = i;
-					troop_drag_offset = mpos - ClockGearsBattleScene::screen_to_troop_pos(mb->get_position(), vp_rect);
+				Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
+				ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+				if (lay.hud_group_box.grow(4.0f).has_point(mb->get_position())) {
+					hit_hp_idx = i;
+					Vector2 cur_anchor_ref(mpos.x + float(hp_off.x), mpos.y + float(hp_off.y));
+					troop_hp_drag_offset = cur_anchor_ref - ClockGearsBattleScene::screen_to_troop_pos(mb->get_position(), vp_rect);
 					break;
 				}
 			}
-			if (hit_idx >= 0) {
-				selected_troop_member_idx = hit_idx;
-				troop_member_dragging = true;
+			if (hit_hp_idx >= 0) {
+				selected_troop_member_idx = hit_hp_idx;
+				troop_hp_bar_dragging = true;
+				troop_member_dragging = false;
 				_refresh_troop_members_ui();
+				_queue_troop_preview_redraw();
+			} else {
+				int hit_idx = -1;
+				for (int i = mems.size() - 1; i >= 0; i--) {
+					Dictionary m = mems[i];
+					Vector2 mpos(float(m.get("x", 200)), float(m.get("y", 260)));
+					Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+					int m_scale = s_get_troop_member_scale(m);
+					String hp_mode = s_get_troop_member_hp_bar_mode(m);
+					Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
+					ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+					if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
+						hit_idx = i;
+						troop_drag_offset = mpos - ClockGearsBattleScene::screen_to_troop_pos(mb->get_position(), vp_rect);
+						break;
+					}
+				}
+				if (hit_idx >= 0) {
+					selected_troop_member_idx = hit_idx;
+					troop_member_dragging = true;
+					troop_hp_bar_dragging = false;
+					_refresh_troop_members_ui();
+				}
 			}
 		} else {
+			if (troop_hp_bar_dragging) {
+				troop_hp_bar_dragging = false;
+				_queue_troop_preview_redraw();
+				_on_param_changed();
+			}
 			if (troop_member_dragging) {
 				troop_member_dragging = false;
 				_refresh_troop_members_ui();
@@ -8561,7 +8706,9 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 			Vector2 mpos(float(m.get("x", 200)), float(m.get("y", 260)));
 			Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 			int m_scale = s_get_troop_member_scale(m);
-			ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font);
+			String hp_mode = s_get_troop_member_hp_bar_mode(m);
+			Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
+			ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
 			if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
 				hit_idx = i;
 				break;
@@ -8579,10 +8726,14 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 					troop_scale_submenu->set_item_checked(item_idx, s == cur_scale);
 				}
 			}
+			s_update_hp_bar_submenu_checks(troop_hp_bar_submenu, s_get_troop_member_hp_bar_mode(mems[hit_idx]));
 
 			if (ClockGearsTheme::get_singleton()) {
 				ClockGearsTheme::get_singleton()->apply_to_window(troop_ctx_menu);
 				ClockGearsTheme::get_singleton()->apply_to_window(troop_scale_submenu);
+				if (troop_hp_bar_submenu) {
+					ClockGearsTheme::get_singleton()->apply_to_window(troop_hp_bar_submenu);
+				}
 			}
 			troop_ctx_menu->reset_size();
 			Size2i menu_sz = troop_ctx_menu->get_contents_minimum_size();
@@ -8607,6 +8758,37 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 				py = CLAMP(py, usable_scr.position.y + 4, usable_scr.position.y + usable_scr.size.y - menu_sz.y - 4);
 			}
 			troop_ctx_menu->popup(Rect2i(Vector2i(px, py), Size2i()));
+		}
+	} else if (mm.is_valid() && troop_hp_bar_dragging) {
+		if (selected_troop_member_idx >= 0 && selected_troop_member_idx < mems.size()) {
+			Dictionary m = mems[selected_troop_member_idx];
+			int mx = int(m.get("x", 200));
+			int my = int(m.get("y", 260));
+			Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
+			int m_scale = s_get_troop_member_scale(m);
+			const Rect2 ref_vp(Point2(0, 0), Size2(ClockGearsBattleScene::BATTLE_REF_WIDTH, ClockGearsBattleScene::BATTLE_REF_HEIGHT));
+			ClockGearsBattleScene::EnemyVisualLayout ref_lay = ClockGearsBattleScene::compute_enemy_visual_layout(
+					Vector2(float(mx), float(my)), ref_vp, src_sz, m_scale, font, "libre", Vector2i(0, 0));
+			float grp_w = ref_lay.hud_group_box.size.x;
+			float grp_h = float(ref_lay.font_sz) + 3.0f + 5.0f + MAX(6.0f, 10.0f);
+			float half_w = grp_w * 0.5f;
+
+			Vector2 desired_anchor = ClockGearsBattleScene::screen_to_troop_pos(mm->get_position(), vp_rect) + troop_hp_drag_offset;
+			float min_cx = half_w;
+			float max_cx = MAX(min_cx, ClockGearsBattleScene::BATTLE_REF_WIDTH - half_w);
+			float min_ty = 0.0f;
+			float max_ty = MAX(min_ty, ClockGearsBattleScene::BATTLE_REF_HEIGHT - grp_h);
+			int cx = int(Math::round(CLAMP(desired_anchor.x, min_cx, max_cx)));
+			int ty = int(Math::round(CLAMP(desired_anchor.y, min_ty, max_ty)));
+
+			m["hp_bar_mode"] = "libre";
+			m["hp_bar_offset_x"] = cx - mx;
+			m["hp_bar_offset_y"] = ty - my;
+			mems[selected_troop_member_idx] = m;
+			d["members"] = mems;
+			category_data[CAT_TROOPS][rec_idx] = d;
+			_update_troop_hud_warning(d);
+			_queue_troop_preview_redraw();
 		}
 	} else if (mm.is_valid() && troop_member_dragging) {
 		if (selected_troop_member_idx >= 0 && selected_troop_member_idx < mems.size()) {
@@ -10514,6 +10696,47 @@ Dictionary ClockGearsDatabaseDialog::get_troop_member_preview_info(int p_troop_i
 	}
 	info["region"] = src_rect;
 	return info;
+}
+
+Rect2 ClockGearsDatabaseDialog::get_troop_preview_viewport_rect() const {
+	if (!troop_placement_canvas) {
+		return Rect2();
+	}
+	return s_calc_troop_vp_rect(troop_placement_canvas);
+}
+
+Dictionary ClockGearsDatabaseDialog::get_troop_preview_enemy_layout(int p_member_idx) const {
+	Dictionary out;
+	if (!troop_placement_canvas) {
+		return out;
+	}
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[CAT_TROOPS].size()) {
+		return out;
+	}
+	Dictionary td = category_data[CAT_TROOPS][sel[0]];
+	Array mems = td.get("members", Array());
+	if (p_member_idx < 0 || p_member_idx >= mems.size() || mems[p_member_idx].get_type() != Variant::DICTIONARY) {
+		return out;
+	}
+	Dictionary m = mems[p_member_idx];
+	Vector2 mpos(float(m.get("x", 200 + p_member_idx * 110)), float(m.get("y", 260)));
+	Size2 src_sz = s_resolve_troop_member_src_size(m, category_data[CAT_ENEMIES]);
+	int m_scale = s_get_troop_member_scale(m);
+	String hp_mode = s_get_troop_member_hp_bar_mode(m);
+	Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
+	Rect2 vp_rect = s_calc_troop_vp_rect(troop_placement_canvas);
+	Ref<Font> font = get_theme_default_font();
+	ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+	out["sprite_rect"] = lay.draw_spr_rect;
+	out["hud_group_rect"] = lay.hud_group_box;
+	out["hp_rect"] = lay.hp_rect;
+	out["hp_visible"] = lay.hp_bar_visible;
+	out["label_baseline_y"] = lay.label_baseline_y;
+	out["hp_bar_mode"] = lay.hp_bar_mode;
+	out["hp_bar_offset"] = hp_off;
+	out["hud_highlighted"] = (troop_hp_bar_dragging && p_member_idx == selected_troop_member_idx);
+	return out;
 }
 
 Dictionary ClockGearsDatabaseDialog::get_enemy_anim_slot_info(int p_enemy_idx, const String &p_slot_key) const {

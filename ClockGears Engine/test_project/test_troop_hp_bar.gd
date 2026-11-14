@@ -123,19 +123,11 @@ func find_popup_item_idx(pm: PopupMenu, exact_or_sub: String) -> int:
 	return -1
 
 func find_troop_canvas(db: Node) -> Control:
-	var all_ctrls := find_controls_of_class(db, "Control")
-	var best: Control = null
-	var best_area: float = 0.0
-	for c in all_ctrls:
+	for c in find_controls_of_class(db, "Control"):
 		var ctrl := c as Control
-		if ctrl.is_visible_in_tree() and ctrl.get_child_count() >= 3:
-			var sz := ctrl.size
-			if sz.x >= 300.0 and sz.y >= 150.0 and absf((sz.x / maxf(1.0, sz.y)) - (16.0 / 9.0)) < 0.08:
-				var area := sz.x * sz.y
-				if area > best_area:
-					best_area = area
-					best = ctrl
-	return best
+		if ctrl and ctrl.get_class() == "Control" and ctrl.is_visible_in_tree() and ctrl.get_child_count() >= 3 and ctrl.size.x >= 300.0:
+			return ctrl
+	return null
 
 func _init() -> void:
 	call_deferred("_watchdog_loop")
