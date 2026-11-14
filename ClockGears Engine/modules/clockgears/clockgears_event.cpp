@@ -3,6 +3,7 @@
 #include "clockgears_debug_panel.h"
 #include "clockgears_map.h"
 #include "core/clockgears_data_manager.h"
+#include "core/clockgears_system_catalog.h"
 #include "core/config/engine.h"
 #include "core/io/image.h"
 #include "core/io/json.h"
@@ -140,6 +141,7 @@ void ClockGearsEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_arpg_enemy_record"), &ClockGearsEvent::get_arpg_enemy_record);
 	ClassDB::bind_method(D_METHOD("get_arpg_anim_frame"), &ClockGearsEvent::get_arpg_anim_frame);
 	ClassDB::bind_method(D_METHOD("take_arpg_hit", "damage", "knockback_force", "hit_dir", "hitstop_ms", "is_crit"), &ClockGearsEvent::take_arpg_hit, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("start_arpg_attack", "target"), &ClockGearsEvent::start_arpg_attack, DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("sync_arpg_defeated_state"), &ClockGearsEvent::sync_arpg_defeated_state);
 	ClassDB::bind_method(D_METHOD("respawn_arpg_enemy"), &ClockGearsEvent::respawn_arpg_enemy);
 
@@ -1039,6 +1041,11 @@ void ClockGearsEvent::_advance_behavior_animation(float p_delta) {
 		ev_anim_timer -= dur;
 		if (ev_anim_frame + 1 < fcount) {
 			ev_anim_frame++;
+			_update_behavior_visual_frame();
+			if (ev_action_state == "atacar") {
+				_process_enemy_attack_hits(ClockGearsEntityNav::find_parent_map(this));
+			}
+			return;
 		} else if (ev_action_state == "morir" && arpg_dying) {
 			arpg_dying = false;
 			arpg_dead = true;
@@ -1050,6 +1057,7 @@ void ClockGearsEvent::_advance_behavior_animation(float p_delta) {
 		} else if (resolved_anim.loop && ev_action_state != "atacar" && ev_action_state != "morir") {
 			ev_anim_frame = 0;
 		} else if (ev_action_state == "atacar") {
+			_end_enemy_attack_swing();
 			ev_action_state = "quieto";
 			ev_anim_frame = 0;
 			ev_anim_timer = 0.0f;
@@ -1199,16 +1207,9 @@ void ClockGearsEvent::execute_zone_actions(const Array &p_actions, Node *p_targe
 				}
 			}
 		} else if (act_type == "atacar") {
-			Node2D *n2 = Object::cast_to<Node2D>(p_target);
-			if (n2) {
-				_face_toward_world_pos(n2->get_position());
+			if (ev_action_state != "atacar") {
+				start_arpg_attack(p_target);
 			}
-			// Solo dispara el estado/animación de ataque, sin daño
-			ev_action_state = "atacar";
-			ev_anim_frame = 0;
-			ev_anim_timer = 0.0f;
-			ev_attack_timer = 0.45f * (100.0f / MAX(1.0f, attack_speed_pct));
-			_update_behavior_visual_frame();
 		}
 	}
 }
@@ -1329,10 +1330,144 @@ void ClockGearsEvent::_grant_arpg_kill_rewards() {
 	emit_signal("arpg_defeated");
 }
 
+void ClockGearsEvent::_begin_enemy_attack_swing() {
+	if (ev_swing_tracker.is_null()) {
+		ev_swing_tracker.instantiate();
+	}
+	ev_attack_swing_id = ev_swing_tracker->start_new_swing();
+}
+
+void ClockGearsEvent::_end_enemy_attack_swing() {
+	if (ev_swing_tracker.is_valid() && ev_attack_swing_id > 0) {
+		ev_swing_tracker->end_swing(ev_attack_swing_id);
+	}
+	ev_attack_swing_id = 0;
+}
+
+void ClockGearsEvent::start_arpg_attack(Node *p_target) {
+	if (arpg_dead || arpg_dying) {
+		return;
+	}
+	ClockGearsMap *map = ClockGearsEntityNav::find_parent_map(this);
+	Node2D *n2 = Object::cast_to<Node2D>(p_target);
+	if (!n2 && map) {
+		n2 = map->get_runtime_player();
+	}
+	if (n2 && !direction_fix) {
+		_face_toward_world_pos(n2->get_position());
+	}
+	ev_action_state = "atacar";
+	ev_anim_frame = 0;
+	ev_anim_timer = 0.0f;
+	ev_attack_timer = 0.45f * (100.0f / MAX(1.0f, attack_speed_pct));
+	_begin_enemy_attack_swing();
+	_update_behavior_visual_frame();
+	_process_enemy_attack_hits(map);
+}
+
+void ClockGearsEvent::_process_enemy_attack_hits(ClockGearsMap *p_map) {
+	if (behavior_type != 3 || !is_arpg_alive() || ev_action_state != "atacar" || !p_map || !p_map->is_arpg_effective()) {
+		return;
+	}
+	ClockGearsPlayer *pl = p_map->get_runtime_player();
+	if (!pl || !pl->is_arpg_alive()) {
+		return;
+	}
+	if (ev_swing_tracker.is_null() || ev_attack_swing_id <= 0) {
+		_begin_enemy_attack_swing();
+	}
+	int64_t pid = int64_t(pl->get_instance_id());
+	if (ev_swing_tracker->has_hit_target(ev_attack_swing_id, pid)) {
+		return;
+	}
+
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return;
+	}
+	ClockGearsSpriteAnimation atk_anim;
+	bool freeze_f0 = false;
+	String res_slot;
+	if (!reg->resolve_actor_animation(cached_sprite_data, cached_directional_idle, "atacar", direction, atk_anim, freeze_f0, res_slot) || freeze_f0) {
+		return;
+	}
+	int fcount = atk_anim.get_frame_count();
+	if (fcount <= 0) {
+		return;
+	}
+	int fi = CLAMP(ev_anim_frame, 0, fcount - 1);
+	if (fi < 0 || fi >= atk_anim.frames_data.size() || atk_anim.frames_data[fi].hitbox.is_empty()) {
+		return;
+	}
+	const ClockGearsFrameHitboxData &hb = atk_anim.frames_data[fi].hitbox;
+	Array shapes_arr;
+	shapes_arr.resize(hb.shapes.size());
+	for (int si = 0; si < hb.shapes.size(); si++) {
+		shapes_arr[si] = hb.shapes[si].to_dict();
+	}
+	Dictionary pl_hurt = pl->get_arpg_effective_hurtbox();
+	Vector2 atk_origin = get_arpg_world_center();
+	Vector2 pl_origin = pl->get_arpg_world_center();
+	if (!ClockGearsShapeGeometry::check_attack_hits_hurtbox(shapes_arr, atk_origin, direction, pl_hurt, pl_origin, pl->get_direction(), 0, 0)) {
+		return;
+	}
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary eff_stats = (dm && pl->get_actor_id() > 0) ? dm->get_actor_effective_stats(pl->get_actor_id()) : Dictionary();
+	Dictionary attacker_dict;
+	attacker_dict["atk"] = MAX(0, arpg_atk);
+	attacker_dict["def"] = MAX(0, arpg_def);
+	attacker_dict["mat"] = MAX(0, int(cached_db_rec.get("mat", arpg_atk)));
+	attacker_dict["mdf"] = MAX(0, int(cached_db_rec.get("mdf", arpg_def)));
+	attacker_dict["luk"] = MAX(0, int(cached_db_rec.get("luk", 0)));
+
+	Dictionary defender_dict;
+	defender_dict["def"] = eff_stats.is_empty() ? 0 : MAX(0, int(eff_stats.get("def", 0)));
+	defender_dict["atk"] = eff_stats.is_empty() ? 10 : MAX(0, int(eff_stats.get("atk", 10)));
+
+	String atk_elem_key = String(cached_db_rec.get("element_key", cached_db_rec.get("element", ""))).strip_edges().to_lower();
+	int atk_elem_id = int(cached_db_rec.get("element_id", 0));
+	if (atk_elem_id <= 0 && atk_elem_key.is_empty()) {
+		Variant tr_v = cached_db_rec.get("traits", Array());
+		if (tr_v.get_type() == Variant::ARRAY) {
+			atk_elem_id = ClockGearsDataManager::resolve_traits_attack_element_id(Array(tr_v), atk_elem_key);
+		}
+	}
+	if (atk_elem_key.is_empty()) {
+		atk_elem_key = "fisico";
+	}
+	if (atk_elem_id <= 0 && ClockGearsSystemCatalog::get_singleton()) {
+		atk_elem_id = ClockGearsSystemCatalog::get_singleton()->resolve_element_id(atk_elem_key);
+	}
+
+	float elem_mult = 1.0f;
+	if (dm && pl->get_actor_id() > 0) {
+		elem_mult = dm->get_actor_element_rate(pl->get_actor_id(), atk_elem_id, atk_elem_key);
+	}
+	double hurt_mult_pct = MAX(0.0, double(pl_hurt.get("damage_mult_pct", 100.0)));
+	bool is_crit = false;
+	int final_dmg = ClockGearsDataManager::compute_arpg_hit_damage(attacker_dict, defender_dict, elem_mult, hb.damage_mult_pct, hurt_mult_pct, is_crit);
+
+	Vector2 hit_dir = pl_origin - atk_origin;
+	if (hit_dir.length_squared() < 1.0f) {
+		hit_dir = Vector2(ClockGearsPlayer::direction_to_vector(direction));
+	} else {
+		hit_dir = hit_dir.normalized();
+	}
+
+	if (pl->take_arpg_hit(final_dmg, hb.knockback, hit_dir, hb.hitstop_ms, is_crit, get_event_name())) {
+		ev_swing_tracker->register_hit(ev_attack_swing_id, pid);
+		if (hb.hitstop_ms > 0) {
+			arpg_hitstop_timer = MAX(arpg_hitstop_timer, float(hb.hitstop_ms) / 1000.0f);
+		}
+	}
+}
+
 void ClockGearsEvent::_begin_arpg_death() {
 	if (arpg_dying || arpg_dead) {
 		return;
 	}
+	_end_enemy_attack_swing();
 	arpg_dying = true;
 	saved_body_through_before_death = body_through;
 	body_through = true;
@@ -1514,11 +1649,13 @@ void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 		}
 	}
 
-	// 3. Animación temporal de ataque (sin daño)
+	// 3. Animación de ataque (con hitboxes ARPG hacia el jugador)
 	if (ev_action_state == "atacar") {
 		ev_attack_timer -= p_delta;
 		_advance_behavior_animation(p_delta);
+		_process_enemy_attack_hits(map);
 		if (ev_attack_timer <= 0.0f && ev_action_state == "atacar") {
+			_end_enemy_attack_swing();
 			ev_action_state = "quieto";
 			ev_anim_frame = 0;
 			ev_anim_timer = 0.0f;

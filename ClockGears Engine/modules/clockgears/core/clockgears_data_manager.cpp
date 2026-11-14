@@ -87,10 +87,7 @@ void ClockGearsDataManager::init_empty() {
 	system_config["combat_mode"] = 0; // 0 = Turnos Clásico, 1 = Action RPG Tiempo Real
 	system_config["movement_directions"] = 4; // 4 o 8 direcciones de movimiento
 	system_config["mannequin_size"] = 32; // Tamaño de maniquí de referencia (32, 48, 64; no se exporta)
-	system_config["arpg_move_while_attacking"] = true;
-	system_config["arpg_attack_move_speed_pct"] = 100;
-	system_config["arpg_move_while_blocking"] = false;
-	system_config["arpg_block_move_speed_pct"] = 50;
+	normalize_arpg_system_config(system_config);
 	system_config["start_map"] = "";
 	system_config["start_x"] = 0;
 	system_config["start_y"] = 0;
@@ -1056,9 +1053,49 @@ int ClockGearsDataManager::normalize_mannequin_size(int p_size) {
 	return 32;
 }
 
+void ClockGearsDataManager::normalize_arpg_system_config(Dictionary &r_cfg) {
+	if (!r_cfg.has("arpg_move_while_attacking")) {
+		r_cfg["arpg_move_while_attacking"] = true;
+	} else {
+		r_cfg["arpg_move_while_attacking"] = bool(r_cfg["arpg_move_while_attacking"]);
+	}
+	r_cfg["arpg_attack_move_speed_pct"] = CLAMP(int(r_cfg.get("arpg_attack_move_speed_pct", 100)), 0, 200);
+	if (!r_cfg.has("arpg_move_while_blocking")) {
+		r_cfg["arpg_move_while_blocking"] = false;
+	} else {
+		r_cfg["arpg_move_while_blocking"] = bool(r_cfg["arpg_move_while_blocking"]);
+	}
+	r_cfg["arpg_block_move_speed_pct"] = CLAMP(int(r_cfg.get("arpg_block_move_speed_pct", 50)), 0, 200);
+
+	// Tanda 3C-2: Invulnerabilidad, bloqueo (% reducción) y esquivar
+	double inv_sec = r_cfg.has("arpg_invuln_seconds") ? double(r_cfg["arpg_invuln_seconds"]) : 0.5;
+	r_cfg["arpg_invuln_seconds"] = MAX(0.0, inv_sec);
+	r_cfg["arpg_block_reduction_pct"] = CLAMP(int(r_cfg.get("arpg_block_reduction_pct", 50)), 0, 100);
+
+	String dtype = String(r_cfg.get("arpg_dodge_type", "voltereta")).strip_edges().to_lower();
+	if (dtype != "dash") {
+		dtype = "voltereta";
+	}
+	r_cfg["arpg_dodge_type"] = dtype;
+
+	String dkey = String(r_cfg.get("arpg_dodge_key", "Space")).strip_edges();
+	if (dkey.is_empty()) {
+		dkey = "Space";
+	}
+	r_cfg["arpg_dodge_key"] = dkey;
+
+	double ddur = r_cfg.has("arpg_dodge_duration") ? double(r_cfg["arpg_dodge_duration"]) : 0.25;
+	r_cfg["arpg_dodge_duration"] = CLAMP(ddur, 0.05, 5.0);
+	double ddist = r_cfg.has("arpg_dodge_distance") ? double(r_cfg["arpg_dodge_distance"]) : 96.0;
+	r_cfg["arpg_dodge_distance"] = CLAMP(ddist, 0.0, 2000.0);
+	double dcd = r_cfg.has("arpg_dodge_cooldown") ? double(r_cfg["arpg_dodge_cooldown"]) : 0.4;
+	r_cfg["arpg_dodge_cooldown"] = CLAMP(dcd, 0.0, 30.0);
+}
+
 void ClockGearsDataManager::set_system_config(const Dictionary &p_cfg) {
 	system_config = p_cfg.duplicate(true);
 	system_config["mannequin_size"] = normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
+	normalize_arpg_system_config(system_config);
 	dirty = true;
 	emit_signal("data_changed", "system", 0);
 }
@@ -1225,18 +1262,7 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	int loaded_dirs = int(system_config.get("movement_directions", 4));
 	system_config["movement_directions"] = (loaded_dirs == 8) ? 8 : 4;
 	system_config["mannequin_size"] = normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
-	if (!system_config.has("arpg_move_while_attacking")) {
-		system_config["arpg_move_while_attacking"] = true;
-	} else {
-		system_config["arpg_move_while_attacking"] = bool(system_config["arpg_move_while_attacking"]);
-	}
-	system_config["arpg_attack_move_speed_pct"] = CLAMP(int(system_config.get("arpg_attack_move_speed_pct", 100)), 0, 200);
-	if (!system_config.has("arpg_move_while_blocking")) {
-		system_config["arpg_move_while_blocking"] = false;
-	} else {
-		system_config["arpg_move_while_blocking"] = bool(system_config["arpg_move_while_blocking"]);
-	}
-	system_config["arpg_block_move_speed_pct"] = CLAMP(int(system_config.get("arpg_block_move_speed_pct", 50)), 0, 200);
+	normalize_arpg_system_config(system_config);
 
 	Variant types_var;
 	if (_read_json_with_backup(p_dir_path.path_join("types.json"), types_var) && types_var.get_type() == Variant::DICTIONARY) {
@@ -1513,6 +1539,75 @@ int ClockGearsDataManager::get_actor_arpg_attack_element_id(int p_actor_id, Stri
 		}
 	}
 	return 0;
+}
+
+float ClockGearsDataManager::get_actor_element_rate(int p_actor_id, int p_element_id, const String &p_element_key) const {
+	float rate = 1.0f;
+	if (p_actor_id <= 0) {
+		return rate;
+	}
+	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
+	Variant atv = act.get("traits", Array());
+	if (atv.get_type() == Variant::ARRAY) {
+		rate *= evaluate_traits_element_rate(Array(atv), p_element_id, p_element_key);
+	}
+	int class_id = int(act.get("class_id", 0));
+	if (class_id > 0) {
+		Dictionary cls = get_record_by_id(CAT_CLASSES, class_id);
+		Variant ctv = cls.get("traits", Array());
+		if (ctv.get_type() == Variant::ARRAY) {
+			rate *= evaluate_traits_element_rate(Array(ctv), p_element_id, p_element_key);
+		}
+	}
+	Array slots = get_actor_arpg_equip_slots(p_actor_id);
+	for (int i = 0; i < slots.size(); i++) {
+		if (slots[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sd = slots[i];
+		int pid = int(sd.get("piece_id", 0));
+		if (pid <= 0) {
+			continue;
+		}
+		int cat_idx = get_category_from_key(String(sd.get("category", "")));
+		if (cat_idx < 0) {
+			continue;
+		}
+		Dictionary piece = get_record_by_id(cat_idx, pid);
+		Variant ptv = piece.get("traits", Array());
+		if (ptv.get_type() == Variant::ARRAY) {
+			rate *= evaluate_traits_element_rate(Array(ptv), p_element_id, p_element_key);
+		}
+	}
+	return MAX(0.0f, rate);
+}
+
+int ClockGearsDataManager::compute_arpg_hit_damage(const Dictionary &p_attacker, const Dictionary &p_defender, float p_elem_mult, double p_hitbox_mult_pct, double p_hurtbox_mult_pct, bool &r_is_crit) {
+	r_is_crit = false;
+	int64_t base_dmg = 1;
+	ClockGearsFormulas *fm = ClockGearsFormulas::get_singleton();
+	if (fm) {
+		double luk = double(int(p_attacker.get("luk", 0)));
+		double crit_chance = fm->calculate_critical_chance(luk * 0.005, 0.0);
+		r_is_crit = (crit_chance > 0.0) ? (fm->rand_float() <= crit_chance) : false;
+		Dictionary ctx;
+		ctx["is_critical"] = r_is_crit;
+		ctx["critical_multiplier"] = 2.0;
+		ctx["variance"] = 20.0;
+		base_dmg = fm->calculate_damage("max(a.atk * 4 - b.def * 2, 0)", p_attacker, p_defender, ctx);
+	} else {
+		base_dmg = MAX(int64_t(0), int64_t(p_attacker.get("atk", 0)) * 4 - int64_t(p_defender.get("def", 0)) * 2);
+	}
+	if (base_dmg <= 0) {
+		base_dmg = 1;
+	}
+	double hb_m = MAX(0.0, p_hitbox_mult_pct);
+	double hu_m = MAX(0.0, p_hurtbox_mult_pct);
+	if (p_elem_mult <= 0.0f || hb_m <= 0.0 || hu_m <= 0.0) {
+		return 0;
+	}
+	double total = double(base_dmg) * double(p_elem_mult) * (hb_m / 100.0) * (hu_m / 100.0);
+	return MAX(1, int(Math::round(total)));
 }
 
 Dictionary ClockGearsDataManager::get_actor_runtime_state(int p_actor_id) {
@@ -2142,6 +2237,7 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip", "actor_id", "slot_id"), &ClockGearsDataManager::get_actor_arpg_equip);
 	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip_bonuses", "actor_id"), &ClockGearsDataManager::get_actor_arpg_equip_bonuses);
 	ClassDB::bind_method(D_METHOD("get_actor_effective_stats", "actor_id"), &ClockGearsDataManager::get_actor_effective_stats);
+	ClassDB::bind_method(D_METHOD("get_actor_element_rate", "actor_id", "element_id", "element_key"), &ClockGearsDataManager::get_actor_element_rate, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("export_runtime_state"), &ClockGearsDataManager::export_runtime_state);
 	ClassDB::bind_method(D_METHOD("import_runtime_state", "state"), &ClockGearsDataManager::import_runtime_state);
 	ClassDB::bind_method(D_METHOD("format_text", "text"), &ClockGearsDataManager::format_text);

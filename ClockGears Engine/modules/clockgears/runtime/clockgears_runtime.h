@@ -83,6 +83,20 @@ private:
 	int64_t current_swing_id = 0;
 	float hitstop_timer = 0.0f;
 
+	// Invulnerabilidad, retroceso, esquivar y muerte ARPG (Tanda 3C-2)
+	float arpg_invuln_timer = 0.0f;
+	float arpg_knockback_timer = 0.0f;
+	Vector2 arpg_knockback_velocity;
+	float arpg_knockback_duration = 0.16f;
+	float arpg_dodge_timer = 0.0f;
+	float arpg_dodge_cooldown_timer = 0.0f;
+	Vector2 arpg_dodge_velocity;
+	bool arpg_dodge_invuln = false;
+	bool arpg_dying = false;
+	bool arpg_dead = false;
+	float arpg_death_fallback_timer = 0.0f;
+	String cached_dodge_key_str;
+
 	Sprite2D *sprite = nullptr;
 	HashMap<String, Sprite2D *> arpg_layer_sprites;
 	ClockGearsHitShape body_shape = ClockGearsHitShape::make_circle(12.0f);
@@ -104,6 +118,10 @@ private:
 	void _end_attack_swing();
 	void _collect_active_attack_hitboxes(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const;
 	void _process_active_attack_hits();
+	void _refresh_dodge_input_action();
+	void _sync_grid_cell_from_world_pos(const Vector2 &p_world_pos);
+	void _begin_arpg_player_death();
+	void _finish_arpg_player_death();
 	void _update_body_sprite_frame();
 	void _update_sprite_frame();
 	void _refresh_actor_speeds_from_dm();
@@ -131,6 +149,19 @@ public:
 	int64_t get_arpg_exp() const;
 	float get_arpg_hitstop_remaining() const { return hitstop_timer; }
 	Vector2 get_arpg_world_center() const;
+	Dictionary get_arpg_effective_hurtbox() const;
+	bool is_arpg_invulnerable() const { return arpg_invuln_timer > 0.0f || (arpg_dodge_invuln && arpg_dodge_timer > 0.0f); }
+	float get_arpg_invuln_remaining() const { return arpg_invuln_timer; }
+	bool is_arpg_blocking() const { return action_state_id == "bloquear" || arpg_block_held; }
+	bool is_arpg_dodging() const { return arpg_dodge_timer > 0.0f; }
+	bool is_arpg_dodge_invulnerable() const { return arpg_dodge_invuln && arpg_dodge_timer > 0.0f; }
+	float get_arpg_dodge_cooldown_remaining() const { return arpg_dodge_cooldown_timer; }
+	bool is_arpg_dying() const { return arpg_dying; }
+	bool is_arpg_dead() const { return arpg_dead; }
+	bool is_arpg_alive() const { return !arpg_dying && !arpg_dead; }
+	bool try_trigger_dodge(int p_dir = 0);
+	bool take_arpg_hit(int p_damage, float p_knockback_force = 0.0f, const Vector2 &p_hit_dir = Vector2(), int p_hitstop_ms = 0, bool p_is_crit = false, const String &p_attacker_name = "");
+	void reset_after_arpg_death(const Vector2i &p_cell, int p_dir);
 	void reload_actor_arpg_data() {
 		if (actor_id > 0) {
 			load_actor_data(actor_id);

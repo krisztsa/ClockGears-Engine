@@ -131,10 +131,15 @@ private:
 	float arpg_knockback_timer = 0.0f;
 	Vector2 arpg_knockback_velocity;
 	float arpg_hitstop_timer = 0.0f;
+	Ref<ClockGearsAttackSwingTracker> ev_swing_tracker;
+	int64_t ev_attack_swing_id = 0;
 
 	void _begin_arpg_death();
 	void _grant_arpg_kill_rewards();
 	void _apply_entity_body_collision_state();
+	void _begin_enemy_attack_swing();
+	void _end_enemy_attack_swing();
+	void _process_enemy_attack_hits(ClockGearsMap *p_map);
 
 	void _apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed);
 	void _sync_runtime_entity_components();
@@ -262,6 +267,7 @@ public:
 	Dictionary get_arpg_enemy_record() const { return cached_db_rec; }
 	int get_arpg_anim_frame() const { return ev_anim_frame; }
 	bool take_arpg_hit(int p_damage, float p_knockback_force, const Vector2 &p_hit_dir, int p_hitstop_ms, bool p_is_crit = false);
+	void start_arpg_attack(Node *p_target = nullptr);
 	void sync_arpg_defeated_state();
 	void respawn_arpg_enemy();
 

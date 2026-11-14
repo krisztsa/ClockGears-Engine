@@ -92,6 +92,7 @@ public:
 	String get_respawn_state_key() const;
 	void apply_enemy_respawns_on_enter();
 	void refresh_enemy_respawns();
+	void restart_map_after_player_death();
 
 	void set_map_name(const String &p_name) { map_name = p_name; }
 	String get_map_name() const { return map_name; }

@@ -15,6 +15,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
 #include "scene/main/canvas_layer.h"
+#include "scene/main/scene_tree.h"
 #include "modules/tilemap/tile_set.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
@@ -42,6 +43,7 @@ void ClockGearsMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_respawn_state_key"), &ClockGearsMap::get_respawn_state_key);
 	ClassDB::bind_method(D_METHOD("apply_enemy_respawns_on_enter"), &ClockGearsMap::apply_enemy_respawns_on_enter);
 	ClassDB::bind_method(D_METHOD("refresh_enemy_respawns"), &ClockGearsMap::refresh_enemy_respawns);
+	ClassDB::bind_method(D_METHOD("restart_map_after_player_death"), &ClockGearsMap::restart_map_after_player_death);
 
 	ClassDB::bind_method(D_METHOD("set_map_name", "name"), &ClockGearsMap::set_map_name);
 	ClassDB::bind_method(D_METHOD("get_map_name"), &ClockGearsMap::get_map_name);
@@ -100,6 +102,8 @@ void ClockGearsMap::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "bgm_path"), "set_bgm_path", "get_bgm_path");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "region_map"), "set_region_map", "get_region_map");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "shadow_map"), "set_shadow_map", "get_shadow_map");
+
+	ADD_SIGNAL(MethodInfo("map_restarted"));
 }
 
 void ClockGearsMap::set_grid_resolution(int p_res) {
@@ -285,6 +289,62 @@ void ClockGearsMap::refresh_enemy_respawns() {
 			}
 		}
 	}
+}
+
+void ClockGearsMap::restart_map_after_player_death() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary sys = dm ? dm->get_system_config() : Dictionary();
+	if (dm) {
+		Array party = sys.get("party", Array());
+		for (int i = 0; i < party.size(); i++) {
+			int aid = int(party[i]);
+			if (aid > 0) {
+				dm->set_actor_runtime_hp(aid, dm->get_actor_runtime_max_hp(aid));
+			}
+		}
+		if (runtime_player && runtime_player->get_actor_id() > 0) {
+			int lid = runtime_player->get_actor_id();
+			dm->set_actor_runtime_hp(lid, dm->get_actor_runtime_max_hp(lid));
+		}
+	}
+
+	if (is_inside_tree() && !get_scene_file_path().is_empty() && ResourceLoader::exists(get_scene_file_path())) {
+		SceneTree *st = get_tree();
+		if (st && st->get_current_scene() == this) {
+			if (dm) {
+				sys["runtime_has_transfer"] = false;
+				dm->set_system_config(sys);
+			}
+			emit_signal("map_restarted");
+			st->call_deferred("reload_current_scene");
+			return;
+		}
+	}
+
+	Vector2i start_cell(
+			CLAMP(int(sys.get("start_x", 0)), 0, MAX(0, map_width - 1)),
+			CLAMP(int(sys.get("start_y", 0)), 0, MAX(0, map_height - 1)));
+	int start_dir = int(sys.get("start_dir", 2));
+	if (start_dir != 2 && start_dir != 4 && start_dir != 6 && start_dir != 8) {
+		start_dir = 2;
+	}
+
+	apply_enemy_respawns_on_enter();
+	if (events_container) {
+		for (int i = 0; i < events_container->get_child_count(); i++) {
+			ClockGearsEvent *ev = Object::cast_to<ClockGearsEvent>(events_container->get_child(i));
+			if (ev && ev->get_behavior_type() == 3) {
+				ev->update_active_page();
+			}
+		}
+	}
+	if (runtime_followers) {
+		runtime_followers->gather_followers(start_cell, start_dir);
+	}
+	if (runtime_player) {
+		runtime_player->reset_after_arpg_death(start_cell, start_dir);
+	}
+	emit_signal("map_restarted");
 }
 
 void ClockGearsMap::ensure_default_layers() {

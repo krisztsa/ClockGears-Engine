@@ -137,6 +137,9 @@ public:
 	static float evaluate_traits_element_rate(const Array &p_traits, int p_element_id, const String &p_element_name = String());
 	static int resolve_traits_attack_element_id(const Array &p_traits, String &r_element_key);
 	int get_actor_arpg_attack_element_id(int p_actor_id, String &r_element_key) const;
+	float get_actor_element_rate(int p_actor_id, int p_element_id, const String &p_element_key = String()) const;
+	static int compute_arpg_hit_damage(const Dictionary &p_attacker, const Dictionary &p_defender, float p_elem_mult, double p_hitbox_mult_pct, double p_hurtbox_mult_pct, bool &r_is_crit);
+	static void normalize_arpg_system_config(Dictionary &r_cfg);
 	Dictionary get_actor_runtime_state(int p_actor_id);
 	void set_actor_runtime_hp(int p_actor_id, int p_hp);
 	int get_actor_runtime_hp(int p_actor_id);
