@@ -12,13 +12,28 @@ static Dictionary _make_def(int p_code, const char *p_name, const char *p_catego
 }
 
 void ClockGearsSystemCatalog::_init_system_defaults() {
-	// Elementos base del sistema (estructura editable en la pestaña "Tipos", igual que RPG Maker MZ)
+	// Elementos base del sistema (identificador interno fijo, nombre mostrable editable en "Tipos")
 	elements.clear();
-	const char *default_elements[] = {
-		"Físico", "Fuego", "Hielo", "Rayo", "Agua", "Tierra", "Viento", "Luz", "Oscuridad"
+	element_keys.clear();
+	struct DefaultElem {
+		const char *key;
+		const char *name;
+	};
+	const DefaultElem default_elements[] = {
+		{ "agua", "Agua" },
+		{ "fuego", "Fuego" },
+		{ "hielo", "Hielo" },
+		{ "electricidad", "Electricidad" },
+		{ "viento", "Viento" },
+		{ "luz", "Luz" },
+		{ "oscuridad", "Oscuridad" },
+		{ "astral", "Astral" },
+		{ "tierra", "Tierra" },
+		{ "naturaleza", "Naturaleza" }
 	};
 	for (size_t i = 0; i < sizeof(default_elements) / sizeof(default_elements[0]); i++) {
-		elements.push_back(String::utf8(default_elements[i]));
+		element_keys.push_back(String::utf8(default_elements[i].key));
+		elements.push_back(String::utf8(default_elements[i].name));
 	}
 
 	// Tipos de arma del sistema
@@ -163,12 +178,10 @@ void ClockGearsSystemCatalog::_init_system_defaults() {
 	// Condiciones de IA de Enemigo - Sección 5.3 / 9.7
 	ai_condition_definitions.clear();
 	ai_condition_definitions.push_back(_make_def(CG_AI_COND_ALWAYS, "Siempre", "IA"));
-	ai_condition_definitions.push_back(_make_def(CG_AI_COND_TURN, "Turno (A + B * X)", "IA"));
-	ai_condition_definitions.push_back(_make_def(CG_AI_COND_HP_RANGE, "PV (HP %) entre A% y B%", "IA"));
-	ai_condition_definitions.push_back(_make_def(CG_AI_COND_MP_RANGE, "PM (MP %) entre A% y B%", "IA"));
-	ai_condition_definitions.push_back(_make_def(CG_AI_COND_STATE, "Estado Activo", "IA"));
-	ai_condition_definitions.push_back(_make_def(CG_AI_COND_PARTY_LEVEL, "Nivel del Grupo >= X", "IA"));
-	ai_condition_definitions.push_back(_make_def(CG_AI_COND_SWITCH, "Interruptor ON", "IA"));
+	ai_condition_definitions.push_back(_make_def(CG_AI_COND_TURN, "Turno N", "IA"));
+	ai_condition_definitions.push_back(_make_def(CG_AI_COND_HP_RANGE, "Vida por debajo de X%", "IA"));
+	ai_condition_definitions.push_back(_make_def(CG_AI_COND_STATE, "Estado", "IA"));
+	ai_condition_definitions.push_back(_make_def(CG_AI_COND_SWITCH, "Interruptor", "IA"));
 
 	// Catálogo de Comandos de Evento - Sección 3.5
 	command_definitions.clear();
@@ -303,9 +316,141 @@ void ClockGearsSystemCatalog::reset_to_defaults() {
 	_init_system_defaults();
 }
 
+void ClockGearsSystemCatalog::set_elements(const PackedStringArray &p_elements) {
+	elements = p_elements;
+	if (elements.is_empty()) {
+		ensure_default_elements_if_empty();
+		return;
+	}
+	while (element_keys.size() < elements.size()) {
+		int idx = element_keys.size();
+		String k = elements[idx].to_lower().strip_edges().replace(" ", "_");
+		if (k.is_empty()) {
+			k = vformat("elem_%d", idx + 1);
+		}
+		element_keys.push_back(k);
+	}
+}
+
+void ClockGearsSystemCatalog::ensure_default_elements_if_empty() {
+	if (!elements.is_empty()) {
+		while (element_keys.size() < elements.size()) {
+			int idx = element_keys.size();
+			String k = elements[idx].to_lower().strip_edges().replace(" ", "_");
+			if (k.is_empty()) {
+				k = vformat("elem_%d", idx + 1);
+			}
+			element_keys.push_back(k);
+		}
+		return;
+	}
+	const char *def_keys[] = {
+		"agua", "fuego", "hielo", "electricidad", "viento", "luz", "oscuridad", "astral", "tierra", "naturaleza"
+	};
+	const char *def_names[] = {
+		"Agua", "Fuego", "Hielo", "Electricidad", "Viento", "Luz", "Oscuridad", "Astral", "Tierra", "Naturaleza"
+	};
+	element_keys.clear();
+	elements.clear();
+	for (size_t i = 0; i < 10; i++) {
+		element_keys.push_back(String::utf8(def_keys[i]));
+		elements.push_back(String::utf8(def_names[i]));
+	}
+}
+
+Array ClockGearsSystemCatalog::get_element_records() const {
+	Array arr;
+	for (int i = 0; i < elements.size(); i++) {
+		Dictionary d;
+		d["id"] = i + 1;
+		d["key"] = (i < element_keys.size()) ? element_keys[i] : elements[i].to_lower();
+		d["name"] = elements[i];
+		d["type"] = 0;
+		d["desc"] = "";
+		arr.push_back(d);
+	}
+	return arr;
+}
+
+void ClockGearsSystemCatalog::sync_elements_from_records(const Array &p_records) {
+	PackedStringArray new_elems;
+	PackedStringArray new_keys;
+	const char *def_keys[] = {
+		"agua", "fuego", "hielo", "electricidad", "viento", "luz", "oscuridad", "astral", "tierra", "naturaleza"
+	};
+	for (int i = 0; i < p_records.size(); i++) {
+		if (p_records[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary d = p_records[i];
+		if (int(d.get("type", 0)) != 0) {
+			continue;
+		}
+		String nm = String(d.get("name", "")).strip_edges();
+		String ky = String(d.get("key", "")).strip_edges();
+		if (ky.is_empty()) {
+			int idx = new_keys.size();
+			ky = (idx < 10) ? String::utf8(def_keys[idx]) : nm.to_lower().replace(" ", "_");
+		}
+		if (nm.is_empty()) {
+			nm = ky.capitalize();
+		}
+		new_keys.push_back(ky);
+		new_elems.push_back(nm);
+	}
+	if (!new_elems.is_empty()) {
+		elements = new_elems;
+		element_keys = new_keys;
+	} else {
+		ensure_default_elements_if_empty();
+	}
+}
+
+int ClockGearsSystemCatalog::resolve_element_id(const Variant &p_id_or_name) const {
+	if (p_id_or_name.get_type() == Variant::INT || p_id_or_name.get_type() == Variant::FLOAT) {
+		int id = int(p_id_or_name);
+		if (id >= 1 && id <= elements.size()) {
+			return id;
+		}
+		return 0;
+	}
+	String s = String(p_id_or_name).strip_edges().to_lower();
+	if (s.is_empty()) {
+		return 0;
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].to_lower() == s) {
+			return i + 1;
+		}
+		if (i < element_keys.size() && element_keys[i].to_lower() == s) {
+			return i + 1;
+		}
+	}
+	return 0;
+}
+
+String ClockGearsSystemCatalog::get_element_name(int p_element_id) const {
+	if (p_element_id >= 1 && p_element_id <= elements.size()) {
+		return elements[p_element_id - 1];
+	}
+	return "";
+}
+
+String ClockGearsSystemCatalog::get_element_key(int p_element_id) const {
+	if (p_element_id >= 1 && p_element_id <= element_keys.size()) {
+		return element_keys[p_element_id - 1];
+	}
+	if (p_element_id >= 1 && p_element_id <= elements.size()) {
+		return elements[p_element_id - 1].to_lower();
+	}
+	return "";
+}
+
 Dictionary ClockGearsSystemCatalog::to_dict() const {
 	Dictionary d;
 	d["elements"] = elements;
+	d["element_keys"] = element_keys;
+	d["element_records"] = get_element_records();
 	d["weapon_types"] = weapon_types;
 	d["armor_types"] = armor_types;
 	d["equip_slots"] = equip_slots;
@@ -313,8 +458,16 @@ Dictionary ClockGearsSystemCatalog::to_dict() const {
 }
 
 void ClockGearsSystemCatalog::from_dict(const Dictionary &p_dict) {
-	if (p_dict.has("elements")) {
+	if (p_dict.has("element_records") && p_dict["element_records"].get_type() == Variant::ARRAY) {
+		sync_elements_from_records(p_dict["element_records"]);
+	} else if (p_dict.has("elements")) {
 		elements = p_dict["elements"];
+		if (p_dict.has("element_keys")) {
+			element_keys = p_dict["element_keys"];
+		}
+		ensure_default_elements_if_empty();
+	} else {
+		ensure_default_elements_if_empty();
 	}
 	if (p_dict.has("weapon_types")) {
 		weapon_types = p_dict["weapon_types"];
@@ -331,6 +484,13 @@ void ClockGearsSystemCatalog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("reset_to_defaults"), &ClockGearsSystemCatalog::reset_to_defaults);
 	ClassDB::bind_method(D_METHOD("get_elements"), &ClockGearsSystemCatalog::get_elements);
 	ClassDB::bind_method(D_METHOD("set_elements", "elements"), &ClockGearsSystemCatalog::set_elements);
+	ClassDB::bind_method(D_METHOD("get_element_keys"), &ClockGearsSystemCatalog::get_element_keys);
+	ClassDB::bind_method(D_METHOD("get_element_records"), &ClockGearsSystemCatalog::get_element_records);
+	ClassDB::bind_method(D_METHOD("sync_elements_from_records", "records"), &ClockGearsSystemCatalog::sync_elements_from_records);
+	ClassDB::bind_method(D_METHOD("ensure_default_elements_if_empty"), &ClockGearsSystemCatalog::ensure_default_elements_if_empty);
+	ClassDB::bind_method(D_METHOD("resolve_element_id", "id_or_name"), &ClockGearsSystemCatalog::resolve_element_id);
+	ClassDB::bind_method(D_METHOD("get_element_name", "element_id"), &ClockGearsSystemCatalog::get_element_name);
+	ClassDB::bind_method(D_METHOD("get_element_key", "element_id"), &ClockGearsSystemCatalog::get_element_key);
 	ClassDB::bind_method(D_METHOD("get_weapon_types"), &ClockGearsSystemCatalog::get_weapon_types);
 	ClassDB::bind_method(D_METHOD("set_weapon_types", "types"), &ClockGearsSystemCatalog::set_weapon_types);
 	ClassDB::bind_method(D_METHOD("get_armor_types"), &ClockGearsSystemCatalog::get_armor_types);

@@ -211,6 +211,12 @@ void ClockGearsDebugOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_show_player"), &ClockGearsDebugOverlay::is_show_player);
 	ClassDB::bind_method(D_METHOD("set_show_camera", "show"), &ClockGearsDebugOverlay::set_show_camera);
 	ClassDB::bind_method(D_METHOD("is_show_camera"), &ClockGearsDebugOverlay::is_show_camera);
+	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("set_show_battle_turns", "show"), &ClockGearsDebugOverlay::set_show_battle_turns);
+	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("is_show_battle_turns"), &ClockGearsDebugOverlay::is_show_battle_turns);
+	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("set_show_battle_formulas", "show"), &ClockGearsDebugOverlay::set_show_battle_formulas);
+	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("is_show_battle_formulas"), &ClockGearsDebugOverlay::is_show_battle_formulas);
+	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("get_battle_log_text"), &ClockGearsDebugOverlay::get_battle_log_text);
+	ClassDB::bind_static_method("ClockGearsDebugOverlay", D_METHOD("clear_battle_log"), &ClockGearsDebugOverlay::clear_battle_log);
 	ClassDB::bind_method(D_METHOD("setup_overlay", "map", "player", "camera"), &ClockGearsDebugOverlay::setup_overlay, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("get_world_canvas"), &ClockGearsDebugOverlay::get_world_canvas);
 }
@@ -238,6 +244,58 @@ bool ClockGearsDebugOverlay::is_playtest_mode() {
 
 static Vector<String> s_battle_log_history;
 static ClockGearsDebugOverlay *s_overlay_singleton = nullptr;
+static bool s_show_battle_turns = false;
+static bool s_show_battle_formulas = false;
+static bool s_battle_settings_loaded = false;
+
+static void _ensure_battle_debug_settings_loaded() {
+	if (s_battle_settings_loaded) {
+		return;
+	}
+	s_battle_settings_loaded = true;
+	if (FileAccess::exists("user://clockgears_debug_settings.json")) {
+		Error err;
+		Ref<FileAccess> f = FileAccess::open("user://clockgears_debug_settings.json", FileAccess::READ, &err);
+		if (err == OK && f.is_valid()) {
+			String text = f->get_as_text();
+			f->close();
+			f.unref();
+			Variant v = JSON::parse_string(text);
+			if (v.get_type() == Variant::DICTIONARY) {
+				Dictionary d = v;
+				s_show_battle_turns = bool(d.get("show_battle_turns", false));
+				s_show_battle_formulas = bool(d.get("show_battle_formulas", false));
+			}
+		}
+	}
+}
+
+static void _persist_battle_debug_settings() {
+	Dictionary d;
+	if (FileAccess::exists("user://clockgears_debug_settings.json")) {
+		Error r_err;
+		Ref<FileAccess> rf = FileAccess::open("user://clockgears_debug_settings.json", FileAccess::READ, &r_err);
+		if (r_err == OK && rf.is_valid()) {
+			String text = rf->get_as_text();
+			rf->close();
+			rf.unref();
+			Variant v = JSON::parse_string(text);
+			if (v.get_type() == Variant::DICTIONARY) {
+				d = v;
+			}
+		}
+	}
+	d["show_battle_turns"] = s_show_battle_turns;
+	d["show_battle_formulas"] = s_show_battle_formulas;
+	Error w_err;
+	Ref<FileAccess> wf = FileAccess::open("user://clockgears_debug_settings.json", FileAccess::WRITE, &w_err);
+	if (w_err == OK && wf.is_valid()) {
+		wf->store_string(JSON::stringify(d));
+		wf->flush();
+		wf->close();
+		wf.unref();
+	}
+}
 
 ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	s_overlay_singleton = this;
@@ -406,6 +464,20 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	tab_battle->add_theme_constant_override("separation", 6);
 	tabs->add_child(tab_battle);
 
+	HBoxContainer *battle_toggles_hb = memnew(HBoxContainer);
+	battle_toggles_hb->add_theme_constant_override("separation", 12);
+	tab_battle->add_child(battle_toggles_hb);
+
+	chk_battle_turns = memnew(CheckBox(CG_DBG_TR("Mostrar turnos")));
+	chk_battle_turns->set_pressed(false);
+	chk_battle_turns->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_battle_chk_toggled));
+	battle_toggles_hb->add_child(chk_battle_turns);
+
+	chk_battle_formulas = memnew(CheckBox(CG_DBG_TR("Mostrar fórmulas")));
+	chk_battle_formulas->set_pressed(false);
+	chk_battle_formulas->connect("toggled", callable_mp(this, &ClockGearsDebugOverlay::_on_battle_chk_toggled));
+	battle_toggles_hb->add_child(chk_battle_formulas);
+
 	Label *lbl_battle_desc = memnew(Label(CG_DBG_TR("Registro de golpes y fórmulas de combate:")));
 	lbl_battle_desc->add_theme_color_override("font_color", Color(0.85f, 0.85f, 0.85f));
 	tab_battle->add_child(lbl_battle_desc);
@@ -438,6 +510,60 @@ void ClockGearsDebugOverlay::log_battle(const String &p_entry) {
 	if (s_overlay_singleton && s_overlay_singleton->battle_log_rtl) {
 		s_overlay_singleton->battle_log_rtl->append_text(p_entry + "\n");
 	}
+}
+
+String ClockGearsDebugOverlay::get_battle_log_text() {
+	String joined;
+	for (int i = 0; i < s_battle_log_history.size(); i++) {
+		if (i > 0) joined += "\n";
+		joined += s_battle_log_history[i];
+	}
+	return joined;
+}
+
+void ClockGearsDebugOverlay::clear_battle_log() {
+	s_battle_log_history.clear();
+	if (s_overlay_singleton && s_overlay_singleton->battle_log_rtl) {
+		s_overlay_singleton->battle_log_rtl->clear();
+	}
+}
+
+void ClockGearsDebugOverlay::set_show_battle_turns(bool p_show) {
+	_ensure_battle_debug_settings_loaded();
+	s_show_battle_turns = p_show;
+	if (s_overlay_singleton && s_overlay_singleton->chk_battle_turns) {
+		s_overlay_singleton->is_loading_settings = true;
+		s_overlay_singleton->chk_battle_turns->set_pressed(p_show);
+		s_overlay_singleton->is_loading_settings = false;
+	}
+	_persist_battle_debug_settings();
+}
+
+bool ClockGearsDebugOverlay::is_show_battle_turns() {
+	_ensure_battle_debug_settings_loaded();
+	if (s_overlay_singleton && s_overlay_singleton->chk_battle_turns) {
+		return s_overlay_singleton->chk_battle_turns->is_pressed();
+	}
+	return s_show_battle_turns;
+}
+
+void ClockGearsDebugOverlay::set_show_battle_formulas(bool p_show) {
+	_ensure_battle_debug_settings_loaded();
+	s_show_battle_formulas = p_show;
+	if (s_overlay_singleton && s_overlay_singleton->chk_battle_formulas) {
+		s_overlay_singleton->is_loading_settings = true;
+		s_overlay_singleton->chk_battle_formulas->set_pressed(p_show);
+		s_overlay_singleton->is_loading_settings = false;
+	}
+	_persist_battle_debug_settings();
+}
+
+bool ClockGearsDebugOverlay::is_show_battle_formulas() {
+	_ensure_battle_debug_settings_loaded();
+	if (s_overlay_singleton && s_overlay_singleton->chk_battle_formulas) {
+		return s_overlay_singleton->chk_battle_formulas->is_pressed();
+	}
+	return s_show_battle_formulas;
 }
 
 void ClockGearsDebugOverlay::setup_overlay(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsPixelCamera2D *p_camera) {
@@ -519,6 +645,16 @@ void ClockGearsDebugOverlay::_on_chk_toggled(bool) {
 	_update_hud();
 }
 
+void ClockGearsDebugOverlay::_on_battle_chk_toggled(bool) {
+	if (is_loading_settings) {
+		return;
+	}
+	s_show_battle_turns = chk_battle_turns && chk_battle_turns->is_pressed();
+	s_show_battle_formulas = chk_battle_formulas && chk_battle_formulas->is_pressed();
+	s_battle_settings_loaded = true;
+	_save_settings();
+}
+
 void ClockGearsDebugOverlay::_on_noclip_toggled(bool p_val) {
 	if (player) {
 		player->set_through_enabled(p_val);
@@ -553,6 +689,8 @@ void ClockGearsDebugOverlay::_save_settings() {
 		d["show_player"] = chk_player ? chk_player->is_pressed() : false;
 		d["show_camera"] = chk_camera ? chk_camera->is_pressed() : false;
 		if (chk_noclip) d["noclip"] = chk_noclip->is_pressed();
+		d["show_battle_turns"] = chk_battle_turns ? chk_battle_turns->is_pressed() : s_show_battle_turns;
+		d["show_battle_formulas"] = chk_battle_formulas ? chk_battle_formulas->is_pressed() : s_show_battle_formulas;
 		f->store_string(JSON::stringify(d));
 		f->flush();
 		f->close();
@@ -561,6 +699,7 @@ void ClockGearsDebugOverlay::_save_settings() {
 }
 
 void ClockGearsDebugOverlay::_load_settings() {
+	s_battle_settings_loaded = true;
 	if (FileAccess::exists("user://clockgears_debug_settings.json")) {
 		Error err;
 		Ref<FileAccess> f = FileAccess::open("user://clockgears_debug_settings.json", FileAccess::READ, &err);
@@ -580,6 +719,10 @@ void ClockGearsDebugOverlay::_load_settings() {
 				if (chk_player) chk_player->set_pressed(bool(d.get("show_player", false)));
 				if (chk_camera) chk_camera->set_pressed(bool(d.get("show_camera", false)));
 				if (chk_noclip) chk_noclip->set_pressed(bool(d.get("noclip", false)));
+				s_show_battle_turns = bool(d.get("show_battle_turns", false));
+				s_show_battle_formulas = bool(d.get("show_battle_formulas", false));
+				if (chk_battle_turns) chk_battle_turns->set_pressed(s_show_battle_turns);
+				if (chk_battle_formulas) chk_battle_formulas->set_pressed(s_show_battle_formulas);
 				is_loading_settings = false;
 			}
 		}

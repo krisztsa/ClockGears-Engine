@@ -4,6 +4,7 @@
 #include "clockgears_animation.h"
 #include "core/clockgears_formulas.h"
 #include "core/clockgears_data_manager.h"
+#include "core/clockgears_system_catalog.h"
 #include "core/object/class_db.h"
 #include "core/object/ref_counted.h"
 #include "core/templates/vector.h"
@@ -44,6 +45,9 @@ private:
 
 	// Estados activos: [ {id, name, turns, restriction}, ... ]
 	Array states;
+	Array traits;
+	Array actions;
+	Array cast_animations;
 
 	bool is_defending = false;
 	bool is_dead = false;
@@ -51,6 +55,11 @@ private:
 
 	String graphic_path;
 	Ref<ClockGearsAnimationTriggerTable> trigger_table;
+	String current_anim_slot = "idle";
+	String last_played_anim_slot = "idle";
+	float anim_slot_timer = 0.0f;
+	int active_effect_anim_id = 0;
+	float active_effect_timer = 0.0f;
 
 protected:
 	static void _bind_methods();
@@ -128,6 +137,38 @@ public:
 	void set_states(const Array &p_states) { states = p_states; }
 	Array get_states() const { return states; }
 
+	void set_traits(const Array &p_traits) { traits = p_traits; }
+	Array get_traits() const { return traits; }
+	float get_element_rate(int p_element_id, const String &p_element_name = "") const;
+	int get_attack_element_id() const;
+
+	void set_actions(const Array &p_actions) { actions = p_actions; }
+	Array get_actions() const { return actions; }
+
+	void set_cast_animations(const Array &p_casts) { cast_animations = p_casts; }
+	Array get_cast_animations() const { return cast_animations; }
+
+	String resolve_slot_animation_name(const String &p_slot_type, int p_element_id = 0, const String &p_element_name = "") const;
+	void play_slot_animation(const String &p_slot_name, float p_duration = 0.5f);
+	String get_current_anim_slot() const { return current_anim_slot; }
+	void set_current_anim_slot(const String &p_slot) { current_anim_slot = p_slot; }
+	String get_last_played_anim_slot() const { return last_played_anim_slot; }
+	float get_anim_slot_timer() const { return anim_slot_timer; }
+	void set_anim_slot_timer(float p_t) { anim_slot_timer = MAX(0.0f, p_t); }
+
+	void trigger_target_effect_anim(int p_anim_id, float p_duration = 0.5f) {
+		active_effect_anim_id = p_anim_id;
+		active_effect_timer = p_duration;
+	}
+	int get_active_effect_anim_id() const { return active_effect_anim_id; }
+	float get_active_effect_timer() const { return active_effect_timer; }
+	void set_active_effect_timer(float p_t) {
+		active_effect_timer = MAX(0.0f, p_t);
+		if (active_effect_timer <= 0.0f) {
+			active_effect_anim_id = 0;
+		}
+	}
+
 	bool has_state(int p_state_id) const;
 	void apply_state(int p_state_id, const String &p_name, int p_turns, int p_restriction = 0);
 	void remove_state(int p_state_id);
@@ -202,6 +243,8 @@ private:
 	bool can_escape = true;
 	bool can_lose = false;
 	String battle_bgm;
+	String troop_bg_path;
+	String troop_floor_path;
 
 	Vector<Ref<ClockGearsBattleUnit>> party;
 	Vector<Ref<ClockGearsBattleUnit>> enemies;
@@ -220,14 +263,20 @@ private:
 	Array level_up_messages;
 	PackedStringArray log_history;
 	String last_hit_log;
+	float last_element_multiplier = 1.0f;
 
-	void _log_hit(const String &p_attacker, int p_a_atk, const String &p_target, int p_b_def, const String &p_action, const String &p_formula, int64_t p_damage, bool p_crit, bool p_hit);
+	void _log_hit(const String &p_attacker, int p_a_atk, const String &p_target, int p_b_def, const String &p_action, const String &p_formula, int64_t p_damage, bool p_crit, bool p_hit, const String &p_elem_info = "");
 
 protected:
 	static void _bind_methods();
 
 public:
 	String get_last_hit_log() const { return last_hit_log; }
+	float get_last_element_multiplier() const { return last_element_multiplier; }
+	String get_troop_bg_path() const { return troop_bg_path; }
+	void set_troop_bg_path(const String &p_path) { troop_bg_path = p_path; }
+	String get_troop_floor_path() const { return troop_floor_path; }
+	void set_troop_floor_path(const String &p_path) { troop_floor_path = p_path; }
 	// Configuración de la batalla
 	void setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm = "");
 	void add_party_unit(const Ref<ClockGearsBattleUnit> &p_unit);

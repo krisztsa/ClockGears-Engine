@@ -130,7 +130,9 @@ private:
 	Label *critical_label = nullptr;
 	CheckBox *critical_check = nullptr;
 
-	// Sección 5.3: Enemigos (EXP, Oro, Battler animado, 3 Drops, Patrones de Acción)
+	// Sección 5.3: Enemigos (Nivel, EXP, Oro, Debilidades y Resistencias, 3 Drops, Patrones de Acción)
+	Label *enemy_level_label = nullptr;
+	SpinBox *enemy_level_spin = nullptr;
 	Label *enemy_exp_label = nullptr;
 	SpinBox *enemy_exp_spin = nullptr;
 	Label *enemy_gold_label = nullptr;
@@ -139,6 +141,13 @@ private:
 	SpinBox *battler_frames_spin = nullptr;
 	Label *battler_fps_label = nullptr;
 	SpinBox *battler_fps_spin = nullptr;
+
+	// Debilidades y Resistencias (como Pokémon) -> persiste en traits CG_TRAIT_ELEMENT_RATE
+	VBoxContainer *enemy_element_rates_box = nullptr;
+	VBoxContainer *enemy_element_rates_rows_vbox = nullptr;
+	Vector<OptionButton *> enemy_elem_preset_opts;
+	Vector<SpinBox *> enemy_elem_rate_spins;
+	Vector<int> enemy_elem_ids;
 
 	VBoxContainer *enemy_drops_box = nullptr;
 	OptionButton *drop_kind_opt[3] = { nullptr };
@@ -175,10 +184,35 @@ private:
 	CheckBox *sys_camera_smooth_check = nullptr;
 	CheckBox *sys_camera_clamp_check = nullptr;
 
-	// Sección 5.4: Tropas (Lista de Miembros con posición)
+	// Sección 5.4: Tropas (Colocación interactiva como en RPG Maker MZ)
 	VBoxContainer *troop_members_box = nullptr;
 	VBoxContainer *troop_members_list_vbox = nullptr;
 	Button *btn_add_troop_member = nullptr;
+	Button *btn_remove_troop_member_sel = nullptr;
+	Button *btn_clear_troop_members = nullptr;
+	Button *btn_align_troop_members = nullptr;
+	Button *btn_autoname_troop = nullptr;
+	Button *btn_battle_test_troop = nullptr;
+	Button *btn_change_troop_bg = nullptr;
+	CheckBox *chk_troop_snap_grid = nullptr;
+	VBoxContainer *troop_placement_col3_box = nullptr;
+	Control *troop_placement_canvas = nullptr;
+	int selected_troop_member_idx = 0;
+	bool troop_member_dragging = false;
+	Vector2 troop_drag_offset;
+
+	// Ventana "Cambiar fondo" (Fondo + Suelo por tropa)
+	AcceptDialog *troop_bg_dialog = nullptr;
+	LineEdit *troop_bg1_edit = nullptr;
+	LineEdit *troop_bg2_edit = nullptr;
+	FileDialog *troop_bg_file_dialog = nullptr;
+	int troop_bg_selecting_slot = 0; // 1 = Fondo (battleback1), 2 = Suelo (battleback2)
+
+	// Ranuras con nombre para Enemigos ("Lanzamientos" con nombre y elemento opcional)
+	VBoxContainer *enemy_casts_box = nullptr;
+	VBoxContainer *enemy_casts_rows_vbox = nullptr;
+	Button *btn_add_enemy_cast = nullptr;
+	AcceptDialog *battle_test_dialog = nullptr;
 
 	// Column 3: Graphic Viewer + Traits / Effects sub-panels
 	VBoxContainer *col3_box = nullptr;
@@ -402,13 +436,35 @@ private:
 
 	Ref<Texture2D> _load_texture_from_path(const String &p_path) const;
 
-	// Callbacks de Tropas (Fase 8A)
+	// Callbacks de Tropas (Fase 8A / Cierre)
 	void _refresh_troop_members_ui();
 	void _on_add_troop_member_pressed();
 	void _on_remove_troop_member_pressed(int p_idx);
+	void _on_remove_selected_troop_member_pressed();
+	void _on_clear_troop_members_pressed();
+	void _on_align_troop_members_pressed();
+	void _on_autoname_troop_pressed();
+	void _on_battle_test_troop_pressed();
+	void _on_change_troop_bg_pressed();
+	void _on_troop_bg_browse_pressed(int p_slot);
+	void _on_troop_bg_clear_pressed(int p_slot);
+	void _on_troop_bg_file_selected(const String &p_path);
+	void _on_troop_placement_canvas_draw();
+	void _on_troop_placement_canvas_gui_input(const Ref<InputEvent> &p_ev);
 	void _on_troop_member_enemy_changed(int p_enemy_id, int p_idx);
 	void _on_troop_member_x_changed(double p_val, int p_idx);
 	void _on_troop_member_y_changed(double p_val, int p_idx);
+
+	// Debilidades y Resistencias + Ranuras fijas y Lanzamientos de Enemigos
+	void _refresh_enemy_element_rates_ui();
+	void _on_enemy_elem_preset_changed(int p_sel_idx, int p_row);
+	void _on_enemy_elem_rate_spin_changed(double p_val, int p_row);
+	void _update_enemy_element_rate_trait(int p_elem_id, double p_rate_pct);
+	void _ensure_enemy_fixed_anim_slots(Dictionary &r_enemy_dict);
+	void _refresh_enemy_casts_ui();
+	void _on_add_enemy_cast_pressed();
+	void _on_remove_enemy_cast_pressed(int p_idx);
+	void _on_enemy_cast_element_changed(int p_sel_idx, int p_idx);
 
 	// Callbacks del Editor de Sprites y Animaciones (SpriteFrames Style - Fase 8A)
 	String _get_active_anim_name() const;

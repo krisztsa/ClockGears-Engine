@@ -166,6 +166,7 @@ private:
 	static ClockGearsSystemCatalog *singleton;
 
 	PackedStringArray elements;
+	PackedStringArray element_keys;
 	PackedStringArray weapon_types;
 	PackedStringArray armor_types;
 	PackedStringArray equip_slots;
@@ -193,7 +194,14 @@ public:
 	void reset_to_defaults();
 
 	PackedStringArray get_elements() const { return elements; }
-	void set_elements(const PackedStringArray &p_elements) { elements = p_elements; }
+	void set_elements(const PackedStringArray &p_elements);
+	PackedStringArray get_element_keys() const { return element_keys; }
+	Array get_element_records() const;
+	void sync_elements_from_records(const Array &p_records);
+	void ensure_default_elements_if_empty();
+	int resolve_element_id(const Variant &p_id_or_name) const;
+	String get_element_name(int p_element_id) const;
+	String get_element_key(int p_element_id) const;
 
 	PackedStringArray get_weapon_types() const { return weapon_types; }
 	void set_weapon_types(const PackedStringArray &p_types) { weapon_types = p_types; }

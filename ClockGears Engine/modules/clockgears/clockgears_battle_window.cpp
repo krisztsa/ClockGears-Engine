@@ -1,4 +1,5 @@
 #include "clockgears_battle_window.h"
+#include "clockgears_debug_panel.h"
 #include "editor/clockgears_theme.h"
 #include "editor/themes/editor_scale.h"
 #include "core/config/project_settings.h"
@@ -70,16 +71,20 @@ Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &
 
 	String fname = fixed_path.get_file();
 	if (!fname.is_empty()) {
+		try_paths.push_back("res://img/battlebacks/" + fname);
 		try_paths.push_back("res://img/battlers/" + fname);
 		try_paths.push_back("res://img/enemies/" + fname);
 		try_paths.push_back("res://img/characters/" + fname);
+		try_paths.push_back("res://img/animations/" + fname);
 		try_paths.push_back("res://img/" + fname);
 		try_paths.push_back("res://" + fname);
 
 		if (ProjectSettings::get_singleton()) {
+			try_paths.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/battlebacks/" + fname));
 			try_paths.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/battlers/" + fname));
 			try_paths.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/enemies/" + fname));
 			try_paths.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/characters/" + fname));
+			try_paths.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/animations/" + fname));
 			try_paths.push_back(ProjectSettings::get_singleton()->globalize_path("res://img/" + fname));
 		}
 	}
@@ -100,7 +105,7 @@ Ref<Texture2D> ClockGearsBattleScene::load_texture_with_fallbacks(const String &
 	}
 
 	// Fallback por escaneo en subdirectorios img/
-	String search_dirs[] = { "res://img/battlers", "res://img/enemies", "res://img/characters", "res://img" };
+	String search_dirs[] = { "res://img/battlebacks", "res://img/battlers", "res://img/enemies", "res://img/characters", "res://img/animations", "res://img" };
 	for (size_t d = 0; d < sizeof(search_dirs) / sizeof(search_dirs[0]); d++) {
 		Ref<DirAccess> da = DirAccess::open(search_dirs[d]);
 		if (da.is_valid()) {
@@ -137,6 +142,12 @@ void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("finish_battle_immediate"), &ClockGearsBattleScene::finish_battle_immediate);
 	ClassDB::bind_method(D_METHOD("get_battle_result"), &ClockGearsBattleScene::get_battle_result);
 	ClassDB::bind_method(D_METHOD("is_battle_finished"), &ClockGearsBattleScene::is_battle_finished);
+	ClassDB::bind_method(D_METHOD("is_initiative_bar_visible"), &ClockGearsBattleScene::is_initiative_bar_visible);
+	ClassDB::bind_method(D_METHOD("is_formula_log_visible"), &ClockGearsBattleScene::is_formula_log_visible);
+	ClassDB::bind_method(D_METHOD("get_enemy_node_pos", "idx"), &ClockGearsBattleScene::get_enemy_node_pos);
+	ClassDB::bind_method(D_METHOD("get_enemy_label_text", "idx"), &ClockGearsBattleScene::get_enemy_label_text);
+	ClassDB::bind_method(D_METHOD("is_enemy_hp_bar_visible", "idx"), &ClockGearsBattleScene::is_enemy_hp_bar_visible);
+	ClassDB::bind_method(D_METHOD("get_enemy_current_visual_anim", "idx"), &ClockGearsBattleScene::get_enemy_current_visual_anim);
 
 	ADD_SIGNAL(MethodInfo("battle_finished", PropertyInfo(Variant::INT, "result")));
 }
@@ -161,14 +172,49 @@ void ClockGearsBattleScene::_setup_ui() {
 
 	set_layer(50); // Superior al mapa y tilesets
 
-	// Fondo oscuro semi-transparente
+	// Fondo oscuro plano por defecto (cuando no hay imagen de fondo)
 	bg_rect = memnew(ColorRect);
 	bg_rect->set_anchors_preset(Control::PRESET_FULL_RECT);
-	bg_rect->set_color(Color(0.06f, 0.08f, 0.12f, 0.92f));
+	bg_rect->set_color(Color(0.06f, 0.08f, 0.12f, 1.0f));
+	bg_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	add_child(bg_rect);
+
+	// Fondo de la tropa (cubre toda la pantalla sin deformarse)
+	battleback_bg_rect = memnew(TextureRect);
+	battleback_bg_rect->set_anchors_preset(Control::PRESET_FULL_RECT);
+	battleback_bg_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	battleback_bg_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
+	battleback_bg_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	battleback_bg_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	battleback_bg_rect->hide();
+	add_child(battleback_bg_rect);
+
+	// Suelo de la tropa (se apoya abajo, escalado sin deformar)
+	battleback_floor_rect = memnew(TextureRect);
+	battleback_floor_rect->set_anchor(SIDE_LEFT, 0.0f);
+	battleback_floor_rect->set_anchor(SIDE_RIGHT, 1.0f);
+	battleback_floor_rect->set_anchor(SIDE_TOP, 0.35f);
+	battleback_floor_rect->set_anchor(SIDE_BOTTOM, 1.0f);
+	battleback_floor_rect->set_offset(SIDE_LEFT, 0.0f);
+	battleback_floor_rect->set_offset(SIDE_RIGHT, 0.0f);
+	battleback_floor_rect->set_offset(SIDE_TOP, 0.0f);
+	battleback_floor_rect->set_offset(SIDE_BOTTOM, 0.0f);
+	battleback_floor_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	battleback_floor_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
+	battleback_floor_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	battleback_floor_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	battleback_floor_rect->hide();
+	add_child(battleback_floor_rect);
+
+	// Campo posicionado libremente para enemigos según la posición guardada en la tropa
+	enemies_field = memnew(Control);
+	enemies_field->set_anchors_preset(Control::PRESET_FULL_RECT);
+	enemies_field->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	add_child(enemies_field);
 
 	main_container = memnew(PanelContainer);
 	main_container->set_anchors_preset(Control::PRESET_FULL_RECT);
+	main_container->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	Ref<StyleBoxFlat> empty_sb;
 	empty_sb.instantiate();
 	empty_sb->set_bg_color(Color(0, 0, 0, 0));
@@ -181,10 +227,11 @@ void ClockGearsBattleScene::_setup_ui() {
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
 	main_vbox->set_anchors_preset(Control::PRESET_FULL_RECT);
+	main_vbox->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	main_vbox->add_theme_constant_override("separation", 10);
 	main_container->add_child(main_vbox);
 
-	// 1. Barra de Iniciativa (Arriba)
+	// 1. Barra de Iniciativa (Arriba) - oculta por defecto salvo que F3 "Mostrar turnos" esté activo
 	initiative_panel = memnew(PanelContainer);
 	Ref<StyleBoxFlat> init_sb;
 	init_sb.instantiate();
@@ -193,6 +240,7 @@ void ClockGearsBattleScene::_setup_ui() {
 	init_sb->set_border_color(Color(0.3f, 0.35f, 0.45f, 0.9f));
 	init_sb->set_corner_radius_all(4);
 	initiative_panel->add_theme_style_override("panel", init_sb);
+	initiative_panel->set_visible(ClockGearsDebugOverlay::is_show_battle_turns());
 	main_vbox->add_child(initiative_panel);
 
 	initiative_bar = memnew(HBoxContainer);
@@ -201,15 +249,14 @@ void ClockGearsBattleScene::_setup_ui() {
 	initiative_bar->add_theme_constant_override("separation", 8);
 	initiative_panel->add_child(initiative_bar);
 
-	// 2. Área de Enemigos (Centro)
-	enemies_container = memnew(HBoxContainer);
-	enemies_container->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-	enemies_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemies_container->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	enemies_container->add_theme_constant_override("separation", 24);
-	main_vbox->add_child(enemies_container);
+	// Espaciador central transparente para el campo de batalla
+	Control *center_spacer = memnew(Control);
+	center_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	center_spacer->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	center_spacer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	main_vbox->add_child(center_spacer);
 
-	// Log de Combate (Abajo, compacto y no bloqueante del turno)
+	// Log de Combate (Abajo, compacto y no bloqueante del turno; oculto por defecto salvo F3 "Mostrar fórmulas")
 	battle_log_panel = memnew(PanelContainer);
 	Ref<StyleBoxFlat> log_sb;
 	log_sb.instantiate();
@@ -228,7 +275,7 @@ void ClockGearsBattleScene::_setup_ui() {
 	battle_log_label->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	battle_log_panel->add_child(battle_log_label);
 	main_vbox->add_child(battle_log_panel);
-	battle_log_panel->hide();
+	battle_log_panel->set_visible(false);
 
 	// 3. Fila inferior: Grupo del Jugador (Izq) + Comandos de Acción (Der)
 	HBoxContainer *bottom_row = memnew(HBoxContainer);
@@ -334,12 +381,82 @@ void ClockGearsBattleScene::setup_battle(int p_troop_id, bool p_can_escape, bool
 }
 
 void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
+	if (initiative_panel) {
+		initiative_panel->set_visible(ClockGearsDebugOverlay::is_show_battle_turns());
+	}
+	if (battle_log_panel && battle_log_label) {
+		bool show_f = ClockGearsDebugOverlay::is_show_battle_formulas() && !battle_log_label->get_text().is_empty();
+		battle_log_panel->set_visible(show_f);
+	}
+
 	for (int i = 0; i < battler_visuals.size(); i++) {
 		ClockGearsBattlerVisual &vis = battler_visuals.write[i];
+		if (vis.unit.is_valid()) {
+			float st = vis.unit->get_anim_slot_timer();
+			if (st > 0.0f) {
+				st -= p_delta;
+				vis.unit->set_anim_slot_timer(MAX(0.0f, st));
+			}
+			float et = vis.unit->get_active_effect_timer();
+			if (et > 0.0f) {
+				et -= p_delta;
+				if (et <= 0.0f) {
+					vis.unit->set_active_effect_timer(0.0f);
+					if (vis.effect_rect) vis.effect_rect->hide();
+				} else {
+					vis.unit->set_active_effect_timer(et);
+				}
+			}
+		}
+
+		// Efecto visual sobre el objetivo (CAT_ANIMATIONS)
+		if (vis.effect_rect && vis.unit.is_valid() && vis.unit->get_active_effect_anim_id() > 0 && vis.unit->get_active_effect_timer() > 0.0f) {
+			int eff_id = vis.unit->get_active_effect_anim_id();
+			if (vis.loaded_effect_id != eff_id) {
+				vis.loaded_effect_id = eff_id;
+				vis.effect_frame_idx = 0;
+				vis.effect_frame_timer = 0.0f;
+				ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+				Array anim_list = dm ? dm->get_category_array(CAT_ANIMATIONS) : Array();
+				for (int a = 0; a < anim_list.size(); a++) {
+					Dictionary ad = anim_list[a];
+					if (int(ad.get("id", a + 1)) == eff_id) {
+						String eff_path = ad.get("spritesheet", ad.get("graphic", ""));
+						vis.effect_sprite_data.from_dict(ad);
+						vis.effect_base_texture = load_texture_with_fallbacks(eff_path);
+						if (vis.effect_atlas_texture.is_null()) vis.effect_atlas_texture.instantiate();
+						if (vis.effect_base_texture.is_valid()) {
+							vis.effect_atlas_texture->set_atlas(vis.effect_base_texture);
+							vis.effect_rect->set_texture(vis.effect_atlas_texture);
+						}
+						break;
+					}
+				}
+			}
+			if (vis.effect_base_texture.is_valid() && vis.effect_atlas_texture.is_valid()) {
+				vis.effect_rect->show();
+				int cols = MAX(1, vis.effect_sprite_data.cols > 0 ? vis.effect_sprite_data.cols : 5);
+				int rows = MAX(1, vis.effect_sprite_data.rows > 0 ? vis.effect_sprite_data.rows : 1);
+				int total_ef = MAX(1, cols * rows);
+				vis.effect_frame_timer += p_delta;
+				if (vis.effect_frame_timer >= 0.07f) {
+					vis.effect_frame_timer -= 0.07f;
+					vis.effect_frame_idx = (vis.effect_frame_idx + 1) % total_ef;
+				}
+				int cw = vis.effect_base_texture->get_width() / cols;
+				int ch = vis.effect_base_texture->get_height() / rows;
+				int cx = (vis.effect_frame_idx % cols) * cw;
+				int cy = (vis.effect_frame_idx / cols) * ch;
+				vis.effect_atlas_texture->set_region(Rect2(cx, cy, cw, ch));
+			}
+		} else if (vis.effect_rect) {
+			vis.effect_rect->hide();
+		}
+
 		if (vis.base_texture.is_null() || vis.atlas_texture.is_null()) continue;
 
 		if (vis.unit.is_valid() && vis.unit->get_is_dead()) {
-			String death_name = vis.unit->get_combat_animation(ANIM_TRIGGER_DEATH, "death");
+			String death_name = vis.unit->resolve_slot_animation_name("death");
 			const ClockGearsSpriteAnimation *death_anim = s_find_animation_ci(vis.sprite_data, death_name);
 			if (death_anim && vis.current_anim != death_anim->name) {
 				vis.current_anim = death_anim->name;
@@ -351,9 +468,12 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 			if (vis.state_duration > 0.0f) {
 				vis.state_duration -= p_delta;
 				if (vis.state_duration <= 0.0f) {
-					String idle_name = vis.unit.is_valid() ? vis.unit->get_combat_animation(ANIM_TRIGGER_IDLE, "idle") : "idle";
+					String idle_name = vis.unit.is_valid() ? vis.unit->resolve_slot_animation_name("idle") : "Idle";
 					const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(vis.sprite_data, idle_name);
 					vis.current_anim = idle_anim ? idle_anim->name : idle_name;
+					if (vis.unit.is_valid()) {
+						vis.unit->set_current_anim_slot(vis.current_anim);
+					}
 					vis.current_frame_idx = 0;
 					vis.frame_timer = 0.0f;
 					vis.current_frame_duration = 0.0f;
@@ -371,12 +491,20 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 			cur_anim = ci_anim;
 		}
 		if (!cur_anim) {
-			String idle_name = vis.unit.is_valid() ? vis.unit->get_combat_animation(ANIM_TRIGGER_IDLE, "idle") : "idle";
+			String idle_name = vis.unit.is_valid() ? vis.unit->resolve_slot_animation_name("idle") : "Idle";
 			cur_anim = s_find_animation_ci(vis.sprite_data, idle_name);
 		}
 
 		if (cur_anim && cur_anim->get_frame_count() > 0) {
 			const ClockGearsSpriteAnimation &an = *cur_anim;
+			if (!an.spritesheet_path.is_empty() && an.spritesheet_path != vis.current_sheet_path) {
+				Ref<Texture2D> anim_tex = load_texture_with_fallbacks(an.spritesheet_path);
+				if (anim_tex.is_valid()) {
+					vis.base_texture = anim_tex;
+					vis.atlas_texture->set_atlas(vis.base_texture);
+					vis.current_sheet_path = an.spritesheet_path;
+				}
+			}
 			int total_f = an.get_frame_count();
 			bool loop = (vis.current_anim.to_lower().find("idle") != -1) ? true : an.loop;
 
@@ -419,7 +547,7 @@ void ClockGearsBattleScene::_update_battler_visuals(float p_delta) {
 			}
 			r = f.region;
 		} else {
-			// Si no hay animación configurada, usar frame 0 sin romperse
+			// Si falta una ranura o está vacía, usa el frame 0 sin dar error
 			int cols = vis.sprite_data.cols > 0 ? vis.sprite_data.cols : 4;
 			int fw = vis.sprite_data.frame_w > 0 ? vis.sprite_data.frame_w : (vis.base_texture.is_valid() ? vis.base_texture->get_width() / cols : 32);
 			int fh = vis.sprite_data.frame_h > 0 ? vis.sprite_data.frame_h : (vis.base_texture.is_valid() ? vis.base_texture->get_height() : 32);
@@ -614,74 +742,138 @@ void ClockGearsBattleScene::unhandled_input(const Ref<InputEvent> &p_event) {
 }
 
 void ClockGearsBattleScene::_refresh_ui() {
-	if (!controller.is_valid() || !enemies_container || !party_container) return;
+	if (!controller.is_valid() || !enemies_field || !party_container) return;
 
 	_update_initiative_bar();
+	if (initiative_panel) {
+		initiative_panel->set_visible(ClockGearsDebugOverlay::is_show_battle_turns());
+	}
+	if (battle_log_panel && battle_log_label) {
+		battle_log_panel->set_visible(ClockGearsDebugOverlay::is_show_battle_formulas() && !battle_log_label->get_text().is_empty());
+	}
+
+	// Actualizar fondo y suelo de la tropa (sin imagen -> fondo oscuro plano)
+	if (battleback_bg_rect) {
+		String bg_path = controller->get_troop_bg_path();
+		Ref<Texture2D> bg_tex = load_texture_with_fallbacks(bg_path);
+		if (bg_tex.is_valid()) {
+			battleback_bg_rect->set_texture(bg_tex);
+			battleback_bg_rect->show();
+		} else {
+			battleback_bg_rect->set_texture(Ref<Texture2D>());
+			battleback_bg_rect->hide();
+		}
+	}
+	if (battleback_floor_rect) {
+		String floor_path = controller->get_troop_floor_path();
+		Ref<Texture2D> floor_tex = load_texture_with_fallbacks(floor_path);
+		if (floor_tex.is_valid()) {
+			battleback_floor_rect->set_texture(floor_tex);
+			battleback_floor_rect->show();
+		} else {
+			battleback_floor_rect->set_texture(Ref<Texture2D>());
+			battleback_floor_rect->hide();
+		}
+	}
+
 	battler_visuals.clear();
 
-	// 1. Refrescar cartas de enemigos
-	while (enemies_container->get_child_count() > 0) {
-		Node *c = enemies_container->get_child(0);
-		enemies_container->remove_child(c);
+	// 1. Refrescar enemigos en sus posiciones guardadas (sin tarjeta/rectángulo)
+	while (enemies_field->get_child_count() > 0) {
+		Node *c = enemies_field->get_child(0);
+		enemies_field->remove_child(c);
 		memdelete(c);
 	}
-	enemy_cards.clear();
+	enemy_nodes.clear();
+	enemy_name_labels.clear();
+	enemy_hp_bars.clear();
 
 	Array ens = controller->get_enemy_units();
 	for (int i = 0; i < ens.size(); i++) {
 		Ref<ClockGearsBattleUnit> en = ens[i];
 		if (!en.is_valid()) continue;
 
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_custom_minimum_size(Size2(140, 160));
-		Ref<StyleBoxFlat> csb;
-		csb.instantiate();
-		csb->set_bg_color(en->get_is_dead() ? Color(0.1f, 0.1f, 0.1f, 0.4f) : Color(0.12f, 0.15f, 0.2f, 0.9f));
-		csb->set_border_width_all(1);
-		csb->set_border_color(Color(0.4f, 0.45f, 0.55f, 0.8f));
-		csb->set_corner_radius_all(6);
-		card->add_theme_style_override("panel", csb);
-
 		VBoxContainer *cvb = memnew(VBoxContainer);
 		cvb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-		cvb->add_theme_constant_override("separation", 6);
-		card->add_child(cvb);
+		cvb->add_theme_constant_override("separation", 4);
+		cvb->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		Vector2 bpos = en->get_battle_pos();
+		if (bpos.x <= 0.0f && bpos.y <= 0.0f) {
+			bpos = Vector2(220.0f + i * 160.0f, 180.0f);
+		}
+		cvb->set_position(bpos);
 
-		// Gráfico de battler con recorte de frame, centrado y escalado pixel art
+		Control *sprite_holder = memnew(Control);
+		sprite_holder->set_custom_minimum_size(Size2(110, 110));
+		sprite_holder->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		cvb->add_child(sprite_holder);
+
+		// Gráfico de battler directamente en su posición (sin tarjeta rectangular)
 		TextureRect *trect = memnew(TextureRect);
-		trect->set_custom_minimum_size(Size2(110, 110));
+		trect->set_anchors_preset(Control::PRESET_FULL_RECT);
 		trect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
 		trect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 		trect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-		cvb->add_child(trect);
+		trect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		if (en->get_is_dead()) {
+			trect->set_modulate(Color(0.5f, 0.5f, 0.5f, 0.45f));
+		}
+		sprite_holder->add_child(trect);
+
+		// Efecto visual sobre el objetivo (animación propia de la habilidad)
+		TextureRect *eff_rect = memnew(TextureRect);
+		eff_rect->set_anchors_preset(Control::PRESET_FULL_RECT);
+		eff_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+		eff_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+		eff_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		eff_rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		eff_rect->hide();
+		sprite_holder->add_child(eff_rect);
 
 		ClockGearsSpriteSheetData sp_data = en->get_sprite_data();
 		String tex_path = en->get_graphic_path();
-		String idle_name = en->get_combat_animation(ANIM_TRIGGER_IDLE, "idle");
-		const ClockGearsSpriteAnimation *idle_anim = s_find_animation_ci(sp_data, idle_name);
-		if (!idle_anim && sp_data.animations.has(idle_name)) {
-			idle_anim = &sp_data.animations[idle_name];
-		}
-		if (!idle_anim) {
-			idle_anim = s_find_animation_ci(sp_data, "idle");
-		}
-		if (!idle_anim && !sp_data.animations.is_empty()) {
-			idle_anim = &sp_data.animations.begin()->value;
+		String active_slot = en->get_current_anim_slot();
+		float active_timer = en->get_anim_slot_timer();
+		String target_anim_name;
+		if (en->get_is_dead()) {
+			target_anim_name = en->resolve_slot_animation_name("death");
+		} else if (active_timer > 0.0f && !active_slot.is_empty()) {
+			target_anim_name = active_slot;
+		} else {
+			target_anim_name = en->resolve_slot_animation_name("idle");
 		}
 
-		if (idle_anim && !idle_anim->spritesheet_path.is_empty()) {
-			tex_path = idle_anim->spritesheet_path;
+		const ClockGearsSpriteAnimation *cur_anim = s_find_animation_ci(sp_data, target_anim_name);
+		if (!cur_anim && sp_data.animations.has(target_anim_name)) {
+			cur_anim = &sp_data.animations[target_anim_name];
+		}
+		if (!cur_anim) {
+			cur_anim = s_find_animation_ci(sp_data, "idle");
+		}
+		if (!cur_anim && !sp_data.animations.is_empty()) {
+			cur_anim = &sp_data.animations.begin()->value;
+		}
+
+		if (cur_anim && !cur_anim->spritesheet_path.is_empty()) {
+			tex_path = cur_anim->spritesheet_path;
 		}
 		Ref<Texture2D> base_tex = load_texture_with_fallbacks(tex_path);
 		Ref<AtlasTexture> atlas;
 		atlas.instantiate();
 
 		Rect2i r;
-		if (idle_anim && idle_anim->get_frame_count() > 0) {
-			ClockGearsAnimationFrame f0 = idle_anim->get_frame(0, base_tex.is_valid() ? base_tex->get_width() : 0, base_tex.is_valid() ? base_tex->get_height() : 0);
+		if (cur_anim && cur_anim->get_frame_count() > 0) {
+			ClockGearsAnimationFrame f0 = cur_anim->get_frame(0, base_tex.is_valid() ? base_tex->get_width() : 0, base_tex.is_valid() ? base_tex->get_height() : 0);
+			if (!f0.sheet_path.is_empty() && f0.sheet_path != tex_path) {
+				Ref<Texture2D> f_tex = load_texture_with_fallbacks(f0.sheet_path);
+				if (f_tex.is_valid()) {
+					base_tex = f_tex;
+					tex_path = f0.sheet_path;
+				}
+			}
 			r = f0.region;
 		} else {
-			// Frame 0 por defecto si no hay animación idle
+			// Frame 0 por defecto si falta una ranura o está vacía
 			int cols = sp_data.cols > 0 ? sp_data.cols : 4;
 			int fw = sp_data.frame_w > 0 ? sp_data.frame_w : (base_tex.is_valid() ? base_tex->get_width() / cols : 32);
 			int fh = sp_data.frame_h > 0 ? sp_data.frame_h : (base_tex.is_valid() ? base_tex->get_height() : 32);
@@ -694,8 +886,7 @@ void ClockGearsBattleScene::_refresh_ui() {
 			}
 			r = Rect2i(0, 0, fw, fh);
 		}
-		// Si la textura mide 64 de alto pero el frame quedó en 32, ajustar a 64
-		if (base_tex.is_valid() && base_tex->get_height() > 32 && r.size.y < base_tex->get_height()) {
+		if (base_tex.is_valid() && base_tex->get_height() > 32 && r.size.y < base_tex->get_height() && (!cur_anim || cur_anim->get_frame_count() <= 1)) {
 			r.size.y = base_tex->get_height();
 			r.size.x = MAX(r.size.x, base_tex->get_height());
 		}
@@ -709,34 +900,43 @@ void ClockGearsBattleScene::_refresh_ui() {
 		ClockGearsBattlerVisual vis;
 		vis.unit = en;
 		vis.texture_rect = trect;
+		vis.effect_rect = eff_rect;
 		vis.base_texture = base_tex;
 		vis.atlas_texture = atlas;
 		vis.sprite_data = sp_data;
-		vis.current_anim = en->get_is_dead() ? "death" : (idle_anim ? idle_anim->name : "idle");
+		vis.current_anim = cur_anim ? cur_anim->name : target_anim_name;
 		vis.current_frame_idx = 0;
 		vis.frame_timer = 0.0f;
-		vis.current_frame_duration = (idle_anim && idle_anim->get_frame_count() > 0) ? idle_anim->get_frame(0).get_duration(idle_anim->fps) : 0.1f;
+		vis.current_frame_duration = (cur_anim && cur_anim->get_frame_count() > 0) ? cur_anim->get_frame(0).get_duration(cur_anim->fps) : 0.1f;
 		vis.anim_timer = 0.0f;
-		vis.state_duration = 0.0f;
+		vis.state_duration = active_timer;
 		vis.is_actor = false;
 		vis.current_sheet_path = tex_path;
 		battler_visuals.push_back(vis);
 
-		Label *lbl_name = memnew(Label(en->get_name()));
+		// Nombre y nivel debajo ("Cañón musgoso Nv 3")
+		String name_lvl = vformat("%s Nv %d", en->get_name(), MAX(1, en->get_level()));
+		Label *lbl_name = memnew(Label(name_lvl));
 		lbl_name->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		lbl_name->add_theme_color_override("font_color", en->get_is_dead() ? Color(0.6f, 0.6f, 0.6f) : Color(1.0f, 0.9f, 0.9f));
+		lbl_name->add_theme_color_override("font_color", en->get_is_dead() ? Color(0.6f, 0.6f, 0.6f) : Color(1.0f, 0.95f, 0.9f));
+		lbl_name->add_theme_color_override("font_shadow_color", Color(0.0f, 0.0f, 0.0f, 0.9f));
+		lbl_name->add_theme_constant_override("shadow_offset_x", 1);
+		lbl_name->add_theme_constant_override("shadow_offset_y", 1);
 		cvb->add_child(lbl_name);
 
-		// Barra de HP
+		// Barra de vida SIEMPRE visible bajo el nombre
 		ProgressBar *hp_bar = memnew(ProgressBar);
 		hp_bar->set_min(0);
-		hp_bar->set_max(en->get_max_hp());
+		hp_bar->set_max(MAX(1, en->get_max_hp()));
 		hp_bar->set_value(en->get_hp());
-		hp_bar->set_custom_minimum_size(Size2(100, 14));
+		hp_bar->set_custom_minimum_size(Size2(110, 14));
+		hp_bar->set_visible(true);
 		cvb->add_child(hp_bar);
 
-		enemies_container->add_child(card);
-		enemy_cards.push_back(card);
+		enemies_field->add_child(cvb);
+		enemy_nodes.push_back(cvb);
+		enemy_name_labels.push_back(lbl_name);
+		enemy_hp_bars.push_back(hp_bar);
 	}
 
 	// 2. Refrescar cartas del grupo
@@ -939,7 +1139,7 @@ void ClockGearsBattleScene::_on_message_completed() {
 void ClockGearsBattleScene::_on_hit_executed(const String &p_log) {
 	if (battle_log_label && battle_log_panel) {
 		battle_log_label->set_text(p_log);
-		battle_log_panel->show();
+		battle_log_panel->set_visible(ClockGearsDebugOverlay::is_show_battle_formulas() && !p_log.is_empty());
 	}
 }
 
@@ -1257,6 +1457,48 @@ int ClockGearsBattleScene::get_battle_result() const {
 
 bool ClockGearsBattleScene::is_battle_finished() const {
 	return controller.is_valid() && controller->is_finished();
+}
+
+bool ClockGearsBattleScene::is_initiative_bar_visible() const {
+	return initiative_panel && initiative_panel->is_visible();
+}
+
+bool ClockGearsBattleScene::is_formula_log_visible() const {
+	return battle_log_panel && battle_log_panel->is_visible();
+}
+
+Vector2 ClockGearsBattleScene::get_enemy_node_pos(int p_idx) const {
+	if (p_idx >= 0 && p_idx < enemy_nodes.size() && enemy_nodes[p_idx]) {
+		return enemy_nodes[p_idx]->get_position();
+	}
+	return Vector2();
+}
+
+String ClockGearsBattleScene::get_enemy_label_text(int p_idx) const {
+	if (p_idx >= 0 && p_idx < enemy_name_labels.size() && enemy_name_labels[p_idx]) {
+		return enemy_name_labels[p_idx]->get_text();
+	}
+	return String();
+}
+
+bool ClockGearsBattleScene::is_enemy_hp_bar_visible(int p_idx) const {
+	if (p_idx >= 0 && p_idx < enemy_hp_bars.size() && enemy_hp_bars[p_idx]) {
+		return enemy_hp_bars[p_idx]->is_visible();
+	}
+	return false;
+}
+
+String ClockGearsBattleScene::get_enemy_current_visual_anim(int p_idx) const {
+	int enemy_count = 0;
+	for (int i = 0; i < battler_visuals.size(); i++) {
+		if (!battler_visuals[i].is_actor) {
+			if (enemy_count == p_idx) {
+				return battler_visuals[i].current_anim;
+			}
+			enemy_count++;
+		}
+	}
+	return String();
 }
 
 ClockGearsBattleScene::ClockGearsBattleScene() {

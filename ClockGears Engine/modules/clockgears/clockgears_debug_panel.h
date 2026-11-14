@@ -85,9 +85,12 @@ private:
 	bool is_loading_settings = false;
 
 	// Log de Batalla (Fase 8A)
+	CheckBox *chk_battle_turns = nullptr;
+	CheckBox *chk_battle_formulas = nullptr;
 	RichTextLabel *battle_log_rtl = nullptr;
 
 	void _on_chk_toggled(bool p_val);
+	void _on_battle_chk_toggled(bool p_val);
 	void _on_noclip_toggled(bool p_val);
 	void _on_title_gui_input(const Ref<InputEvent> &p_event);
 	void _save_settings();
@@ -103,6 +106,14 @@ protected:
 public:
 	static bool is_playtest_mode();
 	static void log_battle(const String &p_entry);
+	static String get_battle_log_text();
+	static void clear_battle_log();
+
+	static void set_show_battle_turns(bool p_show);
+	static bool is_show_battle_turns();
+
+	static void set_show_battle_formulas(bool p_show);
+	static bool is_show_battle_formulas();
 
 	void setup_overlay(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsPixelCamera2D *p_camera);
 	void toggle_debug_panel();

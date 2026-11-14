@@ -65,6 +65,10 @@ void ClockGearsDataManager::init_empty() {
 	if (ClockGearsTimeManager::get_singleton()) {
 		ClockGearsTimeManager::get_singleton()->init_empty();
 	}
+	if (ClockGearsSystemCatalog::get_singleton()) {
+		ClockGearsSystemCatalog::get_singleton()->ensure_default_elements_if_empty();
+		category_data[CAT_TYPES] = ClockGearsSystemCatalog::get_singleton()->get_element_records();
+	}
 
 	system_config.clear();
 	system_config["game_title"] = "";
@@ -336,6 +340,14 @@ Array ClockGearsDataManager::get_category_array(int p_category) const {
 void ClockGearsDataManager::set_category_array(int p_category, const Array &p_array) {
 	ERR_FAIL_INDEX(p_category, CAT_MAX);
 	category_data[p_category] = p_array.duplicate(true);
+	if (p_category == CAT_TYPES && ClockGearsSystemCatalog::get_singleton()) {
+		if (category_data[CAT_TYPES].is_empty()) {
+			ClockGearsSystemCatalog::get_singleton()->ensure_default_elements_if_empty();
+			category_data[CAT_TYPES] = ClockGearsSystemCatalog::get_singleton()->get_element_records();
+		} else {
+			ClockGearsSystemCatalog::get_singleton()->sync_elements_from_records(category_data[CAT_TYPES]);
+		}
+	}
 	if (ClockGearsIdRegistry::get_singleton()) {
 		ClockGearsIdRegistry::get_singleton()->sync_category_from_records(get_category_key(p_category), category_data[p_category]);
 	}
@@ -476,6 +488,12 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 
 	// 3. Guardar types.json (catálogos editables de elementos, armas, armaduras y ranuras)
 	if (ClockGearsSystemCatalog::get_singleton()) {
+		if (!category_data[CAT_TYPES].is_empty()) {
+			ClockGearsSystemCatalog::get_singleton()->sync_elements_from_records(category_data[CAT_TYPES]);
+		} else {
+			ClockGearsSystemCatalog::get_singleton()->ensure_default_elements_if_empty();
+			category_data[CAT_TYPES] = ClockGearsSystemCatalog::get_singleton()->get_element_records();
+		}
 		if (!_write_json_atomic(p_dir_path.path_join("types.json"), ClockGearsSystemCatalog::get_singleton()->to_dict())) {
 			return false;
 		}
@@ -569,7 +587,11 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	if (_read_json_with_backup(p_dir_path.path_join("types.json"), types_var) && types_var.get_type() == Variant::DICTIONARY) {
 		if (ClockGearsSystemCatalog::get_singleton()) {
 			ClockGearsSystemCatalog::get_singleton()->from_dict(types_var);
+			category_data[CAT_TYPES] = ClockGearsSystemCatalog::get_singleton()->get_element_records();
 		}
+	} else if (ClockGearsSystemCatalog::get_singleton()) {
+		ClockGearsSystemCatalog::get_singleton()->ensure_default_elements_if_empty();
+		category_data[CAT_TYPES] = ClockGearsSystemCatalog::get_singleton()->get_element_records();
 	}
 
 	Variant vocab_var;

@@ -19,9 +19,13 @@
 struct ClockGearsBattlerVisual {
 	Ref<ClockGearsBattleUnit> unit;
 	TextureRect *texture_rect = nullptr;
+	TextureRect *effect_rect = nullptr;
 	Ref<Texture2D> base_texture;
 	Ref<AtlasTexture> atlas_texture;
+	Ref<Texture2D> effect_base_texture;
+	Ref<AtlasTexture> effect_atlas_texture;
 	ClockGearsSpriteSheetData sprite_data;
+	ClockGearsSpriteSheetData effect_sprite_data;
 	String current_anim = "idle";
 	String current_sheet_path;
 	int current_frame_idx = 0;
@@ -29,6 +33,9 @@ struct ClockGearsBattlerVisual {
 	float current_frame_duration = 0.1f;
 	float anim_timer = 0.0f;
 	float state_duration = 0.0f;
+	int loaded_effect_id = 0;
+	int effect_frame_idx = 0;
+	float effect_frame_timer = 0.0f;
 	bool is_actor = false;
 };
 
@@ -47,15 +54,19 @@ private:
 
 	// UI Layout
 	ColorRect *bg_rect = nullptr;
+	TextureRect *battleback_bg_rect = nullptr;
+	TextureRect *battleback_floor_rect = nullptr;
 	PanelContainer *main_container = nullptr;
 
 	// Barra de Iniciativa superior
 	PanelContainer *initiative_panel = nullptr;
 	HBoxContainer *initiative_bar = nullptr;
 
-	// Área de enemigos (Centro)
-	HBoxContainer *enemies_container = nullptr;
-	Vector<PanelContainer *> enemy_cards;
+	// Área de enemigos (Campo posicionado libremente)
+	Control *enemies_field = nullptr;
+	Vector<Control *> enemy_nodes;
+	Vector<Label *> enemy_name_labels;
+	Vector<ProgressBar *> enemy_hp_bars;
 
 	// Área del grupo (Abajo izquierda)
 	HBoxContainer *party_container = nullptr;
@@ -144,6 +155,13 @@ public:
 
 	int get_battle_result() const;
 	bool is_battle_finished() const;
+
+	bool is_initiative_bar_visible() const;
+	bool is_formula_log_visible() const;
+	Vector2 get_enemy_node_pos(int p_idx) const;
+	String get_enemy_label_text(int p_idx) const;
+	bool is_enemy_hp_bar_visible(int p_idx) const;
+	String get_enemy_current_visual_anim(int p_idx) const;
 
 	ClockGearsBattleScene();
 	~ClockGearsBattleScene();
