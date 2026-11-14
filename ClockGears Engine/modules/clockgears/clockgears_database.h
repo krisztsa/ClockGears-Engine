@@ -28,6 +28,10 @@
 class ClockGearsBattleScene;
 class ClockGearsEventEditorDialog;
 class ClockGearsShapeEditor;
+class ClockGearsTitleScreen;
+class ColorPickerButton;
+class SubViewport;
+class AspectRatioContainer;
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
@@ -588,6 +592,34 @@ private:
 
 	Array category_data[CAT_MAX];
 	Dictionary system_config;
+	Dictionary menu_title_config;
+
+	// Menús -> Menú principal (9B Tanda 1 UI)
+	VBoxContainer *main_menu_editor_panel = nullptr;
+	VBoxContainer *menu_entries_list_vbox = nullptr;
+	OptionButton *menu_bg_type_opt = nullptr;
+	ColorPickerButton *menu_bg_color_btn = nullptr;
+	LineEdit *menu_bg_image_edit = nullptr;
+	Button *menu_bg_import_btn = nullptr;
+	Button *menu_bg_clear_btn = nullptr;
+	OptionButton *menu_bg_scale_opt = nullptr;
+	OptionButton *menu_bg_filter_opt = nullptr;
+	OptionButton *menu_title_type_opt = nullptr;
+	LineEdit *menu_title_text_edit = nullptr;
+	LineEdit *menu_title_image_edit = nullptr;
+	Button *menu_title_import_btn = nullptr;
+	Button *menu_title_clear_btn = nullptr;
+	OptionButton *menu_title_filter_opt = nullptr;
+	LineEdit *menu_bgm_edit = nullptr;
+	Button *menu_bgm_import_btn = nullptr;
+	Button *menu_bgm_clear_btn = nullptr;
+	Button *menu_test_btn = nullptr;
+	SubViewport *menu_preview_viewport = nullptr;
+	ClockGearsTitleScreen *menu_live_preview = nullptr;
+	Window *menu_test_window = nullptr;
+	ClockGearsTitleScreen *menu_test_screen = nullptr;
+	FileDialog *menu_asset_file_dialog = nullptr;
+	int menu_asset_pick_target = 0;
 
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
 	bool updating_ui = false;
@@ -908,6 +940,24 @@ private:
 	void _save_database_to_disk();
 	void _load_database_from_disk();
 
+	void _setup_main_menu_editor_ui();
+	void _refresh_main_menu_editor_ui();
+	void _rebuild_main_menu_entries_rows();
+	void _update_main_menu_live_preview();
+	void _on_menu_entry_toggled(bool p_enabled, String p_entry_id);
+	void _on_menu_entry_text_changed(const String &p_text, String p_entry_id);
+	void _on_menu_entry_move_pressed(String p_entry_id, int p_delta);
+	void _on_menu_bg_field_changed(int p_unused = 0);
+	void _on_menu_bg_color_changed(const Color &p_color);
+	void _on_menu_title_field_changed(int p_unused = 0);
+	void _on_menu_title_text_changed(const String &p_text);
+	void _on_menu_bgm_text_changed(const String &p_text);
+	void _on_menu_import_asset_pressed(int p_target);
+	void _on_menu_clear_asset_pressed(int p_target);
+	void _on_menu_asset_file_selected(const String &p_path);
+	void _on_menu_test_popup_close_requested();
+	String _import_menu_asset_file(const String &p_src_path, const String &p_subfolder, bool p_pixel_preset);
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -915,6 +965,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
+	enum { DB_CAT_MAIN_MENU = CAT_MAX };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -971,6 +1022,16 @@ public:
 	void set_system_combat_mode(int p_mode);
 	Dictionary get_system_config_copy() const;
 	void set_system_realtime_value(const String &p_key, const Variant &p_val);
+
+	Dictionary get_title_menu_draft_copy() const;
+	void set_title_menu_entry_state(const String &p_id, bool p_enabled, const String &p_text);
+	bool move_title_menu_entry(const String &p_id, int p_delta);
+	void set_title_menu_background(const String &p_type, const String &p_color_or_path, const String &p_scale_mode = "fit", const String &p_filter = "nearest");
+	void set_title_menu_title_config(const String &p_type, const String &p_text_or_path, const String &p_filter = "nearest");
+	void set_title_menu_bgm(const String &p_path);
+	ClockGearsTitleScreen *get_title_menu_live_preview() const { return menu_live_preview; }
+	Window *open_title_menu_test_popup();
+	Window *get_title_menu_test_popup() const { return menu_test_window; }
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

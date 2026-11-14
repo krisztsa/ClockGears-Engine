@@ -29,9 +29,12 @@ private:
 	PanelContainer *main_menu_panel = nullptr;
 	VBoxContainer *entries_box = nullptr;
 
+	Control *continue_overlay = nullptr;
 	PanelContainer *continue_panel = nullptr;
 	VBoxContainer *slots_box = nullptr;
+	Button *btn_continue_back = nullptr;
 
+	Control *options_overlay = nullptr;
 	PanelContainer *options_panel = nullptr;
 	HSlider *music_slider = nullptr;
 	Label *music_val_label = nullptr;
@@ -40,16 +43,27 @@ private:
 	HSlider *brightness_slider = nullptr;
 	Label *brightness_val_label = nullptr;
 	CheckBox *fullscreen_check = nullptr;
+	Button *btn_options_reset = nullptr;
+	Button *btn_options_back = nullptr;
 	bool syncing_options_ui = false;
 
 	bool auto_quit_tree = true;
+	bool preview_mode = false;
+	bool editor_test_popup_mode = false;
 	bool quit_requested_flag = false;
 	String applied_bgm_path;
 	String last_started_map_path;
 	PackedStringArray visible_entry_ids;
 	PackedStringArray visible_entry_texts;
+	Dictionary preview_title_config;
+	Dictionary preview_system_config;
 
 	void _build_base_ui();
+	void _apply_theme_styling();
+	void _apply_title_config(const Dictionary &p_cfg, const Dictionary &p_sys_cfg, bool p_check_saves);
+	Vector<Button *> _get_active_nav_buttons() const;
+	bool _move_focus_by(int p_delta);
+	bool _activate_focused_button();
 	void _populate_save_slots();
 	void _sync_options_controls_from_dm();
 	void _commit_options_from_controls();
@@ -66,11 +80,20 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	static bool ensure_title_screen_scene(const String &p_scene_path = "res://title_screen.tscn");
 
 	void rebuild_title_screen();
+	void set_preview_mode(bool p_enable);
+	bool is_preview_mode() const { return preview_mode; }
+	void set_editor_test_popup_mode(bool p_enable);
+	bool is_editor_test_popup_mode() const { return editor_test_popup_mode; }
+	void apply_title_config_preview(const Dictionary &p_title_cfg, const Dictionary &p_sys_cfg = Dictionary());
+	bool handle_navigation_key(Key p_keycode);
+	Dictionary get_layout_bounds_info(const Vector2 &p_viewport_size = Vector2()) const;
 	PackedStringArray get_visible_entry_ids() const { return visible_entry_ids; }
 	PackedStringArray get_visible_entry_texts() const { return visible_entry_texts; }
 
