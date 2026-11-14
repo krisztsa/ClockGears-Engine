@@ -9,42 +9,26 @@
 #include "core/os/os.h"
 #include "editor/clockgears_project_manager.h"
 #include "editor/editor_node.h"
+#include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
-#include "editor/docks/scene_tree_dock.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/docks/scene_tree_dock.h"
+#include "icons/clockgears_icons.h"
 #include "scene/gui/base_button.h"
-#include "scene/gui/separator.h"
 #include "scene/resources/image_texture.h"
-#include "scene/resources/style_box_flat.h"
 #include "scene/resources/style_box.h"
+#include "scene/resources/style_box_flat.h"
 #include "scene/resources/theme.h"
 
 ClockGearsTopBar *ClockGearsTopBar::singleton = nullptr;
 
 namespace {
 
-const char *CLOCKGEARS_GEAR_SVG =
-		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">"
-		"<path fill=\"#E8B84B\" d=\"M13.5 1.5h5l1 4.2 2.6 1.1 3.4-2.7 3.5 3.5-2.7 3.4 1.1 2.6 4.2 1v5l-4.2 1-1.1 2.6 2.7 3.4-3.5 3.5-3.4-2.7-2.6 1.1-1 4.2h-5l-1-4.2-2.6-1.1-3.4 2.7-3.5-3.5 2.7-3.4-1.1-2.6-4.2-1v-5l4.2-1 1.1-2.6-2.7-3.4 3.5-3.5 3.4 2.7 2.6-1.1z\"/>"
-		"<circle cx=\"16\" cy=\"16\" r=\"7.4\" fill=\"#1A1E26\"/>"
-		"<circle cx=\"16\" cy=\"16\" r=\"3.2\" fill=\"#E8B84B\"/>"
-		"</svg>";
-
+// Iconos conservados temporalmente (sin PNG nuevo todavía): estrella (eventos), luna (sombra), selección punteada.
 const char *CLOCKGEARS_EVENT_SVG =
 		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">"
 		"<path fill=\"#E8B84B\" d=\"M12 2.2l2.8 6.1 6.7.7-5 4.5 1.4 6.6-5.9-3.4-5.9 3.4 1.4-6.6-5-4.5 6.7-.7z\"/>"
-		"</svg>";
-
-const char *CLOCKGEARS_PENCIL_SVG =
-		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">"
-		"<path fill=\"#E8B84B\" d=\"M3.2 20.8l1-4.4L16.5 4.1l3.4 3.4L7.6 19.8z\"/>"
-		"<path fill=\"#1A1E26\" d=\"M15.4 5.2l3.4 3.4 1.6-1.6a1.4 1.4 0 0 0 0-2l-1.4-1.4a1.4 1.4 0 0 0-2 0z\"/>"
-		"</svg>";
-
-const char *CLOCKGEARS_ELLIPSE_SVG =
-		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">"
-		"<ellipse cx=\"12\" cy=\"12\" rx=\"8.2\" ry=\"6.4\" fill=\"none\" stroke=\"#E8B84B\" stroke-width=\"2\"/>"
 		"</svg>";
 
 const char *CLOCKGEARS_SHADOW_SVG =
@@ -57,12 +41,9 @@ const char *CLOCKGEARS_SELECT_SVG =
 		"<path fill=\"#E8B84B\" d=\"M3 3h5v2H5v3H3V3zm13 0h5v5h-2V5h-3V3zM3 16h2v3h3v2H3v-5zm16 3v-3h2v5h-5v-2h3zM9 3h6v2H9V3zm0 16h6v2H9v-2zM3 9h2v6H3V9zm16 0h2v6h-2V9z\"/>"
 		"</svg>";
 
-const char *CLOCKGEARS_START_POS_SVG =
-		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">"
-		"<path fill=\"#5CE67E\" d=\"M5 2h2v20H5V2zm3 1h12l-3.2 4.5L20 12H8V3z\"/>"
-		"<circle cx=\"15\" cy=\"17\" r=\"2.5\" fill=\"#E8B84B\"/>"
-		"<path fill=\"#E8B84B\" d=\"M11.5 22c0-2 1.6-3.2 3.5-3.2s3.5 1.2 3.5 3.2h-7z\"/>"
-		"</svg>";
+int _get_int_scale() {
+	return MAX(1, (int)Math::floor(EDSCALE + 0.001f));
+}
 
 } // namespace
 
@@ -75,44 +56,74 @@ void ClockGearsTopBar::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_on_zoom_in_pressed"), &ClockGearsTopBar::_on_zoom_in_pressed);
 	ClassDB::bind_method(D_METHOD("_on_zoom_out_pressed"), &ClockGearsTopBar::_on_zoom_out_pressed);
 	ClassDB::bind_method(D_METHOD("_on_playtest_pressed"), &ClockGearsTopBar::_on_playtest_pressed);
+	ClassDB::bind_method(D_METHOD("_relayout_rows"), &ClockGearsTopBar::_relayout_rows);
 }
 
-Ref<Texture2D> ClockGearsTopBar::_make_svg_icon(const String &p_svg) const {
+Ref<Texture2D> ClockGearsTopBar::_make_svg_icon(const String &p_svg, int p_int_scale) const {
 	Ref<Image> image;
 	image.instantiate();
-	if (image->load_svg_from_buffer(p_svg.to_utf8_buffer(), 1.0) != OK || image->is_empty()) {
+	if (image->load_svg_from_buffer(p_svg.to_utf8_buffer(), float(MAX(1, p_int_scale))) != OK || image->is_empty()) {
 		return Ref<Texture2D>();
 	}
 	return ImageTexture::create_from_image(image);
 }
 
-void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button) const {
-	const int radius = 8 * EDSCALE;
-	const int margin = 3 * EDSCALE;
+Ref<Texture2D> ClockGearsTopBar::_get_png_icon(const String &p_name, int p_int_scale) const {
+	if (ClockGearsIcons::get_singleton()) {
+		return ClockGearsIcons::get_singleton()->get_icon(p_name, float(MAX(1, p_int_scale)));
+	}
+	return Ref<Texture2D>();
+}
+
+void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button, const Ref<Theme> &p_editor_theme, int p_int_scale) const {
+	const int radius = 6 * p_int_scale;
+	const int margin_h = 7 * p_int_scale;
+	const int margin_v = 4 * p_int_scale;
+
+	Color accent(0.88f, 0.63f, 0.25f);
+	if (p_editor_theme.is_valid() && p_editor_theme->has_color(SNAME("accent_color"), EditorStringName(Editor))) {
+		accent = p_editor_theme->get_color(SNAME("accent_color"), EditorStringName(Editor));
+	}
 
 	Ref<StyleBoxFlat> normal;
 	normal.instantiate();
 	normal->set_bg_color(Color(1, 1, 1, 0.0));
+	normal->set_border_width_all(1);
+	normal->set_border_color(Color(1, 1, 1, 0.0));
 	normal->set_corner_radius_all(radius);
-	normal->set_content_margin_all(margin);
+	normal->set_content_margin_individual(margin_h, margin_v, margin_h, margin_v);
 
 	Ref<StyleBoxFlat> hover;
 	hover.instantiate();
-	hover->set_bg_color(Color(1, 1, 1, 0.075));
+	hover->set_bg_color(Color(1, 1, 1, 0.11f));
+	hover->set_border_width_all(1);
+	hover->set_border_color(Color(1, 1, 1, 0.16f));
 	hover->set_corner_radius_all(radius);
-	hover->set_content_margin_all(margin);
+	hover->set_content_margin_individual(margin_h, margin_v, margin_h, margin_v);
 
 	Ref<StyleBoxFlat> pressed;
 	pressed.instantiate();
-	pressed->set_bg_color(Color(0.95, 0.72, 0.26, 0.24));
+	pressed->set_bg_color(Color(accent.r, accent.g, accent.b, 0.30f));
+	pressed->set_border_width_all(1);
+	pressed->set_border_color(Color(accent.r, accent.g, accent.b, 0.85f));
 	pressed->set_corner_radius_all(radius);
-	pressed->set_content_margin_all(margin);
+	pressed->set_content_margin_individual(margin_h, margin_v, margin_h, margin_v);
+
+	Ref<StyleBoxFlat> hover_pressed;
+	hover_pressed.instantiate();
+	hover_pressed->set_bg_color(Color(accent.r, accent.g, accent.b, 0.40f));
+	hover_pressed->set_border_width_all(1);
+	hover_pressed->set_border_color(Color(accent.r, accent.g, accent.b, 0.95f));
+	hover_pressed->set_corner_radius_all(radius);
+	hover_pressed->set_content_margin_individual(margin_h, margin_v, margin_h, margin_v);
 
 	Ref<StyleBoxFlat> disabled;
 	disabled.instantiate();
 	disabled->set_bg_color(Color(1, 1, 1, 0.0));
+	disabled->set_border_width_all(1);
+	disabled->set_border_color(Color(1, 1, 1, 0.0));
 	disabled->set_corner_radius_all(radius);
-	disabled->set_content_margin_all(margin);
+	disabled->set_content_margin_individual(margin_h, margin_v, margin_h, margin_v);
 
 	Ref<StyleBoxEmpty> focus_empty;
 	focus_empty.instantiate();
@@ -120,19 +131,43 @@ void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button) const {
 	p_button->add_theme_style_override("normal", normal);
 	p_button->add_theme_style_override("hover", hover);
 	p_button->add_theme_style_override("pressed", pressed);
-	p_button->add_theme_style_override("hover_pressed", pressed);
+	p_button->add_theme_style_override("hover_pressed", hover_pressed);
 	p_button->add_theme_style_override("disabled", disabled);
 	p_button->add_theme_style_override("focus", focus_empty);
+
+	// NO teñir los iconos: conservan su color propio; al deshabilitarse van al 40%.
+	p_button->add_theme_color_override("icon_normal_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("icon_hover_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("icon_pressed_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("icon_hover_pressed_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("icon_focus_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.40f));
+
+	const Color text_normal(0.93f, 0.94f, 0.96f, 1.0f);
+	const Color text_disabled(0.93f, 0.94f, 0.96f, 0.40f);
+	p_button->add_theme_color_override("font_color", text_normal);
+	p_button->add_theme_color_override("font_hover_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("font_pressed_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("font_hover_pressed_color", Color(1, 1, 1, 1));
+	p_button->add_theme_color_override("font_focus_color", text_normal);
+	p_button->add_theme_color_override("font_disabled_color", text_disabled);
+
+	// 32 px (o multiplo entero exacto) + filtro nearest sin suavizado.
+	p_button->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	p_button->add_theme_constant_override("icon_max_width", 32 * p_int_scale);
+	p_button->add_theme_constant_override("h_separation", 5 * p_int_scale);
+	p_button->add_theme_font_size_override(SceneStringName(font_size), 11 * p_int_scale);
+	p_button->set_custom_minimum_size(Size2(0, 32 * p_int_scale + margin_v * 2));
 }
 
-Button *ClockGearsTopBar::_make_icon_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Callable &p_action) {
+Button *ClockGearsTopBar::_make_labeled_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_label, const String &p_tooltip, const Callable &p_action, const Ref<Theme> &p_editor_theme, int p_int_scale) {
 	Button *button = memnew(Button);
 	button->set_button_icon(p_icon);
+	button->set_text(p_label);
 	button->set_tooltip_text(p_tooltip);
 	button->set_focus_mode(Control::FOCUS_NONE);
-	button->set_custom_minimum_size(Size2(26, 26) * EDSCALE);
-	button->add_theme_constant_override("icon_max_width", 17 * EDSCALE);
-	_apply_toolbar_button_style(button);
+	button->set_icon_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	_apply_toolbar_button_style(button, p_editor_theme, p_int_scale);
 	if (p_action.is_valid()) {
 		button->connect(SceneStringName(pressed), p_action);
 	}
@@ -140,25 +175,94 @@ Button *ClockGearsTopBar::_make_icon_button(HBoxContainer *p_parent, const Ref<T
 	return button;
 }
 
-Button *ClockGearsTopBar::_make_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Ref<ButtonGroup> &p_group) {
-	Button *button = _make_icon_button(p_parent, p_icon, p_tooltip, Callable());
+Button *ClockGearsTopBar::_make_labeled_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_label, const String &p_tooltip, const Ref<ButtonGroup> &p_group, const Ref<Theme> &p_editor_theme, int p_int_scale) {
+	Button *button = _make_labeled_button(p_parent, p_icon, p_label, p_tooltip, Callable(), p_editor_theme, p_int_scale);
 	button->set_toggle_mode(true);
 	button->set_button_group(p_group);
 	return button;
 }
 
-Button *ClockGearsTopBar::_make_layer_button(HBoxContainer *p_parent, const String &p_label, const String &p_tooltip, const Ref<ButtonGroup> &p_group) {
-	Button *button = memnew(Button);
-	button->set_text(p_label);
-	button->set_tooltip_text(p_tooltip);
-	button->set_toggle_mode(true);
-	button->set_button_group(p_group);
-	button->set_focus_mode(Control::FOCUS_NONE);
-	button->set_custom_minimum_size(Size2(24, 24) * EDSCALE);
-	button->add_theme_font_size_override(SceneStringName(font_size), 12 * EDSCALE);
-	_apply_toolbar_button_style(button);
-	p_parent->add_child(button);
-	return button;
+void ClockGearsTopBar::_relayout_rows() {
+	if (!row1_flow || !row2_flow || all_groups.is_empty()) {
+		return;
+	}
+
+	const int int_scale = _get_int_scale();
+	const float h_sep = 16.0f * int_scale;
+	const float avail_width = get_size().x - 20.0f * int_scale;
+
+	float single_row_width = 0.0f;
+	for (int i = 0; i < all_groups.size(); i++) {
+		single_row_width += all_groups[i]->get_combined_minimum_size().x;
+		if (i > 0) {
+			single_row_width += h_sep;
+		}
+	}
+
+	const bool need_two_rows = (avail_width <= 0.0f) || (avail_width < single_row_width);
+
+	for (int i = 0; i < all_groups.size(); i++) {
+		HBoxContainer *grp = all_groups[i];
+		HFlowContainer *target = (!need_two_rows || i < split_group_index) ? row1_flow : row2_flow;
+		if (grp->get_parent() != target) {
+			if (grp->get_parent()) {
+				grp->get_parent()->remove_child(grp);
+			}
+			target->add_child(grp);
+		}
+		target->move_child(grp, target == row1_flow ? i : (i - split_group_index));
+	}
+
+	row2_flow->set_visible(need_two_rows);
+	two_row_mode = need_two_rows;
+	queue_redraw();
+}
+
+void ClockGearsTopBar::_draw_flow_separators(HFlowContainer *p_flow, int p_int_scale) {
+	if (!p_flow || !p_flow->is_visible_in_tree()) {
+		return;
+	}
+	const Color sep_color(1, 1, 1, 0.14f);
+	const float sep_w = MAX(1.0f, float(p_int_scale));
+	const Vector2 self_pos = get_global_position();
+
+	Control *prev = nullptr;
+	Rect2 prev_rect;
+	for (int i = 0; i < p_flow->get_child_count(); i++) {
+		Control *curr = Object::cast_to<Control>(p_flow->get_child(i));
+		if (!curr || !curr->is_visible()) {
+			continue;
+		}
+		Rect2 curr_rect = curr->get_global_rect();
+		curr_rect.position -= self_pos;
+		if (prev && Math::abs(prev_rect.position.y - curr_rect.position.y) < 6.0f) {
+			const float gap_x = Math::round((prev_rect.position.x + prev_rect.size.x + curr_rect.position.x) * 0.5f);
+			const float y_top = curr_rect.position.y + 5.0f * p_int_scale;
+			const float y_bot = curr_rect.position.y + curr_rect.size.y - 5.0f * p_int_scale;
+			if (y_bot > y_top) {
+				draw_line(Point2(gap_x, y_top), Point2(gap_x, y_bot), sep_color, sep_w);
+			}
+		}
+		prev = curr;
+		prev_rect = curr_rect;
+	}
+}
+
+void ClockGearsTopBar::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_RESIZED: {
+			const float w = get_size().x;
+			if (Math::abs(w - last_layout_width) >= 1.0f) {
+				last_layout_width = w;
+				call_deferred("_relayout_rows");
+			}
+		} break;
+		case NOTIFICATION_DRAW: {
+			const int int_scale = _get_int_scale();
+			_draw_flow_separators(row1_flow, int_scale);
+			_draw_flow_separators(row2_flow, int_scale);
+		} break;
+	}
 }
 
 void ClockGearsTopBar::_on_undo_pressed() {
@@ -383,48 +487,66 @@ void ClockGearsTopBar::set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEve
 
 ClockGearsTopBar::ClockGearsTopBar() {
 	singleton = this;
-	set_custom_minimum_size(Size2(0, 54) * EDSCALE);
 	set_process_shortcut_input(true);
+
+	const int int_scale = _get_int_scale();
 
 	Ref<StyleBoxFlat> bar_style;
 	bar_style.instantiate();
-	bar_style->set_bg_color(Color(0.088, 0.096, 0.115));
-	bar_style->set_corner_radius_all(12);
-	bar_style->set_content_margin_all(7);
+	bar_style->set_bg_color(Color(0.088f, 0.096f, 0.115f));
+	bar_style->set_corner_radius_all(10 * int_scale);
+	bar_style->set_content_margin_individual(10 * int_scale, 5 * int_scale, 10 * int_scale, 5 * int_scale);
 	bar_style->set_border_width_all(1);
-	bar_style->set_border_color(Color(1, 1, 1, 0.06));
+	bar_style->set_border_color(Color(1, 1, 1, 0.07f));
 	add_theme_style_override(SceneStringName(panel), bar_style);
 
-	HBoxContainer *bar = memnew(HBoxContainer);
-	bar->add_theme_constant_override("separation", 10 * EDSCALE);
-	add_child(bar);
+	rows_vbox = memnew(VBoxContainer);
+	rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rows_vbox->add_theme_constant_override("separation", 5 * int_scale);
+	add_child(rows_vbox);
+
+	row1_flow = memnew(HFlowContainer);
+	row1_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	row1_flow->add_theme_constant_override("h_separation", 16 * int_scale);
+	row1_flow->add_theme_constant_override("v_separation", 4 * int_scale);
+	row1_flow->connect("sort_children", callable_mp((CanvasItem *)this, &CanvasItem::queue_redraw));
+	rows_vbox->add_child(row1_flow);
+
+	row2_flow = memnew(HFlowContainer);
+	row2_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	row2_flow->add_theme_constant_override("h_separation", 16 * int_scale);
+	row2_flow->add_theme_constant_override("v_separation", 4 * int_scale);
+	row2_flow->connect("sort_children", callable_mp((CanvasItem *)this, &CanvasItem::queue_redraw));
+	rows_vbox->add_child(row2_flow);
 
 	Ref<Theme> editor_theme = EditorNode::get_singleton()->get_editor_theme();
 	const auto editor_icon = [&editor_theme](const StringName &p_name) -> Ref<Texture2D> {
 		return editor_theme->get_icon(p_name, SNAME("EditorIcons"));
 	};
+	const auto make_group = [int_scale, this]() -> HBoxContainer * {
+		HBoxContainer *g = memnew(HBoxContainer);
+		g->add_theme_constant_override("separation", 3 * int_scale);
+		all_groups.push_back(g);
+		return g;
+	};
 
 	// ------------------------------------------------------------------
-	// Left: file + clipboard + history.
+	// Fila 1 (en 2 filas) - Grupo 0: Archivo
 	// ------------------------------------------------------------------
-	HBoxContainer *left_group = memnew(HBoxContainer);
-	left_group->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_group->set_stretch_ratio(1.0);
-	left_group->add_theme_constant_override("separation", 6 * EDSCALE);
-	bar->add_child(left_group);
-
-	_make_icon_button(left_group, editor_icon(SNAME("New")), CG_TR("Nuevo Mapa"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_new_scene));
-	_make_icon_button(left_group, editor_icon(SNAME("Load")), CG_TR("Abrir Mapa"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_open_scene));
-	_make_icon_button(left_group, editor_icon(SNAME("Save")), CG_TR("Guardar"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_save_scene));
+	HBoxContainer *grp_file = make_group();
+	_make_labeled_button(grp_file, _get_png_icon("nuevo_mapa_icono", int_scale), CG_TR("Nuevo Mapa"), CG_TR("Nuevo Mapa"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_new_scene), editor_theme, int_scale);
+	_make_labeled_button(grp_file, _get_png_icon("abrir_mapa_icono", int_scale), CG_TR("Abrir Mapa"), CG_TR("Abrir Mapa"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_open_scene), editor_theme, int_scale);
+	_make_labeled_button(grp_file, _get_png_icon("guardar_proyecto_icono", int_scale), CG_TR("Guardar"), CG_TR("Guardar"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_save_scene), editor_theme, int_scale);
 
 	folders_btn = memnew(MenuButton);
-	folders_btn->set_button_icon(editor_icon(SNAME("Folder")));
+	folders_btn->set_flat(false);
+	folders_btn->set_button_icon(_get_png_icon("cargar_proyecto_icono", int_scale));
+	folders_btn->set_text(CG_TR("Carpetas"));
 	folders_btn->set_tooltip_text(CG_TR("Carpetas del Proyecto y Gestor de Recursos (F10)"));
 	folders_btn->set_focus_mode(Control::FOCUS_NONE);
-	folders_btn->set_custom_minimum_size(Size2(26, 26) * EDSCALE);
-	folders_btn->add_theme_constant_override("icon_max_width", 17 * EDSCALE);
-	_apply_toolbar_button_style(folders_btn);
-	left_group->add_child(folders_btn);
+	folders_btn->set_icon_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	_apply_toolbar_button_style(folders_btn, editor_theme, int_scale);
+	grp_file->add_child(folders_btn);
 
 	folders_popup = folders_btn->get_popup();
 	folders_popup->connect("id_pressed", callable_mp(this, &ClockGearsTopBar::_on_folder_menu_id_pressed));
@@ -457,108 +579,82 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	folders_popup->add_item(String::utf8("fonts (Fuentes)"), 32);
 	folders_popup->add_item(String::utf8("movies (Vídeos)"), 33);
 
-	left_group->add_child(memnew(VSeparator));
-
-	_make_icon_button(left_group, editor_icon(SNAME("ActionCut")), CG_TR("Cortar"), callable_mp(this, &ClockGearsTopBar::_on_cut_pressed));
-	_make_icon_button(left_group, editor_icon(SNAME("ActionCopy")), CG_TR("Copiar"), callable_mp(this, &ClockGearsTopBar::_on_copy_pressed));
-	_make_icon_button(left_group, editor_icon(SNAME("ActionPaste")), CG_TR("Pegar"), callable_mp(this, &ClockGearsTopBar::_on_paste_pressed));
-
-	left_group->add_child(memnew(VSeparator));
-
-	undo_btn = _make_icon_button(left_group, editor_icon(SNAME("UndoRedo")), CG_TR("Deshacer (Ctrl+Z)"), callable_mp(this, &ClockGearsTopBar::_on_undo_pressed));
-	redo_btn = _make_icon_button(left_group, editor_icon(SNAME("Redo")), CG_TR("Rehacer (Ctrl+Y)"), callable_mp(this, &ClockGearsTopBar::_on_redo_pressed));
+	// ------------------------------------------------------------------
+	// Fila 1 (en 2 filas) - Grupo 1: Edición e historial
+	// ------------------------------------------------------------------
+	HBoxContainer *grp_edit = make_group();
+	_make_labeled_button(grp_edit, editor_icon(SNAME("ActionCut")), CG_TR("Cortar"), CG_TR("Cortar"), callable_mp(this, &ClockGearsTopBar::_on_cut_pressed), editor_theme, int_scale);
+	_make_labeled_button(grp_edit, editor_icon(SNAME("ActionCopy")), CG_TR("Copiar"), CG_TR("Copiar"), callable_mp(this, &ClockGearsTopBar::_on_copy_pressed), editor_theme, int_scale);
+	_make_labeled_button(grp_edit, editor_icon(SNAME("ActionPaste")), CG_TR("Pegar"), CG_TR("Pegar"), callable_mp(this, &ClockGearsTopBar::_on_paste_pressed), editor_theme, int_scale);
+	undo_btn = _make_labeled_button(grp_edit, _get_png_icon("deshacer_icono", int_scale), CG_TR("Deshacer"), CG_TR("Deshacer (Ctrl+Z)"), callable_mp(this, &ClockGearsTopBar::_on_undo_pressed), editor_theme, int_scale);
+	redo_btn = _make_labeled_button(grp_edit, _get_png_icon("rehacer_icono", int_scale), CG_TR("Rehacer"), CG_TR("Rehacer (Ctrl+Y)"), callable_mp(this, &ClockGearsTopBar::_on_redo_pressed), editor_theme, int_scale);
 
 	// ------------------------------------------------------------------
-	// Center: the large DATABASE gear, geometrically centered.
+	// Fila 1 (en 2 filas) - Grupo 2: Base de Datos y Modos
 	// ------------------------------------------------------------------
-	database_btn = memnew(Button);
-	database_btn->set_button_icon(_make_svg_icon(CLOCKGEARS_GEAR_SVG));
-	database_btn->set_tooltip_text(CG_TR("Base de Datos - RPG Maker Paradigm (F9)"));
-	database_btn->set_focus_mode(Control::FOCUS_NONE);
-	database_btn->set_custom_minimum_size(Size2(44, 44) * EDSCALE);
-	database_btn->add_theme_constant_override("icon_max_width", 34 * EDSCALE);
-
-	Ref<StyleBoxFlat> database_normal;
-	database_normal.instantiate();
-	database_normal->set_bg_color(Color(0.95, 0.72, 0.26, 0.13));
-	database_normal->set_corner_radius_all(11);
-	database_normal->set_content_margin_all(4);
-
-	Ref<StyleBoxFlat> database_hover;
-	database_hover.instantiate();
-	database_hover->set_bg_color(Color(0.95, 0.72, 0.26, 0.26));
-	database_hover->set_corner_radius_all(11);
-	database_hover->set_content_margin_all(4);
-
-	Ref<StyleBoxFlat> database_pressed;
-	database_pressed.instantiate();
-	database_pressed->set_bg_color(Color(0.95, 0.72, 0.26, 0.38));
-	database_pressed->set_corner_radius_all(11);
-	database_pressed->set_content_margin_all(4);
-
-	database_btn->add_theme_style_override("normal", database_normal);
-	database_btn->add_theme_style_override("hover", database_hover);
-	database_btn->add_theme_style_override("pressed", database_pressed);
-	database_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_database_pressed));
-	bar->add_child(database_btn);
-
-	// ------------------------------------------------------------------
-	// Right: map tools, layers, painting tools, zoom and playtest.
-	// ------------------------------------------------------------------
-	HBoxContainer *right_group = memnew(HBoxContainer);
-	right_group->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	right_group->set_stretch_ratio(1.0);
-	right_group->set_alignment(BoxContainer::ALIGNMENT_END);
-	right_group->add_theme_constant_override("separation", 6 * EDSCALE);
-	bar->add_child(right_group);
+	HBoxContainer *grp_db_modes = make_group();
+	database_btn = _make_labeled_button(grp_db_modes, _get_png_icon("database_icon_mainmenu", int_scale), CG_TR("Base de Datos"), CG_TR("Base de Datos - RPG Maker Paradigm (F9)"), callable_mp(this, &ClockGearsTopBar::_on_database_pressed), editor_theme, int_scale);
 
 	Ref<ButtonGroup> mode_group;
 	mode_group.instantiate();
-	map_mode_btn = _make_toggle_button(right_group, editor_icon(SNAME("2D")), CG_TR("Modo Mapa (F5)"), mode_group);
+	map_mode_btn = _make_labeled_toggle_button(grp_db_modes, _get_png_icon("modo_mapa_icono", int_scale), CG_TR("Modo Mapa"), CG_TR("Modo Mapa (F5)"), mode_group, editor_theme, int_scale);
 	map_mode_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_map_mode_pressed));
 	map_mode_btn->set_pressed(true);
 
-	event_mode_btn = _make_toggle_button(right_group, _make_svg_icon(CLOCKGEARS_EVENT_SVG), CG_TR("Modo Eventos (F6)"), mode_group);
+	event_mode_btn = _make_labeled_toggle_button(grp_db_modes, _make_svg_icon(CLOCKGEARS_EVENT_SVG, int_scale), CG_TR("Modo Eventos"), CG_TR("Modo Eventos (F6)"), mode_group, editor_theme, int_scale);
 	event_mode_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_event_mode_pressed));
 
-	right_group->add_child(memnew(VSeparator));
-
+	// ------------------------------------------------------------------
+	// Fila 1 (en 2 filas) - Grupo 3: Capas (1..4, A, R)
+	// ------------------------------------------------------------------
+	HBoxContainer *grp_layers = make_group();
 	Ref<ButtonGroup> layer_group;
 	layer_group.instantiate();
 	const char *layer_labels[6] = { "1", "2", "3", "4", "A", "R" };
+	const char *layer_icons[6] = { "capa1_icono", "capa2_icono", "capa3_icono", "capa4_icono", "capa_auto_icono", "capa_r_icono" };
 	const char *layer_tooltips[6] = { "Capa 1: Suelo (F5)", "Capa 2: Decoración (Shift+F6)", "Capa 3: Objetos (F7)", "Capa 4: Techo (★)", "Capa Automática", "Capa R: Regiones 0-255 (F8)" };
 	for (int i = 0; i < 6; i++) {
-		layer_buttons[i] = _make_layer_button(right_group, layer_labels[i], CG_TR(layer_tooltips[i]), layer_group);
+		layer_buttons[i] = _make_labeled_toggle_button(grp_layers, _get_png_icon(layer_icons[i], int_scale), layer_labels[i], CG_TR(layer_tooltips[i]), layer_group, editor_theme, int_scale);
 		layer_buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_layer_pressed).bind(i + 1));
 	}
 	layer_buttons[0]->set_pressed(true);
 
-	right_group->add_child(memnew(VSeparator));
+	// ------------------------------------------------------------------
+	// Fila 2 (en 2 filas) - Grupos 4 y 5: Herramientas (dibujo y mapa)
+	// ------------------------------------------------------------------
+	split_group_index = all_groups.size(); // 4: a partir de aqui pasan a fila 2 cuando no cabe todo en 1 fila
 
 	Ref<ButtonGroup> tool_group;
 	tool_group.instantiate();
-	tool_buttons[0] = _make_toggle_button(right_group, _make_svg_icon(CLOCKGEARS_PENCIL_SVG), CG_TR("Lápiz (Individual o Bloque)"), tool_group);
-	tool_buttons[1] = _make_toggle_button(right_group, editor_icon(SNAME("Rectangle")), CG_TR("Rectángulo"), tool_group);
-	tool_buttons[2] = _make_toggle_button(right_group, _make_svg_icon(CLOCKGEARS_ELLIPSE_SVG), CG_TR("Elipse"), tool_group);
-	tool_buttons[3] = _make_toggle_button(right_group, editor_icon(SNAME("Bucket")), CG_TR("Cubo de Pintura (Flood Fill)"), tool_group);
-	tool_buttons[4] = _make_toggle_button(right_group, _make_svg_icon(CLOCKGEARS_SHADOW_SVG), CG_TR("Pincel de Sombra"), tool_group);
-	tool_buttons[5] = _make_toggle_button(right_group, _make_svg_icon(CLOCKGEARS_SELECT_SVG), CG_TR("Selección Rectangular (Ctrl+C / Ctrl+V / Supr)"), tool_group);
-	tool_buttons[6] = _make_toggle_button(right_group, _make_svg_icon(CLOCKGEARS_START_POS_SVG), CG_TR("Posición Inicial del Jugador (Clic para colocar / Clic repetido para rotar dirección)"), tool_group);
-	tool_buttons[7] = _make_toggle_button(right_group, editor_icon(SNAME("Eraser")), CG_TR("Goma de Borrar (Eliminar tiles con clic o arrastre)"), tool_group);
+
+	HBoxContainer *grp_tools_draw = make_group();
+	tool_buttons[0] = _make_labeled_toggle_button(grp_tools_draw, _get_png_icon("lapiz_icono", int_scale), CG_TR("Lápiz"), CG_TR("Lápiz (Individual o Bloque)"), tool_group, editor_theme, int_scale);
+	tool_buttons[1] = _make_labeled_toggle_button(grp_tools_draw, _get_png_icon("rectangulo_icono", int_scale), CG_TR("Rectángulo"), CG_TR("Rectángulo"), tool_group, editor_theme, int_scale);
+	tool_buttons[2] = _make_labeled_toggle_button(grp_tools_draw, _get_png_icon("elipse_icono", int_scale), CG_TR("Elipse"), CG_TR("Elipse"), tool_group, editor_theme, int_scale);
+	tool_buttons[3] = _make_labeled_toggle_button(grp_tools_draw, _get_png_icon("rellenar", int_scale), CG_TR("Cubo de Pintura"), CG_TR("Cubo de Pintura (Flood Fill)"), tool_group, editor_theme, int_scale);
+	tool_buttons[4] = _make_labeled_toggle_button(grp_tools_draw, _make_svg_icon(CLOCKGEARS_SHADOW_SVG, int_scale), CG_TR("Sombra"), CG_TR("Pincel de Sombra"), tool_group, editor_theme, int_scale);
+
+	HBoxContainer *grp_tools_map = make_group();
+	tool_buttons[5] = _make_labeled_toggle_button(grp_tools_map, _make_svg_icon(CLOCKGEARS_SELECT_SVG, int_scale), CG_TR("Selección"), CG_TR("Selección Rectangular (Ctrl+C / Ctrl+V / Supr)"), tool_group, editor_theme, int_scale);
+	tool_buttons[6] = _make_labeled_toggle_button(grp_tools_map, _get_png_icon("posicion_jugador", int_scale), CG_TR("Pos. Jugador"), CG_TR("Posición Inicial del Jugador (Clic para colocar / Clic repetido para rotar dirección)"), tool_group, editor_theme, int_scale);
+	tool_buttons[7] = _make_labeled_toggle_button(grp_tools_map, _get_png_icon("goma_borrar", int_scale), CG_TR("Goma de Borrar"), CG_TR("Goma de Borrar (Eliminar tiles con clic o arrastre)"), tool_group, editor_theme, int_scale);
+
 	for (int i = 0; i < 8; i++) {
 		tool_buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_tool_pressed).bind(i));
 	}
 	tool_buttons[0]->set_pressed(true);
 
-	right_group->add_child(memnew(VSeparator));
+	// ------------------------------------------------------------------
+	// Fila 2 (en 2 filas) - Grupos 6 y 7: Zoom y Ejecutar
+	// ------------------------------------------------------------------
+	HBoxContainer *grp_zoom = make_group();
+	_make_labeled_button(grp_zoom, _get_png_icon("zoom_icono", int_scale), CG_TR("Acercar"), CG_TR("Acercar Zoom"), callable_mp(this, &ClockGearsTopBar::_on_zoom_in_pressed), editor_theme, int_scale);
+	_make_labeled_button(grp_zoom, _get_png_icon("alejar_icono", int_scale), CG_TR("Alejar"), CG_TR("Alejar Zoom"), callable_mp(this, &ClockGearsTopBar::_on_zoom_out_pressed), editor_theme, int_scale);
 
-	_make_icon_button(right_group, editor_icon(SNAME("ZoomMore")), CG_TR("Acercar Zoom"), callable_mp(this, &ClockGearsTopBar::_on_zoom_in_pressed));
-	_make_icon_button(right_group, editor_icon(SNAME("ZoomLess")), CG_TR("Alejar Zoom"), callable_mp(this, &ClockGearsTopBar::_on_zoom_out_pressed));
+	HBoxContainer *grp_play = make_group();
+	playtest_btn = _make_labeled_button(grp_play, _get_png_icon("test_game", int_scale), CG_TR("Ejecutar"), CG_TR("Probar Juego (Playtest F5)"), callable_mp(this, &ClockGearsTopBar::_on_playtest_pressed), editor_theme, int_scale);
 
-	right_group->add_child(memnew(VSeparator));
-
-	playtest_btn = _make_icon_button(right_group, editor_icon(SNAME("Play")), CG_TR("Probar Juego (Playtest F5)"), callable_mp(this, &ClockGearsTopBar::_on_playtest_pressed));
-	playtest_btn->add_theme_color_override("icon_normal_color", Color(0.55, 0.88, 0.62));
+	_relayout_rows();
 }
 
 ClockGearsTopBar::~ClockGearsTopBar() {

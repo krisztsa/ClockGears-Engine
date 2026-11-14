@@ -1,7 +1,10 @@
 #include "clockgears_icons.h"
+#include "clockgears_png_icons.gen.h"
 #include "core/clockgears_data_manager.h"
 #include "core/io/image.h"
 #include "scene/resources/image_texture.h"
+
+#include <cstring>
 
 ClockGearsIcons *ClockGearsIcons::singleton = nullptr;
 
@@ -190,6 +193,35 @@ Ref<Texture2D> ClockGearsIcons::_get_fallback_icon() const {
 	return fallback_icon;
 }
 
+void ClockGearsIcons::_register_builtin_pngs() {
+	png_sources.clear();
+	for (int i = 0; i < CLOCKGEARS_PNG_ICON_COUNT; i++) {
+		PngIconRef ref;
+		ref.data = CLOCKGEARS_PNG_ICONS[i].data;
+		ref.size = CLOCKGEARS_PNG_ICONS[i].size;
+		png_sources[String(CLOCKGEARS_PNG_ICONS[i].name)] = ref;
+	}
+}
+
+Ref<Texture2D> ClockGearsIcons::_rasterize_png(const PngIconRef &p_png, int p_int_scale) const {
+	if (!p_png.data || p_png.size == 0) {
+		return Ref<Texture2D>();
+	}
+	Vector<uint8_t> buf;
+	buf.resize(p_png.size);
+	memcpy(buf.ptrw(), p_png.data, p_png.size);
+	Ref<Image> img;
+	img.instantiate();
+	if (img->load_png_from_buffer(buf) != OK || img->is_empty()) {
+		return Ref<Texture2D>();
+	}
+	// Renderizado 32 px o multiplo entero exacto con nearest (nunca escala fraccionaria)
+	if (p_int_scale > 1) {
+		img->resize(img->get_width() * p_int_scale, img->get_height() * p_int_scale, Image::INTERPOLATE_NEAREST);
+	}
+	return ImageTexture::create_from_image(img);
+}
+
 Ref<Texture2D> ClockGearsIcons::_rasterize_svg(const String &p_svg, float p_scale) const {
 	// A4: Escala entera para evitar interpolación borrosa en iconos de UI
 	float snapped_scale = MAX(1.0f, Math::round(p_scale));
@@ -202,6 +234,22 @@ Ref<Texture2D> ClockGearsIcons::_rasterize_svg(const String &p_svg, float p_scal
 }
 
 Ref<Texture2D> ClockGearsIcons::get_icon(const String &p_name, float p_scale) const {
+	const int int_scale = MAX(1, (int)Math::floor(p_scale + 0.001f));
+	if (const PngIconRef *png_ptr = png_sources.getptr(p_name)) {
+		String png_key = vformat("png_%s_%d", p_name, int_scale);
+		if (icon_cache.has(png_key) && icon_cache[png_key].is_valid()) {
+			return icon_cache[png_key];
+		}
+		Ref<Texture2D> tex = _rasterize_png(*png_ptr, int_scale);
+		if (tex.is_null()) {
+			WARN_PRINT(vformat("ClockGearsIcons: Fallo al decodificar PNG incrustado '%s'; usando icono de respaldo.", p_name));
+			tex = _get_fallback_icon();
+		} else {
+			icon_cache[png_key] = tex;
+		}
+		return tex;
+	}
+
 	String cache_key = vformat("%s_%.2f", p_name, p_scale);
 	if (icon_cache.has(cache_key) && icon_cache[cache_key].is_valid()) {
 		return icon_cache[cache_key];
@@ -226,9 +274,9 @@ Ref<Texture2D> ClockGearsIcons::get_db_category_icon(int p_category, float p_sca
 	switch (p_category) {
 		case CAT_ACTORS: return get_icon("db_actors", p_scale);
 		case CAT_CLASSES: return get_icon("db_classes", p_scale);
-		case CAT_SKILLS: return get_icon("db_skills", p_scale);
-		case CAT_ITEMS: return get_icon("db_items", p_scale);
-		case CAT_WEAPONS: return get_icon("db_weapons", p_scale);
+		case CAT_SKILLS: return get_icon("habilidades_icono", p_scale);
+		case CAT_ITEMS: return get_icon("objetos_icono", p_scale);
+		case CAT_WEAPONS: return get_icon("armas_icono", p_scale);
 		case CAT_ARMORS:
 		case CAT_ACCESSORIES: return get_icon("db_armors", p_scale);
 		case CAT_ENEMIES:
@@ -297,6 +345,7 @@ void ClockGearsIcons::_bind_methods() {
 ClockGearsIcons::ClockGearsIcons() {
 	singleton = this;
 	_register_builtin_svgs();
+	_register_builtin_pngs();
 }
 
 ClockGearsIcons::~ClockGearsIcons() {

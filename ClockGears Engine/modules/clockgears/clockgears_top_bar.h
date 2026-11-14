@@ -3,6 +3,7 @@
 #include "clockgears_types.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
@@ -11,11 +12,20 @@ class ClockGearsDatabaseDialog;
 class ClockGearsEventEditorDialog;
 class ClockGearsSimplifiedExportDialog;
 class ButtonGroup;
+class Theme;
 
-// Icon-only ClockGears command bar. Layout: file/edit history on the left,
-// the large DATABASE gear in the exact center, map tools on the right.
+// ClockGears command bar with 32px pixel-art icons and short Spanish labels.
+// Uses 1 row when everything fits, or 2 grouped rows (file+edit & modes+layers / tools & zoom+play).
 class ClockGearsTopBar : public PanelContainer {
 	GDCLASS(ClockGearsTopBar, PanelContainer);
+
+	VBoxContainer *rows_vbox = nullptr;
+	HFlowContainer *row1_flow = nullptr;
+	HFlowContainer *row2_flow = nullptr;
+	Vector<HBoxContainer *> all_groups;
+	int split_group_index = 4;
+	bool two_row_mode = true;
+	float last_layout_width = -1.0f;
 
 	Button *database_btn = nullptr;
 	Button *map_mode_btn = nullptr;
@@ -34,11 +44,13 @@ class ClockGearsTopBar : public PanelContainer {
 	ClockGearsEventEditorDialog *event_editor_dialog = nullptr;
 	ClockGearsSimplifiedExportDialog *export_dialog = nullptr;
 
-	Ref<Texture2D> _make_svg_icon(const String &p_svg) const;
-	Button *_make_icon_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Callable &p_action);
-	Button *_make_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Ref<ButtonGroup> &p_group);
-	Button *_make_layer_button(HBoxContainer *p_parent, const String &p_label, const String &p_tooltip, const Ref<ButtonGroup> &p_group);
-	void _apply_toolbar_button_style(Button *p_button) const;
+	Ref<Texture2D> _make_svg_icon(const String &p_svg, int p_int_scale) const;
+	Ref<Texture2D> _get_png_icon(const String &p_name, int p_int_scale) const;
+	void _apply_toolbar_button_style(Button *p_button, const Ref<Theme> &p_editor_theme, int p_int_scale) const;
+	Button *_make_labeled_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_label, const String &p_tooltip, const Callable &p_action, const Ref<Theme> &p_editor_theme, int p_int_scale);
+	Button *_make_labeled_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_label, const String &p_tooltip, const Ref<ButtonGroup> &p_group, const Ref<Theme> &p_editor_theme, int p_int_scale);
+	void _relayout_rows();
+	void _draw_flow_separators(HFlowContainer *p_flow, int p_int_scale);
 
 	void _on_undo_pressed();
 	void _on_redo_pressed();
@@ -57,6 +69,7 @@ class ClockGearsTopBar : public PanelContainer {
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 	static ClockGearsTopBar *singleton;

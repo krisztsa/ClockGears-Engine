@@ -1,0 +1,14 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+
+import clockgears_icons_builders
+
+png_icons = Glob("#../ICONO/iconos_motor/*.png")
+png_icons.sort(key=lambda n: str(n))
+env.CommandNoCache(
+    "#modules/clockgears/icons/clockgears_png_icons.gen.h",
+    png_icons,
+    env.Run(clockgears_icons_builders.make_png_icons_header),
+)

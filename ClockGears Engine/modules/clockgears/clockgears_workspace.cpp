@@ -3,6 +3,7 @@
 #include "clockgears_map.h"
 #include "clockgears_map_properties_dialog.h"
 #include "clockgears_top_bar.h"
+#include "icons/clockgears_icons.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_pixel_art.h"
 #include "modules/tilemap/tile_set.h"
@@ -471,6 +472,19 @@ Control *ClockGearsMapPanel::_make_section_header(const String &p_title, bool p_
 	} else {
 		Button *new_button = memnew(Button);
 		_clockgears_icon_button(new_button, SNAME("New"), CG_TR("Nuevo mapa (Abre Propiedades)"));
+		if (ClockGearsIcons::get_singleton()) {
+			const int int_scale = MAX(1, (int)Math::floor(EDSCALE + 0.001f));
+			new_button->set_button_icon(ClockGearsIcons::get_singleton()->get_icon("nuevo_mapa_icono", float(int_scale)));
+			new_button->set_custom_minimum_size(Size2(36, 36) * int_scale);
+			new_button->add_theme_constant_override("icon_max_width", 32 * int_scale);
+			new_button->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			new_button->add_theme_color_override("icon_normal_color", Color(1, 1, 1, 1));
+			new_button->add_theme_color_override("icon_hover_color", Color(1, 1, 1, 1));
+			new_button->add_theme_color_override("icon_pressed_color", Color(1, 1, 1, 1));
+			new_button->add_theme_color_override("icon_hover_pressed_color", Color(1, 1, 1, 1));
+			new_button->add_theme_color_override("icon_focus_color", Color(1, 1, 1, 1));
+			new_button->add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.4f));
+		}
 		new_button->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsMapPanel::_on_add_map));
 		header->add_child(new_button);
 

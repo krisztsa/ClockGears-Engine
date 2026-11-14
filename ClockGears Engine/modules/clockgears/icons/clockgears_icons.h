@@ -10,13 +10,21 @@ class ClockGearsIcons : public Object {
 	GDCLASS(ClockGearsIcons, Object);
 
 private:
+	struct PngIconRef {
+		const uint8_t *data = nullptr;
+		size_t size = 0;
+	};
+
 	static ClockGearsIcons *singleton;
 	mutable HashMap<String, Ref<Texture2D>> icon_cache;
 	mutable HashMap<String, String> svg_sources;
+	mutable HashMap<String, PngIconRef> png_sources;
 	mutable Ref<Texture2D> fallback_icon;
 
 	void _register_builtin_svgs();
+	void _register_builtin_pngs();
 	Ref<Texture2D> _get_fallback_icon() const;
+	Ref<Texture2D> _rasterize_png(const PngIconRef &p_png, int p_int_scale) const;
 	Ref<Texture2D> _rasterize_svg(const String &p_svg, float p_scale = 1.0f) const;
 
 protected:

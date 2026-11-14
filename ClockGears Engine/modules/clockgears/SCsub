@@ -7,6 +7,8 @@ Import("env_modules")
 env_clockgears = env_modules.Clone()
 env_clockgears.Prepend(CPPPATH=[Dir("."), Dir("core"), Dir("icons"), Dir("editor"), Dir("runtime")])
 
+SConscript("icons/SCsub")
+
 env_clockgears.add_source_files(env.modules_sources, "*.cpp")
 env_clockgears.add_source_files(env.modules_sources, "core/*.cpp")
 env_clockgears.add_source_files(env.modules_sources, "icons/*.cpp")

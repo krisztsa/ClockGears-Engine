@@ -3326,14 +3326,23 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cat_vbox->add_theme_constant_override("separation", 4);
 	cat_scroll->add_child(cat_vbox);
 
+	const int int_scale = MAX(1, (int)Math::floor(EDSCALE + 0.001f));
 	for (int i = 0; i < CAT_MAX; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_toggle_mode(true);
 		btn->set_clip_text(true);
 		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
-		btn->set_custom_minimum_size(Size2(0, 26 * EDSCALE));
+		btn->set_custom_minimum_size(Size2(0, MAX(26 * EDSCALE, 36 * int_scale)));
+		btn->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		btn->add_theme_constant_override("icon_max_width", 32 * int_scale);
+		btn->add_theme_color_override("icon_normal_color", Color(1, 1, 1, 1));
+		btn->add_theme_color_override("icon_hover_color", Color(1, 1, 1, 1));
+		btn->add_theme_color_override("icon_pressed_color", Color(1, 1, 1, 1));
+		btn->add_theme_color_override("icon_hover_pressed_color", Color(1, 1, 1, 1));
+		btn->add_theme_color_override("icon_focus_color", Color(1, 1, 1, 1));
+		btn->add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.4f));
 		if (ClockGearsIcons::get_singleton()) {
-			btn->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, EDSCALE));
+			btn->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, float(int_scale)));
 		}
 		btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_category_selected).bind(i));
 		cat_vbox->add_child(btn);
