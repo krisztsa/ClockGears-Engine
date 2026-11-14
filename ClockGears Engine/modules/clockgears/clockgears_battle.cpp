@@ -596,7 +596,7 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			int pos_y = 260;
 			int sprite_scale = 1;
 			String hp_mode = "abajo";
-			Vector2i hp_off = Vector2i(0, 0);
+			Vector2i hp_pos = Vector2i(-1, -1);
 			if (item.get_type() == Variant::DICTIONARY) {
 				Dictionary md = item;
 				e_id = int(md.get("enemy_id", md.get("id", 1)));
@@ -609,7 +609,13 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 				}
 				sprite_scale = CLAMP(sprite_scale, 1, 6);
 				hp_mode = ClockGearsBattleUnit::normalize_hp_bar_mode(String(md.get("hp_bar_mode", "abajo")));
-				hp_off = Vector2i(int(md.get("hp_bar_offset_x", 0)), int(md.get("hp_bar_offset_y", 0)));
+				if (hp_mode == "libre") {
+					if (md.has("hp_bar_x") && md.has("hp_bar_y")) {
+						hp_pos = ClockGearsBattleUnit::clamp_free_hp_bar_pos(Vector2i(int(md["hp_bar_x"]), int(md["hp_bar_y"])));
+					} else {
+						hp_pos = ClockGearsBattleUnit::clamp_free_hp_bar_pos(Vector2i(pos_x, pos_y));
+					}
+				}
 			} else {
 				e_id = int(item);
 			}
@@ -646,7 +652,7 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 			en->set_battle_pos(Vector2(pos_x, pos_y));
 			en->set_sprite_scale(sprite_scale);
 			en->set_hp_bar_mode(hp_mode);
-			en->set_hp_bar_offset(hp_off);
+			en->set_hp_bar_pos(hp_pos);
 			en->set_max_hp(MAX(1, int(en_data.get("hp", 120))));
 			en->set_hp(en->get_max_hp());
 			en->set_max_mp(MAX(0, int(en_data.get("mp", 20))));

@@ -1051,7 +1051,7 @@ void ClockGearsBattleScene::_refresh_ui() {
 			}
 		}
 
-		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, field_vp, Size2(r.size.x, r.size.y), en->get_sprite_scale(), enemies_field ? enemies_field->get_theme_default_font() : Ref<Font>(), en->get_hp_bar_mode(), en->get_hp_bar_offset());
+		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, field_vp, Size2(r.size.x, r.size.y), en->get_sprite_scale(), enemies_field ? enemies_field->get_theme_default_font() : Ref<Font>(), en->get_hp_bar_mode(), en->get_hp_bar_pos());
 
 		Control *en_slot = memnew(Control);
 		en_slot->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
@@ -1666,7 +1666,7 @@ ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::_get_enemy_visua
 		}
 	}
 	Ref<Font> font = enemies_field ? enemies_field->get_theme_default_font() : Ref<Font>();
-	return compute_enemy_visual_layout(bpos, vp_rect, src_sz, en->get_sprite_scale(), font, en->get_hp_bar_mode(), en->get_hp_bar_offset());
+	return compute_enemy_visual_layout(bpos, vp_rect, src_sz, en->get_sprite_scale(), font, en->get_hp_bar_mode(), en->get_hp_bar_pos());
 }
 
 Rect2 ClockGearsBattleScene::get_battle_field_rect() const {
@@ -1941,7 +1941,7 @@ Rect2 ClockGearsBattleScene::get_battle_hud_strip_rect(const Rect2 &p_vp_rect) {
 	return Rect2(p_vp_rect.position.x, p_vp_rect.position.y + p_vp_rect.size.y - hud_h, p_vp_rect.size.x, hud_h);
 }
 
-ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale, const Ref<Font> &p_font, const String &p_hp_bar_mode, const Vector2i &p_hp_bar_offset) {
+ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale, const Ref<Font> &p_font, const String &p_hp_bar_mode, const Vector2i &p_hp_bar_pos) {
 	EnemyVisualLayout layout;
 	float sx = (p_vp_rect.size.x > 0.0f) ? (p_vp_rect.size.x / BATTLE_REF_WIDTH) : 1.0f;
 	float sy = (p_vp_rect.size.y > 0.0f) ? (p_vp_rect.size.y / BATTLE_REF_HEIGHT) : 1.0f;
@@ -1961,13 +1961,17 @@ ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::compute_enemy_vi
 	layout.draw_spr_rect = Rect2(feet_scr.x - draw_w * 0.5f, feet_scr.y - draw_h, draw_w, draw_h);
 	layout.sprite_box = layout.draw_spr_rect;
 
-	layout.font_sz = MAX(9, int(13.0f * scale));
-	layout.label_max_w = MAX(block_w, draw_w + 24.0f * scale);
-	float hp_w = CLAMP(MAX(110.0f * scale, draw_w), 72.0f * scale, 240.0f * scale);
-	float hp_h = MAX(6.0f, 10.0f * scale);
-
 	layout.hp_bar_mode = ClockGearsBattleUnit::normalize_hp_bar_mode(p_hp_bar_mode);
 	layout.hp_bar_visible = (layout.hp_bar_mode != "oculta");
+
+	layout.font_sz = MAX(9, int(13.0f * scale));
+	float hp_w = (layout.hp_bar_mode == "libre")
+			? (ClockGearsBattleUnit::FREE_HP_BAR_WIDTH * scale)
+			: CLAMP(MAX(ClockGearsBattleUnit::FREE_HP_BAR_WIDTH * scale, draw_w), 72.0f * scale, 240.0f * scale);
+	layout.label_max_w = (layout.hp_bar_mode == "libre")
+			? MAX(block_w, hp_w + 24.0f * scale)
+			: MAX(block_w, draw_w + 24.0f * scale);
+	float hp_h = MAX(6.0f, 10.0f * scale);
 
 	float lbl_h = float(layout.font_sz) + 3.0f * scale;
 	float group_h = lbl_h + 5.0f * scale + hp_h;
@@ -1978,7 +1982,8 @@ ClockGearsBattleScene::EnemyVisualLayout ClockGearsBattleScene::compute_enemy_vi
 		layout.group_center_x = layout.draw_spr_rect.get_center().x;
 		group_top_y = layout.draw_spr_rect.position.y - 4.0f * scale - group_h;
 	} else if (layout.hp_bar_mode == "libre") {
-		Point2 free_anchor_scr = troop_pos_to_screen(p_troop_pos + Vector2(float(p_hp_bar_offset.x), float(p_hp_bar_offset.y)), p_vp_rect);
+		Vector2i clamped_ref = ClockGearsBattleUnit::clamp_free_hp_bar_pos(p_hp_bar_pos, BATTLE_REF_WIDTH, BATTLE_REF_HEIGHT);
+		Point2 free_anchor_scr = troop_pos_to_screen(Vector2(float(clamped_ref.x), float(clamped_ref.y)), p_vp_rect);
 		float half_w = hp_w * 0.5f;
 		float min_cx = p_vp_rect.position.x + half_w;
 		float max_cx = MAX(min_cx, p_vp_rect.position.x + p_vp_rect.size.x - half_w);
@@ -2026,7 +2031,7 @@ void ClockGearsBattleScene::draw_troop_enemies(Control *p_canvas, const Rect2 &p
 		Size2 src_sz = (e.src_region.size.x > 0.0f && e.src_region.size.y > 0.0f)
 				? e.src_region.size
 				: (e.texture.is_valid() ? e.texture->get_size() : Size2(64.0f, 64.0f));
-		EnemyVisualLayout layout = compute_enemy_visual_layout(e.troop_pos, p_vp_rect, src_sz, e.sprite_scale, p_font, e.hp_bar_mode, e.hp_bar_offset);
+		EnemyVisualLayout layout = compute_enemy_visual_layout(e.troop_pos, p_vp_rect, src_sz, e.sprite_scale, p_font, e.hp_bar_mode, e.hp_bar_pos);
 
 		if (is_texture_ready(e.texture)) {
 			Rect2 vis_r = layout.draw_spr_rect.intersection(p_vp_rect);
@@ -2113,7 +2118,7 @@ void ClockGearsBattleScene::_sync_enemy_hit_nodes_layout() {
 				break;
 			}
 		}
-		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, vp_rect, src_sz, en->get_sprite_scale(), font, en->get_hp_bar_mode(), en->get_hp_bar_offset());
+		EnemyVisualLayout layout = compute_enemy_visual_layout(bpos, vp_rect, src_sz, en->get_sprite_scale(), font, en->get_hp_bar_mode(), en->get_hp_bar_pos());
 		node->set_position(layout.block_origin);
 		node->set_size(layout.full_box.size);
 		if (node->get_child_count() > 0) {
@@ -2148,7 +2153,7 @@ void ClockGearsBattleScene::_on_enemies_field_draw() {
 		entry.is_dead = en->get_is_dead();
 		entry.sprite_scale = en->get_sprite_scale();
 		entry.hp_bar_mode = en->get_hp_bar_mode();
-		entry.hp_bar_offset = en->get_hp_bar_offset();
+		entry.hp_bar_pos = en->get_hp_bar_pos();
 		Vector2 bpos = en->get_battle_pos();
 		if (bpos.x <= 0.0f && bpos.y <= 0.0f) {
 			bpos = Vector2(220.0f + i * 160.0f, 180.0f);

@@ -181,7 +181,7 @@ public:
 		Rect2 src_region;
 		Color modulate = Color(1, 1, 1, 1);
 		String hp_bar_mode = "abajo";
-		Vector2i hp_bar_offset = Vector2i(0, 0);
+		Vector2i hp_bar_pos = Vector2i(-1, -1);
 		bool highlight_hud_group = false;
 	};
 
@@ -205,7 +205,7 @@ public:
 	static Point2 troop_pos_to_screen(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect);
 	static Vector2 screen_to_troop_pos(const Point2 &p_screen_pos, const Rect2 &p_vp_rect);
 	static Rect2 get_battle_hud_strip_rect(const Rect2 &p_vp_rect);
-	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale = 1, const Ref<Font> &p_font = Ref<Font>(), const String &p_hp_bar_mode = "abajo", const Vector2i &p_hp_bar_offset = Vector2i());
+	static EnemyVisualLayout compute_enemy_visual_layout(const Vector2 &p_troop_pos, const Rect2 &p_vp_rect, const Size2 &p_src_size, int p_member_scale = 1, const Ref<Font> &p_font = Ref<Font>(), const String &p_hp_bar_mode = "abajo", const Vector2i &p_hp_bar_pos = Vector2i(-1, -1));
 	static void draw_troop_enemies(Control *p_canvas, const Rect2 &p_vp_rect, const Vector<TroopEnemyDrawEntry> &p_entries, int p_selected_idx, bool p_show_selection, bool p_show_grid, const Ref<Font> &p_font);
 
 	static Dictionary default_battleback_cfg(bool p_is_floor, const Size2 &p_tex_size = Size2());

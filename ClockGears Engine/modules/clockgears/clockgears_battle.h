@@ -197,8 +197,21 @@ public:
 	void set_sprite_scale(int p_scale) { sprite_scale = CLAMP(p_scale, 1, 6); }
 	int get_sprite_scale() const { return sprite_scale; }
 
+	static constexpr float FREE_HP_BAR_WIDTH = 110.0f;
+	static Vector2i clamp_free_hp_bar_pos(const Vector2i &p_pos, float p_ref_w = 960.0f, float p_ref_h = 540.0f) {
+		float half_w = FREE_HP_BAR_WIDTH * 0.5f;
+		float ref_lbl_h = float(MAX(9, int(13.0f))) + 3.0f;
+		float ref_hp_h = MAX(6.0f, 10.0f);
+		float ref_grp_h = ref_lbl_h + 5.0f + ref_hp_h;
+		int min_x = int(Math::ceil(half_w));
+		int max_x = MAX(min_x, int(Math::floor(p_ref_w - half_w)));
+		int min_y = 0;
+		int max_y = MAX(min_y, int(Math::floor(p_ref_h - ref_grp_h)));
+		return Vector2i(CLAMP(p_pos.x, min_x, max_x), CLAMP(p_pos.y, min_y, max_y));
+	}
+
 	String hp_bar_mode = "abajo";
-	Vector2i hp_bar_offset = Vector2i(0, 0);
+	Vector2i hp_bar_pos = Vector2i(-1, -1);
 	static String normalize_hp_bar_mode(const String &p_mode) {
 		String clean = p_mode.strip_edges().to_lower();
 		if (clean == "arriba" || clean == "abajo" || clean == "libre" || clean == "oculta") {
@@ -208,8 +221,8 @@ public:
 	}
 	void set_hp_bar_mode(const String &p_mode) { hp_bar_mode = normalize_hp_bar_mode(p_mode); }
 	String get_hp_bar_mode() const { return hp_bar_mode; }
-	void set_hp_bar_offset(const Vector2i &p_off) { hp_bar_offset = p_off; }
-	Vector2i get_hp_bar_offset() const { return hp_bar_offset; }
+	void set_hp_bar_pos(const Vector2i &p_pos) { hp_bar_pos = p_pos; }
+	Vector2i get_hp_bar_pos() const { return hp_bar_pos; }
 
 	ClockGearsSpriteSheetData sprite_data;
 	void set_sprite_data(const ClockGearsSpriteSheetData &p_data) { sprite_data = p_data; }

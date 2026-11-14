@@ -49,8 +49,11 @@ static String s_get_troop_member_hp_bar_mode(const Dictionary &p_member) {
 	return ClockGearsBattleUnit::normalize_hp_bar_mode(String(p_member.get("hp_bar_mode", "abajo")));
 }
 
-static Vector2i s_get_troop_member_hp_bar_offset(const Dictionary &p_member) {
-	return Vector2i(int(p_member.get("hp_bar_offset_x", 0)), int(p_member.get("hp_bar_offset_y", 0)));
+static Vector2i s_get_troop_member_hp_bar_pos(const Dictionary &p_member) {
+	if (p_member.has("hp_bar_x") && p_member.has("hp_bar_y")) {
+		return ClockGearsBattleUnit::clamp_free_hp_bar_pos(Vector2i(int(p_member["hp_bar_x"]), int(p_member["hp_bar_y"])));
+	}
+	return ClockGearsBattleUnit::clamp_free_hp_bar_pos(Vector2i(int(p_member.get("x", 200)), int(p_member.get("y", 260))));
 }
 
 static int s_hp_bar_mode_to_menu_id(const String &p_mode) {
@@ -7730,8 +7733,6 @@ void ClockGearsDatabaseDialog::_on_add_troop_member_pressed() {
 	new_m["y"] = 260;
 	new_m["escala"] = 1;
 	new_m["hp_bar_mode"] = "abajo";
-	new_m["hp_bar_offset_x"] = 0;
-	new_m["hp_bar_offset_y"] = 0;
 	mems.push_back(new_m);
 	selected_troop_member_idx = mems.size() - 1;
 
@@ -7812,7 +7813,7 @@ void ClockGearsDatabaseDialog::_on_align_troop_members_pressed() {
 		src_sizes.write[i] = src_sz;
 		member_scales.write[i] = m_scale;
 
-		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font, s_get_troop_member_hp_bar_mode(m), s_get_troop_member_hp_bar_offset(m));
+		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font, s_get_troop_member_hp_bar_mode(m), s_get_troop_member_hp_bar_pos(m));
 		if (!has_box) {
 			group_box = layout.full_box;
 			has_box = true;
@@ -8245,7 +8246,7 @@ void ClockGearsDatabaseDialog::_update_troop_hud_warning(const Dictionary &p_tro
 		Vector2 mpos(float(m.get("x", 200 + i * 110)), float(m.get("y", 260)));
 		Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 		int m_scale = s_get_troop_member_scale(m);
-		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font, s_get_troop_member_hp_bar_mode(m), s_get_troop_member_hp_bar_offset(m));
+		ClockGearsBattleScene::EnemyVisualLayout layout = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, ref_vp, src_sz, m_scale, font, s_get_troop_member_hp_bar_mode(m), s_get_troop_member_hp_bar_pos(m));
 		if (layout.full_box.intersects(hud_strip)) {
 			any_overlap = true;
 			break;
@@ -8433,12 +8434,14 @@ void ClockGearsDatabaseDialog::_on_troop_hp_bar_menu_id_pressed(int p_id) {
 	String next_mode = prev_mode;
 	if (p_id == 5) {
 		next_mode = "abajo";
-		m["hp_bar_offset_x"] = 0;
-		m["hp_bar_offset_y"] = 0;
+		m.erase("hp_bar_x");
+		m.erase("hp_bar_y");
+		m.erase("hp_bar_offset_x");
+		m.erase("hp_bar_offset_y");
 		troop_hp_bar_dragging = false;
 	} else if (p_id == 3) {
 		next_mode = "libre";
-		if (prev_mode != "libre") {
+		if (prev_mode != "libre" || !m.has("hp_bar_x") || !m.has("hp_bar_y")) {
 			const Rect2 ref_vp(Point2(0, 0), Size2(ClockGearsBattleScene::BATTLE_REF_WIDTH, ClockGearsBattleScene::BATTLE_REF_HEIGHT));
 			int mx = int(m.get("x", 200));
 			int my = int(m.get("y", 260));
@@ -8446,14 +8449,15 @@ void ClockGearsDatabaseDialog::_on_troop_hp_bar_menu_id_pressed(int p_id) {
 			int m_scale = s_get_troop_member_scale(m);
 			Ref<Font> font = get_theme_default_font();
 			ClockGearsBattleScene::EnemyVisualLayout cur_lay = ClockGearsBattleScene::compute_enemy_visual_layout(
-					Vector2(float(mx), float(my)), ref_vp, src_sz, m_scale, font, prev_mode, s_get_troop_member_hp_bar_offset(m));
-			float grp_h = float(cur_lay.font_sz) + 3.0f + 5.0f + MAX(6.0f, 10.0f);
-			float half_w = cur_lay.hud_group_box.size.x * 0.5f;
-			int clamped_cx = int(Math::round(CLAMP(cur_lay.group_center_x, half_w, ClockGearsBattleScene::BATTLE_REF_WIDTH - half_w)));
-			int clamped_ty = int(Math::round(CLAMP(cur_lay.label_baseline_y - float(cur_lay.font_sz) - 3.0f, 0.0f, MAX(0.0f, ClockGearsBattleScene::BATTLE_REF_HEIGHT - grp_h))));
-			m["hp_bar_offset_x"] = clamped_cx - mx;
-			m["hp_bar_offset_y"] = clamped_ty - my;
+					Vector2(float(mx), float(my)), ref_vp, src_sz, m_scale, font, prev_mode, s_get_troop_member_hp_bar_pos(m));
+			Vector2i init_pos = ClockGearsBattleUnit::clamp_free_hp_bar_pos(Vector2i(
+					int(Math::round(cur_lay.group_center_x)),
+					int(Math::round(cur_lay.label_baseline_y - float(cur_lay.font_sz) - 3.0f))));
+			m["hp_bar_x"] = init_pos.x;
+			m["hp_bar_y"] = init_pos.y;
 		}
+		m.erase("hp_bar_offset_x");
+		m.erase("hp_bar_offset_y");
 	} else if (p_id == 1) {
 		next_mode = "arriba";
 	} else if (p_id == 4) {
@@ -8930,7 +8934,7 @@ void ClockGearsDatabaseDialog::_draw_troop_enemies_preview(Control *p_canvas, co
 		entry.is_dead = false;
 		entry.sprite_scale = s_get_troop_member_scale(m);
 		entry.hp_bar_mode = s_get_troop_member_hp_bar_mode(m);
-		entry.hp_bar_offset = s_get_troop_member_hp_bar_offset(m);
+		entry.hp_bar_pos = s_get_troop_member_hp_bar_pos(m);
 		entry.highlight_hud_group = (p_show_selection && troop_hp_bar_dragging && i == selected_troop_member_idx);
 		entry.troop_pos = Vector2(mx, my);
 		entry.texture = retained_tex;
@@ -9040,11 +9044,11 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 				Vector2 mpos(float(m.get("x", 200)), float(m.get("y", 260)));
 				Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 				int m_scale = s_get_troop_member_scale(m);
-				Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
-				ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+				Vector2i hp_pos = s_get_troop_member_hp_bar_pos(m);
+				ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_pos);
 				if (lay.hud_group_box.grow(4.0f).has_point(mb->get_position())) {
 					hit_hp_idx = i;
-					Vector2 cur_anchor_ref(mpos.x + float(hp_off.x), mpos.y + float(hp_off.y));
+					Vector2 cur_anchor_ref(float(hp_pos.x), float(hp_pos.y));
 					troop_hp_drag_offset = cur_anchor_ref - ClockGearsBattleScene::screen_to_troop_pos(mb->get_position(), vp_rect);
 					break;
 				}
@@ -9063,8 +9067,8 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 					Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 					int m_scale = s_get_troop_member_scale(m);
 					String hp_mode = s_get_troop_member_hp_bar_mode(m);
-					Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
-					ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+					Vector2i hp_pos = s_get_troop_member_hp_bar_pos(m);
+					ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_pos);
 					if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
 						hit_idx = i;
 						troop_drag_offset = mpos - ClockGearsBattleScene::screen_to_troop_pos(mb->get_position(), vp_rect);
@@ -9098,8 +9102,8 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 			Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
 			int m_scale = s_get_troop_member_scale(m);
 			String hp_mode = s_get_troop_member_hp_bar_mode(m);
-			Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
-			ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+			Vector2i hp_pos = s_get_troop_member_hp_bar_pos(m);
+			ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_pos);
 			if (lay.full_box.grow(6.0f).has_point(mb->get_position())) {
 				hit_idx = i;
 				break;
@@ -9153,28 +9157,16 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 	} else if (mm.is_valid() && troop_hp_bar_dragging) {
 		if (selected_troop_member_idx >= 0 && selected_troop_member_idx < mems.size()) {
 			Dictionary m = mems[selected_troop_member_idx];
-			int mx = int(m.get("x", 200));
-			int my = int(m.get("y", 260));
-			Size2 src_sz = s_resolve_troop_member_src_size(m, enemies);
-			int m_scale = s_get_troop_member_scale(m);
-			const Rect2 ref_vp(Point2(0, 0), Size2(ClockGearsBattleScene::BATTLE_REF_WIDTH, ClockGearsBattleScene::BATTLE_REF_HEIGHT));
-			ClockGearsBattleScene::EnemyVisualLayout ref_lay = ClockGearsBattleScene::compute_enemy_visual_layout(
-					Vector2(float(mx), float(my)), ref_vp, src_sz, m_scale, font, "libre", Vector2i(0, 0));
-			float grp_w = ref_lay.hud_group_box.size.x;
-			float grp_h = float(ref_lay.font_sz) + 3.0f + 5.0f + MAX(6.0f, 10.0f);
-			float half_w = grp_w * 0.5f;
-
 			Vector2 desired_anchor = ClockGearsBattleScene::screen_to_troop_pos(mm->get_position(), vp_rect) + troop_hp_drag_offset;
-			float min_cx = half_w;
-			float max_cx = MAX(min_cx, ClockGearsBattleScene::BATTLE_REF_WIDTH - half_w);
-			float min_ty = 0.0f;
-			float max_ty = MAX(min_ty, ClockGearsBattleScene::BATTLE_REF_HEIGHT - grp_h);
-			int cx = int(Math::round(CLAMP(desired_anchor.x, min_cx, max_cx)));
-			int ty = int(Math::round(CLAMP(desired_anchor.y, min_ty, max_ty)));
+			Vector2i clamped_pos = ClockGearsBattleUnit::clamp_free_hp_bar_pos(Vector2i(
+					int(Math::round(desired_anchor.x)),
+					int(Math::round(desired_anchor.y))));
 
 			m["hp_bar_mode"] = "libre";
-			m["hp_bar_offset_x"] = cx - mx;
-			m["hp_bar_offset_y"] = ty - my;
+			m["hp_bar_x"] = clamped_pos.x;
+			m["hp_bar_y"] = clamped_pos.y;
+			m.erase("hp_bar_offset_x");
+			m.erase("hp_bar_offset_y");
 			mems[selected_troop_member_idx] = m;
 			d["members"] = mems;
 			category_data[CAT_TROOPS][rec_idx] = d;
@@ -11232,17 +11224,17 @@ Dictionary ClockGearsDatabaseDialog::get_troop_preview_enemy_layout(int p_member
 	Size2 src_sz = s_resolve_troop_member_src_size(m, category_data[CAT_ENEMIES]);
 	int m_scale = s_get_troop_member_scale(m);
 	String hp_mode = s_get_troop_member_hp_bar_mode(m);
-	Vector2i hp_off = s_get_troop_member_hp_bar_offset(m);
+	Vector2i hp_pos = s_get_troop_member_hp_bar_pos(m);
 	Rect2 vp_rect = s_calc_troop_vp_rect(troop_placement_canvas);
 	Ref<Font> font = get_theme_default_font();
-	ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_off);
+	ClockGearsBattleScene::EnemyVisualLayout lay = ClockGearsBattleScene::compute_enemy_visual_layout(mpos, vp_rect, src_sz, m_scale, font, hp_mode, hp_pos);
 	out["sprite_rect"] = lay.draw_spr_rect;
 	out["hud_group_rect"] = lay.hud_group_box;
 	out["hp_rect"] = lay.hp_rect;
 	out["hp_visible"] = lay.hp_bar_visible;
 	out["label_baseline_y"] = lay.label_baseline_y;
 	out["hp_bar_mode"] = lay.hp_bar_mode;
-	out["hp_bar_offset"] = hp_off;
+	out["hp_bar_pos"] = hp_pos;
 	out["hud_highlighted"] = (troop_hp_bar_dragging && p_member_idx == selected_troop_member_idx);
 	return out;
 }

@@ -248,6 +248,42 @@ static String s_normalize_arpg_ai_type(const Variant &p_val) {
 }
 
 void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary &r_record) {
+	if (p_category == CAT_TROOPS && r_record.has("members") && r_record["members"].get_type() == Variant::ARRAY) {
+		Array mems = r_record["members"];
+		for (int m_i = 0; m_i < mems.size(); m_i++) {
+			if (mems[m_i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary md = mems[m_i];
+			String mode = ClockGearsBattleUnit::normalize_hp_bar_mode(String(md.get("hp_bar_mode", "abajo")));
+			md["hp_bar_mode"] = mode;
+			if (mode == "libre") {
+				Vector2i abs_pos;
+				if (md.has("hp_bar_x") && md.has("hp_bar_y")) {
+					abs_pos = Vector2i(int(md["hp_bar_x"]), int(md["hp_bar_y"]));
+				} else {
+					// Migra el desplazamiento relativo antiguo a la posición absoluta equivalente en 960x540.
+					int mx = int(md.get("x", 200 + m_i * 160));
+					int my = int(md.get("y", 260));
+					int ox = int(md.get("hp_bar_offset_x", 0));
+					int oy = int(md.get("hp_bar_offset_y", 0));
+					abs_pos = Vector2i(mx + ox, my + oy);
+				}
+				Vector2i clamped = ClockGearsBattleUnit::clamp_free_hp_bar_pos(abs_pos);
+				md["hp_bar_x"] = clamped.x;
+				md["hp_bar_y"] = clamped.y;
+			} else {
+				md.erase("hp_bar_x");
+				md.erase("hp_bar_y");
+			}
+			md.erase("hp_bar_offset_x");
+			md.erase("hp_bar_offset_y");
+			mems[m_i] = md;
+		}
+		r_record["members"] = mems;
+		return;
+	}
+
 	if (p_category == CAT_ACTORS || p_category == CAT_ARPG_NPCS || p_category == CAT_NPCS || p_category == CAT_ARPG_ENEMIES) {
 		int walk_pct = r_record.has("walk_speed_pct") ? int(r_record["walk_speed_pct"]) : 100;
 		int run_pct = r_record.has("run_speed_pct") ? int(r_record["run_speed_pct"]) : 100;
@@ -465,20 +501,6 @@ void ClockGearsDataManager::_migrate_schema_if_needed(int p_from_version) {
 			}
 			if (cat == CAT_ENEMIES) {
 				ClockGearsSpriteSheetData::migrate_enemy_record(rec);
-			}
-			if (cat == CAT_TROOPS) {
-				Array mems = rec.get("members", Array());
-				for (int m_i = 0; m_i < mems.size(); m_i++) {
-					if (mems[m_i].get_type() != Variant::DICTIONARY) {
-						continue;
-					}
-					Dictionary md = mems[m_i];
-					md["hp_bar_mode"] = ClockGearsBattleUnit::normalize_hp_bar_mode(String(md.get("hp_bar_mode", "abajo")));
-					md["hp_bar_offset_x"] = md.has("hp_bar_offset_x") ? int(md["hp_bar_offset_x"]) : 0;
-					md["hp_bar_offset_y"] = md.has("hp_bar_offset_y") ? int(md["hp_bar_offset_y"]) : 0;
-					mems[m_i] = md;
-				}
-				rec["members"] = mems;
 			}
 			if (cat_sys) {
 				cat_sys->migrate_record_elements(rec);
