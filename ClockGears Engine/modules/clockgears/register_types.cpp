@@ -166,6 +166,8 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsBattleUnit);
 		GDREGISTER_CLASS(ClockGearsBattleController);
 		GDREGISTER_CLASS(ClockGearsBattleScene);
+
+		ClockGearsPlayer::ensure_default_arpg_input_actions();
 	}
 
 #ifdef TOOLS_ENABLED

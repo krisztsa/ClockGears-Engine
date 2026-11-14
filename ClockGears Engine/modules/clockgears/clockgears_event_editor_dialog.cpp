@@ -33,6 +33,9 @@ static Ref<StyleBoxFlat> _event_card_style() {
 
 void ClockGearsEventEditorDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("edit_event", "event"), &ClockGearsEventEditorDialog::edit_event);
+	ClassDB::bind_method(D_METHOD("edit_database_event", "category_key", "record_id", "record_name", "pages", "on_saved"), &ClockGearsEventEditorDialog::edit_database_event, DEFVAL(Callable()));
+	ClassDB::bind_method(D_METHOD("is_sprite_selector_visible"), &ClockGearsEventEditorDialog::is_sprite_selector_visible);
+	ClassDB::bind_method(D_METHOD("get_working_pages"), &ClockGearsEventEditorDialog::get_working_pages);
 }
 
 Dictionary ClockGearsEventEditorDialog::_create_empty_page() const {
@@ -3658,6 +3661,31 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	btn_delete_page->connect("pressed", callable_mp(this, &ClockGearsEventEditorDialog::_on_delete_page_pressed));
 	header_hb->add_child(btn_delete_page);
 
+	// Selector de Comportamiento por evento de mapa (Normal / NPC / NPC ARPG / Enemigo ARPG)
+	behavior_bar_hb = memnew(HBoxContainer);
+	behavior_bar_hb->add_theme_constant_override("separation", 8);
+	main_vb->add_child(behavior_bar_hb);
+
+	behavior_bar_hb->add_child(memnew(Label(CG_TR("Comportamiento:"))));
+	behavior_type_opt = memnew(OptionButton);
+	behavior_type_opt->add_item(CG_TR("Normal"), 0);
+	behavior_type_opt->add_item(CG_TR("NPC"), 1);
+	behavior_type_opt->add_item(CG_TR("NPC ARPG"), 2);
+	behavior_type_opt->add_item(CG_TR("Enemigo ARPG"), 3);
+	behavior_type_opt->connect("item_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_behavior_type_selected));
+	behavior_bar_hb->add_child(behavior_type_opt);
+
+	behavior_ref_opt = memnew(OptionButton);
+	behavior_ref_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	behavior_ref_opt->set_visible(false);
+	behavior_bar_hb->add_child(behavior_ref_opt);
+
+	behavior_info_label = memnew(Label(CG_TR("Sprite y páginas de evento compartidas desde la Base de Datos. Posición, dirección inicial y movimiento siguen aquí.")));
+	behavior_info_label->add_theme_color_override("font_color", Color(0.85, 0.85, 0.55));
+	behavior_info_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	behavior_info_label->set_visible(false);
+	main_vb->add_child(behavior_info_label);
+
 	// -------------------------------------------------------------
 	// 1. Page Tabs (TabBar: "Página 1", "Página 2", etc.)
 	// -------------------------------------------------------------
@@ -3682,6 +3710,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	// COLUMN 1: Condiciones de Aparición, Disparador y Opciones
 	// =============================================================
 	VBoxContainer *col1 = memnew(VBoxContainer);
+	ev_col1 = col1;
 	col1->set_custom_minimum_size(Size2(240, 0) * EDSCALE);
 	col1->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	col1->add_theme_constant_override("separation", 6);
@@ -3839,7 +3868,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	columns_hb->add_child(col2);
 
 	// Group: Gráfico del Evento
-	PanelContainer *gfx_card = memnew(PanelContainer);
+	gfx_card = memnew(PanelContainer);
 	gfx_card->add_theme_style_override("panel", _event_card_style());
 	col2->add_child(gfx_card);
 
@@ -3926,7 +3955,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	add_child(event_tile_picker_dialog);
 
 	// Group: Movimiento Autónomo
-	PanelContainer *move_card = memnew(PanelContainer);
+	move_card = memnew(PanelContainer);
 	move_card->add_theme_style_override("panel", _event_card_style());
 	col2->add_child(move_card);
 
@@ -3937,6 +3966,13 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	Label *move_title = memnew(Label(CG_TR("Movimiento Autónomo")));
 	move_title->add_theme_color_override("font_color", Color(0.95, 0.8, 0.35));
 	move_box->add_child(move_title);
+
+	HBoxContainer *dir_hb = memnew(HBoxContainer);
+	dir_hb->add_child(memnew(Label(CG_TR("Dirección inicial:"))));
+	initial_dir_opt = memnew(OptionButton);
+	initial_dir_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	dir_hb->add_child(initial_dir_opt);
+	move_box->add_child(dir_hb);
 
 	move_box->add_child(memnew(Label(CG_TR("Tipo:"))));
 	move_type_opt = memnew(OptionButton);
@@ -3977,6 +4013,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	// COLUMN 3: Contenido / Tree de Comandos del Evento
 	// =============================================================
 	VBoxContainer *col3 = memnew(VBoxContainer);
+	ev_col3 = col3;
 	col3->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	col3->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	col3->add_theme_constant_override("separation", 6);
@@ -4053,14 +4090,158 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	connect("canceled", callable_mp(this, &ClockGearsEventEditorDialog::_on_dialog_canceled));
 }
 
+void ClockGearsEventEditorDialog::_populate_initial_dir_options(int p_select_dir) {
+	if (!initial_dir_opt) {
+		return;
+	}
+	initial_dir_opt->clear();
+	struct DirChoice {
+		const char *label;
+		int id;
+	};
+	static const DirChoice card_dirs[4] = {
+		{ "Abajo", 2 },
+		{ "Izquierda", 4 },
+		{ "Derecha", 6 },
+		{ "Arriba", 8 }
+	};
+	static const DirChoice diag_dirs[4] = {
+		{ "Abajo-Izquierda", 1 },
+		{ "Abajo-Derecha", 3 },
+		{ "Arriba-Izquierda", 7 },
+		{ "Arriba-Derecha", 9 }
+	};
+	int idx = 0;
+	int sel_idx = 0;
+	for (int i = 0; i < 4; i++) {
+		initial_dir_opt->add_item(CG_TR(card_dirs[i].label), card_dirs[i].id);
+		if (card_dirs[i].id == p_select_dir) {
+			sel_idx = idx;
+		}
+		idx++;
+	}
+	bool allow8 = false;
+	if (ClockGearsDataManager::get_singleton()) {
+		allow8 = (int(ClockGearsDataManager::get_singleton()->get_system_config().get("movement_directions", 4)) == 8);
+	}
+	if (allow8) {
+		for (int i = 0; i < 4; i++) {
+			initial_dir_opt->add_item(CG_TR(diag_dirs[i].label), diag_dirs[i].id);
+			if (diag_dirs[i].id == p_select_dir) {
+				sel_idx = idx;
+			}
+			idx++;
+		}
+	}
+	if (initial_dir_opt->get_item_count() > 0) {
+		initial_dir_opt->select(sel_idx);
+	}
+}
+
+void ClockGearsEventEditorDialog::_populate_behavior_ref_options(int p_behavior_type, int p_select_id) {
+	if (!behavior_ref_opt) {
+		return;
+	}
+	behavior_ref_opt->clear();
+	int cat = ClockGearsEvent::behavior_type_to_category(p_behavior_type);
+	if (cat < 0) {
+		behavior_ref_opt->set_visible(false);
+		return;
+	}
+	behavior_ref_opt->set_visible(true);
+	behavior_ref_opt->add_item(CG_TR("(Sin asignar)"), 0);
+	int sel_idx = 0;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm) {
+		Array recs = dm->get_category_array(cat);
+		for (int i = 0; i < recs.size(); i++) {
+			if (recs[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary d = recs[i];
+			int rid = int(d.get("id", 0));
+			String rname = String(d.get("name", ""));
+			behavior_ref_opt->add_item(vformat("%03d: %s", rid, rname), rid);
+			if (rid == p_select_id && p_select_id > 0) {
+				sel_idx = behavior_ref_opt->get_item_count() - 1;
+			}
+		}
+	}
+	behavior_ref_opt->select(sel_idx);
+}
+
+void ClockGearsEventEditorDialog::_on_behavior_type_selected(int p_idx) {
+	int btype = behavior_type_opt ? behavior_type_opt->get_item_id(p_idx) : 0;
+	_populate_behavior_ref_options(btype, 0);
+	_update_mode_and_behavior_visibility();
+}
+
+void ClockGearsEventEditorDialog::_update_mode_and_behavior_visibility() {
+	int btype = 0;
+	if (!db_edit_mode && behavior_type_opt && behavior_type_opt->get_selected() >= 0) {
+		btype = behavior_type_opt->get_item_id(behavior_type_opt->get_selected());
+	}
+	bool is_map_behavior_linked = (!db_edit_mode && btype != 0);
+
+	if (behavior_bar_hb) {
+		behavior_bar_hb->set_visible(!db_edit_mode);
+	}
+	if (behavior_info_label) {
+		behavior_info_label->set_visible(is_map_behavior_linked);
+	}
+	if (gfx_card) {
+		gfx_card->set_visible(!db_edit_mode && btype == 0);
+	}
+	if (move_card) {
+		move_card->set_visible(!db_edit_mode);
+	}
+	if (ev_col1) {
+		ev_col1->set_visible(!is_map_behavior_linked);
+	}
+	if (ev_col3) {
+		ev_col3->set_visible(!is_map_behavior_linked);
+	}
+	if (page_tabs) {
+		page_tabs->set_visible(!is_map_behavior_linked);
+	}
+	if (btn_new_page) btn_new_page->set_visible(!is_map_behavior_linked);
+	if (btn_copy_page) btn_copy_page->set_visible(!is_map_behavior_linked);
+	if (btn_paste_page) btn_paste_page->set_visible(!is_map_behavior_linked);
+	if (btn_delete_page) btn_delete_page->set_visible(!is_map_behavior_linked);
+}
+
+bool ClockGearsEventEditorDialog::is_sprite_selector_visible() const {
+	return gfx_card && gfx_card->is_visible();
+}
+
 void ClockGearsEventEditorDialog::edit_event(ClockGearsEvent *p_event) {
+	db_edit_mode = false;
+	db_edit_category_key = "";
+	db_edit_record_id = 0;
+	db_edit_on_saved = Callable();
 	target_event = p_event;
 	if (!target_event) {
 		return;
 	}
 
+	set_title(CG_TR("Editor de Eventos - ClockGears Engine"));
 	id_label->set_text(vformat(CG_TR("ID: %03d"), target_event->get_event_id()));
+	name_edit->set_editable(true);
 	name_edit->set_text(target_event->get_event_name());
+
+	int btype = target_event->get_behavior_type();
+	if (behavior_type_opt) {
+		int b_idx = 0;
+		for (int i = 0; i < behavior_type_opt->get_item_count(); i++) {
+			if (behavior_type_opt->get_item_id(i) == btype) {
+				b_idx = i;
+				break;
+			}
+		}
+		behavior_type_opt->select(b_idx);
+	}
+	_populate_behavior_ref_options(btype, target_event->get_behavior_ref_id());
+	_populate_initial_dir_options(target_event->get_direction());
 
 	working_pages = target_event->get_pages().duplicate(true);
 	if (working_pages.is_empty()) {
@@ -4096,6 +4277,34 @@ void ClockGearsEventEditorDialog::edit_event(ClockGearsEvent *p_event) {
 	current_page_index = 0;
 	_rebuild_page_tabs();
 	_load_page_to_ui(0);
+	_update_mode_and_behavior_visibility();
+
+	if (is_inside_tree()) {
+		popup_centered();
+	}
+}
+
+void ClockGearsEventEditorDialog::edit_database_event(const String &p_category_key, int p_record_id, const String &p_record_name, const Array &p_pages, const Callable &p_on_saved) {
+	target_event = nullptr;
+	db_edit_mode = true;
+	db_edit_category_key = p_category_key;
+	db_edit_record_id = p_record_id;
+	db_edit_on_saved = p_on_saved;
+
+	set_title(vformat(CG_TR("Evento de BD (%03d: %s)"), p_record_id, p_record_name));
+	id_label->set_text(vformat(CG_TR("BD ID: %03d"), p_record_id));
+	name_edit->set_text(p_record_name);
+	name_edit->set_editable(false);
+
+	working_pages = p_pages.duplicate(true);
+	if (working_pages.is_empty()) {
+		working_pages.push_back(_create_empty_page());
+	}
+
+	current_page_index = 0;
+	_rebuild_page_tabs();
+	_load_page_to_ui(0);
+	_update_mode_and_behavior_visibility();
 
 	if (is_inside_tree()) {
 		popup_centered();
@@ -4353,43 +4562,79 @@ void ClockGearsEventEditorDialog::_on_clear_commands_pressed() {
 }
 
 void ClockGearsEventEditorDialog::_on_dialog_confirmed() {
+	_save_current_page_from_ui();
+	if (db_edit_mode) {
+		if (db_edit_on_saved.is_valid()) {
+			db_edit_on_saved.call(working_pages.duplicate(true));
+		}
+		db_edit_mode = false;
+		return;
+	}
 	if (!target_event) {
 		return;
 	}
-	_save_current_page_from_ui();
 	target_event->set_event_name(name_edit->get_text());
-	target_event->set_pages(working_pages.duplicate(true));
 
-	// Sync primary properties with active page (or Page 1) for immediate map display
-	Dictionary active_p = working_pages[CLAMP(current_page_index, 0, working_pages.size() - 1)];
-	target_event->set_condition_switch_1_enabled(active_p.get("sw1_en", false));
-	target_event->set_condition_switch_1_name(active_p.get("sw1_name", ""));
-	target_event->set_condition_switch_2_enabled(active_p.get("sw2_en", false));
-	target_event->set_condition_switch_2_name(active_p.get("sw2_name", ""));
-	target_event->set_condition_self_switch_enabled(active_p.get("self_sw_en", false));
-	target_event->set_condition_self_switch_letter(active_p.get("self_sw_letter", "A"));
-	target_event->set_condition_var_enabled(active_p.get("var_en", false));
-	target_event->set_condition_var_name(active_p.get("var_name", ""));
-	target_event->set_condition_var_value(int(active_p.get("var_val", 0)));
-	target_event->set_condition_item_enabled(active_p.get("item_en", false));
-	target_event->set_condition_item_name(active_p.get("item_name", ""));
-	target_event->set_condition_actor_enabled(active_p.get("actor_en", false));
-	target_event->set_condition_actor_name(active_p.get("actor_name", ""));
+	int btype = 0;
+	if (behavior_type_opt && behavior_type_opt->get_selected() >= 0) {
+		btype = behavior_type_opt->get_item_id(behavior_type_opt->get_selected());
+	}
+	int bref = 0;
+	if (btype != 0 && behavior_ref_opt && behavior_ref_opt->get_selected() >= 0) {
+		bref = behavior_ref_opt->get_item_id(behavior_ref_opt->get_selected());
+	}
+	if (initial_dir_opt && initial_dir_opt->get_selected() >= 0) {
+		target_event->set_direction(initial_dir_opt->get_item_id(initial_dir_opt->get_selected()));
+	}
 
-	target_event->set_trigger_type(int(active_p.get("trigger", 0)));
-	target_event->set_priority_type(int(active_p.get("priority", 1)));
-	target_event->set_through(active_p.get("through", false));
-	target_event->set_direction_fix(active_p.get("dir_fix", false));
+	target_event->set_behavior_type(btype);
+	target_event->set_behavior_ref_id(bref);
 
-	target_event->set_sprite_hframes(int(active_p.get("hframes", 1)));
-	target_event->set_sprite_vframes(int(active_p.get("vframes", 1)));
-	target_event->set_sprite_frame(int(active_p.get("frame", 0)));
-	target_event->set_graphic_path(active_p.get("graphic_path", ""));
+	if (btype == 0) {
+		target_event->set_pages(working_pages.duplicate(true));
 
-	target_event->set_move_type(int(active_p.get("move_type", 0)));
-	target_event->set_move_speed(int(active_p.get("speed", 3)) * 40.0f);
-	target_event->set_move_frequency(int(active_p.get("freq", 3)));
-	target_event->set_commands(active_p.get("commands", Array()));
+		// Sync primary properties with active page (or Page 1) for immediate map display
+		Dictionary active_p = working_pages[CLAMP(current_page_index, 0, working_pages.size() - 1)];
+		target_event->set_condition_switch_1_enabled(active_p.get("sw1_en", false));
+		target_event->set_condition_switch_1_name(active_p.get("sw1_name", ""));
+		target_event->set_condition_switch_2_enabled(active_p.get("sw2_en", false));
+		target_event->set_condition_switch_2_name(active_p.get("sw2_name", ""));
+		target_event->set_condition_self_switch_enabled(active_p.get("self_sw_en", false));
+		target_event->set_condition_self_switch_letter(active_p.get("self_sw_letter", "A"));
+		target_event->set_condition_var_enabled(active_p.get("var_en", false));
+		target_event->set_condition_var_name(active_p.get("var_name", ""));
+		target_event->set_condition_var_value(int(active_p.get("var_val", 0)));
+		target_event->set_condition_item_enabled(active_p.get("item_en", false));
+		target_event->set_condition_item_name(active_p.get("item_name", ""));
+		target_event->set_condition_actor_enabled(active_p.get("actor_en", false));
+		target_event->set_condition_actor_name(active_p.get("actor_name", ""));
+
+		target_event->set_trigger_type(int(active_p.get("trigger", 0)));
+		target_event->set_priority_type(int(active_p.get("priority", 1)));
+		target_event->set_through(active_p.get("through", false));
+		target_event->set_direction_fix(active_p.get("dir_fix", false));
+
+		target_event->set_sprite_hframes(int(active_p.get("hframes", 1)));
+		target_event->set_sprite_vframes(int(active_p.get("vframes", 1)));
+		target_event->set_sprite_frame(int(active_p.get("frame", 0)));
+		target_event->set_graphic_path(active_p.get("graphic_path", ""));
+
+		target_event->set_move_type(int(active_p.get("move_type", 0)));
+		target_event->set_move_speed(int(active_p.get("speed", 3)) * 40.0f);
+		target_event->set_move_frequency(int(active_p.get("freq", 3)));
+		target_event->set_commands(active_p.get("commands", Array()));
+	} else {
+		if (move_type_opt && move_type_opt->get_selected() >= 0) {
+			target_event->set_move_type(move_type_opt->get_item_id(move_type_opt->get_selected()));
+		}
+		if (speed_opt && speed_opt->get_selected() >= 0) {
+			target_event->set_move_speed(speed_opt->get_item_id(speed_opt->get_selected()) * 40.0f);
+		}
+		if (freq_opt && freq_opt->get_selected() >= 0) {
+			target_event->set_move_frequency(freq_opt->get_item_id(freq_opt->get_selected()));
+		}
+		target_event->update_active_page();
+	}
 
 	// Persist to metadata for reliable backend serialization
 	target_event->serialize_to_meta();
@@ -4421,8 +4666,12 @@ void ClockGearsEventEditorDialog::_on_dialog_confirmed() {
 }
 
 void ClockGearsEventEditorDialog::_on_dialog_canceled() {
+	if (db_edit_mode) {
+		db_edit_mode = false;
+		return;
+	}
 	if (target_event) {
-		if (target_event->get_commands().is_empty() && target_event->get_pages().is_empty() && target_event->get_graphic_path().is_empty()) {
+		if (target_event->get_behavior_type() == 0 && target_event->get_commands().is_empty() && target_event->get_pages().is_empty() && target_event->get_graphic_path().is_empty()) {
 			target_event->queue_free();
 			target_event = nullptr;
 		}

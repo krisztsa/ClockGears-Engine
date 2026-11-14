@@ -131,6 +131,11 @@ public:
 	bool is_using_freeze_frame0() const { return active_freeze_frame0; }
 	int get_active_slot_frame_index() const { return slot_anim_frame_idx; }
 
+	static void ensure_default_arpg_input_actions();
+	static bool is_arpg_combat_mode();
+	bool is_arpg_action_allowed() const;
+	bool should_handle_arpg_input(const Ref<InputEvent> &p_event, String &r_action_out) const;
+
 	static Vector2i direction_to_vector(int p_dir);
 	static int opposite_direction(int p_dir);
 

@@ -25,6 +25,7 @@
 #include "scene/gui/scroll_container.h"
 
 class ClockGearsBattleScene;
+class ClockGearsEventEditorDialog;
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
@@ -87,6 +88,12 @@ private:
 	// Editor Tabs (Enemigos: General | Combate | Animaciones; Actores: General | Animaciones; Resto: General sin pestañas)
 	TabContainer *main_editor_tabs = nullptr;
 	VBoxContainer *combat_tab_vbox = nullptr;
+	ScrollContainer *event_tab_scroll = nullptr;
+	VBoxContainer *event_tab_vbox = nullptr;
+	Label *event_tab_summary_label = nullptr;
+	Tree *event_tab_pages_tree = nullptr;
+	Button *btn_open_record_event_editor = nullptr;
+	ClockGearsEventEditorDialog *record_event_editor = nullptr;
 	VBoxContainer *general_section_box = nullptr;
 	VBoxContainer *stats_section_box = nullptr;
 	VBoxContainer *exp_section_box = nullptr;
@@ -653,6 +660,10 @@ private:
 	void _on_anim_play_pressed();
 	void _update_anim_playback(float p_delta);
 
+	void _refresh_event_tab_summary();
+	void _on_open_record_event_editor_pressed();
+	void _on_record_event_saved(const Array &p_pages);
+
 	void _save_database_to_disk();
 	void _load_database_from_disk();
 
@@ -694,6 +705,10 @@ public:
 	Dictionary get_troop_battleback_cfg(int p_troop_idx, int p_slot) const;
 	void set_troop_battleback_cfg(int p_troop_idx, int p_slot, const Dictionary &p_cfg);
 	String get_formatted_troop_enemy_label(int p_troop_idx, int p_member_idx, float p_max_w = 0.0f) const;
+	Dictionary get_chapter_structure_info() const;
+	void select_category_by_key(const String &p_key);
+	Ref<Texture2D> get_record_list_icon(int p_row_idx) const;
+	bool open_record_event_editor();
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

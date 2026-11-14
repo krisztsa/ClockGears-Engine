@@ -4,6 +4,7 @@
 #include "../core/clockgears_system_catalog.h"
 #include "core/config/engine.h"
 #include "core/input/input.h"
+#include "core/input/input_map.h"
 #include "core/io/image.h"
 #include "core/io/resource_loader.h"
 #include "scene/main/scene_tree.h"
@@ -160,6 +161,9 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("load_actor_data", "actor_id"), &ClockGearsPlayer::load_actor_data);
 	ClassDB::bind_method(D_METHOD("setup_on_map", "map", "followers", "interpreter"), &ClockGearsPlayer::setup_on_map, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("can_pass", "from", "to", "dir"), &ClockGearsPlayer::can_pass);
+	ClassDB::bind_static_method("ClockGearsPlayer", D_METHOD("ensure_default_arpg_input_actions"), &ClockGearsPlayer::ensure_default_arpg_input_actions);
+	ClassDB::bind_static_method("ClockGearsPlayer", D_METHOD("is_arpg_combat_mode"), &ClockGearsPlayer::is_arpg_combat_mode);
+	ClassDB::bind_method(D_METHOD("is_arpg_action_allowed"), &ClockGearsPlayer::is_arpg_action_allowed);
 
 	ADD_SIGNAL(MethodInfo("step_started", PropertyInfo(Variant::VECTOR2I, "from_cell"), PropertyInfo(Variant::VECTOR2I, "to_cell"), PropertyInfo(Variant::INT, "direction")));
 	ADD_SIGNAL(MethodInfo("step_finished", PropertyInfo(Variant::VECTOR2I, "cell")));
@@ -1015,7 +1019,84 @@ void ClockGearsPlayer::_notification(int p_what) {
 	}
 }
 
+void ClockGearsPlayer::ensure_default_arpg_input_actions() {
+	InputMap *im = InputMap::get_singleton();
+	if (!im) {
+		return;
+	}
+	auto ensure_mouse_action = [&](const StringName &p_action, MouseButton p_btn) {
+		if (!im->has_action(p_action)) {
+			im->add_action(p_action);
+			Ref<InputEventMouseButton> ev;
+			ev.instantiate();
+			ev->set_button_index(p_btn);
+			ev->set_pressed(true);
+			im->action_add_event(p_action, ev);
+		}
+	};
+	ensure_mouse_action("atacar", MouseButton::LEFT);
+	ensure_mouse_action("bloquear", MouseButton::RIGHT);
+}
+
+bool ClockGearsPlayer::is_arpg_combat_mode() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return false;
+	}
+	return int(dm->get_system_config().get("combat_mode", COMBAT_MODE_TURN_BASED)) == COMBAT_MODE_ACTION_RPG;
+}
+
+bool ClockGearsPlayer::is_arpg_action_allowed() const {
+	if (!is_arpg_combat_mode()) {
+		return false;
+	}
+	if (event_interpreter && event_interpreter->is_blocking_player()) {
+		return false;
+	}
+	ClockGearsMessageWindow *mw = ClockGearsMessageWindow::get_singleton();
+	if (mw && (mw->is_busy() || mw->is_history_open())) {
+		return false;
+	}
+	if (is_inside_tree()) {
+		SceneTree *st = get_tree();
+		if (st && st->is_paused()) {
+			return false;
+		}
+		Window *root = st ? st->get_root() : nullptr;
+		if (root) {
+			for (int i = 0; i < root->get_child_count(); i++) {
+				Window *sub_w = Object::cast_to<Window>(root->get_child(i));
+				if (sub_w && sub_w->is_visible() && sub_w->is_exclusive()) {
+					return false;
+				}
+			}
+			Control *focused = root->gui_get_focus_owner();
+			if (focused && focused->is_visible_in_tree()) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool ClockGearsPlayer::should_handle_arpg_input(const Ref<InputEvent> &p_event, String &r_action_out) const {
+	r_action_out = "";
+	if (p_event.is_null() || !is_arpg_action_allowed()) {
+		return false;
+	}
+	if (p_event->is_action_pressed("atacar")) {
+		r_action_out = "atacar";
+		return true;
+	}
+	if (p_event->is_action_pressed("bloquear")) {
+		r_action_out = "bloquear";
+		return true;
+	}
+	return false;
+}
+
 ClockGearsPlayer::ClockGearsPlayer() {
+	ensure_default_arpg_input_actions();
 	set_z_index(3);
 	set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	sprite = memnew(Sprite2D);

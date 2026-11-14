@@ -340,8 +340,15 @@ Ref<Texture2D> ClockGearsIcons::get_icon(const String &p_name, float p_scale) co
 }
 
 Ref<Texture2D> ClockGearsIcons::get_db_category_icon(int p_category, float p_scale) const {
+	auto icon_or_fallback = [&](const String &p_custom_png, const String &p_fallback) -> Ref<Texture2D> {
+		if (!p_custom_png.is_empty() && png_sources.has(p_custom_png)) {
+			return get_icon(p_custom_png, p_scale);
+		}
+		return get_icon(p_fallback, p_scale);
+	};
 	switch (p_category) {
 		case CAT_ACTORS: return get_icon("db_actors", p_scale);
+		case CAT_NPCS: return icon_or_fallback("db_npc_icono", "db_actors");
 		case CAT_CLASSES: return get_icon("db_classes", p_scale);
 		case CAT_SKILLS: return get_icon("habilidades_icono", p_scale);
 		case CAT_ITEMS: return get_icon("objetos_icono", p_scale);
@@ -350,6 +357,12 @@ Ref<Texture2D> ClockGearsIcons::get_db_category_icon(int p_category, float p_sca
 		case CAT_ACCESSORIES: return get_icon("db_armors", p_scale);
 		case CAT_ENEMIES:
 		case CAT_TROOPS: return get_icon("db_enemies", p_scale);
+		case CAT_ARPG_ENEMIES: return icon_or_fallback("db_arpg_enemigos_icono", "db_enemies");
+		case CAT_ARPG_NPCS: return icon_or_fallback("db_arpg_npc_icono", "db_actors");
+		case CAT_ARPG_WEAPONS: return icon_or_fallback("db_arpg_armas_icono", "armas_icono");
+		case CAT_ARPG_ARMORS: return icon_or_fallback("db_arpg_armaduras_icono", "db_armors");
+		case CAT_ARPG_SHIELDS: return icon_or_fallback("db_arpg_escudos_icono", "db_armors");
+		case CAT_ARPG_ACCESSORIES: return icon_or_fallback("db_arpg_accesorios_icono", "habilidades_icono");
 		case CAT_FLORA: return get_icon("db_flora", p_scale);
 		case CAT_FAUNA: return get_icon("db_fauna", p_scale);
 		case CAT_TILESETS: return get_icon("db_tilesets", p_scale);

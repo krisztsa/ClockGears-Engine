@@ -28,9 +28,17 @@ class ClockGearsEventEditorDialog : public AcceptDialog {
 
 private:
 	ClockGearsEvent *target_event = nullptr;
+	bool db_edit_mode = false;
+	String db_edit_category_key;
+	int db_edit_record_id = 0;
+	Callable db_edit_on_saved;
 
 	Label *id_label = nullptr;
 	LineEdit *name_edit = nullptr;
+	HBoxContainer *behavior_bar_hb = nullptr;
+	OptionButton *behavior_type_opt = nullptr;
+	OptionButton *behavior_ref_opt = nullptr;
+	Label *behavior_info_label = nullptr;
 
 	// 1. Page Tabs (Top Bar)
 	TabBar *page_tabs = nullptr;
@@ -64,6 +72,10 @@ private:
 	CheckBox *dir_fix_check = nullptr;
 
 	// 3. Column 2: Graphic (SpriteSheet/Atlas Frame) & Autonomous Movement
+	VBoxContainer *ev_col1 = nullptr;
+	PanelContainer *gfx_card = nullptr;
+	PanelContainer *move_card = nullptr;
+	VBoxContainer *ev_col3 = nullptr;
 	TextureRect *graphic_preview = nullptr;
 	SpinBox *sprite_hframes_spin = nullptr;
 	SpinBox *sprite_vframes_spin = nullptr;
@@ -76,6 +88,7 @@ private:
 	String current_graphic_path;
 
 	OptionButton *move_type_opt = nullptr;
+	OptionButton *initial_dir_opt = nullptr;
 	OptionButton *speed_opt = nullptr;
 	OptionButton *freq_opt = nullptr;
 
@@ -451,6 +464,10 @@ private:
 	void _on_browse_cutscene_pressed();
 	void _on_cutscene_file_selected(const String &p_path);
 
+	void _on_behavior_type_selected(int p_idx);
+	void _populate_behavior_ref_options(int p_behavior_type, int p_select_id = 0);
+	void _populate_initial_dir_options(int p_select_dir = 2);
+	void _update_mode_and_behavior_visibility();
 	void _on_dialog_confirmed();
 	void _on_dialog_canceled();
 	void _on_graphic_preview_gui_input(const Ref<InputEvent> &p_event);
@@ -467,6 +484,9 @@ protected:
 
 public:
 	void edit_event(ClockGearsEvent *p_event);
+	void edit_database_event(const String &p_category_key, int p_record_id, const String &p_record_name, const Array &p_pages, const Callable &p_on_saved = Callable());
+	bool is_sprite_selector_visible() const;
+	Array get_working_pages() const { return working_pages.duplicate(true); }
 
 	ClockGearsEventEditorDialog();
 };

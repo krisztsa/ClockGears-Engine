@@ -92,6 +92,11 @@ void ClockGearsEvent::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_commands", "commands"), &ClockGearsEvent::set_commands);
 	ClassDB::bind_method(D_METHOD("get_commands"), &ClockGearsEvent::get_commands);
+	ClassDB::bind_method(D_METHOD("get_active_commands"), &ClockGearsEvent::get_commands);
+	ClassDB::bind_method(D_METHOD("set_behavior_type", "type"), &ClockGearsEvent::set_behavior_type);
+	ClassDB::bind_method(D_METHOD("get_behavior_type"), &ClockGearsEvent::get_behavior_type);
+	ClassDB::bind_method(D_METHOD("set_behavior_ref_id", "id"), &ClockGearsEvent::set_behavior_ref_id);
+	ClassDB::bind_method(D_METHOD("get_behavior_ref_id"), &ClockGearsEvent::get_behavior_ref_id);
 
 	ClassDB::bind_method(D_METHOD("set_pages", "pages"), &ClockGearsEvent::set_pages);
 	ClassDB::bind_method(D_METHOD("get_pages"), &ClockGearsEvent::get_pages);
@@ -118,6 +123,8 @@ void ClockGearsEvent::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "sprite_frame"), "set_sprite_frame", "get_sprite_frame");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "commands"), "set_commands", "get_commands");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "pages"), "set_pages", "get_pages");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "behavior_type"), "set_behavior_type", "get_behavior_type");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "behavior_ref_id"), "set_behavior_ref_id", "get_behavior_ref_id");
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "condition_switch_1_enabled"), "set_condition_switch_1_enabled", "is_condition_switch_1_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "condition_switch_1_name"), "set_condition_switch_1_name", "get_condition_switch_1_name");
@@ -156,6 +163,8 @@ void ClockGearsEvent::serialize_to_meta() {
 	set_meta("sprite_frame", sprite_frame);
 	set_meta("commands", commands.duplicate(true));
 	set_meta("pages", pages.duplicate(true));
+	set_meta("behavior_type", behavior_type);
+	set_meta("behavior_ref_id", behavior_ref_id);
 	set_meta("condition_switch_1_enabled", condition_switch_1_enabled);
 	set_meta("condition_switch_1_name", condition_switch_1_name);
 	set_meta("condition_switch_2_enabled", condition_switch_2_enabled);
@@ -189,6 +198,8 @@ void ClockGearsEvent::deserialize_from_meta() {
 	if (has_meta("graphic_path")) set_graphic_path(get_meta("graphic_path"));
 	if (has_meta("commands")) commands = get_meta("commands");
 	if (has_meta("pages")) pages = get_meta("pages");
+	if (has_meta("behavior_type")) behavior_type = int(get_meta("behavior_type"));
+	if (has_meta("behavior_ref_id")) behavior_ref_id = int(get_meta("behavior_ref_id"));
 	if (has_meta("condition_switch_1_enabled")) condition_switch_1_enabled = get_meta("condition_switch_1_enabled");
 	if (has_meta("condition_switch_1_name")) condition_switch_1_name = get_meta("condition_switch_1_name");
 	if (has_meta("condition_switch_2_enabled")) condition_switch_2_enabled = get_meta("condition_switch_2_enabled");
@@ -212,7 +223,7 @@ void ClockGearsEvent::_notification(int p_what) {
 			if (has_meta("clockgears_event")) {
 				deserialize_from_meta();
 			}
-			if (!pages.is_empty()) {
+			if (behavior_type != 0 || !pages.is_empty()) {
 				update_active_page();
 			} else if (!graphic_path.is_empty()) {
 				set_graphic_path(graphic_path);
@@ -250,6 +261,7 @@ void ClockGearsEvent::set_graphic_path(const String &p_path) {
 	if (!sprite) {
 		return;
 	}
+	sprite->set_region_enabled(false);
 	if (p_path.is_empty()) {
 		sprite->set_texture(Ref<Texture2D>());
 		return;
@@ -290,6 +302,10 @@ void ClockGearsEvent::set_direction(int p_dir) {
 		return;
 	}
 	direction = p_dir;
+	if (behavior_type != 0) {
+		update_active_page();
+		return;
+	}
 	if (sprite_vframes == 4 || sprite_vframes >= 8) {
 		int hf = MAX(1, sprite_hframes);
 		int col = sprite_frame % hf;
@@ -298,6 +314,112 @@ void ClockGearsEvent::set_direction(int p_dir) {
 		sprite_frame = row * hf + col;
 		_update_sprite_region();
 	}
+}
+
+int ClockGearsEvent::behavior_type_to_category(int p_type) {
+	switch (p_type) {
+		case 1: return CAT_NPCS;
+		case 2: return CAT_ARPG_NPCS;
+		case 3: return CAT_ARPG_ENEMIES;
+		default: return -1;
+	}
+}
+
+void ClockGearsEvent::set_behavior_type(int p_type) {
+	behavior_type = CLAMP(p_type, 0, 3);
+	update_active_page();
+}
+
+void ClockGearsEvent::set_behavior_ref_id(int p_id) {
+	behavior_ref_id = MAX(0, p_id);
+	if (behavior_type != 0) {
+		update_active_page();
+	}
+}
+
+void ClockGearsEvent::_update_behavior_sprite(const Dictionary &p_rec, bool p_found) {
+	if (!sprite) {
+		return;
+	}
+	auto apply_missing_marker = [&]() {
+		sprite->set_region_enabled(false);
+		sprite->set_texture(ClockGearsCharacterStateRegistry::get_missing_question_marker_texture());
+		sprite_hframes = 1;
+		sprite_vframes = 1;
+		sprite_frame = 0;
+		sprite->set_hframes(1);
+		sprite->set_vframes(1);
+		sprite->set_frame(0);
+		sprite->set_position(Vector2(0, 0));
+	};
+
+	if (!p_found) {
+		apply_missing_marker();
+		return;
+	}
+
+	Dictionary sp_dict = p_rec.get("sprite_data", Dictionary());
+	if (!sp_dict.is_empty()) {
+		ClockGearsSpriteSheetData sheet;
+		sheet.from_dict(sp_dict);
+		bool dir_idle = bool(p_rec.get("directional_idle", false));
+		ClockGearsSpriteAnimation resolved_anim;
+		bool freeze_f0 = false;
+		String res_slot;
+		ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+		if (reg && reg->resolve_actor_animation(sheet, dir_idle, "quieto", direction, resolved_anim, freeze_f0, res_slot) && resolved_anim.get_frame_count() > 0) {
+			ClockGearsAnimationFrame raw_f = resolved_anim.get_frame(0, 0, 0);
+			String spath = raw_f.sheet_path.is_empty() ? resolved_anim.spritesheet_path : raw_f.sheet_path;
+			if (spath.is_empty()) {
+				spath = String(p_rec.get("graphic_path", ""));
+			}
+			Ref<Texture2D> tex;
+			if (!spath.is_empty()) {
+				if (ResourceLoader::exists(spath)) {
+					tex = ResourceLoader::load(spath);
+				}
+				if (tex.is_null()) {
+					Ref<Image> img = Image::load_from_file(spath);
+					if (img.is_valid() && !img->is_empty()) {
+						tex = ImageTexture::create_from_image(img);
+					}
+				}
+			}
+			if (tex.is_valid()) {
+				int tw = tex->get_width();
+				int th = tex->get_height();
+				ClockGearsAnimationFrame f = resolved_anim.get_frame(0, tw, th);
+				Rect2 reg_rect(f.region);
+				if (reg_rect.size.x <= 0 || reg_rect.size.y <= 0 || reg_rect.position.x + reg_rect.size.x > tw || reg_rect.position.y + reg_rect.size.y > th) {
+					reg_rect = Rect2(0, 0, tw, th);
+				}
+				sprite->set_texture(tex);
+				sprite->set_region_enabled(true);
+				sprite->set_region_rect(reg_rect);
+				sprite_hframes = 1;
+				sprite_vframes = 1;
+				sprite_frame = 0;
+				sprite->set_hframes(1);
+				sprite->set_vframes(1);
+				sprite->set_frame(0);
+				sprite->set_position(Vector2((32 - reg_rect.size.x) / 2, 32 - reg_rect.size.y));
+				return;
+			}
+		}
+	}
+
+	String gp = String(p_rec.get("graphic_path", "")).strip_edges();
+	if (!gp.is_empty()) {
+		sprite_hframes = 1;
+		sprite_vframes = 1;
+		sprite_frame = 0;
+		set_graphic_path(gp);
+		if (sprite->get_texture().is_valid()) {
+			return;
+		}
+	}
+
+	apply_missing_marker();
 }
 
 void ClockGearsEvent::add_command(const Dictionary &p_cmd) {
@@ -322,14 +444,39 @@ void ClockGearsEvent::set_self_switches(const Dictionary &p_sw) {
 }
 
 void ClockGearsEvent::update_active_page() {
-	if (pages.is_empty()) {
-		return;
-	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 
+	Array effective_pages = pages;
+	bool using_db_behavior = (behavior_type != 0);
+	Dictionary db_rec;
+	bool db_found = false;
+
+	if (using_db_behavior) {
+		int cat = behavior_type_to_category(behavior_type);
+		if (dm && cat >= 0 && behavior_ref_id > 0) {
+			db_rec = dm->get_record_by_id(cat, behavior_ref_id);
+			if (int(db_rec.get("id", 0)) > 0) {
+				db_found = true;
+				Variant vp = db_rec.get("event_pages", Array());
+				effective_pages = (vp.get_type() == Variant::ARRAY) ? Array(vp) : Array();
+			}
+		}
+		_update_behavior_sprite(db_rec, db_found);
+		if (!db_found || effective_pages.is_empty()) {
+			active_page_index = 0;
+			set_commands(Array());
+			queue_redraw();
+			return;
+		}
+	} else {
+		if (pages.is_empty()) {
+			return;
+		}
+	}
+
 	int matched_page = -1;
-	for (int i = pages.size() - 1; i >= 0; i--) {
-		Dictionary p = pages[i];
+	for (int i = effective_pages.size() - 1; i >= 0; i--) {
+		Dictionary p = effective_pages[i];
 		bool ok = true;
 
 		// Check Switch 1
@@ -381,7 +528,7 @@ void ClockGearsEvent::update_active_page() {
 	}
 
 	active_page_index = matched_page;
-	Dictionary ap = pages[matched_page];
+	Dictionary ap = effective_pages[matched_page];
 
 	// Apply properties from active page
 	set_trigger_type(int(ap.get("trigger", 0)));
@@ -389,14 +536,16 @@ void ClockGearsEvent::update_active_page() {
 	set_through(ap.get("through", false));
 	set_direction_fix(ap.get("dir_fix", false));
 
-	set_sprite_hframes(int(ap.get("hframes", 1)));
-	set_sprite_vframes(int(ap.get("vframes", 1)));
-	set_sprite_frame(int(ap.get("frame", 0)));
-	set_graphic_path(ap.get("graphic_path", ""));
+	if (!using_db_behavior) {
+		set_sprite_hframes(int(ap.get("hframes", 1)));
+		set_sprite_vframes(int(ap.get("vframes", 1)));
+		set_sprite_frame(int(ap.get("frame", 0)));
+		set_graphic_path(ap.get("graphic_path", ""));
 
-	set_move_type(int(ap.get("move_type", 0)));
-	set_move_speed(int(ap.get("speed", 3)) * 40.0f);
-	set_move_frequency(int(ap.get("freq", 3)));
+		set_move_type(int(ap.get("move_type", 0)));
+		set_move_speed(int(ap.get("speed", 3)) * 40.0f);
+		set_move_frequency(int(ap.get("freq", 3)));
+	}
 	set_commands(ap.get("commands", Array()));
 	queue_redraw();
 }

@@ -1,4 +1,5 @@
 #include "clockgears_animation.h"
+#include "core/clockgears_data_manager.h"
 #include "core/io/image.h"
 #include "core/object/message_queue.h"
 #include "scene/resources/image_texture.h"
@@ -462,7 +463,10 @@ void ClockGearsCharacterStateRegistry::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("direction_to_sheet_row", "dir", "rows"), &ClockGearsCharacterStateRegistry::direction_to_sheet_row);
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("vector_to_direction", "vec"), &ClockGearsCharacterStateRegistry::vector_to_direction);
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_actor_slot_ids", "movement_directions", "directional_idle"), &ClockGearsCharacterStateRegistry::get_actor_slot_ids);
+	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_category_slot_ids", "category", "movement_directions", "directional_idle", "combat_mode"), &ClockGearsCharacterStateRegistry::get_category_slot_ids);
+	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_category_slot_ids_by_key", "category_key", "movement_directions", "directional_idle", "combat_mode"), &ClockGearsCharacterStateRegistry::get_category_slot_ids_by_key);
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("is_actor_fixed_directional_slot", "slot_id"), &ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot);
+	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_missing_question_marker_texture"), &ClockGearsCharacterStateRegistry::get_missing_question_marker_texture);
 
 	ClassDB::bind_method(D_METHOD("register_state", "id", "slot_prefix", "blocks_movement", "fallback_state_id", "fallback_freeze_frame0", "default_loop"),
 			&ClockGearsCharacterStateRegistry::register_state, DEFVAL(false), DEFVAL(""), DEFVAL(false), DEFVAL(true));
@@ -556,49 +560,94 @@ int ClockGearsCharacterStateRegistry::vector_to_direction(const Vector2i &p_vec)
 	return 2;
 }
 
+static void s_append_directional_slots(PackedStringArray &r_out, const String &p_prefix, bool p_allow8) {
+	static const char *card_suffixes[4] = { "abajo", "izquierda", "derecha", "arriba" };
+	static const char *diag_suffixes[4] = { "abajo_izquierda", "abajo_derecha", "arriba_izquierda", "arriba_derecha" };
+	for (int i = 0; i < 4; i++) {
+		r_out.push_back(p_prefix + "_" + card_suffixes[i]);
+	}
+	if (p_allow8) {
+		for (int i = 0; i < 4; i++) {
+			r_out.push_back(p_prefix + "_" + diag_suffixes[i]);
+		}
+	}
+}
+
 PackedStringArray ClockGearsCharacterStateRegistry::get_actor_slot_ids(int p_movement_directions, bool p_directional_idle) {
+	return get_category_slot_ids(CAT_ACTORS, p_movement_directions, p_directional_idle, COMBAT_MODE_TURN_BASED);
+}
+
+PackedStringArray ClockGearsCharacterStateRegistry::get_category_slot_ids(int p_category, int p_movement_directions, bool p_directional_idle, int p_combat_mode) {
 	PackedStringArray out;
 	const bool allow8 = (p_movement_directions == 8);
-	const char *card_suffixes[4] = { "abajo", "izquierda", "derecha", "arriba" };
-	const char *diag_suffixes[4] = { "abajo_izquierda", "abajo_derecha", "arriba_izquierda", "arriba_derecha" };
+	const bool is_arpg = (p_combat_mode == COMBAT_MODE_ACTION_RPG);
 
-	// Ranuras de caminar (existentes primero + diagonales en modo 8)
-	for (int i = 0; i < 4; i++) {
-		out.push_back(String("mover_") + card_suffixes[i]);
-	}
-	if (allow8) {
-		for (int i = 0; i < 4; i++) {
-			out.push_back(String("mover_") + diag_suffixes[i]);
-		}
+	bool has_move = false;
+	bool has_run = false;
+	bool has_attack = false;
+	bool has_block = false;
+
+	switch (p_category) {
+		case CAT_ACTORS:
+			has_move = true;
+			has_run = true;
+			has_attack = is_arpg;
+			has_block = is_arpg;
+			break;
+		case CAT_NPCS:
+			has_move = true;
+			break;
+		case CAT_ARPG_ENEMIES:
+		case CAT_ARPG_NPCS:
+			has_move = true;
+			has_attack = is_arpg;
+			break;
+		case CAT_ARPG_WEAPONS:
+		case CAT_ARPG_ARMORS:
+		case CAT_ARPG_SHIELDS:
+		case CAT_ARPG_ACCESSORIES:
+			has_move = true;
+			has_attack = is_arpg;
+			has_block = is_arpg;
+			break;
+		default:
+			return out;
 	}
 
-	// Ranuras de correr (ya que el motor soporta Dash/Correr con Shift)
-	for (int i = 0; i < 4; i++) {
-		out.push_back(String("correr_") + card_suffixes[i]);
+	if (has_move) {
+		s_append_directional_slots(out, "mover", allow8);
 	}
-	if (allow8) {
-		for (int i = 0; i < 4; i++) {
-			out.push_back(String("correr_") + diag_suffixes[i]);
-		}
+	if (has_run) {
+		s_append_directional_slots(out, "correr", allow8);
 	}
-
-	// Ranuras de idle direccional (solo si la casilla está activada)
 	if (p_directional_idle) {
-		for (int i = 0; i < 4; i++) {
-			out.push_back(String("quieto_") + card_suffixes[i]);
-		}
-		if (allow8) {
-			for (int i = 0; i < 4; i++) {
-				out.push_back(String("quieto_") + diag_suffixes[i]);
-			}
-		}
+		s_append_directional_slots(out, "quieto", allow8);
+	}
+	if (has_attack) {
+		s_append_directional_slots(out, "atacar", allow8);
+	}
+	if (has_block) {
+		s_append_directional_slots(out, "bloquear", allow8);
 	}
 	return out;
 }
 
+PackedStringArray ClockGearsCharacterStateRegistry::get_category_slot_ids_by_key(const String &p_category_key, int p_movement_directions, bool p_directional_idle, int p_combat_mode) {
+	int cat = ClockGearsDataManager::get_category_from_key(p_category_key);
+	if (cat < 0) {
+		return PackedStringArray();
+	}
+	return get_category_slot_ids(cat, p_movement_directions, p_directional_idle, p_combat_mode);
+}
+
 bool ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(const String &p_slot_id) {
 	String low = p_slot_id.strip_edges().to_lower();
-	PackedStringArray all_slots = get_actor_slot_ids(8, true);
+	PackedStringArray all_slots;
+	s_append_directional_slots(all_slots, "mover", true);
+	s_append_directional_slots(all_slots, "correr", true);
+	s_append_directional_slots(all_slots, "quieto", true);
+	s_append_directional_slots(all_slots, "atacar", true);
+	s_append_directional_slots(all_slots, "bloquear", true);
 	for (int i = 0; i < all_slots.size(); i++) {
 		if (all_slots[i] == low) {
 			return true;
@@ -765,10 +814,12 @@ bool ClockGearsCharacterStateRegistry::resolve_actor_animation(
 
 ClockGearsCharacterStateRegistry::ClockGearsCharacterStateRegistry() {
 	singleton = this;
-	// Registrar exclusivamente los estados que ya existen en el motor (Tanda 1A)
+	// Registrar exclusivamente estados del motor y ranuras ARPG por defecto
 	register_state("quieto", "quieto", false, "caminar", true, true);
 	register_state("caminar", "mover", false, "", false, true);
 	register_state("correr", "correr", false, "caminar", false, true);
+	register_state("atacar", "atacar", false, "", false, false);
+	register_state("bloquear", "bloquear", false, "", false, true);
 }
 
 ClockGearsCharacterStateRegistry::~ClockGearsCharacterStateRegistry() {

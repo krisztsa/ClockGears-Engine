@@ -799,6 +799,8 @@ public:
 	static int direction_to_sheet_row(int p_dir, int p_rows);
 	static int vector_to_direction(const Vector2i &p_vec);
 	static PackedStringArray get_actor_slot_ids(int p_movement_directions, bool p_directional_idle);
+	static PackedStringArray get_category_slot_ids(int p_category, int p_movement_directions, bool p_directional_idle, int p_combat_mode);
+	static PackedStringArray get_category_slot_ids_by_key(const String &p_category_key, int p_movement_directions, bool p_directional_idle, int p_combat_mode);
 	static bool is_actor_fixed_directional_slot(const String &p_slot_id);
 	static Ref<Texture2D> get_missing_question_marker_texture();
 

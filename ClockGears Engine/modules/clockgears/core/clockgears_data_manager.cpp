@@ -36,6 +36,13 @@ String ClockGearsDataManager::get_category_key(int p_category) {
 		case CAT_TYPES: return "types";
 		case CAT_VOCABULARY: return "vocabulary";
 		case CAT_SWITCHES_VARS: return "switches_vars";
+		case CAT_NPCS: return "npcs";
+		case CAT_ARPG_ENEMIES: return "arpg_enemies";
+		case CAT_ARPG_NPCS: return "arpg_npcs";
+		case CAT_ARPG_WEAPONS: return "arpg_weapons";
+		case CAT_ARPG_ARMORS: return "arpg_armors";
+		case CAT_ARPG_SHIELDS: return "arpg_shields";
+		case CAT_ARPG_ACCESSORIES: return "arpg_accessories";
 		default: return "unknown";
 	}
 }

@@ -1,6 +1,7 @@
 #include "clockgears_database.h"
 #include "clockgears_battle_window.h"
 #include "clockgears_damage_engine.h"
+#include "clockgears_event_editor_dialog.h"
 #include "clockgears_map.h"
 #include "clockgears_workspace.h"
 #include "core/clockgears_formulas.h"
@@ -155,9 +156,33 @@ static Array s_tile_vec_to_json_array(const Vector2i &p_v) {
 	return a;
 }
 
-static bool s_category_has_record_graphic(int p_category) {
+static bool s_is_arpg_category(int p_category) {
 	switch (p_category) {
-		case CAT_ACTORS:
+		case CAT_ARPG_ENEMIES:
+		case CAT_ARPG_NPCS:
+		case CAT_ARPG_WEAPONS:
+		case CAT_ARPG_ARMORS:
+		case CAT_ARPG_SHIELDS:
+		case CAT_ARPG_ACCESSORIES:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static bool s_is_anim_slot_category(int p_category) {
+	return p_category == CAT_ACTORS || p_category == CAT_NPCS || s_is_arpg_category(p_category);
+}
+
+static bool s_has_event_tab_category(int p_category) {
+	return p_category == CAT_NPCS || p_category == CAT_ARPG_NPCS || p_category == CAT_ARPG_ENEMIES;
+}
+
+static bool s_category_has_record_graphic(int p_category) {
+	if (s_is_anim_slot_category(p_category)) {
+		return true;
+	}
+	switch (p_category) {
 		case CAT_CLASSES:
 		case CAT_SKILLS:
 		case CAT_ITEMS:
@@ -365,6 +390,10 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_troop_battleback_cfg", "troop_idx", "slot"), &ClockGearsDatabaseDialog::get_troop_battleback_cfg);
 	ClassDB::bind_method(D_METHOD("set_troop_battleback_cfg", "troop_idx", "slot", "cfg"), &ClockGearsDatabaseDialog::set_troop_battleback_cfg);
 	ClassDB::bind_method(D_METHOD("get_formatted_troop_enemy_label", "troop_idx", "member_idx", "max_w"), &ClockGearsDatabaseDialog::get_formatted_troop_enemy_label, DEFVAL(0.0f));
+	ClassDB::bind_method(D_METHOD("get_chapter_structure_info"), &ClockGearsDatabaseDialog::get_chapter_structure_info);
+	ClassDB::bind_method(D_METHOD("select_category_by_key", "key"), &ClockGearsDatabaseDialog::select_category_by_key);
+	ClassDB::bind_method(D_METHOD("get_record_list_icon", "row_idx"), &ClockGearsDatabaseDialog::get_record_list_icon);
+	ClassDB::bind_method(D_METHOD("open_record_event_editor"), &ClockGearsDatabaseDialog::open_record_event_editor);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -525,6 +554,20 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 			return CG_DB_TR("Vocabulario");
 		case CAT_SWITCHES_VARS:
 			return CG_DB_TR("Interruptores");
+		case CAT_NPCS:
+			return CG_DB_TR("NPC");
+		case CAT_ARPG_ENEMIES:
+			return CG_DB_TR("Enemigos ARPG");
+		case CAT_ARPG_NPCS:
+			return CG_DB_TR("NPC ARPG");
+		case CAT_ARPG_WEAPONS:
+			return CG_DB_TR("Armas ARPG");
+		case CAT_ARPG_ARMORS:
+			return CG_DB_TR("Armaduras ARPG");
+		case CAT_ARPG_SHIELDS:
+			return CG_DB_TR("Escudos ARPG");
+		case CAT_ARPG_ACCESSORIES:
+			return CG_DB_TR("Accesorios ARPG");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -561,6 +604,12 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 		ca["defend"] = "";
 		ca["victory"] = "";
 		d["combat_animations"] = ca;
+	} else if (s_is_anim_slot_category(p_category)) {
+		d["directional_idle"] = false;
+		d["sprite_data"] = Dictionary();
+		if (s_has_event_tab_category(p_category)) {
+			d["event_pages"] = Array();
+		}
 	} else if (p_category == CAT_CLASSES) {
 		// Sección 9.3: Parámetros por defecto de la fórmula de EXP (base=30, extra=20, acc_a=30, acc_b=30)
 		d["exp_base"] = 30;
@@ -843,10 +892,11 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 		chapters.push_back(ch);
 	};
 
-	add_chap("Personajes", { CAT_ACTORS, CAT_CLASSES });
+	add_chap("Personajes", { CAT_ACTORS, CAT_NPCS, CAT_CLASSES });
 	add_chap("Equipo", { CAT_WEAPONS, CAT_ARMORS, CAT_ACCESSORIES });
 	add_chap("Objetos", { CAT_ITEMS });
 	add_chap("Combate", { CAT_SKILLS, CAT_ENEMIES, CAT_TROOPS, CAT_STATES });
+	add_chap("Action RPG", { CAT_ARPG_ENEMIES, CAT_ARPG_NPCS, CAT_ARPG_WEAPONS, CAT_ARPG_ARMORS, CAT_ARPG_SHIELDS, CAT_ARPG_ACCESSORIES });
 	add_chap("Animaciones", { CAT_ANIMATIONS });
 	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
 	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
@@ -987,12 +1037,25 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_enemy = (current_category == CAT_ENEMIES);
 	bool is_actor = (current_category == CAT_ACTORS);
 	bool is_classes = (current_category == CAT_CLASSES);
-	bool is_actor_or_enemy = (is_actor || is_enemy);
+	bool is_anim_slot_cat = s_is_anim_slot_category(current_category);
+	bool is_actor_or_enemy = (is_anim_slot_cat || is_enemy);
+	bool has_event_tab = s_has_event_tab_category(current_category);
 	bool has_single_graphic = (current_category == CAT_ITEMS || current_category == CAT_WEAPONS ||
 			current_category == CAT_ARMORS || current_category == CAT_ACCESSORIES ||
 			current_category == CAT_SKILLS || current_category == CAT_STATES ||
 			current_category == CAT_CLASSES || current_category == CAT_FLORA ||
 			current_category == CAT_FAUNA || current_category == CAT_ANIMATIONS);
+
+	if (ClockGearsDataManager::get_singleton() && !is_system) {
+		Dictionary dm_sys = ClockGearsDataManager::get_singleton()->get_system_config();
+		if (dm_sys.has("combat_mode")) {
+			system_config["combat_mode"] = dm_sys["combat_mode"];
+			current_combat_mode = int(dm_sys["combat_mode"]);
+		}
+		if (dm_sys.has("movement_directions")) {
+			system_config["movement_directions"] = dm_sys["movement_directions"];
+		}
+	}
 
 	if (col1_box) {
 		col1_box->set_visible(!is_system);
@@ -1011,9 +1074,16 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		main_editor_tabs->set_tab_hidden(0, false);
 		main_editor_tabs->set_tab_hidden(1, !is_enemy);
 		main_editor_tabs->set_tab_hidden(2, !is_actor_or_enemy);
-		if (!is_actor_or_enemy || (is_actor && main_editor_tabs->get_current_tab() == 1)) {
+		if (main_editor_tabs->get_tab_count() > 3) {
+			main_editor_tabs->set_tab_hidden(3, !has_event_tab);
+		}
+		int cur_tab = main_editor_tabs->get_current_tab();
+		if (!is_actor_or_enemy || (cur_tab >= 0 && cur_tab < main_editor_tabs->get_tab_count() && main_editor_tabs->is_tab_hidden(cur_tab))) {
 			main_editor_tabs->set_current_tab(0);
 		}
+	}
+	if (event_tab_scroll) {
+		event_tab_scroll->set_visible(has_event_tab);
 	}
 	if (traits_box && combat_tab_vbox && col2_box) {
 		s_reparent_control(traits_box, is_enemy ? combat_tab_vbox : col2_box);
@@ -1104,7 +1174,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		combat_anims_box->set_visible(is_actor);
 	}
 	if (actor_dir_idle_chk) {
-		actor_dir_idle_chk->set_visible(is_actor);
+		actor_dir_idle_chk->set_visible(is_anim_slot_cat);
 	}
 	if (btn_add_anim) {
 		btn_add_anim->set_text(is_enemy ? CG_DB_TR("Nueva") : CG_DB_TR("Nueva"));
@@ -1881,7 +1951,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 			col2_scroll_container->set_v_scroll(0);
 			col2_scroll_container->call_deferred("set_v_scroll", 0);
 		}
-	} else if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
+	} else if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
 		if (current_category == CAT_ENEMIES) {
 			ClockGearsSpriteSheetData::migrate_enemy_record(d);
 			Dictionary sp_dict = d.get("sprite_data", Dictionary());
@@ -1896,7 +1966,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 			_refresh_enemy_others_ui();
 		} else {
 			if (actor_dir_idle_chk) {
-				actor_dir_idle_chk->set_pressed(current_category == CAT_ACTORS ? bool(d.get("directional_idle", false)) : false);
+				actor_dir_idle_chk->set_pressed(bool(d.get("directional_idle", false)));
 			}
 			Dictionary sp_dict = d.get("sprite_data", Dictionary());
 			if (!sp_dict.is_empty()) {
@@ -1908,7 +1978,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 				current_sprite_data = ClockGearsSpriteSheetData();
 				current_sprite_data.cols = MAX(1, old_frames);
 				current_sprite_data.rows = 1;
-				if (!String(d.get("graphic_path", "")).is_empty() || current_category != CAT_ACTORS) {
+				if (!String(d.get("graphic_path", "")).is_empty()) {
 					ClockGearsSpriteAnimation idle_anim;
 					idle_anim.name = "idle";
 					idle_anim.spritesheet_path = d.get("graphic_path", "");
@@ -1920,18 +1990,12 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 					current_sprite_data.animations[idle_anim.name] = idle_anim;
 				}
 			}
-			if (current_sprite_data.animations.is_empty() && current_category != CAT_ACTORS) {
-				ClockGearsSpriteAnimation idle_anim;
-				idle_anim.name = "idle";
-				idle_anim.spritesheet_path = d.get("graphic_path", "");
-				idle_anim.fps = 6.0f;
-				idle_anim.loop = true;
-				idle_anim.frames.push_back(0);
-				current_sprite_data.animations["idle"] = idle_anim;
-			}
 		}
 
 		_refresh_anim_track_options();
+		if (s_has_event_tab_category(current_category)) {
+			_refresh_event_tab_summary();
+		}
 	} else {
 		_update_graphic_preview_ui(d);
 	}
@@ -2220,52 +2284,54 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 			d["gold"] = int(enemy_gold_spin->get_value());
 		}
 	}
-	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
-		if (current_category == CAT_ACTORS && actor_dir_idle_chk) {
+	if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
+		if (s_is_anim_slot_category(current_category) && actor_dir_idle_chk) {
 			d["directional_idle"] = actor_dir_idle_chk->is_pressed();
 		}
 		d["sprite_data"] = current_sprite_data.to_dict();
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
-		Dictionary ca = d.get("combat_animations", Dictionary());
-		if (current_category == CAT_ENEMIES) {
-			ca["idle"] = "idle";
-			ca["attack"] = "attack";
-			ca["damage"] = "hurt";
-			ca["death"] = "death";
-			ca["buff"] = "buff";
-			ca["defend"] = "idle";
-		} else {
-			if (opt_anim_idle) {
-				ca["idle"] = opt_anim_idle->get_selected() > 0 ? opt_anim_idle->get_item_text(opt_anim_idle->get_selected()) : "";
+		if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
+			Dictionary ca = d.get("combat_animations", Dictionary());
+			if (current_category == CAT_ENEMIES) {
+				ca["idle"] = "idle";
+				ca["attack"] = "attack";
+				ca["damage"] = "hurt";
+				ca["death"] = "death";
+				ca["buff"] = "buff";
+				ca["defend"] = "idle";
+			} else {
+				if (opt_anim_idle) {
+					ca["idle"] = opt_anim_idle->get_selected() > 0 ? opt_anim_idle->get_item_text(opt_anim_idle->get_selected()) : "";
+				}
+				if (opt_anim_attack) {
+					ca["attack"] = opt_anim_attack->get_selected() > 0 ? opt_anim_attack->get_item_text(opt_anim_attack->get_selected()) : "";
+				}
+				if (opt_anim_damage) {
+					ca["damage"] = opt_anim_damage->get_selected() > 0 ? opt_anim_damage->get_item_text(opt_anim_damage->get_selected()) : "";
+				}
+				if (opt_anim_death) {
+					ca["death"] = opt_anim_death->get_selected() > 0 ? opt_anim_death->get_item_text(opt_anim_death->get_selected()) : "";
+				}
+				if (opt_anim_defend) {
+					ca["defend"] = opt_anim_defend->get_selected() > 0 ? opt_anim_defend->get_item_text(opt_anim_defend->get_selected()) : "";
+				}
+				if (opt_anim_victory) {
+					ca["victory"] = opt_anim_victory->get_selected() > 0 ? opt_anim_victory->get_item_text(opt_anim_victory->get_selected()) : "";
+				}
 			}
-			if (opt_anim_attack) {
-				ca["attack"] = opt_anim_attack->get_selected() > 0 ? opt_anim_attack->get_item_text(opt_anim_attack->get_selected()) : "";
-			}
-			if (opt_anim_damage) {
-				ca["damage"] = opt_anim_damage->get_selected() > 0 ? opt_anim_damage->get_item_text(opt_anim_damage->get_selected()) : "";
-			}
-			if (opt_anim_death) {
-				ca["death"] = opt_anim_death->get_selected() > 0 ? opt_anim_death->get_item_text(opt_anim_death->get_selected()) : "";
-			}
-			if (opt_anim_defend) {
-				ca["defend"] = opt_anim_defend->get_selected() > 0 ? opt_anim_defend->get_item_text(opt_anim_defend->get_selected()) : "";
-			}
-			if (opt_anim_victory) {
-				ca["victory"] = opt_anim_victory->get_selected() > 0 ? opt_anim_victory->get_item_text(opt_anim_victory->get_selected()) : "";
-			}
-		}
-		d["combat_animations"] = ca;
+			d["combat_animations"] = ca;
 
-		Dictionary tt = d.get("trigger_table", Dictionary());
-		tt[itos(ANIM_TRIGGER_IDLE)] = ca["idle"];
-		tt[itos(ANIM_TRIGGER_ATTACK)] = ca["attack"];
-		tt[itos(ANIM_TRIGGER_DAMAGE)] = ca["damage"];
-		tt[itos(ANIM_TRIGGER_DEATH)] = ca["death"];
-		tt[itos(ANIM_TRIGGER_DEFEND)] = ca["defend"];
-		if (current_category == CAT_ACTORS) {
-			tt[itos(ANIM_TRIGGER_VICTORY)] = ca.get("victory", "");
+			Dictionary tt = d.get("trigger_table", Dictionary());
+			tt[itos(ANIM_TRIGGER_IDLE)] = ca["idle"];
+			tt[itos(ANIM_TRIGGER_ATTACK)] = ca["attack"];
+			tt[itos(ANIM_TRIGGER_DAMAGE)] = ca["damage"];
+			tt[itos(ANIM_TRIGGER_DEATH)] = ca["death"];
+			tt[itos(ANIM_TRIGGER_DEFEND)] = ca["defend"];
+			if (current_category == CAT_ACTORS) {
+				tt[itos(ANIM_TRIGGER_VICTORY)] = ca.get("victory", "");
+			}
+			d["trigger_table"] = tt;
 		}
-		d["trigger_table"] = tt;
 	}
 
 	const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
@@ -2276,7 +2342,7 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 	arr[idx] = d;
 	int id = d.get("id", idx + 1);
 	record_list->set_item_text(idx, vformat("%03d: %s", id, String(d["name"])));
-	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
+	if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
 		_invalidate_record_list_icon(current_category, idx);
 		_update_record_list_item_icon(idx);
 	}
@@ -3045,6 +3111,9 @@ void ClockGearsDatabaseDialog::_on_select_graphic_pressed() {
 	String filter_desc = CG_DB_TR("Iconos y Gráficos de Sistema (*.png, *.webp)");
 	switch (current_category) {
 		case CAT_ACTORS:
+		case CAT_NPCS:
+		case CAT_ARPG_NPCS:
+		case CAT_ARPG_ENEMIES:
 		case CAT_FLORA:
 		case CAT_FAUNA:
 			rel_folder = "img/characters";
@@ -3139,6 +3208,7 @@ bool ClockGearsDatabaseDialog::_has_visible_child_dialog() const {
 		sheet_importer_dialog,
 		troop_ctx_menu,
 		troop_scale_submenu,
+		record_event_editor,
 	};
 	for (const Window *w : children) {
 		if (w && w->is_visible()) {
@@ -3221,6 +3291,47 @@ Ref<Texture2D> ClockGearsDatabaseDialog::_build_record_list_icon_texture(int p_c
 		Rect2i full_r(0, 0, sp_tex->get_width(), sp_tex->get_height());
 		Rect2i r = (sp_reg.size.x > 0 && sp_reg.size.y > 0)
 				? Rect2i(int(sp_reg.position.x), int(sp_reg.position.y), int(sp_reg.size.x), int(sp_reg.size.y)).intersection(full_r)
+				: full_r;
+		if (r.size.x <= 0 || r.size.y <= 0) {
+			return p_fallback;
+		}
+		cache_key = vformat("%d|%d|%s|%d,%d,%d,%d", p_category, p_icon_px, sp_path, r.position.x, r.position.y, r.size.x, r.size.y);
+		if (record_list_icon_cache.has(cache_key)) {
+			return record_list_icon_cache[cache_key];
+		}
+		Ref<Image> img = sp_tex->get_image();
+		if (img.is_null() || img->is_empty()) {
+			return p_fallback;
+		}
+		r = r.intersection(Rect2i(0, 0, img->get_width(), img->get_height()));
+		if (r.size.x <= 0 || r.size.y <= 0) {
+			return p_fallback;
+		}
+		src_crop = img->get_region(r);
+	} else if (s_is_anim_slot_category(p_category)) {
+		Dictionary sp_dict = p_rec.get("sprite_data", Dictionary());
+		ClockGearsSpriteSheetData sd;
+		sd.from_dict(sp_dict);
+		if (!sd.animations.has("mover_abajo") || sd.animations["mover_abajo"].get_frame_count() <= 0) {
+			return p_fallback;
+		}
+		const ClockGearsSpriteAnimation &mv = sd.animations["mover_abajo"];
+		ClockGearsAnimationFrame raw_f0 = mv.get_frame(0, 0, 0);
+		String sp_path = raw_f0.sheet_path.is_empty() ? mv.spritesheet_path : raw_f0.sheet_path;
+		if (sp_path.is_empty()) {
+			sp_path = String(p_rec.get("graphic_path", ""));
+		}
+		if (sp_path.is_empty()) {
+			return p_fallback;
+		}
+		Ref<Texture2D> sp_tex = _load_texture_from_path(sp_path);
+		if (sp_tex.is_null() || sp_tex->get_width() <= 0 || sp_tex->get_height() <= 0) {
+			return p_fallback;
+		}
+		ClockGearsAnimationFrame f0 = mv.get_frame(0, sp_tex->get_width(), sp_tex->get_height());
+		Rect2i full_r(0, 0, sp_tex->get_width(), sp_tex->get_height());
+		Rect2i r = (f0.region.size.x > 0 && f0.region.size.y > 0)
+				? f0.region.intersection(full_r)
 				: full_r;
 		if (r.size.x <= 0 || r.size.y <= 0) {
 			return p_fallback;
@@ -3755,7 +3866,7 @@ void ClockGearsDatabaseDialog::_on_file_selected(const String &p_path) {
 	Dictionary d = arr[idx];
 	ClockGearsProjectStructure::write_pixel_art_import_preset(p_path);
 
-	String target_folder = (current_category == CAT_ACTORS || current_category == CAT_FLORA || current_category == CAT_FAUNA)
+	String target_folder = (s_is_anim_slot_category(current_category) || current_category == CAT_FLORA || current_category == CAT_FAUNA)
 			? "img/characters"
 			: "img/system";
 	String warn_32_msg;
@@ -3777,7 +3888,7 @@ void ClockGearsDatabaseDialog::_on_file_selected(const String &p_path) {
 		}
 	}
 
-	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
+	if (s_is_anim_slot_category(current_category) || current_category == CAT_ENEMIES) {
 		String cur_anim_name = _get_active_anim_name();
 		if (cur_anim_name.is_empty()) {
 			cur_anim_name = "idle";
@@ -4138,7 +4249,7 @@ void ClockGearsDatabaseDialog::_on_system_movement_dirs_selected(int p_idx) {
 	if (ClockGearsDataManager::get_singleton()) {
 		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
 	}
-	if (current_category == CAT_ACTORS) {
+	if (s_is_anim_slot_category(current_category)) {
 		_refresh_anim_track_options();
 	}
 	_mark_database_dirty();
@@ -4149,7 +4260,7 @@ void ClockGearsDatabaseDialog::_on_actor_directional_idle_toggled(bool p_pressed
 		return;
 	}
 	_on_param_changed();
-	if (current_category == CAT_ACTORS) {
+	if (s_is_anim_slot_category(current_category)) {
 		_refresh_anim_track_options();
 	}
 }
@@ -4165,6 +4276,12 @@ void ClockGearsDatabaseDialog::_on_system_spin_changed(double p_val) {
 void ClockGearsDatabaseDialog::_on_combat_mode_selected(int p_idx) {
 	current_combat_mode = p_idx;
 	system_config["combat_mode"] = p_idx;
+	if (ClockGearsDataManager::get_singleton()) {
+		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
+	}
+	if (s_is_anim_slot_category(current_category)) {
+		_refresh_anim_track_options();
+	}
 	_mark_database_dirty();
 }
 
@@ -4358,6 +4475,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		if (ClockGearsIcons::get_singleton()) {
 			btn->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, float(icon_scale)));
 		}
+		if (s_is_arpg_category(i)) {
+			btn->set_tooltip_text(CG_DB_TR("Para combate en tiempo real"));
+		}
 		btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_category_selected).bind(i));
 		cats_bar->add_child(btn);
 		category_buttons.push_back(btn);
@@ -4514,6 +4634,58 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	sprite_anim_editor_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sprite_anim_editor_box->add_theme_constant_override("separation", int(16 * EDSCALE));
 	tab2_margin->add_child(sprite_anim_editor_box);
+
+	// Pestaña 3: "Evento" (NPC, NPC ARPG, Enemigos ARPG)
+	event_tab_scroll = memnew(ScrollContainer);
+	event_tab_scroll->set_name(CG_DB_TR("Evento"));
+	event_tab_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	event_tab_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	event_tab_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	event_tab_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	main_editor_tabs->add_child(event_tab_scroll);
+
+	MarginContainer *tab3_margin = memnew(MarginContainer);
+	tab3_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab3_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tab3_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	tab3_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	tab3_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	tab3_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	event_tab_scroll->add_child(tab3_margin);
+
+	event_tab_vbox = memnew(VBoxContainer);
+	event_tab_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	event_tab_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	event_tab_vbox->add_theme_constant_override("separation", int(10 * EDSCALE));
+	tab3_margin->add_child(event_tab_vbox);
+
+	HBoxContainer *ev_hdr = memnew(HBoxContainer);
+	ev_hdr->add_theme_constant_override("separation", int(10 * EDSCALE));
+	event_tab_vbox->add_child(ev_hdr);
+
+	event_tab_summary_label = memnew(Label(CG_DB_TR("0 páginas de evento configuradas.")));
+	event_tab_summary_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ev_hdr->add_child(event_tab_summary_label);
+
+	btn_open_record_event_editor = memnew(Button(CG_DB_TR("Editar Evento...")));
+	btn_open_record_event_editor->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
+	btn_open_record_event_editor->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_open_record_event_editor_pressed));
+	ev_hdr->add_child(btn_open_record_event_editor);
+
+	event_tab_pages_tree = memnew(Tree);
+	event_tab_pages_tree->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	event_tab_pages_tree->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	event_tab_pages_tree->set_custom_minimum_size(Size2(0, 220 * EDSCALE));
+	event_tab_pages_tree->set_hide_root(true);
+	event_tab_pages_tree->set_columns(3);
+	event_tab_pages_tree->set_column_titles_visible(true);
+	event_tab_pages_tree->set_column_title(0, CG_DB_TR("Página"));
+	event_tab_pages_tree->set_column_title(1, CG_DB_TR("Disparador"));
+	event_tab_pages_tree->set_column_title(2, CG_DB_TR("Comandos"));
+	event_tab_vbox->add_child(event_tab_pages_tree);
+
+	record_event_editor = memnew(ClockGearsEventEditorDialog);
+	add_child(record_event_editor);
 
 	// ========================================================================
 	// SECCIÓN 1 EN TAB GENERAL: DATOS GENERALES + RECUADRO FIJO 96x96 A LA DERECHA
@@ -8582,6 +8754,12 @@ static bool s_parse_actor_fixed_slot_key(const String &p_slot_name, String &r_st
 	} else if (p_slot_name.begins_with("quieto_")) {
 		r_state_id = "quieto";
 		prefix = "quieto_";
+	} else if (p_slot_name.begins_with("atacar_")) {
+		r_state_id = "atacar";
+		prefix = "atacar_";
+	} else if (p_slot_name.begins_with("bloquear_")) {
+		r_state_id = "bloquear";
+		prefix = "bloquear_";
 	} else {
 		return false;
 	}
@@ -8609,7 +8787,7 @@ static bool s_parse_actor_fixed_slot_key(const String &p_slot_name, String &r_st
 }
 
 void ClockGearsDatabaseDialog::_ensure_actor_fixed_slot_exists(const String &p_slot_name) {
-	if (current_category != CAT_ACTORS || p_slot_name.is_empty()) {
+	if (!s_is_anim_slot_category(current_category) || p_slot_name.is_empty()) {
 		return;
 	}
 	if (!ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(p_slot_name)) {
@@ -8709,10 +8887,11 @@ void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
 				add_enemy_slot_item(E.key, E.key);
 			}
 		}
-	} else if (current_category == CAT_ACTORS) {
+	} else if (s_is_anim_slot_category(current_category)) {
 		int move_dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
 		bool dir_idle = actor_dir_idle_chk ? actor_dir_idle_chk->is_pressed() : false;
-		PackedStringArray fixed_slots = ClockGearsCharacterStateRegistry::get_actor_slot_ids(move_dirs, dir_idle);
+		int combat_mode = int(system_config.get("combat_mode", COMBAT_MODE_TURN_BASED));
+		PackedStringArray fixed_slots = ClockGearsCharacterStateRegistry::get_category_slot_ids(current_category, move_dirs, dir_idle, combat_mode);
 		auto add_actor_slot_item = [&](const String &p_key) {
 			String disp = s_format_enemy_slot_display_label(p_key, p_key, current_sprite_data);
 			anim_track_opt->add_item(disp, idx);
@@ -8779,7 +8958,7 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	String anim_name = (meta.get_type() == Variant::STRING && !String(meta).is_empty())
 			? String(meta)
 			: anim_track_opt->get_item_text(p_idx);
-	bool is_fixed_actor_slot = (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(anim_name));
+	bool is_fixed_actor_slot = (s_is_anim_slot_category(current_category) && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(anim_name));
 	if (!current_sprite_data.animations.has(anim_name) && !is_fixed_actor_slot) {
 		return;
 	}
@@ -8787,7 +8966,7 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	updating_ui = true;
 	if (current_sprite_data.animations.has(anim_name)) {
 		const ClockGearsSpriteAnimation &a = current_sprite_data.animations[anim_name];
-		if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : (current_category == CAT_ACTORS ? 8.0f : 6.0f));
+		if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : (s_is_anim_slot_category(current_category) ? 8.0f : 6.0f));
 		if (anim_loop_chk) anim_loop_chk->set_pressed(a.loop);
 		if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
 	} else {
@@ -8861,8 +9040,8 @@ void ClockGearsDatabaseDialog::_on_anim_item_activated(int p_idx) {
 	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(old_name)) {
 		return; // Las 5 ranuras fijas (idle, attack, hurt, death, buff) no se renombran
 	}
-	if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(old_name)) {
-		return; // Las ranuras direccionales fijas del Actor no se renombran
+	if (s_is_anim_slot_category(current_category) && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(old_name)) {
+		return; // Las ranuras direccionales fijas no se renombran
 	}
 	if (rename_anim_dialog && rename_anim_name_edit) {
 		rename_anim_name_edit->set_text(old_name);
@@ -8945,7 +9124,7 @@ void ClockGearsDatabaseDialog::_on_rename_anim_pressed() {
 	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(cur_name)) {
 		return;
 	}
-	if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(cur_name)) {
+	if (s_is_anim_slot_category(current_category) && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(cur_name)) {
 		return;
 	}
 	if (rename_anim_dialog && rename_anim_name_edit) {
@@ -8963,7 +9142,7 @@ void ClockGearsDatabaseDialog::_on_rename_anim_dialog_confirmed() {
 	String new_name = rename_anim_name_edit->get_text().strip_edges();
 	if (new_name.is_empty() || new_name == old_name) return;
 	if (current_category == CAT_ENEMIES && (s_is_enemy_fixed_slot_name(old_name) || s_is_enemy_fixed_slot_name(new_name))) return;
-	if (current_category == CAT_ACTORS && (ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(old_name) || ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(new_name))) return;
+	if (s_is_anim_slot_category(current_category) && (ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(old_name) || ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(new_name))) return;
 
 	if (current_sprite_data.animations.has(old_name)) {
 		ClockGearsSpriteAnimation a = current_sprite_data.animations[old_name];
@@ -9020,7 +9199,7 @@ void ClockGearsDatabaseDialog::_on_remove_anim_pressed() {
 		return;
 	}
 	current_sprite_data.animations.erase(name_to_remove);
-	if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(name_to_remove)) {
+	if (s_is_anim_slot_category(current_category) && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(name_to_remove)) {
 		_refresh_anim_track_options();
 		select_anim_slot(name_to_remove);
 		_on_param_changed();
@@ -9344,7 +9523,7 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 
 	String cur_anim_name = _get_active_anim_name();
 	if (!current_sprite_data.animations.has(cur_anim_name)) {
-		if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(cur_anim_name)) {
+		if (s_is_anim_slot_category(current_category) && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(cur_anim_name)) {
 			Label *empty_lbl = memnew(Label(CG_DB_TR("(Ranura vacía — usará respaldo automático o pulsa 'Añadir frames desde spritesheet')")));
 			empty_lbl->add_theme_color_override("font_color", Color(0.6f, 0.6f, 0.6f));
 			frames_strip_hbox->add_child(empty_lbl);
@@ -9514,7 +9693,7 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 
 void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 	String cur_name = _get_active_anim_name();
-	if (current_category == CAT_ACTORS) {
+	if (s_is_anim_slot_category(current_category)) {
 		ClockGearsSpriteAnimation resolved_anim;
 		bool has_anim = false;
 		String state_id;
@@ -9537,8 +9716,8 @@ void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 			String spath = raw_f0.sheet_path.is_empty() ? resolved_anim.spritesheet_path : raw_f0.sheet_path;
 			if (spath.is_empty()) {
 				Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
-				if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ACTORS].size()) {
-					spath = Dictionary(category_data[CAT_ACTORS][sel[0]]).get("graphic_path", "");
+				if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[current_category].size()) {
+					spath = Dictionary(category_data[current_category][sel[0]]).get("graphic_path", "");
 				}
 			}
 			Ref<Texture2D> tex = _load_texture_from_path(spath);
@@ -9557,8 +9736,8 @@ void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 		} else {
 			String spath;
 			Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
-			if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ACTORS].size()) {
-				spath = Dictionary(category_data[CAT_ACTORS][sel[0]]).get("graphic_path", "");
+			if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[current_category].size()) {
+				spath = Dictionary(category_data[current_category][sel[0]]).get("graphic_path", "");
 			}
 			Ref<Texture2D> tex = _load_texture_from_path(spath);
 			if (tex.is_valid() && is_fixed_slot) {
@@ -9989,7 +10168,7 @@ void ClockGearsDatabaseDialog::set_system_movement_directions(int p_dirs) {
 		sys_movement_dirs_opt->select(dirs == 8 ? 1 : 0);
 		updating_ui = prev_upd;
 	}
-	if (current_category == CAT_ACTORS) {
+	if (s_is_anim_slot_category(current_category)) {
 		_refresh_anim_track_options();
 	}
 	_mark_database_dirty();
@@ -10006,7 +10185,7 @@ void ClockGearsDatabaseDialog::set_actor_directional_idle(bool p_enabled) {
 		actor_dir_idle_chk->set_pressed(p_enabled);
 		updating_ui = prev_upd;
 	}
-	if (current_category == CAT_ACTORS) {
+	if (s_is_anim_slot_category(current_category)) {
 		_on_param_changed();
 		_refresh_anim_track_options();
 	}
@@ -10229,3 +10408,156 @@ String ClockGearsDatabaseDialog::get_formatted_troop_enemy_label(int p_troop_idx
 	float max_w = (p_max_w > 0.0f) ? p_max_w : MAX(96.0f * scale, 140.0f * scale);
 	return ClockGearsBattleScene::format_enemy_name_level(font, font_sz, ename, elvl, max_w);
 }
+
+void ClockGearsDatabaseDialog::_refresh_event_tab_summary() {
+	if (!event_tab_summary_label || !event_tab_pages_tree) {
+		return;
+	}
+	event_tab_pages_tree->clear();
+	TreeItem *root = event_tab_pages_tree->create_item();
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (!s_has_event_tab_category(current_category) || sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[current_category].size()) {
+		event_tab_summary_label->set_text(CG_DB_TR("0 páginas de evento configuradas."));
+		if (btn_open_record_event_editor) {
+			btn_open_record_event_editor->set_disabled(true);
+		}
+		return;
+	}
+	if (btn_open_record_event_editor) {
+		btn_open_record_event_editor->set_disabled(false);
+	}
+	Dictionary d = category_data[current_category][sel[0]];
+	Array pages = d.get("event_pages", Array());
+	int count = pages.size();
+	event_tab_summary_label->set_text(count == 1
+					? CG_DB_TR("1 página de evento configurada (compartida con eventos de mapa).")
+					: vformat(CG_DB_TR("%d páginas de evento configuradas (compartidas con eventos de mapa)."), count));
+
+	static const char *trigger_names[5] = {
+		"Botón de Acción",
+		"Tocar Jugador",
+		"Tocar Evento",
+		"Inicio Automático",
+		"Proceso Paralelo"
+	};
+	for (int i = 0; i < count; i++) {
+		Variant pv = pages[i];
+		if (pv.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary pd = pv;
+		int trig = CLAMP(int(pd.get("trigger", 0)), 0, 4);
+		int cmds_count = Array(pd.get("commands", Array())).size();
+		TreeItem *item = event_tab_pages_tree->create_item(root);
+		item->set_text(0, vformat(CG_DB_TR("Página %d"), i + 1));
+		item->set_text(1, CG_DB_TR(trigger_names[trig]));
+		item->set_text(2, vformat(CG_DB_TR("%d comandos"), cmds_count));
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_open_record_event_editor_pressed() {
+	open_record_event_editor();
+}
+
+void ClockGearsDatabaseDialog::_on_record_event_saved(const Array &p_pages) {
+	int target_cat = current_category;
+	int target_idx = -1;
+	if (record_event_editor) {
+		if (record_event_editor->has_meta("cg_db_event_cat")) {
+			target_cat = int(record_event_editor->get_meta("cg_db_event_cat"));
+		}
+		if (record_event_editor->has_meta("cg_db_event_idx")) {
+			target_idx = int(record_event_editor->get_meta("cg_db_event_idx"));
+		}
+	}
+	if (target_idx < 0 && record_list) {
+		Vector<int> sel = record_list->get_selected_items();
+		if (!sel.is_empty()) {
+			target_idx = sel[0];
+		}
+	}
+	if (target_cat < 0 || target_cat >= CAT_MAX || target_idx < 0 || target_idx >= category_data[target_cat].size()) {
+		return;
+	}
+	Dictionary d = category_data[target_cat][target_idx];
+	d["event_pages"] = p_pages.duplicate(true);
+	category_data[target_cat][target_idx] = d;
+	if (target_cat == current_category) {
+		_refresh_event_tab_summary();
+	}
+	_mark_database_dirty();
+}
+
+bool ClockGearsDatabaseDialog::open_record_event_editor() {
+	if (!s_has_event_tab_category(current_category) || !record_event_editor || !record_list) {
+		return false;
+	}
+	Vector<int> sel = record_list->get_selected_items();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= category_data[current_category].size()) {
+		return false;
+	}
+	int idx = sel[0];
+	Dictionary d = category_data[current_category][idx];
+	int rec_id = int(d.get("id", idx + 1));
+	String rec_name = String(d.get("name", ""));
+	Array pages = d.get("event_pages", Array());
+	String cat_key = ClockGearsDataManager::get_category_key(current_category);
+
+	record_event_editor->set_meta("cg_db_event_cat", current_category);
+	record_event_editor->set_meta("cg_db_event_idx", idx);
+	record_event_editor->edit_database_event(cat_key, rec_id, rec_name, pages,
+			callable_mp(this, &ClockGearsDatabaseDialog::_on_record_event_saved));
+	return true;
+}
+
+Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
+	Dictionary out;
+	Array chaps;
+	Dictionary tooltips;
+	for (int i = 0; i < chapters.size(); i++) {
+		Dictionary cd;
+		cd["name"] = chapters[i].name;
+		Array cat_keys;
+		Array cat_names;
+		Array cat_ids;
+		for (int j = 0; j < chapters[i].categories.size(); j++) {
+			int cid = chapters[i].categories[j];
+			String ckey = ClockGearsDataManager::get_category_key(cid);
+			cat_ids.push_back(cid);
+			cat_keys.push_back(ckey);
+			cat_names.push_back(_get_category_name(cid));
+			if (cid >= 0 && cid < category_buttons.size() && category_buttons[cid]) {
+				tooltips[ckey] = category_buttons[cid]->get_tooltip_text();
+			}
+		}
+		cd["categories"] = cat_keys;
+		cd["category_ids"] = cat_ids;
+		cd["category_keys"] = cat_keys;
+		cd["category_names"] = cat_names;
+		chaps.push_back(cd);
+	}
+	out["chapters"] = chaps;
+	out["tooltips"] = tooltips;
+	out["current_chapter"] = current_chapter;
+	out["current_category"] = current_category;
+	out["current_category_key"] = ClockGearsDataManager::get_category_key(current_category);
+	out["category_count"] = CAT_MAX;
+	return out;
+}
+
+void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
+	for (int i = 0; i < CAT_MAX; i++) {
+		if (ClockGearsDataManager::get_category_key(i) == p_key) {
+			_on_category_selected(i);
+			return;
+		}
+	}
+}
+
+Ref<Texture2D> ClockGearsDatabaseDialog::get_record_list_icon(int p_row_idx) const {
+	if (!record_list || p_row_idx < 0 || p_row_idx >= record_list->get_item_count()) {
+		return Ref<Texture2D>();
+	}
+	return record_list->get_item_icon(p_row_idx);
+}
+

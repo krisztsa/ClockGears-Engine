@@ -22,6 +22,8 @@ private:
 	int sprite_hframes = 1;
 	int sprite_vframes = 1;
 	int sprite_frame = 0;
+	int behavior_type = 0; // 0=Normal, 1=NPC, 2=NPC ARPG, 3=Enemigo ARPG
+	int behavior_ref_id = 0;
 	Array commands;
 	Array pages;
 
@@ -108,6 +110,13 @@ public:
 	bool get_self_switch(const String &p_letter) const;
 	Dictionary get_self_switches() const { return self_switches; }
 	void set_self_switches(const Dictionary &p_sw);
+
+	void set_behavior_type(int p_type);
+	int get_behavior_type() const { return behavior_type; }
+	void set_behavior_ref_id(int p_id);
+	int get_behavior_ref_id() const { return behavior_ref_id; }
+	static int behavior_type_to_category(int p_type);
+	void _update_behavior_sprite(const Dictionary &p_rec, bool p_found);
 
 	int get_active_page_index() const { return active_page_index; }
 	void update_active_page();
