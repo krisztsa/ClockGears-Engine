@@ -2,6 +2,7 @@
 #include "clockgears_debug_panel.h"
 #include "core/clockgears_data_manager.h"
 #include "clockgears_fx_manager.h"
+#include "runtime/clockgears_window_style.h"
 #include "editor/clockgears_theme.h"
 #include "editor/themes/editor_scale.h"
 #include "core/config/project_settings.h"
@@ -331,6 +332,7 @@ void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("select_action_defend"), &ClockGearsBattleScene::select_action_defend);
 	ClassDB::bind_method(D_METHOD("select_action_flee"), &ClockGearsBattleScene::select_action_flee);
 	ClassDB::bind_method(D_METHOD("finish_battle_immediate"), &ClockGearsBattleScene::finish_battle_immediate);
+	ClassDB::bind_method(D_METHOD("refresh_window_styles"), &ClockGearsBattleScene::refresh_window_styles);
 	ClassDB::bind_method(D_METHOD("get_battle_result"), &ClockGearsBattleScene::get_battle_result);
 	ClassDB::bind_method(D_METHOD("is_battle_finished"), &ClockGearsBattleScene::is_battle_finished);
 	ClassDB::bind_method(D_METHOD("is_initiative_bar_visible"), &ClockGearsBattleScene::is_initiative_bar_visible);
@@ -415,6 +417,7 @@ void ClockGearsBattleScene::_setup_ui() {
 	empty_sb->set_content_margin(SIDE_TOP, 12);
 	empty_sb->set_content_margin(SIDE_BOTTOM, 16);
 	main_container->add_theme_style_override("panel", empty_sb);
+	main_container->connect("resized", callable_mp(this, &ClockGearsBattleScene::refresh_window_styles));
 	add_child(main_container);
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
@@ -425,13 +428,6 @@ void ClockGearsBattleScene::_setup_ui() {
 
 	// 1. Barra de Iniciativa (Arriba) - oculta por defecto salvo que F3 "Mostrar turnos" esté activo
 	initiative_panel = memnew(PanelContainer);
-	Ref<StyleBoxFlat> init_sb;
-	init_sb.instantiate();
-	init_sb->set_bg_color(Color(0.12f, 0.14f, 0.18f, 0.85f));
-	init_sb->set_border_width_all(1);
-	init_sb->set_border_color(Color(0.3f, 0.35f, 0.45f, 0.9f));
-	init_sb->set_corner_radius_all(4);
-	initiative_panel->add_theme_style_override("panel", init_sb);
 	initiative_panel->set_visible(ClockGearsDebugOverlay::is_show_battle_turns());
 	main_vbox->add_child(initiative_panel);
 
@@ -450,13 +446,6 @@ void ClockGearsBattleScene::_setup_ui() {
 
 	// Log de Combate (Abajo, compacto y no bloqueante del turno; oculto por defecto salvo F3 "Mostrar fórmulas")
 	battle_log_panel = memnew(PanelContainer);
-	Ref<StyleBoxFlat> log_sb;
-	log_sb.instantiate();
-	log_sb->set_bg_color(Color(0.08f, 0.1f, 0.14f, 0.9f));
-	log_sb->set_border_width_all(1);
-	log_sb->set_border_color(Color(0.35f, 0.42f, 0.55f, 0.75f));
-	log_sb->set_corner_radius_all(4);
-	battle_log_panel->add_theme_style_override("panel", log_sb);
 	battle_log_panel->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	battle_log_panel->set_custom_minimum_size(Size2(0, 30));
 
@@ -484,17 +473,6 @@ void ClockGearsBattleScene::_setup_ui() {
 
 	// Panel de Comandos
 	actions_panel = memnew(PanelContainer);
-	Ref<StyleBoxFlat> act_sb;
-	act_sb.instantiate();
-	act_sb->set_bg_color(Color(0.1f, 0.12f, 0.16f, 0.95f));
-	act_sb->set_border_width_all(2);
-	act_sb->set_border_color(Color(0.35f, 0.5f, 0.75f, 0.9f));
-	act_sb->set_corner_radius_all(6);
-	act_sb->set_content_margin(SIDE_LEFT, 8);
-	act_sb->set_content_margin(SIDE_RIGHT, 8);
-	act_sb->set_content_margin(SIDE_TOP, 6);
-	act_sb->set_content_margin(SIDE_BOTTOM, 6);
-	actions_panel->add_theme_style_override("panel", act_sb);
 	actions_panel->set_custom_minimum_size(Size2(160, 130));
 	bottom_row->add_child(actions_panel);
 
@@ -529,7 +507,6 @@ void ClockGearsBattleScene::_setup_ui() {
 
 	// 4. Submenú flotante para selección de objetivo / habilidad / objeto
 	sub_menu_panel = memnew(PanelContainer);
-	sub_menu_panel->add_theme_style_override("panel", act_sb);
 	sub_menu_panel->set_custom_minimum_size(Size2(220, 160));
 	sub_menu_panel->hide();
 	add_child(sub_menu_panel);
@@ -537,6 +514,34 @@ void ClockGearsBattleScene::_setup_ui() {
 	sub_menu_vbox = memnew(VBoxContainer);
 	sub_menu_vbox->add_theme_constant_override("separation", 4);
 	sub_menu_panel->add_child(sub_menu_vbox);
+
+	refresh_window_styles();
+}
+
+void ClockGearsBattleScene::refresh_window_styles() {
+	ClockGearsWindowStyleManager::apply_window_style(initiative_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_window_style(battle_log_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_window_style(actions_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_window_style(sub_menu_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_buttons_in_container(actions_vbox, "battle_commands");
+	ClockGearsWindowStyleManager::apply_buttons_in_container(sub_menu_vbox, "battle_commands");
+	if (party_container) {
+		for (int i = 0; i < party_container->get_child_count(); i++) {
+			Control *card = Object::cast_to<Control>(party_container->get_child(i));
+			if (card) {
+				Dictionary ov;
+				if (bool(card->get_meta("_cg_is_turn", false))) {
+					Dictionary st = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->resolve_window_style("battle_party") : Dictionary();
+					String bt = String(st.get("border_type", "rounded"));
+					if (bt != "none" && bt != "image") {
+						ov["border_color"] = "#ffd959ff";
+						ov["border_width"] = MAX(2, int(st.get("border_width", 2)) + 1);
+					}
+				}
+				ClockGearsWindowStyleManager::apply_window_style(card, "battle_party", ov);
+			}
+		}
+	}
 }
 
 void ClockGearsBattleScene::setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm, ClockGearsMessageWindow *p_msg_window, bool p_test_mode) {
@@ -1114,13 +1119,17 @@ void ClockGearsBattleScene::_refresh_ui() {
 		pcard->set_custom_minimum_size(Size2(130, 110));
 
 		bool is_turn = (active.is_valid() && active == hero);
-		Ref<StyleBoxFlat> psb;
-		psb.instantiate();
-		psb->set_bg_color(is_turn ? Color(0.18f, 0.22f, 0.32f, 0.95f) : Color(0.12f, 0.14f, 0.18f, 0.85f));
-		psb->set_border_width_all(is_turn ? 2 : 1);
-		psb->set_border_color(is_turn ? Color(1.0f, 0.85f, 0.35f, 1.0f) : Color(0.3f, 0.35f, 0.45f, 0.8f));
-		psb->set_corner_radius_all(6);
-		pcard->add_theme_style_override("panel", psb);
+		pcard->set_meta("_cg_is_turn", is_turn);
+		Dictionary pcard_ov;
+		if (is_turn) {
+			Dictionary st = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->resolve_window_style("battle_party") : Dictionary();
+			String bt = String(st.get("border_type", "rounded"));
+			if (bt != "none" && bt != "image") {
+				pcard_ov["border_color"] = "#ffd959ff";
+				pcard_ov["border_width"] = MAX(2, int(st.get("border_width", 2)) + 1);
+			}
+		}
+		ClockGearsWindowStyleManager::apply_window_style(pcard, "battle_party", pcard_ov);
 
 		VBoxContainer *pvb = memnew(VBoxContainer);
 		pvb->add_theme_constant_override("separation", 4);
@@ -1337,6 +1346,8 @@ void ClockGearsBattleScene::_show_target_selector(int p_action_type, int p_sub_i
 	Button *btn_cancel = memnew(Button(String::utf8("Cancelar")));
 	btn_cancel->connect("pressed", callable_mp(this, &ClockGearsBattleScene::_close_sub_menu));
 	sub_menu_vbox->add_child(btn_cancel);
+	ClockGearsWindowStyleManager::apply_window_style(sub_menu_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_buttons_in_container(sub_menu_vbox, "battle_commands");
 
 	Vector2 act_gpos = actions_panel ? actions_panel->get_global_position() : Vector2();
 	if (act_gpos.x < 10.0f || act_gpos.y < 10.0f) {
@@ -1405,6 +1416,8 @@ void ClockGearsBattleScene::_show_skill_selector() {
 	Button *btn_cancel = memnew(Button(String::utf8("Cancelar")));
 	btn_cancel->connect("pressed", callable_mp(this, &ClockGearsBattleScene::_close_sub_menu));
 	sub_menu_vbox->add_child(btn_cancel);
+	ClockGearsWindowStyleManager::apply_window_style(sub_menu_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_buttons_in_container(sub_menu_vbox, "battle_commands");
 
 	Vector2 act_gpos = actions_panel ? actions_panel->get_global_position() : Vector2();
 	if (act_gpos.x < 10.0f || act_gpos.y < 10.0f) {
@@ -1463,6 +1476,8 @@ void ClockGearsBattleScene::_show_item_selector() {
 	Button *btn_cancel = memnew(Button(String::utf8("Cancelar")));
 	btn_cancel->connect("pressed", callable_mp(this, &ClockGearsBattleScene::_close_sub_menu));
 	sub_menu_vbox->add_child(btn_cancel);
+	ClockGearsWindowStyleManager::apply_window_style(sub_menu_panel, "battle_commands");
+	ClockGearsWindowStyleManager::apply_buttons_in_container(sub_menu_vbox, "battle_commands");
 
 	Vector2 act_gpos = actions_panel ? actions_panel->get_global_position() : Vector2();
 	if (act_gpos.x < 10.0f || act_gpos.y < 10.0f) {

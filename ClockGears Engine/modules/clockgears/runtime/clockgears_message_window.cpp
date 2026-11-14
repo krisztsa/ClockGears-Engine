@@ -1,5 +1,6 @@
 #include "clockgears_message_window.h"
 #include "../core/clockgears_data_manager.h"
+#include "clockgears_window_style.h"
 #include "core/config/engine.h"
 #include "core/input/input.h"
 #include "core/io/image.h"
@@ -36,6 +37,7 @@ void ClockGearsMessageWindow::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_skip_mode", "enable"), &ClockGearsMessageWindow::set_skip_mode);
 	ClassDB::bind_method(D_METHOD("get_skip_mode"), &ClockGearsMessageWindow::get_skip_mode);
 	ClassDB::bind_method(D_METHOD("is_busy"), &ClockGearsMessageWindow::is_busy);
+	ClassDB::bind_method(D_METHOD("refresh_window_styles"), &ClockGearsMessageWindow::refresh_window_styles);
 	ClassDB::bind_method(D_METHOD("handle_choice_cancel"), &ClockGearsMessageWindow::_handle_choice_cancel);
 	ClassDB::bind_method(D_METHOD("unhandled_input", "event"), &ClockGearsMessageWindow::unhandled_input);
 
@@ -53,15 +55,7 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 	set_focus_mode(FOCUS_NONE);
 	set_mouse_filter(MOUSE_FILTER_PASS);
 
-	// 1. Estilos Pixel Art
-	style_window = memnew(StyleBoxFlat);
-	style_window->set_anti_aliased(false);
-	style_window->set_bg_color(Color(0.08f, 0.09f, 0.12f, 0.94f));
-	style_window->set_border_width_all(2);
-	style_window->set_border_color(Color(0.88f, 0.63f, 0.25f, 1.0f)); // Cobre (#e0a040)
-	style_window->set_corner_radius_all(4);
-	style_window->set_content_margin_all(10);
-
+	// 1. Estilos de Fondo Especiales (Dim / Transparente); modo Ventana usa el componente unificado
 	style_dim = memnew(StyleBoxFlat);
 	style_dim->set_anti_aliased(false);
 	style_dim->set_bg_color(Color(0.02f, 0.03f, 0.05f, 0.75f));
@@ -76,24 +70,12 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 
 	// 2. Ventana Principal de Mensaje
 	main_panel = memnew(PanelContainer);
-	main_panel->add_theme_style_override("panel", style_window);
 	main_panel->set_focus_mode(FOCUS_NONE);
 	main_panel->set_mouse_filter(MOUSE_FILTER_PASS);
 	add_child(main_panel);
 
 	// 3. Caja de Nombre (Name Box)
 	name_panel = memnew(PanelContainer);
-	Ref<StyleBoxFlat> name_sb = memnew(StyleBoxFlat);
-	name_sb->set_anti_aliased(false);
-	name_sb->set_bg_color(Color(0.12f, 0.13f, 0.17f, 0.95f));
-	name_sb->set_border_width_all(2);
-	name_sb->set_border_color(Color(0.88f, 0.63f, 0.25f, 1.0f));
-	name_sb->set_corner_radius_all(3);
-	name_sb->set_content_margin(SIDE_LEFT, 10);
-	name_sb->set_content_margin(SIDE_RIGHT, 10);
-	name_sb->set_content_margin(SIDE_TOP, 3);
-	name_sb->set_content_margin(SIDE_BOTTOM, 3);
-	name_panel->add_theme_style_override("panel", name_sb);
 	name_panel->set_focus_mode(FOCUS_NONE);
 	name_panel->set_mouse_filter(MOUSE_FILTER_IGNORE);
 	name_panel->hide();
@@ -116,13 +98,6 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 	main_panel->add_child(content_hbox);
 
 	face_frame = memnew(PanelContainer);
-	Ref<StyleBoxFlat> ff_sb = memnew(StyleBoxFlat);
-	ff_sb->set_anti_aliased(false);
-	ff_sb->set_bg_color(Color(0.04f, 0.05f, 0.07f, 0.8f));
-	ff_sb->set_border_width_all(1);
-	ff_sb->set_border_color(Color(0.4f, 0.45f, 0.55f, 0.6f));
-	ff_sb->set_content_margin_all(4);
-	face_frame->add_theme_style_override("panel", ff_sb);
 	face_frame->set_custom_minimum_size(Size2(88, 88));
 	face_frame->set_focus_mode(FOCUS_NONE);
 	face_frame->set_mouse_filter(MOUSE_FILTER_IGNORE);
@@ -202,13 +177,6 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 
 	// Ventana flotante de Oro ($)
 	gold_panel = memnew(PanelContainer);
-	Ref<StyleBoxFlat> gold_sb = memnew(StyleBoxFlat);
-	gold_sb->set_anti_aliased(false);
-	gold_sb->set_bg_color(Color(0.08f, 0.09f, 0.12f, 0.95f));
-	gold_sb->set_border_width_all(2);
-	gold_sb->set_border_color(Color(0.88f, 0.63f, 0.25f, 1.0f));
-	gold_sb->set_content_margin_all(8);
-	gold_panel->add_theme_style_override("panel", gold_sb);
 	gold_panel->set_focus_mode(FOCUS_NONE);
 	gold_panel->set_mouse_filter(MOUSE_FILTER_IGNORE);
 	gold_panel->hide();
@@ -224,7 +192,6 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 
 	// Ventana de Opciones (Choices)
 	choices_panel = memnew(PanelContainer);
-	choices_panel->add_theme_style_override("panel", style_window);
 	choices_panel->set_focus_mode(FOCUS_NONE);
 	choices_panel->set_mouse_filter(MOUSE_FILTER_PASS);
 	choices_panel->hide();
@@ -239,7 +206,6 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 
 	// Ventana de Entrada de Número (Number Input)
 	number_panel = memnew(PanelContainer);
-	number_panel->add_theme_style_override("panel", style_window);
 	number_panel->set_focus_mode(FOCUS_NONE);
 	number_panel->set_mouse_filter(MOUSE_FILTER_PASS);
 	number_panel->hide();
@@ -253,7 +219,6 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 
 	// Historial de Diálogos (Backlog)
 	history_panel = memnew(PanelContainer);
-	history_panel->add_theme_style_override("panel", style_window);
 	history_panel->set_focus_mode(FOCUS_NONE);
 	history_panel->hide();
 	add_child(history_panel);
@@ -289,6 +254,7 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 	history_vbox->set_focus_mode(FOCUS_NONE);
 	history_scroll->add_child(history_vbox);
 
+	_apply_unified_styles();
 	hide();
 }
 
@@ -369,9 +335,10 @@ void ClockGearsMessageWindow::_update_window_position_layout() {
 		name_panel->set_anchor(SIDE_TOP, 0.0f);
 		name_panel->set_anchor(SIDE_RIGHT, 0.0f);
 		name_panel->set_anchor(SIDE_BOTTOM, 0.0f);
-		name_panel->set_position(Vector2(win_x + 16.0f, MAX(0.0f, win_y - 28.0f)));
 		float name_w = MAX(100.0f, name_label ? name_label->get_combined_minimum_size().x + 24.0f : 100.0f);
-		name_panel->set_size(Size2(name_w, 26.0f));
+		float name_h = MAX(26.0f, name_panel->get_combined_minimum_size().y);
+		name_panel->set_position(Vector2(win_x + 16.0f, MAX(0.0f, win_y - name_h - 2.0f)));
+		name_panel->set_size(Size2(name_w, name_h));
 	}
 
 	if (gold_panel) {
@@ -380,7 +347,7 @@ void ClockGearsMessageWindow::_update_window_position_layout() {
 		gold_panel->set_anchor(SIDE_RIGHT, 0.0f);
 		gold_panel->set_anchor(SIDE_BOTTOM, 0.0f);
 		gold_panel->set_position(Vector2(vp_size.x - 180.0f, 16.0f));
-		gold_panel->set_size(Size2(160.0f, 40.0f));
+		gold_panel->set_size(Size2(160.0f, MAX(40.0f, gold_panel->get_combined_minimum_size().y)));
 	}
 
 	if (choices_panel) {
@@ -388,8 +355,9 @@ void ClockGearsMessageWindow::_update_window_position_layout() {
 		choices_panel->set_anchor(SIDE_TOP, 0.0f);
 		choices_panel->set_anchor(SIDE_RIGHT, 0.0f);
 		choices_panel->set_anchor(SIDE_BOTTOM, 0.0f);
-		float cw = MIN(320.0f, vp_size.x * 0.4f);
-		float ch = MIN(220.0f, vp_size.y * 0.4f);
+		Size2 cmin = choices_panel->get_combined_minimum_size();
+		float cw = CLAMP(MAX(cmin.x, vp_size.x * 0.34f), 220.0f, MIN(420.0f, vp_size.x * 0.45f));
+		float ch = MIN(vp_size.y * 0.5f, MAX(cmin.y, MIN(220.0f, vp_size.y * 0.4f)));
 		choices_panel->set_position(Vector2(vp_size.x - cw - margin_x, MAX(16.0f, win_y - ch - 8.0f)));
 		choices_panel->set_size(Size2(cw, ch));
 	}
@@ -413,6 +381,40 @@ void ClockGearsMessageWindow::_update_window_position_layout() {
 		history_panel->set_position(Vector2(margin_x, 20.0f));
 		history_panel->set_size(Size2(win_w, vp_size.y - 40.0f));
 	}
+
+	_apply_unified_styles();
+}
+
+void ClockGearsMessageWindow::_apply_unified_styles() {
+	_update_background_style();
+
+	Dictionary name_ov;
+	Dictionary name_pad;
+	name_pad["left"] = 10;
+	name_pad["top"] = 3;
+	name_pad["right"] = 10;
+	name_pad["bottom"] = 3;
+	name_ov["padding"] = name_pad;
+	ClockGearsWindowStyleManager::apply_window_style(name_panel, "message", name_ov);
+
+	Dictionary face_ov;
+	Dictionary face_pad;
+	face_pad["left"] = 4;
+	face_pad["top"] = 4;
+	face_pad["right"] = 4;
+	face_pad["bottom"] = 4;
+	face_ov["padding"] = face_pad;
+	ClockGearsWindowStyleManager::apply_window_style(face_frame, "message", face_ov);
+
+	ClockGearsWindowStyleManager::apply_window_style(gold_panel, "message");
+	ClockGearsWindowStyleManager::apply_window_style(number_panel, "message");
+	ClockGearsWindowStyleManager::apply_window_style(history_panel, "message");
+	ClockGearsWindowStyleManager::apply_button_style(history_close_btn, "message");
+
+	ClockGearsWindowStyleManager::apply_window_style(choices_panel, "choices");
+	for (int i = 0; i < choice_buttons.size(); i++) {
+		ClockGearsWindowStyleManager::apply_button_style(choice_buttons[i], "choices");
+	}
 }
 
 void ClockGearsMessageWindow::_update_background_style() {
@@ -426,7 +428,7 @@ void ClockGearsMessageWindow::_update_background_style() {
 			break;
 		case BG_WINDOW:
 		default:
-			main_panel->add_theme_style_override("panel", style_window);
+			ClockGearsWindowStyleManager::apply_window_style(main_panel, "message");
 			break;
 	}
 }
@@ -602,6 +604,7 @@ void ClockGearsMessageWindow::show_choices(const PackedStringArray &p_choices, i
 		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 		btn->set_focus_mode(FOCUS_ALL);
 		btn->connect("pressed", callable_mp(this, &ClockGearsMessageWindow::_on_choice_btn_pressed).bind(i));
+		ClockGearsWindowStyleManager::apply_button_style(btn, "choices");
 		choices_vbox->add_child(btn);
 		choice_buttons.push_back(btn);
 	}

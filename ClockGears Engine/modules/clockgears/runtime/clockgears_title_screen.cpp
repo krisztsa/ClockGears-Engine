@@ -2,6 +2,7 @@
 #include "../core/clockgears_data_manager.h"
 #include "../editor/clockgears_theme.h"
 #include "clockgears_audio_manager.h"
+#include "clockgears_window_style.h"
 
 #include "core/config/engine.h"
 #include "core/io/dir_access.h"
@@ -15,65 +16,6 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/image_texture.h"
-#include "scene/resources/style_box_flat.h"
-
-static bool s_is_light_theme_active() {
-	return ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->is_light_mode();
-}
-
-static Ref<StyleBoxFlat> s_make_title_panel_style(const Color &p_bg, const Color &p_border, int p_radius = 10, int p_margin = 16) {
-	Ref<StyleBoxFlat> sb;
-	sb.instantiate();
-	sb->set_anti_aliased(true);
-	sb->set_bg_color(p_bg);
-	sb->set_border_width_all(1);
-	sb->set_border_color(p_border);
-	sb->set_corner_radius_all(p_radius);
-	sb->set_content_margin_all(p_margin);
-	return sb;
-}
-
-static Ref<StyleBoxFlat> s_make_title_button_style(const Color &p_bg, const Color &p_border, int p_radius = 8, int p_border_w = 1) {
-	Ref<StyleBoxFlat> sb;
-	sb.instantiate();
-	sb->set_anti_aliased(true);
-	sb->set_bg_color(p_bg);
-	sb->set_border_width_all(p_border_w);
-	sb->set_border_color(p_border);
-	sb->set_corner_radius_all(p_radius);
-	sb->set_content_margin_individual(14, 7, 14, 7);
-	return sb;
-}
-
-static void s_style_menu_button(Button *p_btn, bool p_dimmed_disabled = false) {
-	if (!p_btn) {
-		return;
-	}
-	const bool light = s_is_light_theme_active();
-	const Color accent = ClockGearsTheme::color_accent_amber();
-	const Color txt = light ? Color::html("#1e2026") : ClockGearsTheme::color_text_primary();
-	const Color txt_dis = light ? Color(0.35f, 0.38f, 0.44f, p_dimmed_disabled ? 0.45f : 0.60f) : Color(0.65f, 0.68f, 0.75f, p_dimmed_disabled ? 0.42f : 0.55f);
-
-	const Color bg_norm = light ? Color(0.89f, 0.90f, 0.93f, 0.96f) : Color(0.15f, 0.17f, 0.22f, 0.94f);
-	const Color bg_hov = light ? Color(0.83f, 0.86f, 0.91f, 0.98f) : Color(0.21f, 0.24f, 0.31f, 0.98f);
-	const Color bg_prs = light ? Color(accent.r, accent.g, accent.b, 0.22f) : Color(0.24f, 0.20f, 0.14f, 0.98f);
-	const Color bg_dis = light ? Color(0.91f, 0.92f, 0.94f, p_dimmed_disabled ? 0.45f : 0.70f) : Color(0.10f, 0.11f, 0.15f, p_dimmed_disabled ? 0.45f : 0.70f);
-	const Color border_norm = light ? Color(0.0f, 0.0f, 0.0f, 0.18f) : Color(1.0f, 1.0f, 1.0f, 0.15f);
-
-	p_btn->add_theme_style_override("normal", s_make_title_button_style(bg_norm, border_norm, 8, 1));
-	p_btn->add_theme_style_override("hover", s_make_title_button_style(bg_hov, Color(accent.r, accent.g, accent.b, 0.75f), 8, 1));
-	p_btn->add_theme_style_override("pressed", s_make_title_button_style(bg_prs, accent, 8, 1));
-	p_btn->add_theme_style_override("hover_pressed", s_make_title_button_style(bg_prs, accent, 8, 1));
-	p_btn->add_theme_style_override("focus", s_make_title_button_style(bg_hov, accent, 8, 2));
-	p_btn->add_theme_style_override("disabled", s_make_title_button_style(bg_dis, Color(border_norm.r, border_norm.g, border_norm.b, 0.07f), 8, 1));
-
-	p_btn->add_theme_color_override("font_color", txt);
-	p_btn->add_theme_color_override("font_hover_color", light ? txt : Color(1, 1, 1, 1));
-	p_btn->add_theme_color_override("font_pressed_color", accent);
-	p_btn->add_theme_color_override("font_focus_color", light ? txt : Color(1, 1, 1, 1));
-	p_btn->add_theme_color_override("font_disabled_color", txt_dis);
-	p_btn->set_custom_minimum_size(Size2(220, 36));
-}
 
 bool ClockGearsTitleScreen::ensure_title_screen_scene(const String &p_scene_path) {
 	String path = p_scene_path.strip_edges();
@@ -128,31 +70,37 @@ void ClockGearsTitleScreen::_apply_theme_styling() {
 	if (ClockGearsTheme::get_singleton()) {
 		ClockGearsTheme::get_singleton()->apply_to_control(this);
 	}
-	const bool light = s_is_light_theme_active();
-	const Color card_bg = light ? Color(0.97f, 0.98f, 0.99f, 0.94f) : Color(0.08f, 0.09f, 0.13f, 0.92f);
-	const Color modal_bg = light ? Color(0.98f, 0.98f, 1.0f, 0.98f) : Color(0.07f, 0.08f, 0.12f, 0.97f);
-	const Color border_main = light ? Color(0.25f, 0.30f, 0.42f, 0.35f) : Color(0.35f, 0.42f, 0.58f, 0.78f);
-	const Color border_modal = Color(ClockGearsTheme::color_accent_amber().r, ClockGearsTheme::color_accent_amber().g, ClockGearsTheme::color_accent_amber().b, 0.55f);
-
 	if (main_menu_panel) {
-		main_menu_panel->add_theme_style_override("panel", s_make_title_panel_style(card_bg, border_main, 10, 14));
+		ClockGearsWindowStyleManager::apply_window_style(main_menu_panel, "title_buttons");
+	}
+	if (entries_box) {
+		ClockGearsWindowStyleManager::apply_buttons_in_container(entries_box, "title_buttons");
+		for (int i = 0; i < entries_box->get_child_count(); i++) {
+			Button *b = Object::cast_to<Button>(entries_box->get_child(i));
+			if (b) {
+				b->set_custom_minimum_size(Size2(220, 36));
+			}
+		}
 	}
 	if (continue_panel) {
-		continue_panel->add_theme_style_override("panel", s_make_title_panel_style(modal_bg, border_modal, 12, 16));
+		ClockGearsWindowStyleManager::apply_window_style(continue_panel, "save_list");
+	}
+	if (slots_box) {
+		ClockGearsWindowStyleManager::apply_buttons_in_container(slots_box, "save_list");
 	}
 	if (options_panel) {
-		options_panel->add_theme_style_override("panel", s_make_title_panel_style(modal_bg, border_modal, 12, 16));
+		ClockGearsWindowStyleManager::apply_window_style(options_panel, "options");
 	}
 	if (btn_continue_back) {
-		s_style_menu_button(btn_continue_back);
+		ClockGearsWindowStyleManager::apply_button_style(btn_continue_back, "save_list");
 		btn_continue_back->set_custom_minimum_size(Size2(180, 34));
 	}
 	if (btn_options_reset) {
-		s_style_menu_button(btn_options_reset);
+		ClockGearsWindowStyleManager::apply_button_style(btn_options_reset, "options");
 		btn_options_reset->set_custom_minimum_size(Size2(150, 34));
 	}
 	if (btn_options_back) {
-		s_style_menu_button(btn_options_back);
+		ClockGearsWindowStyleManager::apply_button_style(btn_options_back, "options");
 		btn_options_back->set_custom_minimum_size(Size2(150, 34));
 	}
 }
@@ -490,7 +438,8 @@ void ClockGearsTitleScreen::_apply_title_config(const Dictionary &p_cfg, const D
 		Button *btn = memnew(Button(txt));
 		btn->set_name(vformat("Entry_%s", id));
 		btn->set_meta("entry_id", id);
-		s_style_menu_button(btn);
+		btn->set_custom_minimum_size(Size2(220, 36));
+		ClockGearsWindowStyleManager::apply_button_style(btn, "title_buttons");
 		if (preview_mode) {
 			btn->set_mouse_filter(MOUSE_FILTER_IGNORE);
 			btn->set_focus_mode(FOCUS_NONE);
@@ -587,7 +536,8 @@ void ClockGearsTitleScreen::_populate_save_slots() {
 		Button *btn = memnew(Button(text));
 		btn->set_h_size_flags(SIZE_EXPAND_FILL);
 		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
-		s_style_menu_button(btn, !exists);
+		btn->set_custom_minimum_size(Size2(220, 36));
+		ClockGearsWindowStyleManager::apply_button_style(btn, "save_list");
 		btn->set_disabled(!exists);
 		btn->set_focus_mode(exists ? FOCUS_ALL : FOCUS_NONE);
 		btn->set_modulate(exists ? Color(1.0f, 1.0f, 1.0f, 1.0f) : Color(0.75f, 0.78f, 0.86f, 0.55f));
@@ -1080,9 +1030,15 @@ Dictionary ClockGearsTitleScreen::get_layout_bounds_info(const Vector2 &p_viewpo
 				Rect2 br = rel_rect(b);
 				btn_rects.push_back(br);
 				if (corner_rad == 0) {
-					Ref<StyleBoxFlat> sb = b->get_theme_stylebox("normal");
-					if (sb.is_valid()) {
-						corner_rad = sb->get_corner_radius(CORNER_TOP_LEFT);
+					Ref<StyleBox> gen_sb = b->get_theme_stylebox("normal");
+					Ref<ClockGearsWindowStyleBox> cg_sb = gen_sb;
+					if (cg_sb.is_valid()) {
+						corner_rad = cg_sb->get_scaled_corner_radius();
+					} else {
+						Ref<StyleBoxFlat> flat_sb = gen_sb;
+						if (flat_sb.is_valid()) {
+							corner_rad = flat_sb->get_corner_radius(CORNER_TOP_LEFT);
+						}
 					}
 				}
 			}
@@ -1174,6 +1130,8 @@ void ClockGearsTitleScreen::_notification(int p_what) {
 			dm->apply_game_window_title(this);
 		}
 		rebuild_title_screen();
+	} else if (p_what == NOTIFICATION_RESIZED) {
+		_apply_theme_styling();
 	}
 }
 

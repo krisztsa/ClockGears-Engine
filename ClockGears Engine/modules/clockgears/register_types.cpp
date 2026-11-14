@@ -38,6 +38,7 @@
 #include "runtime/clockgears_cutscene.h"
 #include "runtime/clockgears_entity_ai.h"
 #include "runtime/clockgears_title_screen.h"
+#include "runtime/clockgears_window_style.h"
 #include "clockgears_debug_panel.h"
 
 #ifdef TOOLS_ENABLED
@@ -67,6 +68,7 @@ static ClockGearsTheme *cg_theme_singleton = nullptr;
 static ClockGearsAudioManager *cg_audio_manager_singleton = nullptr;
 static ClockGearsAnimationManager *cg_animation_manager_singleton = nullptr;
 static ClockGearsCharacterStateRegistry *cg_char_state_registry_singleton = nullptr;
+static ClockGearsWindowStyleManager *cg_window_style_manager_singleton = nullptr;
 
 void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
@@ -177,6 +179,11 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsBattleController);
 		GDREGISTER_CLASS(ClockGearsBattleScene);
 		GDREGISTER_CLASS(ClockGearsTitleScreen);
+		GDREGISTER_CLASS(ClockGearsWindowStyleBox);
+		GDREGISTER_CLASS(ClockGearsWindowStyleManager);
+
+		cg_window_style_manager_singleton = memnew(ClockGearsWindowStyleManager);
+		Engine::get_singleton()->add_singleton(Engine::Singleton("ClockGearsWindowStyleManager", ClockGearsWindowStyleManager::get_singleton()));
 
 		ClockGearsPlayer::ensure_default_arpg_input_actions();
 	}
@@ -206,6 +213,9 @@ void uninitialize_clockgears_module(ModuleInitializationLevel p_level) {
 	if (Engine::get_singleton()) {
 		if (cg_theme_singleton) {
 			Engine::get_singleton()->remove_singleton("ClockGearsTheme");
+		}
+		if (cg_window_style_manager_singleton) {
+			Engine::get_singleton()->remove_singleton("ClockGearsWindowStyleManager");
 		}
 		if (cg_audio_manager_singleton) {
 			Engine::get_singleton()->remove_singleton("ClockGearsAudioManager");
@@ -242,6 +252,10 @@ void uninitialize_clockgears_module(ModuleInitializationLevel p_level) {
 	if (cg_theme_singleton) {
 		memdelete(cg_theme_singleton);
 		cg_theme_singleton = nullptr;
+	}
+	if (cg_window_style_manager_singleton) {
+		memdelete(cg_window_style_manager_singleton);
+		cg_window_style_manager_singleton = nullptr;
 	}
 	if (ClockGearsAudioManager::get_singleton()) {
 		ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton();

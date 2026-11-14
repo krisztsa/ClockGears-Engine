@@ -216,6 +216,7 @@ public:
 
 	void setup_battle(int p_troop_id, bool p_can_escape, bool p_can_lose, const String &p_bgm = "", ClockGearsMessageWindow *p_msg_window = nullptr, bool p_test_mode = false);
 	void finish_battle_immediate();
+	void refresh_window_styles();
 
 	Ref<ClockGearsBattleController> get_controller() const { return controller; }
 

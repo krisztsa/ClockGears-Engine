@@ -57,6 +57,7 @@ private:
 	Dictionary system_config;
 	Dictionary vocabulary_config;
 	Dictionary title_menu_config;
+	Dictionary window_styles_config;
 	Dictionary player_options;
 	bool player_options_loaded = false;
 	String player_options_path_override;
@@ -133,6 +134,28 @@ public:
 	Array get_visible_title_entries() const;
 	int get_save_slot_count() const;
 	void set_save_slot_count(int p_count);
+
+	// Estilos de ventana y botones (9B Tanda 2)
+	static void ensure_default_window_types_registered();
+	static void register_window_type(const String &p_id, const String &p_label);
+	static Array get_registered_window_types();
+	static Dictionary get_default_window_styles_config();
+	static Dictionary normalize_window_style(const Dictionary &p_style);
+	static Dictionary normalize_window_styles_config(const Dictionary &p_cfg);
+	Dictionary get_window_styles_config() const { return window_styles_config.duplicate(true); }
+	void set_window_styles_config(const Dictionary &p_cfg);
+	Array get_window_styles() const;
+	Dictionary get_window_style(const String &p_style_id) const;
+	String create_window_style(const Dictionary &p_style);
+	String duplicate_window_style(const String &p_source_id, const String &p_new_name = "");
+	bool update_window_style(const String &p_style_id, const Dictionary &p_style);
+	bool delete_window_style(const String &p_style_id);
+	String get_default_window_style_id() const;
+	bool set_default_window_style_id(const String &p_style_id);
+	String get_window_type_assignment(const String &p_window_type_id) const;
+	bool set_window_type_assignment(const String &p_window_type_id, const String &p_style_id);
+	String resolve_window_style_id(const String &p_window_type_id) const;
+	Dictionary resolve_window_style(const String &p_window_type_id) const;
 
 	// Título del proyecto y Unidad Monetaria (fuente única de verdad)
 	String get_effective_game_title() const;

@@ -48,7 +48,6 @@ private:
 
 	// Contenedor principal de la ventana
 	PanelContainer *main_panel = nullptr;
-	Ref<StyleBoxFlat> style_window;
 	Ref<StyleBoxFlat> style_dim;
 	Ref<StyleBoxFlat> style_transparent;
 
@@ -123,6 +122,7 @@ private:
 
 	void _update_window_position_layout();
 	void _update_background_style();
+	void _apply_unified_styles();
 	void _advance_typewriter(float p_delta);
 	void _process_current_token();
 	void _on_choice_btn_pressed(int p_idx);
@@ -167,6 +167,7 @@ public:
 	// Estado
 	State get_state() const { return current_state; }
 	bool is_busy() const { return current_state != STATE_CLOSED; }
+	void refresh_window_styles() { _apply_unified_styles(); }
 
 	ClockGearsMessageWindow();
 	~ClockGearsMessageWindow();

@@ -130,6 +130,8 @@ void ClockGearsDataManager::init_empty() {
 	vocabulary_config["game_end"] = "Salir";
 
 	title_menu_config = get_default_title_menu_config();
+	ensure_default_window_types_registered();
+	window_styles_config = get_default_window_styles_config();
 	if (!player_options_loaded) {
 		player_options = get_default_player_options();
 	}
@@ -1294,6 +1296,12 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 		return false;
 	}
 
+	// 5c-bis. Guardar estilos de ventana (window_styles.json)
+	window_styles_config = normalize_window_styles_config(window_styles_config);
+	if (!_write_json_atomic(p_dir_path.path_join("window_styles.json"), window_styles_config)) {
+		return false;
+	}
+
 	// 5d. Guardar estado de partida / equipo ARPG runtime (runtime_state.json)
 	if (!_write_json_atomic(p_dir_path.path_join("runtime_state.json"), export_runtime_state())) {
 		return false;
@@ -1394,6 +1402,15 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 	system_config.erase("title_menu");
 	_normalize_system_and_vocabulary_config();
+
+	// Migración de estilos de ventana (window_styles.json; proyectos antiguos heredan "Redondeado")
+	ensure_default_window_types_registered();
+	Variant ws_var;
+	if (_read_json_with_backup(p_dir_path.path_join("window_styles.json"), ws_var) && ws_var.get_type() == Variant::DICTIONARY) {
+		window_styles_config = normalize_window_styles_config(Dictionary(ws_var));
+	} else {
+		window_styles_config = get_default_window_styles_config();
+	}
 
 	Variant sw_var;
 	if (_read_json_with_backup(p_dir_path.path_join("switches_vars.json"), sw_var) && sw_var.get_type() == Variant::DICTIONARY) {
@@ -2476,6 +2493,672 @@ void ClockGearsDataManager::set_save_slot_count(int p_count) {
 	emit_signal("data_changed", "title_menu", 0);
 }
 
+// --- Estilos de Ventana y Botones (9B Tanda 2) ---
+
+namespace {
+struct CGWindowTypeEntry {
+	String id;
+	String label;
+};
+
+static Vector<CGWindowTypeEntry> &s_get_window_type_registry() {
+	static Vector<CGWindowTypeEntry> registry;
+	return registry;
+}
+
+static String s_normalize_border_type(const String &p_raw) {
+	String v = p_raw.strip_edges().to_lower();
+	if (v == "rect" || v == "recto" || v == "square" || v == "cuadrado") {
+		return "rect";
+	}
+	if (v == "none" || v == "sin borde" || v == "sin bordes" || v == "sin_borde" || v == "sin_bordes") {
+		return "none";
+	}
+	if (v == "image" || v == "imagen" || v == "nine_slice" || v == "9slice") {
+		return "image";
+	}
+	return "rounded";
+}
+
+static String s_normalize_fill_type(const String &p_raw) {
+	String v = p_raw.strip_edges().to_lower();
+	if (v == "image" || v == "imagen" || v == "texture" || v == "textura") {
+		return "image";
+	}
+	return "color";
+}
+
+static String s_normalize_center_mode(const String &p_raw) {
+	String v = p_raw.strip_edges().to_lower();
+	if (v == "repeat" || v == "repetir" || v == "tile") {
+		return "repeat";
+	}
+	return "stretch";
+}
+
+static String s_normalize_color_html(const Variant &p_val, const String &p_fallback, double p_opacity_override = -1.0) {
+	Color c;
+	bool valid = false;
+	if (p_val.get_type() == Variant::COLOR) {
+		c = Color(p_val);
+		valid = true;
+	} else {
+		String s = String(p_val).strip_edges();
+		if (!s.is_empty() && Color::html_is_valid(s)) {
+			c = Color::html(s);
+			valid = true;
+		}
+	}
+	if (!valid) {
+		c = Color::html(p_fallback);
+	}
+	if (p_opacity_override >= 0.0) {
+		c.a = CLAMP((float)p_opacity_override, 0.0f, 1.0f);
+	}
+	return "#" + c.to_html(true);
+}
+
+static Dictionary s_normalize_insets_dict(const Variant &p_val, const Dictionary &p_default) {
+	int dl = MAX(0, int(p_default.get("left", 0)));
+	int dt = MAX(0, int(p_default.get("top", 0)));
+	int dr = MAX(0, int(p_default.get("right", 0)));
+	int db = MAX(0, int(p_default.get("bottom", 0)));
+	if (p_val.get_type() == Variant::INT || p_val.get_type() == Variant::FLOAT) {
+		int uniform = MAX(0, int(p_val));
+		dl = dt = dr = db = uniform;
+	} else if (p_val.get_type() == Variant::DICTIONARY) {
+		Dictionary d = p_val;
+		dl = MAX(0, int(d.get("left", dl)));
+		dt = MAX(0, int(d.get("top", dt)));
+		dr = MAX(0, int(d.get("right", dr)));
+		db = MAX(0, int(d.get("bottom", db)));
+	}
+	Dictionary out;
+	out["left"] = dl;
+	out["top"] = dt;
+	out["right"] = dr;
+	out["bottom"] = db;
+	return out;
+}
+
+static Dictionary s_make_insets_dict(int p_left, int p_top, int p_right, int p_bottom) {
+	Dictionary out;
+	out["left"] = MAX(0, p_left);
+	out["top"] = MAX(0, p_top);
+	out["right"] = MAX(0, p_right);
+	out["bottom"] = MAX(0, p_bottom);
+	return out;
+}
+
+static Dictionary s_make_surface_props(
+		const String &p_border_type,
+		int p_border_width,
+		int p_corner_radius,
+		const String &p_border_color,
+		const String &p_fill_type,
+		const String &p_fill_color,
+		const String &p_fill_image_path,
+		const Dictionary &p_padding,
+		const String &p_image_path,
+		const Dictionary &p_nine_slice,
+		const String &p_center_mode,
+		bool p_pixel_art,
+		const String &p_font_color) {
+	Dictionary out;
+	out["border_type"] = s_normalize_border_type(p_border_type);
+	out["border_width"] = (out["border_type"] == "none") ? 0 : MAX(0, p_border_width);
+	out["corner_radius"] = (out["border_type"] == "rect" || out["border_type"] == "none") ? 0 : MAX(0, p_corner_radius);
+	out["border_color"] = s_normalize_color_html(p_border_color, "#e0a040ff");
+	out["fill_type"] = s_normalize_fill_type(p_fill_type);
+	out["fill_color"] = s_normalize_color_html(p_fill_color, "#14171ff0");
+	out["fill_image_path"] = p_fill_image_path.strip_edges();
+	out["padding"] = p_padding.duplicate(true);
+	out["image_path"] = p_image_path.strip_edges();
+	out["nine_slice"] = p_nine_slice.duplicate(true);
+	out["center_mode"] = s_normalize_center_mode(p_center_mode);
+	out["pixel_art"] = p_pixel_art;
+	out["font_color"] = s_normalize_color_html(p_font_color, "#eef2faff");
+	return out;
+}
+
+static Dictionary s_normalize_surface_props(const Dictionary &p_raw, const Dictionary &p_fallback) {
+	String bt = s_normalize_border_type(String(p_raw.get("border_type", p_fallback.get("border_type", "rounded"))));
+	int bw = MAX(0, int(p_raw.get("border_width", p_fallback.get("border_width", 2))));
+	int cr = MAX(0, int(p_raw.get("corner_radius", p_fallback.get("corner_radius", 8))));
+	if (bt == "none") {
+		bw = 0;
+		cr = 0;
+	} else if (bt == "rect") {
+		cr = 0;
+	}
+	double opacity_override = p_raw.has("fill_opacity") ? double(p_raw["fill_opacity"]) : -1.0;
+	String bcol = s_normalize_color_html(p_raw.get("border_color", p_fallback.get("border_color", "#e0a040ff")), String(p_fallback.get("border_color", "#e0a040ff")));
+	String fcol = s_normalize_color_html(p_raw.get("fill_color", p_fallback.get("fill_color", "#14171ff0")), String(p_fallback.get("fill_color", "#14171ff0")), opacity_override);
+	String ft = s_normalize_fill_type(String(p_raw.get("fill_type", p_fallback.get("fill_type", "color"))));
+	String fimg = String(p_raw.get("fill_image_path", p_fallback.get("fill_image_path", ""))).strip_edges();
+	Dictionary pad = s_normalize_insets_dict(p_raw.has("padding") ? p_raw["padding"] : p_fallback.get("padding", s_make_insets_dict(12, 10, 12, 10)),
+			Dictionary(p_fallback.get("padding", s_make_insets_dict(12, 10, 12, 10))));
+	String img = String(p_raw.get("image_path", p_fallback.get("image_path", ""))).strip_edges();
+	Dictionary slice = s_normalize_insets_dict(p_raw.has("nine_slice") ? p_raw["nine_slice"] : p_fallback.get("nine_slice", s_make_insets_dict(8, 8, 8, 8)),
+			Dictionary(p_fallback.get("nine_slice", s_make_insets_dict(8, 8, 8, 8))));
+	String cm = s_normalize_center_mode(String(p_raw.get("center_mode", p_fallback.get("center_mode", "stretch"))));
+	bool pa = p_raw.has("pixel_art") ? bool(p_raw["pixel_art"]) : bool(p_fallback.get("pixel_art", true));
+	String tcol = s_normalize_color_html(p_raw.get("font_color", p_fallback.get("font_color", "#eef2faff")), String(p_fallback.get("font_color", "#eef2faff")));
+
+	return s_make_surface_props(bt, bw, cr, bcol, ft, fcol, fimg, pad, img, slice, cm, pa, tcol);
+}
+
+static Dictionary s_make_builtin_style_rounded() {
+	Dictionary pad = s_make_insets_dict(12, 10, 12, 10);
+	Dictionary btn_pad = s_make_insets_dict(12, 6, 12, 6);
+	Dictionary slice = s_make_insets_dict(8, 8, 8, 8);
+	Dictionary s = s_make_surface_props("rounded", 2, 8, "#e0a040ff", "color", "#14171ff0", "", pad, "", slice, "stretch", true, "#eef2faff");
+	s["id"] = "rounded";
+	s["name"] = "Redondeado";
+	s["built_in"] = true;
+
+	Dictionary btns;
+	Dictionary st_norm = s_make_surface_props("rounded", 1, 8, "#e0a040ff", "color", "#1f2536f0", "", btn_pad, "", slice, "stretch", true, "#eef2faff");
+	st_norm["inherit_normal"] = false;
+	Dictionary st_hover = s_make_surface_props("rounded", 1, 8, "#ffd25aff", "color", "#2e3854fa", "", btn_pad, "", slice, "stretch", true, "#ffffffff");
+	st_hover["inherit_normal"] = false;
+	Dictionary st_pressed = s_make_surface_props("rounded", 1, 8, "#c88a2eff", "color", "#141a29fa", "", btn_pad, "", slice, "stretch", true, "#ffe6a8ff");
+	st_pressed["inherit_normal"] = false;
+	Dictionary st_disabled = s_make_surface_props("rounded", 1, 8, "#474e5db3", "color", "#14171f8c", "", btn_pad, "", slice, "stretch", true, "#737a8cff");
+	st_disabled["inherit_normal"] = false;
+
+	btns["normal"] = st_norm;
+	btns["hover"] = st_hover;
+	btns["pressed"] = st_pressed;
+	btns["disabled"] = st_disabled;
+	s["buttons"] = btns;
+	return s;
+}
+
+static Dictionary s_make_builtin_style_rect() {
+	Dictionary pad = s_make_insets_dict(12, 10, 12, 10);
+	Dictionary btn_pad = s_make_insets_dict(12, 6, 12, 6);
+	Dictionary slice = s_make_insets_dict(8, 8, 8, 8);
+	Dictionary s = s_make_surface_props("rect", 2, 0, "#d8dde8ff", "color", "#10131cf2", "", pad, "", slice, "stretch", true, "#f0f4fcff");
+	s["id"] = "rect";
+	s["name"] = "Recto";
+	s["built_in"] = true;
+
+	Dictionary btns;
+	Dictionary st_norm = s_make_surface_props("rect", 2, 0, "#9aa6bdff", "color", "#1a2030f2", "", btn_pad, "", slice, "stretch", true, "#f0f4fcff");
+	st_norm["inherit_normal"] = false;
+	Dictionary st_hover = s_make_surface_props("rect", 2, 0, "#ffffffff", "color", "#2a344dfa", "", btn_pad, "", slice, "stretch", true, "#ffffffff");
+	st_hover["inherit_normal"] = false;
+	Dictionary st_pressed = s_make_surface_props("rect", 2, 0, "#e0a040ff", "color", "#111622fa", "", btn_pad, "", slice, "stretch", true, "#ffe6a8ff");
+	st_pressed["inherit_normal"] = false;
+	Dictionary st_disabled = s_make_surface_props("rect", 2, 0, "#464d5cb3", "color", "#10131c8c", "", btn_pad, "", slice, "stretch", true, "#70788aff");
+	st_disabled["inherit_normal"] = false;
+
+	btns["normal"] = st_norm;
+	btns["hover"] = st_hover;
+	btns["pressed"] = st_pressed;
+	btns["disabled"] = st_disabled;
+	s["buttons"] = btns;
+	return s;
+}
+
+static Dictionary s_make_builtin_style_none() {
+	Dictionary pad = s_make_insets_dict(10, 8, 10, 8);
+	Dictionary btn_pad = s_make_insets_dict(10, 6, 10, 6);
+	Dictionary slice = s_make_insets_dict(8, 8, 8, 8);
+	Dictionary s = s_make_surface_props("none", 0, 0, "#00000000", "color", "#0f121ae6", "", pad, "", slice, "stretch", true, "#eef2faff");
+	s["id"] = "none";
+	s["name"] = "Sin bordes";
+	s["built_in"] = true;
+
+	Dictionary btns;
+	Dictionary st_norm = s_make_surface_props("none", 0, 0, "#00000000", "color", "#1c2233d9", "", btn_pad, "", slice, "stretch", true, "#eef2faff");
+	st_norm["inherit_normal"] = false;
+	Dictionary st_hover = s_make_surface_props("none", 0, 0, "#00000000", "color", "#2f3a57f2", "", btn_pad, "", slice, "stretch", true, "#ffffffff");
+	st_hover["inherit_normal"] = false;
+	Dictionary st_pressed = s_make_surface_props("none", 0, 0, "#00000000", "color", "#121724f2", "", btn_pad, "", slice, "stretch", true, "#ffe6a8ff");
+	st_pressed["inherit_normal"] = false;
+	Dictionary st_disabled = s_make_surface_props("none", 0, 0, "#00000000", "color", "#12151f73", "", btn_pad, "", slice, "stretch", true, "#70788aff");
+	st_disabled["inherit_normal"] = false;
+
+	btns["normal"] = st_norm;
+	btns["hover"] = st_hover;
+	btns["pressed"] = st_pressed;
+	btns["disabled"] = st_disabled;
+	s["buttons"] = btns;
+	return s;
+}
+
+static String s_slugify_style_id(const String &p_name) {
+	String base = p_name.strip_edges().to_lower();
+	String out;
+	bool last_us = false;
+	for (int i = 0; i < base.length(); i++) {
+		char32_t c = base[i];
+		if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			out += c;
+			last_us = false;
+		} else if (!last_us && !out.is_empty()) {
+			out += '_';
+			last_us = true;
+		}
+	}
+	while (out.ends_with("_")) {
+		out = out.substr(0, out.length() - 1);
+	}
+	return out.is_empty() ? String("style") : out;
+}
+} // namespace
+
+void ClockGearsDataManager::ensure_default_window_types_registered() {
+	Vector<CGWindowTypeEntry> &reg = s_get_window_type_registry();
+	if (!reg.is_empty()) {
+		return;
+	}
+	register_window_type("message", "Mensajes");
+	register_window_type("choices", "Elecciones");
+	register_window_type("battle_party", "Panel de grupo (Batalla)");
+	register_window_type("battle_commands", "Panel de comandos (Batalla)");
+	register_window_type("title_buttons", String::utf8("Botones del título"));
+	register_window_type("options", "Opciones");
+	register_window_type("save_list", "Lista de partidas");
+}
+
+void ClockGearsDataManager::register_window_type(const String &p_id, const String &p_label) {
+	String id = p_id.strip_edges().to_lower();
+	if (id.is_empty()) {
+		return;
+	}
+	String label = p_label.strip_edges().is_empty() ? p_id : p_label.strip_edges();
+	Vector<CGWindowTypeEntry> &reg = s_get_window_type_registry();
+	for (int i = 0; i < reg.size(); i++) {
+		if (reg[i].id == id) {
+			if (!p_label.strip_edges().is_empty()) {
+				reg.write[i].label = label;
+			}
+			return;
+		}
+	}
+	reg.push_back({ id, label });
+}
+
+Array ClockGearsDataManager::get_registered_window_types() {
+	ensure_default_window_types_registered();
+	const Vector<CGWindowTypeEntry> &reg = s_get_window_type_registry();
+	Array out;
+	for (int i = 0; i < reg.size(); i++) {
+		Dictionary d;
+		d["id"] = reg[i].id;
+		d["label"] = reg[i].label;
+		out.push_back(d);
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_window_style(const Dictionary &p_style) {
+	Dictionary fallback = s_make_builtin_style_rounded();
+	String id = String(p_style.get("id", "")).strip_edges().to_lower();
+	if (id == "rect") {
+		fallback = s_make_builtin_style_rect();
+	} else if (id == "none") {
+		fallback = s_make_builtin_style_none();
+	}
+
+	Dictionary out = s_normalize_surface_props(p_style, fallback);
+	String name = String(p_style.get("name", fallback.get("name", "Nuevo estilo"))).strip_edges();
+	if (name.is_empty()) {
+		name = "Nuevo estilo";
+	}
+	if (id.is_empty()) {
+		id = s_slugify_style_id(name);
+	}
+	bool is_builtin = (id == "rounded" || id == "rect" || id == "none");
+	out["id"] = id;
+	out["name"] = name;
+	out["built_in"] = is_builtin;
+
+	Dictionary fallback_btns = fallback["buttons"];
+	Dictionary raw_btns = (p_style.has("buttons") && p_style["buttons"].get_type() == Variant::DICTIONARY) ? Dictionary(p_style["buttons"]) : Dictionary();
+
+	// Fallback de normal: hereda de los propios valores de la ventana si se crea un estilo desde cero sin buttons.normal
+	Dictionary base_norm_fallback = fallback_btns["normal"];
+	if (!p_style.has("buttons")) {
+		base_norm_fallback = out.duplicate(true);
+		base_norm_fallback["padding"] = s_make_insets_dict(12, 6, 12, 6);
+		if (out["border_type"] == "rounded" && !is_builtin) {
+			base_norm_fallback["border_width"] = MAX(1, int(out["border_width"]));
+		}
+	}
+
+	Dictionary raw_norm = (raw_btns.has("normal") && raw_btns["normal"].get_type() == Variant::DICTIONARY) ? Dictionary(raw_btns["normal"]) : Dictionary();
+	Dictionary norm_btn = s_normalize_surface_props(raw_norm, base_norm_fallback);
+	norm_btn["inherit_normal"] = false;
+
+	Dictionary btns_out;
+	btns_out["normal"] = norm_btn;
+
+	static const char *k_states[3] = { "hover", "pressed", "disabled" };
+	for (int i = 0; i < 3; i++) {
+		String sk = k_states[i];
+		Dictionary fb_state = is_builtin ? Dictionary(fallback_btns[sk]) : norm_btn;
+		Dictionary raw_st = (raw_btns.has(sk) && raw_btns[sk].get_type() == Variant::DICTIONARY) ? Dictionary(raw_btns[sk]) : Dictionary();
+		bool inherit = raw_st.has("inherit_normal") ? bool(raw_st["inherit_normal"]) : (raw_st.is_empty() && !is_builtin);
+		Dictionary st_out;
+		if (inherit) {
+			st_out = norm_btn.duplicate(true);
+			st_out["inherit_normal"] = true;
+		} else {
+			st_out = s_normalize_surface_props(raw_st, raw_st.is_empty() ? fb_state : norm_btn);
+			st_out["inherit_normal"] = false;
+		}
+		btns_out[sk] = st_out;
+	}
+	out["buttons"] = btns_out;
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_default_window_styles_config() {
+	ensure_default_window_types_registered();
+	Dictionary cfg;
+	cfg["schema_version"] = 1;
+	cfg["default_style_id"] = "rounded";
+
+	Dictionary assignments;
+	const Vector<CGWindowTypeEntry> &reg = s_get_window_type_registry();
+	for (int i = 0; i < reg.size(); i++) {
+		assignments[reg[i].id] = "";
+	}
+	cfg["assignments"] = assignments;
+
+	Array styles;
+	styles.push_back(s_make_builtin_style_rounded());
+	styles.push_back(s_make_builtin_style_rect());
+	styles.push_back(s_make_builtin_style_none());
+	cfg["styles"] = styles;
+	return cfg;
+}
+
+Dictionary ClockGearsDataManager::normalize_window_styles_config(const Dictionary &p_cfg) {
+	ensure_default_window_types_registered();
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+
+	HashMap<String, Dictionary> by_id;
+	Vector<String> order;
+
+	auto add_or_replace = [&](const Dictionary &p_st) {
+		Dictionary norm = normalize_window_style(p_st);
+		String id = norm["id"];
+		if (!by_id.has(id)) {
+			order.push_back(id);
+		}
+		by_id[id] = norm;
+	};
+
+	if (p_cfg.has("styles") && p_cfg["styles"].get_type() == Variant::ARRAY) {
+		Array raw_styles = p_cfg["styles"];
+		for (int i = 0; i < raw_styles.size(); i++) {
+			if (raw_styles[i].get_type() == Variant::DICTIONARY) {
+				add_or_replace(raw_styles[i]);
+			}
+		}
+	}
+
+	// Garantizar que los 3 estilos incluidos siempre existan (no se pueden borrar)
+	if (!by_id.has("rounded")) {
+		order.insert(0, "rounded");
+		by_id["rounded"] = s_make_builtin_style_rounded();
+	}
+	if (!by_id.has("rect")) {
+		order.push_back("rect");
+		by_id["rect"] = s_make_builtin_style_rect();
+	}
+	if (!by_id.has("none")) {
+		order.push_back("none");
+		by_id["none"] = s_make_builtin_style_none();
+	}
+
+	Array norm_styles;
+	for (int i = 0; i < order.size(); i++) {
+		norm_styles.push_back(by_id[order[i]]);
+	}
+	out["styles"] = norm_styles;
+
+	String def_id = String(p_cfg.get("default_style_id", "rounded")).strip_edges().to_lower();
+	if (!by_id.has(def_id)) {
+		def_id = by_id.has("rounded") ? String("rounded") : order[0];
+	}
+	out["default_style_id"] = def_id;
+
+	Dictionary norm_assign;
+	const Vector<CGWindowTypeEntry> &reg = s_get_window_type_registry();
+	for (int i = 0; i < reg.size(); i++) {
+		norm_assign[reg[i].id] = "";
+	}
+	if (p_cfg.has("assignments") && p_cfg["assignments"].get_type() == Variant::DICTIONARY) {
+		Dictionary raw_assign = p_cfg["assignments"];
+		Array keys = raw_assign.keys();
+		for (int i = 0; i < keys.size(); i++) {
+			String k = String(keys[i]).strip_edges().to_lower();
+			if (k.is_empty()) {
+				continue;
+			}
+			String v = String(raw_assign[keys[i]]).strip_edges().to_lower();
+			norm_assign[k] = (!v.is_empty() && by_id.has(v)) ? v : String("");
+		}
+	}
+	out["assignments"] = norm_assign;
+	return out;
+}
+
+void ClockGearsDataManager::set_window_styles_config(const Dictionary &p_cfg) {
+	window_styles_config = normalize_window_styles_config(p_cfg);
+	dirty = true;
+	emit_signal("data_changed", "window_styles", 0);
+}
+
+Array ClockGearsDataManager::get_window_styles() const {
+	Dictionary norm = normalize_window_styles_config(window_styles_config);
+	return Array(norm.get("styles", Array())).duplicate(true);
+}
+
+Dictionary ClockGearsDataManager::get_window_style(const String &p_style_id) const {
+	String target = p_style_id.strip_edges().to_lower();
+	Array styles = get_window_styles();
+	for (int i = 0; i < styles.size(); i++) {
+		Dictionary s = styles[i];
+		if (String(s.get("id", "")) == target) {
+			return s.duplicate(true);
+		}
+	}
+	return Dictionary();
+}
+
+String ClockGearsDataManager::create_window_style(const Dictionary &p_style) {
+	Dictionary raw = p_style.duplicate(true);
+	raw["built_in"] = false;
+	String base_id = String(raw.get("id", "")).strip_edges().to_lower();
+	if (base_id.is_empty() || base_id == "rounded" || base_id == "rect" || base_id == "none") {
+		base_id = s_slugify_style_id(String(raw.get("name", "custom_style")));
+		if (base_id == "rounded" || base_id == "rect" || base_id == "none") {
+			base_id += "_custom";
+		}
+	}
+
+	Array existing = get_window_styles();
+	HashMap<String, bool> used;
+	for (int i = 0; i < existing.size(); i++) {
+		used[String(Dictionary(existing[i]).get("id", ""))] = true;
+	}
+	String unique_id = base_id;
+	int suffix = 2;
+	while (used.has(unique_id)) {
+		unique_id = vformat("%s_%d", base_id, suffix++);
+	}
+	raw["id"] = unique_id;
+	Dictionary norm = normalize_window_style(raw);
+	norm["built_in"] = false;
+
+	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Array styles = cfg["styles"];
+	styles.push_back(norm);
+	cfg["styles"] = styles;
+	set_window_styles_config(cfg);
+	return unique_id;
+}
+
+String ClockGearsDataManager::duplicate_window_style(const String &p_source_id, const String &p_new_name) {
+	Dictionary src = get_window_style(p_source_id);
+	if (src.is_empty()) {
+		src = get_window_style("rounded");
+	}
+	Dictionary copy = src.duplicate(true);
+	copy["built_in"] = false;
+	copy.erase("id");
+	String new_name = p_new_name.strip_edges();
+	if (new_name.is_empty()) {
+		new_name = vformat("%s (Copia)", String(src.get("name", "Estilo")));
+	}
+	copy["name"] = new_name;
+	return create_window_style(copy);
+}
+
+bool ClockGearsDataManager::update_window_style(const String &p_style_id, const Dictionary &p_style) {
+	String target = p_style_id.strip_edges().to_lower();
+	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Array styles = cfg["styles"];
+	for (int i = 0; i < styles.size(); i++) {
+		Dictionary cur = styles[i];
+		if (String(cur.get("id", "")) == target) {
+			Dictionary merged = cur.duplicate(true);
+			Array keys = p_style.keys();
+			for (int k = 0; k < keys.size(); k++) {
+				String key = String(keys[k]);
+				if (key == "id" || key == "built_in") {
+					continue;
+				}
+				Variant val = p_style[keys[k]];
+				if (val.get_type() == Variant::DICTIONARY) {
+					val = Dictionary(val).duplicate(true);
+				} else if (val.get_type() == Variant::ARRAY) {
+					val = Array(val).duplicate(true);
+				}
+				merged[key] = val;
+			}
+			merged["id"] = target;
+			styles[i] = normalize_window_style(merged);
+			cfg["styles"] = styles;
+			set_window_styles_config(cfg);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::delete_window_style(const String &p_style_id) {
+	String target = p_style_id.strip_edges().to_lower();
+	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Array styles = cfg["styles"];
+	if (styles.size() <= 1) {
+		return false;
+	}
+	int found_idx = -1;
+	for (int i = 0; i < styles.size(); i++) {
+		Dictionary s = styles[i];
+		if (String(s.get("id", "")) == target) {
+			if (bool(s.get("built_in", false))) {
+				return false;
+			}
+			found_idx = i;
+			break;
+		}
+	}
+	if (found_idx < 0) {
+		return false;
+	}
+	styles.remove_at(found_idx);
+	cfg["styles"] = styles;
+	if (String(cfg.get("default_style_id", "")) == target) {
+		cfg["default_style_id"] = "rounded";
+	}
+	Dictionary assign = cfg["assignments"];
+	Array akeys = assign.keys();
+	for (int i = 0; i < akeys.size(); i++) {
+		if (String(assign[akeys[i]]) == target) {
+			assign[akeys[i]] = "";
+		}
+	}
+	cfg["assignments"] = assign;
+	set_window_styles_config(cfg);
+	return true;
+}
+
+String ClockGearsDataManager::get_default_window_style_id() const {
+	Dictionary norm = normalize_window_styles_config(window_styles_config);
+	return String(norm.get("default_style_id", "rounded"));
+}
+
+bool ClockGearsDataManager::set_default_window_style_id(const String &p_style_id) {
+	String target = p_style_id.strip_edges().to_lower();
+	if (get_window_style(target).is_empty()) {
+		return false;
+	}
+	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	cfg["default_style_id"] = target;
+	set_window_styles_config(cfg);
+	return true;
+}
+
+String ClockGearsDataManager::get_window_type_assignment(const String &p_window_type_id) const {
+	Dictionary norm = normalize_window_styles_config(window_styles_config);
+	Dictionary assign = norm.get("assignments", Dictionary());
+	return String(assign.get(p_window_type_id.strip_edges().to_lower(), ""));
+}
+
+bool ClockGearsDataManager::set_window_type_assignment(const String &p_window_type_id, const String &p_style_id) {
+	String wt = p_window_type_id.strip_edges().to_lower();
+	if (wt.is_empty()) {
+		return false;
+	}
+	String sid = p_style_id.strip_edges().to_lower();
+	if (!sid.is_empty() && get_window_style(sid).is_empty()) {
+		return false;
+	}
+	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Dictionary assign = cfg.get("assignments", Dictionary());
+	assign[wt] = sid;
+	cfg["assignments"] = assign;
+	set_window_styles_config(cfg);
+	return true;
+}
+
+String ClockGearsDataManager::resolve_window_style_id(const String &p_window_type_id) const {
+	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Dictionary assign = cfg.get("assignments", Dictionary());
+	String wt = p_window_type_id.strip_edges().to_lower();
+	String assigned = String(assign.get(wt, "")).strip_edges().to_lower();
+	if (!assigned.is_empty() && !get_window_style(assigned).is_empty()) {
+		return assigned;
+	}
+	String def_id = String(cfg.get("default_style_id", "rounded")).strip_edges().to_lower();
+	if (!def_id.is_empty() && !get_window_style(def_id).is_empty()) {
+		return def_id;
+	}
+	return "rounded";
+}
+
+Dictionary ClockGearsDataManager::resolve_window_style(const String &p_window_type_id) const {
+	String resolved_id = resolve_window_style_id(p_window_type_id);
+	Dictionary s = get_window_style(resolved_id);
+	if (s.is_empty()) {
+		s = get_window_style("rounded");
+	}
+	if (s.is_empty()) {
+		s = s_make_builtin_style_rounded();
+	}
+	return s;
+}
+
 String ClockGearsDataManager::get_effective_game_title() const {
 	String gt = String(system_config.get("game_title", "")).strip_edges();
 	if (!gt.is_empty()) {
@@ -2955,6 +3638,25 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_visible_title_entries"), &ClockGearsDataManager::get_visible_title_entries);
 	ClassDB::bind_method(D_METHOD("get_save_slot_count"), &ClockGearsDataManager::get_save_slot_count);
 	ClassDB::bind_method(D_METHOD("set_save_slot_count", "count"), &ClockGearsDataManager::set_save_slot_count);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("register_window_type", "id", "label"), &ClockGearsDataManager::register_window_type);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_registered_window_types"), &ClockGearsDataManager::get_registered_window_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_window_styles_config"), &ClockGearsDataManager::get_default_window_styles_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_window_style", "style"), &ClockGearsDataManager::normalize_window_style);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_window_styles_config", "config"), &ClockGearsDataManager::normalize_window_styles_config);
+	ClassDB::bind_method(D_METHOD("get_window_styles_config"), &ClockGearsDataManager::get_window_styles_config);
+	ClassDB::bind_method(D_METHOD("set_window_styles_config", "config"), &ClockGearsDataManager::set_window_styles_config);
+	ClassDB::bind_method(D_METHOD("get_window_styles"), &ClockGearsDataManager::get_window_styles);
+	ClassDB::bind_method(D_METHOD("get_window_style", "style_id"), &ClockGearsDataManager::get_window_style);
+	ClassDB::bind_method(D_METHOD("create_window_style", "style"), &ClockGearsDataManager::create_window_style);
+	ClassDB::bind_method(D_METHOD("duplicate_window_style", "source_id", "new_name"), &ClockGearsDataManager::duplicate_window_style, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("update_window_style", "style_id", "style"), &ClockGearsDataManager::update_window_style);
+	ClassDB::bind_method(D_METHOD("delete_window_style", "style_id"), &ClockGearsDataManager::delete_window_style);
+	ClassDB::bind_method(D_METHOD("get_default_window_style_id"), &ClockGearsDataManager::get_default_window_style_id);
+	ClassDB::bind_method(D_METHOD("set_default_window_style_id", "style_id"), &ClockGearsDataManager::set_default_window_style_id);
+	ClassDB::bind_method(D_METHOD("get_window_type_assignment", "window_type_id"), &ClockGearsDataManager::get_window_type_assignment);
+	ClassDB::bind_method(D_METHOD("set_window_type_assignment", "window_type_id", "style_id"), &ClockGearsDataManager::set_window_type_assignment);
+	ClassDB::bind_method(D_METHOD("resolve_window_style_id", "window_type_id"), &ClockGearsDataManager::resolve_window_style_id);
+	ClassDB::bind_method(D_METHOD("resolve_window_style", "window_type_id"), &ClockGearsDataManager::resolve_window_style);
 	ClassDB::bind_method(D_METHOD("get_effective_game_title"), &ClockGearsDataManager::get_effective_game_title);
 	ClassDB::bind_method(D_METHOD("apply_game_window_title", "context"), &ClockGearsDataManager::apply_game_window_title, DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("get_applied_window_title"), &ClockGearsDataManager::get_applied_window_title);
