@@ -63,6 +63,7 @@ static ClockGearsIcons *cg_icons_singleton = nullptr;
 static ClockGearsTheme *cg_theme_singleton = nullptr;
 static ClockGearsAudioManager *cg_audio_manager_singleton = nullptr;
 static ClockGearsAnimationManager *cg_animation_manager_singleton = nullptr;
+static ClockGearsCharacterStateRegistry *cg_char_state_registry_singleton = nullptr;
 
 void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
@@ -130,6 +131,9 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		cg_animation_manager_singleton = memnew(ClockGearsAnimationManager);
 		Engine::get_singleton()->add_singleton(Engine::Singleton("ClockGearsAnimationManager", ClockGearsAnimationManager::get_singleton()));
 
+		cg_char_state_registry_singleton = memnew(ClockGearsCharacterStateRegistry);
+		Engine::get_singleton()->add_singleton(Engine::Singleton("ClockGearsCharacterStateRegistry", ClockGearsCharacterStateRegistry::get_singleton()));
+
 #ifdef TOOLS_ENABLED
 		// Ejecutar auto-tests numéricos del motor matemático y parser de fórmulas (Sección 9)
 		bool tests_ok = cg_formulas_singleton->run_self_tests();
@@ -158,6 +162,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsCutscenePlayer);
 		GDREGISTER_CLASS(ClockGearsAnimationTriggerTable);
 		GDREGISTER_CLASS(ClockGearsAnimationManager);
+		GDREGISTER_CLASS(ClockGearsCharacterStateRegistry);
 		GDREGISTER_CLASS(ClockGearsBattleUnit);
 		GDREGISTER_CLASS(ClockGearsBattleController);
 		GDREGISTER_CLASS(ClockGearsBattleScene);
@@ -193,6 +198,9 @@ void uninitialize_clockgears_module(ModuleInitializationLevel p_level) {
 		}
 		if (cg_animation_manager_singleton) {
 			Engine::get_singleton()->remove_singleton("ClockGearsAnimationManager");
+		}
+		if (cg_char_state_registry_singleton) {
+			Engine::get_singleton()->remove_singleton("ClockGearsCharacterStateRegistry");
 		}
 		if (cg_icons_singleton) {
 			Engine::get_singleton()->remove_singleton("ClockGearsIcons");
@@ -232,6 +240,10 @@ void uninitialize_clockgears_module(ModuleInitializationLevel p_level) {
 	if (cg_animation_manager_singleton) {
 		memdelete(cg_animation_manager_singleton);
 		cg_animation_manager_singleton = nullptr;
+	}
+	if (cg_char_state_registry_singleton) {
+		memdelete(cg_char_state_registry_singleton);
+		cg_char_state_registry_singleton = nullptr;
 	}
 	if (cg_icons_singleton) {
 		memdelete(cg_icons_singleton);

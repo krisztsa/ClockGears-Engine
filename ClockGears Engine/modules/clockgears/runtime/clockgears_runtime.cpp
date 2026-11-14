@@ -144,11 +144,19 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_walk_speed"), &ClockGearsPlayer::get_walk_speed);
 	ClassDB::bind_method(D_METHOD("is_moving_step"), &ClockGearsPlayer::is_moving_step);
 	ClassDB::bind_method(D_METHOD("try_step", "dir", "is_dash"), &ClockGearsPlayer::try_step, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_front_cell", "candidate_idx"), &ClockGearsPlayer::get_front_cell, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("get_front_cell_count"), &ClockGearsPlayer::get_front_cell_count);
 	ClassDB::bind_method(D_METHOD("try_activate_front_event"), &ClockGearsPlayer::try_activate_front_event);
 	ClassDB::bind_method(D_METHOD("lock_action_key"), &ClockGearsPlayer::lock_action_key);
 	ClassDB::bind_method(D_METHOD("unlock_action_key"), &ClockGearsPlayer::unlock_action_key);
 	ClassDB::bind_method(D_METHOD("is_action_key_locked"), &ClockGearsPlayer::is_action_key_locked);
 	ClassDB::bind_method(D_METHOD("check_touch_events_at", "cell"), &ClockGearsPlayer::check_touch_events_at);
+	ClassDB::bind_method(D_METHOD("set_action_state", "state_id"), &ClockGearsPlayer::set_action_state);
+	ClassDB::bind_method(D_METHOD("get_action_state"), &ClockGearsPlayer::get_action_state);
+	ClassDB::bind_method(D_METHOD("is_action_state_blocking_movement"), &ClockGearsPlayer::is_action_state_blocking_movement);
+	ClassDB::bind_method(D_METHOD("get_active_visual_slot"), &ClockGearsPlayer::get_active_visual_slot);
+	ClassDB::bind_method(D_METHOD("is_using_freeze_frame0"), &ClockGearsPlayer::is_using_freeze_frame0);
+	ClassDB::bind_method(D_METHOD("get_active_slot_frame_index"), &ClockGearsPlayer::get_active_slot_frame_index);
 	ClassDB::bind_method(D_METHOD("load_actor_data", "actor_id"), &ClockGearsPlayer::load_actor_data);
 	ClassDB::bind_method(D_METHOD("setup_on_map", "map", "followers", "interpreter"), &ClockGearsPlayer::setup_on_map, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("can_pass", "from", "to", "dir"), &ClockGearsPlayer::can_pass);
@@ -186,78 +194,258 @@ int ClockGearsPlayer::opposite_direction(int p_dir) {
 }
 
 int ClockGearsPlayer::_direction_to_row(int p_dir) const {
-	switch (p_dir) {
-		case 2:
-		case 1:
-		case 3:
-			return 0; // Abajo
-		case 4:
-			return 1; // Izquierda
-		case 6:
-			return 2; // Derecha
-		case 8:
-		case 7:
-		case 9:
-			return 3; // Arriba
-		default:
-			return 0;
+	return ClockGearsCharacterStateRegistry::direction_to_sheet_row(p_dir, sprite_rows);
+}
+
+Ref<Texture2D> ClockGearsPlayer::_get_cached_slot_texture(const String &p_path) {
+	if (p_path.is_empty()) {
+		return Ref<Texture2D>();
+	}
+	if (cached_slot_textures.has(p_path)) {
+		return cached_slot_textures[p_path];
+	}
+	Ref<Texture2D> tex = _cg_load_runtime_texture(p_path);
+	cached_slot_textures[p_path] = tex;
+	return tex;
+}
+
+void ClockGearsPlayer::set_action_state(const String &p_state_id) {
+	String clean = p_state_id.strip_edges().to_lower();
+	if (clean.is_empty()) {
+		clean = "quieto";
+	}
+	if (action_state_id != clean) {
+		action_state_id = clean;
+		slot_anim_timer = 0.0f;
+		slot_anim_frame_idx = 0;
+		_update_sprite_frame();
+	}
+}
+
+bool ClockGearsPlayer::is_action_state_blocking_movement() const {
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return false;
+	}
+	return reg->does_state_block_movement(action_state_id);
+}
+
+void ClockGearsPlayer::_sync_locomotion_state() {
+	if (action_state_id != "quieto" && action_state_id != "caminar" && action_state_id != "correr") {
+		return; // Respetar estados de acción personalizados registrados externamente
+	}
+	String next_state = "quieto";
+	if (moving_step) {
+		next_state = dashing ? "correr" : "caminar";
+	}
+	if (action_state_id != next_state) {
+		action_state_id = next_state;
+		slot_anim_timer = 0.0f;
+		slot_anim_frame_idx = 0;
+	}
+}
+
+void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return;
+	}
+	ClockGearsSpriteAnimation anim;
+	bool freeze_f0 = false;
+	String res_slot;
+	if (!reg->resolve_actor_animation(actor_sprite_data, directional_idle, action_state_id, direction, anim, freeze_f0, res_slot)) {
+		return;
+	}
+	if (freeze_f0 || anim.get_frame_count() <= 1) {
+		return;
+	}
+	int total = anim.get_frame_count();
+	int cur_idx = CLAMP(slot_anim_frame_idx, 0, total - 1);
+	ClockGearsAnimationFrame cur_f = anim.get_frame(cur_idx, 0, 0);
+	float target_dur = cur_f.get_duration();
+	if (target_dur <= 0.001f) {
+		target_dur = 1.0f / MAX(0.5f, anim.fps);
+	}
+	slot_anim_timer += p_delta;
+	bool changed = false;
+	while (slot_anim_timer >= target_dur) {
+		slot_anim_timer -= target_dur;
+		if (slot_anim_frame_idx + 1 < total) {
+			slot_anim_frame_idx++;
+		} else if (anim.loop) {
+			slot_anim_frame_idx = 0;
+		} else {
+			slot_anim_frame_idx = total - 1;
+			slot_anim_timer = 0.0f;
+			break;
+		}
+		changed = true;
+		ClockGearsAnimationFrame nf = anim.get_frame(slot_anim_frame_idx, 0, 0);
+		target_dur = nf.get_duration();
+		if (target_dur <= 0.001f) {
+			target_dur = 1.0f / MAX(0.5f, anim.fps);
+		}
+	}
+	if (changed) {
+		_update_sprite_frame();
 	}
 }
 
 void ClockGearsPlayer::_update_sprite_frame() {
-	if (!sprite || sprite->get_texture().is_null()) {
+	if (!sprite) {
 		return;
 	}
-	if (!is_spritesheet) {
+
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	ClockGearsSpriteAnimation resolved_anim;
+	bool freeze_f0 = false;
+	String resolved_slot;
+	bool has_slot = reg && reg->resolve_actor_animation(actor_sprite_data, directional_idle, action_state_id, direction, resolved_anim, freeze_f0, resolved_slot);
+
+	if (active_resolved_slot != resolved_slot || active_freeze_frame0 != freeze_f0) {
+		active_resolved_slot = resolved_slot;
+		active_freeze_frame0 = freeze_f0;
+		slot_anim_timer = 0.0f;
+		slot_anim_frame_idx = 0;
+	}
+
+	if (has_slot && resolved_anim.get_frame_count() > 0) {
+		int total = resolved_anim.get_frame_count();
+		int fi = active_freeze_frame0 ? 0 : CLAMP(slot_anim_frame_idx, 0, total - 1);
+		ClockGearsAnimationFrame raw_f = resolved_anim.get_frame(fi, 0, 0);
+		String spath = raw_f.sheet_path;
+		if (spath.is_empty()) {
+			spath = resolved_anim.spritesheet_path;
+		}
+		if (spath.is_empty()) {
+			spath = graphic_path;
+		}
+		Ref<Texture2D> tex = _get_cached_slot_texture(spath);
+		if (tex.is_valid()) {
+			int tw = tex->get_width();
+			int th = tex->get_height();
+			ClockGearsAnimationFrame f = resolved_anim.get_frame(fi, tw, th);
+			Rect2 reg_rect(f.region);
+			if (reg_rect.size.x <= 0 || reg_rect.size.y <= 0 || reg_rect.position.x + reg_rect.size.x > tw || reg_rect.position.y + reg_rect.size.y > th) {
+				reg_rect = Rect2(0, 0, tw, th);
+			}
+			sprite->set_texture(tex);
+			sprite->set_region_enabled(true);
+			sprite->set_region_rect(reg_rect);
+			sprite->set_hframes(1);
+			sprite->set_vframes(1);
+			sprite->set_frame(0);
+			sprite->set_position(Vector2((tile_size - reg_rect.size.x) / 2, tile_size - reg_rect.size.y));
+			return;
+		}
+	}
+
+	sprite->set_region_enabled(false);
+	Ref<Texture2D> std_tex = fallback_std_texture;
+	if (std_tex.is_null()) {
+		std_tex = sprite->get_texture();
+	}
+	if (std_tex.is_null()) {
+		std_tex = ClockGearsCharacterStateRegistry::get_missing_question_marker_texture();
+		sprite->set_texture(std_tex);
 		sprite->set_hframes(1);
 		sprite->set_vframes(1);
 		sprite->set_frame(0);
 		sprite->set_position(Vector2(0, 0));
 		return;
 	}
+	if (sprite->get_texture() != std_tex) {
+		sprite->set_texture(std_tex);
+	}
+	if (!is_spritesheet) {
+		sprite->set_hframes(1);
+		sprite->set_vframes(1);
+		sprite->set_frame(0);
+		int fw = std_tex->get_width();
+		int fh = std_tex->get_height();
+		sprite->set_position(Vector2((tile_size - fw) / 2, tile_size - fh));
+		return;
+	}
 	sprite->set_hframes(sprite_cols);
 	sprite->set_vframes(sprite_rows);
 	const int walk_cycle[4] = { 0, 1, 2, 1 };
-	int col = moving_step ? (walk_cycle[anim_pattern_idx % 4] % sprite_cols) : (1 % sprite_cols);
+	int idle_col = (sprite_cols >= 3) ? 1 : 0;
+	int col = moving_step ? (walk_cycle[anim_pattern_idx % 4] % sprite_cols) : idle_col;
 	int row = CLAMP(_direction_to_row(direction), 0, sprite_rows - 1);
 	sprite->set_frame(row * sprite_cols + col);
 
-	int frame_h = sprite->get_texture()->get_height() / sprite_rows;
-	int frame_w = sprite->get_texture()->get_width() / sprite_cols;
+	int frame_h = std_tex->get_height() / sprite_rows;
+	int frame_w = std_tex->get_width() / sprite_cols;
 	sprite->set_position(Vector2((tile_size - frame_w) / 2, tile_size - frame_h));
 }
 
 void ClockGearsPlayer::load_actor_data(int p_actor_id) {
 	actor_id = p_actor_id;
+	directional_idle = false;
+	actor_sprite_data = ClockGearsSpriteSheetData();
+	cached_slot_textures.clear();
+	active_resolved_slot = "";
+	active_freeze_frame0 = false;
+	slot_anim_timer = 0.0f;
+	slot_anim_frame_idx = 0;
+	graphic_path = "";
+
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (dm && actor_id > 0) {
 		Dictionary rec = dm->get_record_by_id(CAT_ACTORS, actor_id);
 		if (!rec.is_empty()) {
 			actor_name = rec.get("name", "");
 			graphic_path = rec.get("graphic_path", "");
+			directional_idle = bool(rec.get("directional_idle", false));
+			Dictionary sp_dict = rec.get("sprite_data", Dictionary());
+			if (!sp_dict.is_empty()) {
+				actor_sprite_data.from_dict(sp_dict);
+			} else if (rec.has("animations") && rec["animations"].get_type() == Variant::DICTIONARY) {
+				Dictionary tmp;
+				tmp["animations"] = rec["animations"];
+				actor_sprite_data.from_dict(tmp);
+			}
 		}
 	}
 
 	Ref<Texture2D> tex = _cg_load_runtime_texture(graphic_path);
+	has_actor_graphic = tex.is_valid();
 	if (tex.is_valid()) {
 		int tw = tex->get_width();
 		int th = tex->get_height();
-		if (th >= 64 && th % 4 == 0 && (tw % 3 == 0 || tw % 4 == 0)) {
+		bool detected_8 = false;
+		if (tw % 3 == 0 && (tw / 3) >= 16 && (tw / 3) * 8 == th) {
+			detected_8 = true;
 			is_spritesheet = true;
-			sprite_rows = 4;
-			sprite_cols = (tw % 3 == 0) ? 3 : 4;
-		} else {
-			is_spritesheet = false;
-			sprite_rows = 1;
-			sprite_cols = 1;
+			sprite_rows = 8;
+			sprite_cols = 3;
+		} else if (tw % 4 == 0 && (tw / 4) >= 16 && (tw / 4) * 8 == th) {
+			detected_8 = true;
+			is_spritesheet = true;
+			sprite_rows = 8;
+			sprite_cols = 4;
 		}
+		if (!detected_8) {
+			if (th >= 64 && th % 4 == 0 && (tw % 3 == 0 || tw % 4 == 0)) {
+				is_spritesheet = true;
+				sprite_rows = 4;
+				sprite_cols = (tw % 3 == 0) ? 3 : 4;
+			} else {
+				is_spritesheet = false;
+				sprite_rows = 1;
+				sprite_cols = 1;
+			}
+		}
+		fallback_std_texture = tex;
 		sprite->set_texture(tex);
 	} else {
-		is_spritesheet = true;
-		sprite_cols = 3;
-		sprite_rows = 4;
-		sprite->set_texture(_cg_make_pixel_char_sheet(Color(0.22f, 0.52f, 0.88f, 1.0f), Color(0.88f, 0.65f, 0.25f, 1.0f)));
+		is_spritesheet = false;
+		sprite_cols = 1;
+		sprite_rows = 1;
+		fallback_std_texture = ClockGearsCharacterStateRegistry::get_missing_question_marker_texture();
+		sprite->set_texture(fallback_std_texture);
 	}
+	_sync_locomotion_state();
 	_update_sprite_frame();
 }
 
@@ -273,16 +461,22 @@ void ClockGearsPlayer::setup_on_map(ClockGearsMap *p_map, ClockGearsFollowerMana
 
 void ClockGearsPlayer::set_grid_cell_immediate(const Vector2i &p_cell, int p_dir) {
 	grid_cell = p_cell;
-	direction = p_dir;
+	direction = ClockGearsCharacterStateRegistry::is_valid_direction(p_dir) ? p_dir : 2;
 	moving_step = false;
+	dashing = false;
 	step_start_px = Vector2(grid_cell.x * tile_size, grid_cell.y * tile_size);
 	step_target_px = step_start_px;
+	step_exact_px = step_start_px;
 	set_position(step_start_px);
 	anim_pattern_idx = 1;
+	_sync_locomotion_state();
 	_update_sprite_frame();
 }
 
 void ClockGearsPlayer::set_direction(int p_dir) {
+	if (!ClockGearsCharacterStateRegistry::is_valid_direction(p_dir)) {
+		return;
+	}
 	direction = p_dir;
 	_update_sprite_frame();
 }
@@ -446,7 +640,7 @@ bool ClockGearsPlayer::_is_tile_counter(const Vector2i &p_cell) const {
 	return false;
 }
 
-bool ClockGearsPlayer::can_pass_cell(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event) const {
+bool ClockGearsPlayer::_can_pass_cardinal_step(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event) const {
 	if (r_blocking_event) {
 		*r_blocking_event = nullptr;
 	}
@@ -507,11 +701,55 @@ bool ClockGearsPlayer::can_pass_cell(const Vector2i &p_from, const Vector2i &p_t
 	return true;
 }
 
+bool ClockGearsPlayer::can_pass_cell(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event) const {
+	if (r_blocking_event) {
+		*r_blocking_event = nullptr;
+	}
+	if (!current_map) {
+		return true;
+	}
+	Vector2i msize = current_map->get_map_size();
+	if (p_to.x < 0 || p_to.y < 0 || p_to.x >= msize.x || p_to.y >= msize.y) {
+		return false;
+	}
+	if (through_enabled) {
+		return true;
+	}
+
+	Vector2i delta = p_to - p_from;
+	if (Math::abs(delta.x) == 1 && Math::abs(delta.y) == 1) {
+		// Movimiento diagonal: requiere casilla destino Y ambas cardinales contiguas pasables (sin rozar esquinas)
+		int horiz_dir = (delta.x < 0) ? 4 : 6;
+		int vert_dir = (delta.y < 0) ? 8 : 2;
+		Vector2i horiz_cell(p_from.x + delta.x, p_from.y);
+		Vector2i vert_cell(p_from.x, p_from.y + delta.y);
+
+		if (!_can_pass_cardinal_step(p_from, horiz_cell, horiz_dir, nullptr)) {
+			return false;
+		}
+		if (!_can_pass_cardinal_step(p_from, vert_cell, vert_dir, nullptr)) {
+			return false;
+		}
+		if (!_can_pass_cardinal_step(horiz_cell, p_to, vert_dir, r_blocking_event)) {
+			return false;
+		}
+		if (!_can_pass_cardinal_step(vert_cell, p_to, horiz_dir, r_blocking_event)) {
+			return false;
+		}
+		return true;
+	}
+
+	return _can_pass_cardinal_step(p_from, p_to, p_dir, r_blocking_event);
+}
+
 bool ClockGearsPlayer::try_step(int p_dir, bool p_is_dash) {
 	if (moving_step) {
 		return false;
 	}
 	if (event_interpreter && event_interpreter->is_blocking_player()) {
+		return false;
+	}
+	if (is_action_state_blocking_movement()) {
 		return false;
 	}
 
@@ -538,15 +776,34 @@ bool ClockGearsPlayer::try_step(int p_dir, bool p_is_dash) {
 	grid_cell = target_cell;
 	step_start_px = get_position();
 	step_target_px = Vector2(grid_cell.x * tile_size, grid_cell.y * tile_size);
+	step_exact_px = step_start_px;
 	step_target_cell = target_cell;
+	dashing = p_is_dash;
 	current_step_speed = p_is_dash ? dash_speed : walk_speed;
 	moving_step = true;
+	_sync_locomotion_state();
+	_update_sprite_frame();
 
 	if (follower_manager) {
 		follower_manager->record_leader_step(prev_cell, p_dir, current_step_speed);
 	}
 	emit_signal("step_started", prev_cell, target_cell, p_dir);
 	return true;
+}
+
+Vector2i ClockGearsPlayer::get_front_cell(int p_candidate_idx) const {
+	Vector2i delta = direction_to_vector(direction);
+	if (p_candidate_idx == 1 && delta.x != 0 && delta.y != 0) {
+		return grid_cell + Vector2i(delta.x, 0); // Cardinal contigua horizontal primero
+	}
+	if (p_candidate_idx == 2 && delta.x != 0 && delta.y != 0) {
+		return grid_cell + Vector2i(0, delta.y); // Cardinal contigua vertical segundo
+	}
+	return grid_cell + delta; // En mirada diagonal, p_candidate_idx==0 devuelve la casilla diagonal
+}
+
+int ClockGearsPlayer::get_front_cell_count() const {
+	return ClockGearsCharacterStateRegistry::is_diagonal_direction(direction) ? 3 : 1;
 }
 
 bool ClockGearsPlayer::try_activate_front_event() {
@@ -578,27 +835,30 @@ bool ClockGearsPlayer::try_activate_front_event() {
 		return true;
 	}
 
-	// 2. Celda frontal inmediata
-	Vector2i front_cell = grid_cell + direction_to_vector(direction);
-	ClockGearsEvent *front_ev = find_event_at(front_cell);
-	if (front_ev) {
-		if (!front_ev->is_direction_fix()) {
-			front_ev->set_direction(opposite_direction(direction));
-		}
-		event_interpreter->start_event(front_ev);
-		return true;
-	}
-
-	// 3. Si la celda frontal tiene flag Mostrador (♦), buscar 1 celda más allá
-	if (_is_tile_counter(front_cell)) {
-		Vector2i counter_target = front_cell + direction_to_vector(direction);
-		ClockGearsEvent *counter_ev = find_event_at(counter_target);
-		if (counter_ev) {
-			if (!counter_ev->is_direction_fix()) {
-				counter_ev->set_direction(opposite_direction(direction));
+	// 2. Casilla(s) de enfrente: en cardinal la frontal; en diagonal: diagonal -> horizontal -> vertical
+	int cand_count = get_front_cell_count();
+	for (int ci = 0; ci < cand_count; ci++) {
+		Vector2i front_cell = get_front_cell(ci);
+		ClockGearsEvent *front_ev = find_event_at(front_cell);
+		if (front_ev) {
+			if (!front_ev->is_direction_fix()) {
+				front_ev->set_direction(ClockGearsCharacterStateRegistry::vector_to_direction(grid_cell - front_cell));
 			}
-			event_interpreter->start_event(counter_ev);
+			event_interpreter->start_event(front_ev);
 			return true;
+		}
+		// 3. Si la casilla frontal tiene flag Mostrador (♦), buscar 1 celda más allá
+		if (_is_tile_counter(front_cell)) {
+			Vector2i step_vec = front_cell - grid_cell;
+			Vector2i counter_target = front_cell + step_vec;
+			ClockGearsEvent *counter_ev = find_event_at(counter_target);
+			if (counter_ev) {
+				if (!counter_ev->is_direction_fix()) {
+					counter_ev->set_direction(ClockGearsCharacterStateRegistry::vector_to_direction(grid_cell - counter_target));
+				}
+				event_interpreter->start_event(counter_ev);
+				return true;
+			}
 		}
 	}
 
@@ -664,8 +924,7 @@ void ClockGearsPlayer::_notification(int p_what) {
 			}
 
 			if (moving_step) {
-				Vector2 cur = get_position();
-				Vector2 diff = step_target_px - cur;
+				Vector2 diff = step_target_px - step_exact_px;
 				float dist = diff.length();
 				float move_dist = current_step_speed * dt;
 
@@ -675,17 +934,25 @@ void ClockGearsPlayer::_notification(int p_what) {
 					anim_pattern_idx = (anim_pattern_idx + 1) % 4;
 					_update_sprite_frame();
 				}
+				_advance_slot_animation(dt);
 
 				if (dist <= move_dist) {
+					step_exact_px = step_target_px;
 					set_position(step_target_px.round());
 					moving_step = false;
+					dashing = false;
+					_sync_locomotion_state();
+					_update_sprite_frame();
 					emit_signal("step_finished", grid_cell);
 					check_touch_events_at(grid_cell);
 				} else {
-					Vector2 next_pos = cur + diff.normalized() * move_dist;
+					step_exact_px += diff.normalized() * move_dist;
 					// A4.1: Redondear posición visual a píxel entero
-					set_position(next_pos.round());
+					set_position(step_exact_px.round());
 				}
+			} else {
+				_sync_locomotion_state();
+				_advance_slot_animation(dt);
 			}
 
 			if (!moving_step && inp && (!event_interpreter || !event_interpreter->is_blocking_player())) {
@@ -715,12 +982,12 @@ void ClockGearsPlayer::_notification(int p_what) {
 
 				int desired_dir = 0;
 				if (allow_diagonal) {
-					if (down && left) desired_dir = 1;
-					else if (down && right) desired_dir = 3;
-					else if (up && left) desired_dir = 7;
-					else if (up && right) desired_dir = 9;
-				}
-				if (desired_dir == 0) {
+					int ix = (right ? 1 : 0) - (left ? 1 : 0);
+					int iy = (down ? 1 : 0) - (up ? 1 : 0);
+					if (ix != 0 || iy != 0) {
+						desired_dir = ClockGearsCharacterStateRegistry::vector_to_direction(Vector2i(ix, iy));
+					}
+				} else {
 					if (down) desired_dir = 2;
 					else if (up) desired_dir = 8;
 					else if (left) desired_dir = 4;
@@ -783,10 +1050,7 @@ void ClockGearsFollower::_update_sprite_frame() {
 	sprite->set_vframes(sprite_rows);
 	const int walk_cycle[4] = { 0, 1, 2, 1 };
 	int col = moving_step ? (walk_cycle[anim_pattern_idx % 4] % sprite_cols) : (1 % sprite_cols);
-	int row = 0;
-	if (direction == 4) row = 1;
-	else if (direction == 6) row = 2;
-	else if (direction == 8 || direction == 7 || direction == 9) row = 3;
+	int row = ClockGearsCharacterStateRegistry::direction_to_sheet_row(direction, sprite_rows);
 	sprite->set_frame(CLAMP(row, 0, sprite_rows - 1) * sprite_cols + col);
 
 	int frame_h = sprite->get_texture()->get_height() / sprite_rows;
@@ -837,11 +1101,12 @@ void ClockGearsFollower::setup_follower(int p_member_index, int p_actor_id, int 
 
 void ClockGearsFollower::set_cell_immediate(const Vector2i &p_cell, int p_dir) {
 	grid_cell = p_cell;
-	direction = p_dir;
+	direction = ClockGearsCharacterStateRegistry::is_valid_direction(p_dir) ? p_dir : 2;
 	moving_step = false;
 	stuck_frames = 0;
 	step_start_px = Vector2(grid_cell.x * tile_size, grid_cell.y * tile_size);
 	step_target_px = step_start_px;
+	step_exact_px = step_start_px;
 	set_position(step_start_px);
 	anim_pattern_idx = 1;
 	_update_sprite_frame();
@@ -854,15 +1119,16 @@ void ClockGearsFollower::move_toward_cell(const Vector2i &p_target_cell, int p_d
 		return;
 	}
 	Vector2i diff = p_target_cell - grid_cell;
-	if (diff.y > 0) direction = 2;
-	else if (diff.y < 0) direction = 8;
-	else if (diff.x < 0) direction = 4;
-	else if (diff.x > 0) direction = 6;
-	else direction = p_dir;
+	if (diff != Vector2i(0, 0)) {
+		direction = ClockGearsCharacterStateRegistry::vector_to_direction(diff);
+	} else {
+		direction = p_dir;
+	}
 
 	grid_cell = p_target_cell;
 	step_start_px = get_position();
 	step_target_px = Vector2(grid_cell.x * tile_size, grid_cell.y * tile_size);
+	step_exact_px = step_start_px;
 	current_step_speed = MAX(32.0f, p_speed);
 	moving_step = true;
 	_update_sprite_frame();
@@ -873,8 +1139,7 @@ void ClockGearsFollower::tick_follower(float p_delta, const Vector2i &p_leader_c
 		stuck_frames = 0;
 		return;
 	}
-	Vector2 cur = get_position();
-	Vector2 diff = step_target_px - cur;
+	Vector2 diff = step_target_px - step_exact_px;
 	float dist = diff.length();
 	float move_dist = current_step_speed * p_delta;
 
@@ -889,6 +1154,7 @@ void ClockGearsFollower::tick_follower(float p_delta, const Vector2i &p_leader_c
 		stuck_frames++;
 		if (stuck_frames > 120) {
 			// Salvaguarda anti-atasco (> 120 frames lejos): teletransportar suavemente a su celda objetivo
+			step_exact_px = step_target_px;
 			set_position(step_target_px.round());
 			moving_step = false;
 			stuck_frames = 0;
@@ -901,12 +1167,14 @@ void ClockGearsFollower::tick_follower(float p_delta, const Vector2i &p_leader_c
 	}
 
 	if (dist <= move_dist) {
+		step_exact_px = step_target_px;
 		set_position(step_target_px.round());
 		moving_step = false;
 		anim_pattern_idx = 1;
 		_update_sprite_frame();
 	} else {
-		set_position((cur + diff.normalized() * move_dist).round());
+		step_exact_px += diff.normalized() * move_dist;
+		set_position(step_exact_px.round());
 	}
 }
 

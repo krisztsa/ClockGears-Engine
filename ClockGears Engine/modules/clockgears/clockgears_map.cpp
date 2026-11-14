@@ -953,6 +953,7 @@ void ClockGearsMap::init_runtime_session() {
 	add_child(runtime_player);
 	runtime_player->load_actor_data(leader_id);
 	runtime_player->setup_on_map(this, runtime_followers, nullptr);
+	runtime_player->set_allow_diagonal(int(sys.get("movement_directions", 4)) == 8);
 	runtime_player->set_grid_cell_immediate(start_cell, start_dir);
 
 	// 3. Cámara Pixel-Perfect (Anexo A4.1)

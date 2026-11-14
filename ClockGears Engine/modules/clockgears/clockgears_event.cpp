@@ -1,4 +1,5 @@
 #include "clockgears_event.h"
+#include "clockgears_animation.h"
 #include "core/clockgears_data_manager.h"
 #include "core/config/engine.h"
 #include "core/io/image.h"
@@ -282,6 +283,21 @@ void ClockGearsEvent::set_sprite_vframes(int p_vframes) {
 void ClockGearsEvent::set_sprite_frame(int p_frame) {
 	sprite_frame = MAX(0, p_frame);
 	_update_sprite_region();
+}
+
+void ClockGearsEvent::set_direction(int p_dir) {
+	if (!ClockGearsCharacterStateRegistry::is_valid_direction(p_dir)) {
+		return;
+	}
+	direction = p_dir;
+	if (sprite_vframes == 4 || sprite_vframes >= 8) {
+		int hf = MAX(1, sprite_hframes);
+		int col = sprite_frame % hf;
+		int row = ClockGearsCharacterStateRegistry::direction_to_sheet_row(direction, sprite_vframes);
+		row = CLAMP(row, 0, sprite_vframes - 1);
+		sprite_frame = row * hf + col;
+		_update_sprite_region();
+	}
 }
 
 void ClockGearsEvent::add_command(const Dictionary &p_cmd) {

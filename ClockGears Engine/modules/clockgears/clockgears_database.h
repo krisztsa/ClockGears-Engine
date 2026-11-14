@@ -199,6 +199,7 @@ private:
 	LineEdit *sys_game_title_edit = nullptr;
 	LineEdit *sys_currency_edit = nullptr;
 	OptionButton *combat_mode_selector = nullptr;
+	OptionButton *sys_movement_dirs_opt = nullptr;
 	OptionButton *sys_start_map_option = nullptr;
 	SpinBox *sys_start_x_spin = nullptr;
 	SpinBox *sys_start_y_spin = nullptr;
@@ -310,6 +311,7 @@ private:
 	// 1. Gestión de animaciones (Lista estilo Godot + desplegable sincronizado)
 	ItemList *anim_item_list = nullptr;
 	OptionButton *anim_track_opt = nullptr;
+	CheckBox *actor_dir_idle_chk = nullptr;
 	Button *btn_add_anim = nullptr;
 	Button *btn_rename_anim = nullptr;
 	Button *btn_remove_anim = nullptr;
@@ -610,6 +612,9 @@ private:
 
 	// Callbacks del Editor de Sprites y Animaciones (SpriteFrames Style - Fase 8A)
 	String _get_active_anim_name() const;
+	void _ensure_actor_fixed_slot_exists(const String &p_slot_name);
+	void _on_system_movement_dirs_selected(int p_idx);
+	void _on_actor_directional_idle_toggled(bool p_pressed);
 	void _refresh_anim_track_options();
 	void _on_anim_track_selected(int p_idx);
 	void _on_anim_item_selected(int p_idx);
@@ -682,6 +687,10 @@ public:
 	bool remove_enemy_other_animation(int p_enemy_idx, const String &p_other_name);
 	void select_anim_slot(const String &p_slot_id);
 	void remove_anim_frame_at(int p_frame_idx);
+	void set_system_movement_directions(int p_dirs);
+	int get_system_movement_directions() const;
+	void set_actor_directional_idle(bool p_enabled);
+	bool is_actor_directional_idle() const;
 	Dictionary get_troop_battleback_cfg(int p_troop_idx, int p_slot) const;
 	void set_troop_battleback_cfg(int p_troop_idx, int p_slot, const Dictionary &p_cfg);
 	String get_formatted_troop_enemy_label(int p_troop_idx, int p_member_idx, float p_max_w = 0.0f) const;

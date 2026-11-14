@@ -358,6 +358,10 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("remove_enemy_other_animation", "enemy_idx", "other_name"), &ClockGearsDatabaseDialog::remove_enemy_other_animation);
 	ClassDB::bind_method(D_METHOD("select_anim_slot", "slot_id"), &ClockGearsDatabaseDialog::select_anim_slot);
 	ClassDB::bind_method(D_METHOD("remove_anim_frame_at", "frame_idx"), &ClockGearsDatabaseDialog::remove_anim_frame_at);
+	ClassDB::bind_method(D_METHOD("set_system_movement_directions", "dirs"), &ClockGearsDatabaseDialog::set_system_movement_directions);
+	ClassDB::bind_method(D_METHOD("get_system_movement_directions"), &ClockGearsDatabaseDialog::get_system_movement_directions);
+	ClassDB::bind_method(D_METHOD("set_actor_directional_idle", "enabled"), &ClockGearsDatabaseDialog::set_actor_directional_idle);
+	ClassDB::bind_method(D_METHOD("is_actor_directional_idle"), &ClockGearsDatabaseDialog::is_actor_directional_idle);
 	ClassDB::bind_method(D_METHOD("get_troop_battleback_cfg", "troop_idx", "slot"), &ClockGearsDatabaseDialog::get_troop_battleback_cfg);
 	ClassDB::bind_method(D_METHOD("set_troop_battleback_cfg", "troop_idx", "slot", "cfg"), &ClockGearsDatabaseDialog::set_troop_battleback_cfg);
 	ClassDB::bind_method(D_METHOD("get_formatted_troop_enemy_label", "troop_idx", "member_idx", "max_w"), &ClockGearsDatabaseDialog::get_formatted_troop_enemy_label, DEFVAL(0.0f));
@@ -471,6 +475,7 @@ void ClockGearsDatabaseDialog::_init_empty_database() {
 	system_config["game_title"] = "";
 	system_config["currency"] = "G";
 	system_config["combat_mode"] = COMBAT_MODE_TURN_BASED;
+	system_config["movement_directions"] = 4;
 	system_config["start_map"] = "";
 	system_config["start_x"] = 0;
 	system_config["start_y"] = 0;
@@ -547,6 +552,7 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 	d["traits"] = Array();
 	if (p_category == CAT_ACTORS) {
 		d["class_id"] = 0;
+		d["directional_idle"] = false;
 		Dictionary ca;
 		ca["idle"] = "";
 		ca["attack"] = "";
@@ -1097,6 +1103,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (combat_anims_box) {
 		combat_anims_box->set_visible(is_actor);
 	}
+	if (actor_dir_idle_chk) {
+		actor_dir_idle_chk->set_visible(is_actor);
+	}
 	if (btn_add_anim) {
 		btn_add_anim->set_text(is_enemy ? CG_DB_TR("Nueva") : CG_DB_TR("Nueva"));
 		btn_add_anim->set_tooltip_text(is_enemy ? CG_DB_TR("Añadir una nueva ranura de Lanzamiento") : CG_DB_TR("Añadir una nueva animación vacía"));
@@ -1119,6 +1128,10 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		}
 		if (combat_mode_selector) {
 			combat_mode_selector->select((int)system_config.get("combat_mode", COMBAT_MODE_TURN_BASED));
+		}
+		if (sys_movement_dirs_opt) {
+			int dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
+			sys_movement_dirs_opt->select(dirs == 8 ? 1 : 0);
 		}
 		if (sys_start_x_spin) {
 			sys_start_x_spin->set_value((int)system_config.get("start_x", 0));
@@ -1882,6 +1895,9 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 			_refresh_enemy_casts_ui();
 			_refresh_enemy_others_ui();
 		} else {
+			if (actor_dir_idle_chk) {
+				actor_dir_idle_chk->set_pressed(current_category == CAT_ACTORS ? bool(d.get("directional_idle", false)) : false);
+			}
 			Dictionary sp_dict = d.get("sprite_data", Dictionary());
 			if (!sp_dict.is_empty()) {
 				sp_dict["graphic_path"] = d.get("graphic_path", "");
@@ -1892,17 +1908,19 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 				current_sprite_data = ClockGearsSpriteSheetData();
 				current_sprite_data.cols = MAX(1, old_frames);
 				current_sprite_data.rows = 1;
-				ClockGearsSpriteAnimation idle_anim;
-				idle_anim.name = "idle";
-				idle_anim.spritesheet_path = d.get("graphic_path", "");
-				idle_anim.fps = old_fps > 0 ? old_fps : 6.0f;
-				idle_anim.loop = true;
-				for (int f = 0; f < old_frames; f++) {
-					idle_anim.frames.push_back(f);
+				if (!String(d.get("graphic_path", "")).is_empty() || current_category != CAT_ACTORS) {
+					ClockGearsSpriteAnimation idle_anim;
+					idle_anim.name = "idle";
+					idle_anim.spritesheet_path = d.get("graphic_path", "");
+					idle_anim.fps = old_fps > 0 ? old_fps : 6.0f;
+					idle_anim.loop = true;
+					for (int f = 0; f < old_frames; f++) {
+						idle_anim.frames.push_back(f);
+					}
+					current_sprite_data.animations[idle_anim.name] = idle_anim;
 				}
-				current_sprite_data.animations[idle_anim.name] = idle_anim;
 			}
-			if (current_sprite_data.animations.is_empty()) {
+			if (current_sprite_data.animations.is_empty() && current_category != CAT_ACTORS) {
 				ClockGearsSpriteAnimation idle_anim;
 				idle_anim.name = "idle";
 				idle_anim.spritesheet_path = d.get("graphic_path", "");
@@ -2203,6 +2221,9 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 		}
 	}
 	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
+		if (current_category == CAT_ACTORS && actor_dir_idle_chk) {
+			d["directional_idle"] = actor_dir_idle_chk->is_pressed();
+		}
 		d["sprite_data"] = current_sprite_data.to_dict();
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
 		Dictionary ca = d.get("combat_animations", Dictionary());
@@ -4098,10 +4119,39 @@ void ClockGearsDatabaseDialog::_on_system_field_changed() {
 	if (sys_camera_clamp_check) {
 		system_config["camera_clamp"] = sys_camera_clamp_check->is_pressed();
 	}
+	if (sys_movement_dirs_opt) {
+		int sel_id = sys_movement_dirs_opt->get_selected_id();
+		system_config["movement_directions"] = (sel_id == 8) ? 8 : 4;
+	}
 	if (!String(system_config.get("start_map", "")).is_empty()) {
 		system_config["has_start_pos"] = true;
 	}
 	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_system_movement_dirs_selected(int p_idx) {
+	if (updating_ui || !sys_movement_dirs_opt) {
+		return;
+	}
+	int dirs = (sys_movement_dirs_opt->get_item_id(p_idx) == 8) ? 8 : 4;
+	system_config["movement_directions"] = dirs;
+	if (ClockGearsDataManager::get_singleton()) {
+		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
+	}
+	if (current_category == CAT_ACTORS) {
+		_refresh_anim_track_options();
+	}
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_actor_directional_idle_toggled(bool p_pressed) {
+	if (updating_ui) {
+		return;
+	}
+	_on_param_changed();
+	if (current_category == CAT_ACTORS) {
+		_refresh_anim_track_options();
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_system_text_changed(const String &p_new_text) {
@@ -5416,6 +5466,18 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	combat_mode_selector->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_mode_selected));
 	sys_grid->add_child(combat_mode_selector);
 
+	Label *lbl_sys_dirs = memnew(Label(CG_DB_TR("Direcciones de movimiento:")));
+	lbl_sys_dirs->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
+	sys_grid->add_child(lbl_sys_dirs);
+	sys_movement_dirs_opt = memnew(OptionButton);
+	sys_movement_dirs_opt->set_custom_minimum_size(Size2(280 * EDSCALE, row_h));
+	sys_movement_dirs_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_movement_dirs_opt->add_item(CG_DB_TR("4 direcciones (Clásico)"), 4);
+	sys_movement_dirs_opt->add_item(CG_DB_TR("8 direcciones (Cardinales + Diagonales)"), 8);
+	sys_movement_dirs_opt->select(0);
+	sys_movement_dirs_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_movement_dirs_selected));
+	sys_grid->add_child(sys_movement_dirs_opt);
+
 	Label *lbl_sys_map = memnew(Label(CG_DB_TR("Mapa Inicial:")));
 	lbl_sys_map->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
 	sys_grid->add_child(lbl_sys_map);
@@ -5628,6 +5690,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	lbl_b1->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	anim_sel_sec->add_child(lbl_b1);
 	anim_sel_sec->add_child(memnew(HSeparator));
+
+	actor_dir_idle_chk = memnew(CheckBox(CG_DB_TR("Idle direccional (ranuras quieto por dirección)")));
+	actor_dir_idle_chk->set_visible(false);
+	actor_dir_idle_chk->set_pressed(false);
+	actor_dir_idle_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_actor_directional_idle_toggled));
+	anim_sel_sec->add_child(actor_dir_idle_chk);
 
 	HBoxContainer *track_ctrl_hb = memnew(HBoxContainer);
 	track_ctrl_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -8503,6 +8571,60 @@ String ClockGearsDatabaseDialog::_get_active_anim_name() const {
 	return "";
 }
 
+static bool s_parse_actor_fixed_slot_key(const String &p_slot_name, String &r_state_id, int &r_dir) {
+	String prefix;
+	if (p_slot_name.begins_with("mover_")) {
+		r_state_id = "caminar";
+		prefix = "mover_";
+	} else if (p_slot_name.begins_with("correr_")) {
+		r_state_id = "correr";
+		prefix = "correr_";
+	} else if (p_slot_name.begins_with("quieto_")) {
+		r_state_id = "quieto";
+		prefix = "quieto_";
+	} else {
+		return false;
+	}
+	String suf = p_slot_name.substr(prefix.length());
+	static const struct {
+		const char *suf;
+		int dir;
+	} map[] = {
+		{ "abajo_izquierda", 1 },
+		{ "abajo_derecha", 3 },
+		{ "arriba_izquierda", 7 },
+		{ "arriba_derecha", 9 },
+		{ "abajo", 2 },
+		{ "izquierda", 4 },
+		{ "derecha", 6 },
+		{ "arriba", 8 },
+	};
+	for (int i = 0; i < 8; i++) {
+		if (suf == map[i].suf) {
+			r_dir = map[i].dir;
+			return true;
+		}
+	}
+	return false;
+}
+
+void ClockGearsDatabaseDialog::_ensure_actor_fixed_slot_exists(const String &p_slot_name) {
+	if (current_category != CAT_ACTORS || p_slot_name.is_empty()) {
+		return;
+	}
+	if (!ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(p_slot_name)) {
+		return;
+	}
+	if (!current_sprite_data.animations.has(p_slot_name)) {
+		ClockGearsSpriteAnimation a;
+		a.name = p_slot_name;
+		a.fps = 8.0f;
+		a.loop = true;
+		a.random_order = false;
+		current_sprite_data.animations[p_slot_name] = a;
+	}
+}
+
 void ClockGearsDatabaseDialog::_update_current_anim_slot_labels() {
 	if (anim_track_opt) {
 		for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
@@ -8587,6 +8709,33 @@ void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
 				add_enemy_slot_item(E.key, E.key);
 			}
 		}
+	} else if (current_category == CAT_ACTORS) {
+		int move_dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
+		bool dir_idle = actor_dir_idle_chk ? actor_dir_idle_chk->is_pressed() : false;
+		PackedStringArray fixed_slots = ClockGearsCharacterStateRegistry::get_actor_slot_ids(move_dirs, dir_idle);
+		auto add_actor_slot_item = [&](const String &p_key) {
+			String disp = s_format_enemy_slot_display_label(p_key, p_key, current_sprite_data);
+			anim_track_opt->add_item(disp, idx);
+			anim_track_opt->set_item_metadata(idx, p_key);
+			if (anim_item_list) {
+				anim_item_list->add_item(disp);
+				anim_item_list->set_item_metadata(idx, p_key);
+			}
+			if (p_key == prev_sel || (prev_sel.is_empty() && p_key == "mover_abajo")) {
+				sel_idx = idx;
+			}
+			idx++;
+		};
+		for (int s = 0; s < fixed_slots.size(); s++) {
+			add_actor_slot_item(fixed_slots[s]);
+		}
+		// Ranuras adicionales personalizadas o de combate se conservan intactas
+		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
+			if (ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(E.key)) {
+				continue;
+			}
+			add_actor_slot_item(E.key);
+		}
 	} else {
 		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
 			String disp = s_format_enemy_slot_display_label(E.key, E.key, current_sprite_data);
@@ -8630,15 +8779,22 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	String anim_name = (meta.get_type() == Variant::STRING && !String(meta).is_empty())
 			? String(meta)
 			: anim_track_opt->get_item_text(p_idx);
-	if (!current_sprite_data.animations.has(anim_name)) {
+	bool is_fixed_actor_slot = (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(anim_name));
+	if (!current_sprite_data.animations.has(anim_name) && !is_fixed_actor_slot) {
 		return;
 	}
 
 	updating_ui = true;
-	const ClockGearsSpriteAnimation &a = current_sprite_data.animations[anim_name];
-	if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : 6.0f);
-	if (anim_loop_chk) anim_loop_chk->set_pressed(a.loop);
-	if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
+	if (current_sprite_data.animations.has(anim_name)) {
+		const ClockGearsSpriteAnimation &a = current_sprite_data.animations[anim_name];
+		if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : (current_category == CAT_ACTORS ? 8.0f : 6.0f));
+		if (anim_loop_chk) anim_loop_chk->set_pressed(a.loop);
+		if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
+	} else {
+		if (anim_fps_spin) anim_fps_spin->set_value(8.0f);
+		if (anim_loop_chk) anim_loop_chk->set_pressed(true);
+		if (anim_random_order_chk) anim_random_order_chk->set_pressed(false);
+	}
 	if (anim_item_list) {
 		for (int i = 0; i < anim_item_list->get_item_count(); i++) {
 			Variant item_meta = anim_item_list->get_item_metadata(i);
@@ -8653,7 +8809,7 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 	}
 	bool is_fixed_enemy_slot = (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(anim_name));
 	if (btn_rename_anim) {
-		btn_rename_anim->set_disabled(is_fixed_enemy_slot);
+		btn_rename_anim->set_disabled(is_fixed_enemy_slot || is_fixed_actor_slot);
 	}
 	if (btn_remove_anim) {
 		btn_remove_anim->set_disabled(is_fixed_enemy_slot);
@@ -8704,6 +8860,9 @@ void ClockGearsDatabaseDialog::_on_anim_item_activated(int p_idx) {
 			: anim_item_list->get_item_text(p_idx);
 	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(old_name)) {
 		return; // Las 5 ranuras fijas (idle, attack, hurt, death, buff) no se renombran
+	}
+	if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(old_name)) {
+		return; // Las ranuras direccionales fijas del Actor no se renombran
 	}
 	if (rename_anim_dialog && rename_anim_name_edit) {
 		rename_anim_name_edit->set_text(old_name);
@@ -8786,6 +8945,9 @@ void ClockGearsDatabaseDialog::_on_rename_anim_pressed() {
 	if (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(cur_name)) {
 		return;
 	}
+	if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(cur_name)) {
+		return;
+	}
 	if (rename_anim_dialog && rename_anim_name_edit) {
 		rename_anim_name_edit->set_text(cur_name);
 		rename_anim_name_edit->set_meta("old_anim_name", cur_name);
@@ -8801,6 +8963,7 @@ void ClockGearsDatabaseDialog::_on_rename_anim_dialog_confirmed() {
 	String new_name = rename_anim_name_edit->get_text().strip_edges();
 	if (new_name.is_empty() || new_name == old_name) return;
 	if (current_category == CAT_ENEMIES && (s_is_enemy_fixed_slot_name(old_name) || s_is_enemy_fixed_slot_name(new_name))) return;
+	if (current_category == CAT_ACTORS && (ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(old_name) || ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(new_name))) return;
 
 	if (current_sprite_data.animations.has(old_name)) {
 		ClockGearsSpriteAnimation a = current_sprite_data.animations[old_name];
@@ -8857,6 +9020,12 @@ void ClockGearsDatabaseDialog::_on_remove_anim_pressed() {
 		return;
 	}
 	current_sprite_data.animations.erase(name_to_remove);
+	if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(name_to_remove)) {
+		_refresh_anim_track_options();
+		select_anim_slot(name_to_remove);
+		_on_param_changed();
+		return;
+	}
 	if (current_category == CAT_ENEMIES) {
 		Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
 		if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ENEMIES].size()) {
@@ -9126,6 +9295,7 @@ void ClockGearsDatabaseDialog::_on_sheet_importer_clear_sel_pressed() {
 void ClockGearsDatabaseDialog::_on_sheet_importer_add_confirmed() {
 	if (sheet_importer_selected_frames.is_empty()) return;
 	String cur_anim_name = _get_active_anim_name();
+	_ensure_actor_fixed_slot_exists(cur_anim_name);
 	if (!current_sprite_data.animations.has(cur_anim_name)) return;
 	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_anim_name];
 
@@ -9174,6 +9344,11 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 
 	String cur_anim_name = _get_active_anim_name();
 	if (!current_sprite_data.animations.has(cur_anim_name)) {
+		if (current_category == CAT_ACTORS && ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(cur_anim_name)) {
+			Label *empty_lbl = memnew(Label(CG_DB_TR("(Ranura vacía — usará respaldo automático o pulsa 'Añadir frames desde spritesheet')")));
+			empty_lbl->add_theme_color_override("font_color", Color(0.6f, 0.6f, 0.6f));
+			frames_strip_hbox->add_child(empty_lbl);
+		}
 		return;
 	}
 	const ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_anim_name];
@@ -9339,6 +9514,75 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 
 void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 	String cur_name = _get_active_anim_name();
+	if (current_category == CAT_ACTORS) {
+		ClockGearsSpriteAnimation resolved_anim;
+		bool has_anim = false;
+		String state_id;
+		int dir = 2;
+		bool is_fixed_slot = s_parse_actor_fixed_slot_key(cur_name, state_id, dir);
+		if (is_fixed_slot) {
+			bool dir_idle = actor_dir_idle_chk ? actor_dir_idle_chk->is_pressed() : false;
+			bool freeze_f0 = false;
+			String resolved_slot;
+			has_anim = ClockGearsCharacterStateRegistry::get_singleton() &&
+					ClockGearsCharacterStateRegistry::get_singleton()->resolve_actor_animation(
+							current_sprite_data, dir_idle, state_id, dir, resolved_anim, freeze_f0, resolved_slot);
+		} else if (current_sprite_data.animations.has(cur_name)) {
+			resolved_anim = current_sprite_data.animations[cur_name];
+			has_anim = resolved_anim.get_frame_count() > 0;
+		}
+
+		if (has_anim && resolved_anim.get_frame_count() > 0) {
+			ClockGearsAnimationFrame raw_f0 = resolved_anim.get_frame(0, 0, 0);
+			String spath = raw_f0.sheet_path.is_empty() ? resolved_anim.spritesheet_path : raw_f0.sheet_path;
+			if (spath.is_empty()) {
+				Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+				if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ACTORS].size()) {
+					spath = Dictionary(category_data[CAT_ACTORS][sel[0]]).get("graphic_path", "");
+				}
+			}
+			Ref<Texture2D> tex = _load_texture_from_path(spath);
+			if (tex.is_valid()) {
+				ClockGearsAnimationFrame f0 = resolved_anim.get_frame(0, tex->get_width(), tex->get_height());
+				if (anim_preview_atlas.is_null()) anim_preview_atlas.instantiate();
+				anim_preview_atlas->set_atlas(tex);
+				Rect2 reg(f0.region);
+				if (reg.size.x <= 0 || reg.size.y <= 0 || reg.position.x + reg.size.x > tex->get_width() || reg.position.y + reg.size.y > tex->get_height()) {
+					reg = Rect2(0, 0, tex->get_width(), tex->get_height());
+				}
+				anim_preview_atlas->set_region(reg);
+				if (anim_preview_rect) anim_preview_rect->set_texture(anim_preview_atlas);
+				return;
+			}
+		} else {
+			String spath;
+			Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+			if (!sel.is_empty() && sel[0] >= 0 && sel[0] < category_data[CAT_ACTORS].size()) {
+				spath = Dictionary(category_data[CAT_ACTORS][sel[0]]).get("graphic_path", "");
+			}
+			Ref<Texture2D> tex = _load_texture_from_path(spath);
+			if (tex.is_valid() && is_fixed_slot) {
+				int rows = (current_sprite_data.rows == 4 || current_sprite_data.rows >= 8)
+						? current_sprite_data.rows
+						: (tex->get_height() >= tex->get_width() * 2 ? 8 : 4);
+				int cols = current_sprite_data.cols > 0 ? current_sprite_data.cols : 4;
+				int fw = MAX(1, tex->get_width() / cols);
+				int fh = MAX(1, tex->get_height() / rows);
+				int row_idx = ClockGearsCharacterStateRegistry::direction_to_sheet_row(dir, rows);
+				if (anim_preview_atlas.is_null()) anim_preview_atlas.instantiate();
+				anim_preview_atlas->set_atlas(tex);
+				anim_preview_atlas->set_region(Rect2(0, row_idx * fh, fw, fh));
+				if (anim_preview_rect) anim_preview_rect->set_texture(anim_preview_atlas);
+				return;
+			}
+		}
+
+		anim_preview_playing = false;
+		if (btn_anim_play) btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
+		if (anim_preview_rect) anim_preview_rect->set_texture(ClockGearsCharacterStateRegistry::get_missing_question_marker_texture());
+		return;
+	}
+
 	if (!current_sprite_data.animations.has(cur_name)) {
 		if (anim_preview_rect) anim_preview_rect->set_texture(Ref<Texture2D>());
 		return;
@@ -9440,6 +9684,7 @@ void ClockGearsDatabaseDialog::_on_frame_remove(int p_step_idx) {
 void ClockGearsDatabaseDialog::_on_anim_playback_settings_changed() {
 	if (updating_ui) return;
 	String cur_anim_name = _get_active_anim_name();
+	_ensure_actor_fixed_slot_exists(cur_anim_name);
 	if (!current_sprite_data.animations.has(cur_anim_name)) return;
 	ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_anim_name];
 	if (anim_fps_spin) a.fps = float(anim_fps_spin->get_value());
@@ -9730,6 +9975,48 @@ void ClockGearsDatabaseDialog::select_anim_slot(const String &p_slot_key) {
 
 void ClockGearsDatabaseDialog::remove_anim_frame_at(int p_step_idx) {
 	_on_frame_remove(p_step_idx);
+}
+
+void ClockGearsDatabaseDialog::set_system_movement_directions(int p_dirs) {
+	int dirs = (p_dirs == 8) ? 8 : 4;
+	system_config["movement_directions"] = dirs;
+	if (ClockGearsDataManager::get_singleton()) {
+		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
+	}
+	if (sys_movement_dirs_opt) {
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		sys_movement_dirs_opt->select(dirs == 8 ? 1 : 0);
+		updating_ui = prev_upd;
+	}
+	if (current_category == CAT_ACTORS) {
+		_refresh_anim_track_options();
+	}
+	_mark_database_dirty();
+}
+
+int ClockGearsDatabaseDialog::get_system_movement_directions() const {
+	return (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
+}
+
+void ClockGearsDatabaseDialog::set_actor_directional_idle(bool p_enabled) {
+	if (actor_dir_idle_chk) {
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		actor_dir_idle_chk->set_pressed(p_enabled);
+		updating_ui = prev_upd;
+	}
+	if (current_category == CAT_ACTORS) {
+		_on_param_changed();
+		_refresh_anim_track_options();
+	}
+}
+
+bool ClockGearsDatabaseDialog::is_actor_directional_idle() const {
+	if (actor_dir_idle_chk) {
+		return actor_dir_idle_chk->is_pressed();
+	}
+	return false;
 }
 
 void ClockGearsDatabaseDialog::_setup_combat_anims_ui() {

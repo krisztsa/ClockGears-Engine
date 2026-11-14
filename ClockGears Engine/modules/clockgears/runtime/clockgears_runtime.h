@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../clockgears_animation.h"
 #include "../clockgears_event.h"
 #include "../clockgears_map.h"
 #include "../clockgears_types.h"
@@ -45,6 +46,7 @@ private:
 	bool moving_step = false;
 	Vector2 step_start_px;
 	Vector2 step_target_px;
+	Vector2 step_exact_px;
 	Vector2i step_target_cell;
 	float step_progress = 0.0f;
 	float current_step_speed = 128.0f;
@@ -54,6 +56,17 @@ private:
 	int sprite_cols = 3;
 	int sprite_rows = 4;
 	bool is_spritesheet = false;
+	bool has_actor_graphic = false;
+
+	bool directional_idle = false;
+	ClockGearsSpriteSheetData actor_sprite_data;
+	HashMap<String, Ref<Texture2D>> cached_slot_textures;
+	Ref<Texture2D> fallback_std_texture;
+	String action_state_id = "quieto";
+	String active_resolved_slot;
+	bool active_freeze_frame0 = false;
+	float slot_anim_timer = 0.0f;
+	int slot_anim_frame_idx = 0;
 
 	bool action_key_was_pressed = false;
 	bool action_key_released = true;
@@ -66,10 +79,14 @@ private:
 	ClockGearsEventInterpreter *event_interpreter = nullptr;
 
 	Ref<Texture2D> _create_fallback_actor_texture(const Color &p_primary, const Color &p_accent) const;
+	Ref<Texture2D> _get_cached_slot_texture(const String &p_path);
+	void _sync_locomotion_state();
+	void _advance_slot_animation(float p_delta);
 	void _update_sprite_frame();
 	int _direction_to_row(int p_dir) const;
 	bool _is_tile_counter(const Vector2i &p_cell) const;
 	int _get_tile_passage_mode(const Vector2i &p_cell, int &r_dir4_mask) const;
+	bool _can_pass_cardinal_step(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event) const;
 
 protected:
 	static void _bind_methods();
@@ -99,11 +116,20 @@ public:
 	bool can_pass_cell(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event = nullptr) const;
 	bool can_pass(const Vector2i &p_from, const Vector2i &p_to, int p_dir) const { return can_pass_cell(p_from, p_to, p_dir, nullptr); }
 	bool try_step(int p_dir, bool p_is_dash = false);
+	Vector2i get_front_cell(int p_candidate_idx = 0) const;
+	int get_front_cell_count() const;
 	bool try_activate_front_event();
 	void lock_action_key();
 	void unlock_action_key();
 	bool is_action_key_locked() const;
 	bool check_touch_events_at(const Vector2i &p_cell);
+
+	void set_action_state(const String &p_state_id);
+	String get_action_state() const { return action_state_id; }
+	bool is_action_state_blocking_movement() const;
+	String get_active_visual_slot() const { return active_resolved_slot; }
+	bool is_using_freeze_frame0() const { return active_freeze_frame0; }
+	int get_active_slot_frame_index() const { return slot_anim_frame_idx; }
 
 	static Vector2i direction_to_vector(int p_dir);
 	static int opposite_direction(int p_dir);
@@ -128,6 +154,7 @@ private:
 	bool moving_step = false;
 	Vector2 step_start_px;
 	Vector2 step_target_px;
+	Vector2 step_exact_px;
 	float current_step_speed = 128.0f;
 	int stuck_frames = 0;
 

@@ -75,6 +75,7 @@ void ClockGearsDataManager::init_empty() {
 	system_config["game_title"] = "";
 	system_config["currency_unit"] = "G";
 	system_config["combat_mode"] = 0; // 0 = Turnos Clásico, 1 = Action RPG Tiempo Real
+	system_config["movement_directions"] = 4; // 4 o 8 direcciones de movimiento
 	system_config["start_map"] = "";
 	system_config["start_x"] = 0;
 	system_config["start_y"] = 0;
@@ -637,6 +638,8 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	if (_read_json_with_backup(p_dir_path.path_join("system.json"), sys_var) && sys_var.get_type() == Variant::DICTIONARY) {
 		system_config = sys_var;
 	}
+	int loaded_dirs = int(system_config.get("movement_directions", 4));
+	system_config["movement_directions"] = (loaded_dirs == 8) ? 8 : 4;
 
 	Variant types_var;
 	if (_read_json_with_backup(p_dir_path.path_join("types.json"), types_var) && types_var.get_type() == Variant::DICTIONARY) {

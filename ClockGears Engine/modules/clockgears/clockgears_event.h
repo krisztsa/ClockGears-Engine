@@ -74,7 +74,7 @@ public:
 	void set_direction_fix(bool p_fix) { direction_fix = p_fix; }
 	bool is_direction_fix() const { return direction_fix; }
 
-	void set_direction(int p_dir) { direction = p_dir; }
+	void set_direction(int p_dir);
 	int get_direction() const { return direction; }
 
 	void set_graphic_path(const String &p_path);

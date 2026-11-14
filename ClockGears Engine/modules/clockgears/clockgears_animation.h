@@ -753,3 +753,72 @@ public:
 	ClockGearsAnimationManager();
 	~ClockGearsAnimationManager();
 };
+
+// ============================================================================
+// Acciones y Estados Registrables de Personaje (Tanda 1A - Secciones 4, 5, 6)
+// ============================================================================
+struct ClockGearsCharacterStateDef {
+	String id;
+	String slot_prefix;
+	String fallback_state_id;
+	bool fallback_freeze_frame0 = false;
+	bool blocks_movement = false;
+	bool default_loop = true;
+
+	Dictionary to_dict() const {
+		Dictionary d;
+		d["id"] = id;
+		d["slot_prefix"] = slot_prefix;
+		d["fallback_state_id"] = fallback_state_id;
+		d["fallback_freeze_frame0"] = fallback_freeze_frame0;
+		d["blocks_movement"] = blocks_movement;
+		d["default_loop"] = default_loop;
+		return d;
+	}
+};
+
+class ClockGearsCharacterStateRegistry : public Object {
+	GDCLASS(ClockGearsCharacterStateRegistry, Object);
+
+private:
+	static ClockGearsCharacterStateRegistry *singleton;
+	HashMap<String, ClockGearsCharacterStateDef> states;
+	Vector<String> state_order;
+
+protected:
+	static void _bind_methods();
+
+public:
+	static ClockGearsCharacterStateRegistry *get_singleton() { return singleton; }
+
+	// Utilidades de dirección compartidas (4/8 direcciones y orden de filas 4/8)
+	static bool is_valid_direction(int p_dir);
+	static bool is_diagonal_direction(int p_dir);
+	static String direction_to_suffix(int p_dir);
+	static int direction_to_nearest_horizontal(int p_dir);
+	static int direction_to_sheet_row(int p_dir, int p_rows);
+	static int vector_to_direction(const Vector2i &p_vec);
+	static PackedStringArray get_actor_slot_ids(int p_movement_directions, bool p_directional_idle);
+	static bool is_actor_fixed_directional_slot(const String &p_slot_id);
+	static Ref<Texture2D> get_missing_question_marker_texture();
+
+	// Registro extensible de estados de acción (sin modificar estados ya registrados)
+	void register_state(const String &p_id, const String &p_slot_prefix, bool p_blocks_movement = false, const String &p_fallback_state_id = "", bool p_fallback_freeze_frame0 = false, bool p_default_loop = true);
+	bool has_state(const String &p_id) const;
+	Dictionary get_state_info(const String &p_id) const;
+	bool does_state_block_movement(const String &p_id) const;
+	PackedStringArray get_registered_state_ids() const;
+	String resolve_slot_for_state(const String &p_state_id, int p_direction) const;
+
+	bool resolve_actor_animation(
+			const ClockGearsSpriteSheetData &p_sheet,
+			bool p_directional_idle,
+			const String &p_state_id,
+			int p_direction,
+			ClockGearsSpriteAnimation &r_anim,
+			bool &r_freeze_frame0,
+			String &r_resolved_slot) const;
+
+	ClockGearsCharacterStateRegistry();
+	~ClockGearsCharacterStateRegistry();
+};
