@@ -291,9 +291,13 @@ private:
 	PanelContainer *graphic_frame = nullptr;
 	TextureRect *graphic_preview = nullptr;
 	Label *graphic_path_label = nullptr;
+	String graphic_path_full_text;
 	Button *btn_select_graphic = nullptr;
 	Button *btn_pick_tile_graphic = nullptr;
 	ClockGearsTilePickerDialog *tile_picker_dialog = nullptr;
+	Button *btn_apply_changes = nullptr;
+	bool has_pending_changes = false;
+	mutable HashMap<String, Ref<Texture2D>> record_list_icon_cache;
 
 	// Sección B: Editor de Sprites y Animaciones (SpriteFrames Style - Fase 8A)
 	VBoxContainer *sprite_anim_editor_box = nullptr;
@@ -500,6 +504,21 @@ private:
 	void _on_select_graphic_pressed();
 	void _on_pick_tile_graphic_pressed();
 	void _on_tile_graphic_picked(const Array &p_sel, const Vector2i &p_block);
+	void _on_tile_picker_closed();
+	void _restore_focus_after_subdialog();
+	bool _has_visible_child_dialog() const;
+	void _set_pending_changes(bool p_pending);
+	void _mark_database_dirty();
+	void _on_db_apply_pressed();
+	void _on_db_ok_pressed();
+	void _clear_record_list_icon_cache() const;
+	void _invalidate_record_list_icon(int p_category, int p_index) const;
+	Ref<Texture2D> _build_record_list_icon_texture(int p_category, const Dictionary &p_rec, int p_icon_px, const Ref<Texture2D> &p_fallback) const;
+	void _update_record_list_item_icon(int p_index);
+	void _update_graphic_preview_ui(const Dictionary &p_rec);
+	void _set_graphic_path_label_text(const String &p_full_text);
+	void _refit_graphic_path_label();
+	void _apply_record_graphic(int p_index, const String &p_path, bool p_has_tile, const Vector2i &p_tile_coords, const Vector2i &p_tile_block);
 	void _on_load_tileset_sheet_pressed();
 	void _on_file_selected(const String &p_path);
 	void _on_tileset_collision_changed();
@@ -625,6 +644,8 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void _input_from_window(const Ref<InputEvent> &p_event) override;
+	virtual void cancel_pressed() override;
 
 public:
 	void open_database();

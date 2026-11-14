@@ -47,6 +47,127 @@ static String s_fix_mojibake(const String &p_str) {
 	return fixed.is_empty() ? p_str : fixed;
 }
 
+static bool s_parse_tile_coords_variant(const Variant &p_var, Vector2i &r_coords) {
+	switch (p_var.get_type()) {
+		case Variant::VECTOR2I: {
+			Vector2i v = p_var;
+			r_coords = v;
+			return (r_coords.x >= 0 && r_coords.y >= 0);
+		}
+		case Variant::VECTOR2: {
+			Vector2 v = p_var;
+			r_coords = Vector2i(int(Math::round(v.x)), int(Math::round(v.y)));
+			return (r_coords.x >= 0 && r_coords.y >= 0);
+		}
+		case Variant::ARRAY: {
+			Array a = p_var;
+			if (a.size() >= 2) {
+				r_coords = Vector2i(int(a[0]), int(a[1]));
+				return (r_coords.x >= 0 && r_coords.y >= 0);
+			}
+			return false;
+		}
+		case Variant::DICTIONARY: {
+			Dictionary d = p_var;
+			if (d.has("x") && d.has("y")) {
+				r_coords = Vector2i(int(d["x"]), int(d["y"]));
+				return (r_coords.x >= 0 && r_coords.y >= 0);
+			}
+			return false;
+		}
+		case Variant::STRING: {
+			String s = String(p_var).strip_edges();
+			s = s.replace("(", "").replace(")", "").replace("[", "").replace("]", "").strip_edges();
+			PackedStringArray parts = s.split(",", false);
+			if (parts.size() >= 2) {
+				String p0 = parts[0].strip_edges();
+				String p1 = parts[1].strip_edges();
+				if (p0.is_valid_int() && p1.is_valid_int()) {
+					r_coords = Vector2i(p0.to_int(), p1.to_int());
+					return (r_coords.x >= 0 && r_coords.y >= 0);
+				}
+			}
+			return false;
+		}
+		default:
+			return false;
+	}
+}
+
+static Vector2i s_parse_tile_block_variant(const Variant &p_var) {
+	Vector2i blk(1, 1);
+	if (s_parse_tile_coords_variant(p_var, blk)) {
+		return Vector2i(MAX(1, blk.x), MAX(1, blk.y));
+	}
+	return Vector2i(1, 1);
+}
+
+static Array s_tile_vec_to_json_array(const Vector2i &p_v) {
+	Array a;
+	a.push_back(p_v.x);
+	a.push_back(p_v.y);
+	return a;
+}
+
+static bool s_category_has_record_graphic(int p_category) {
+	switch (p_category) {
+		case CAT_ACTORS:
+		case CAT_CLASSES:
+		case CAT_SKILLS:
+		case CAT_ITEMS:
+		case CAT_WEAPONS:
+		case CAT_ARMORS:
+		case CAT_ACCESSORIES:
+		case CAT_ENEMIES:
+		case CAT_STATES:
+		case CAT_FLORA:
+		case CAT_FAUNA:
+		case CAT_ANIMATIONS:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static String s_middle_ellipsize_for_2lines(const String &p_full, const Ref<Font> &p_font, int p_font_size, float p_max_w) {
+	if (p_full.is_empty() || p_font.is_null() || p_max_w <= 16.0f) {
+		return p_full;
+	}
+	const float eff_w = MAX(16.0f, p_max_w - 4.0f);
+	const float line_h = MAX(1.0f, p_font->get_height(p_font_size));
+	const float max_2line_h = line_h * 2.15f;
+	const BitField<TextServer::LineBreakFlag> brk = TextServer::BREAK_MANDATORY | TextServer::BREAK_WORD_BOUND | TextServer::BREAK_GRAPHEME_BOUND;
+	Size2 full_sz = p_font->get_multiline_string_size(p_full, HORIZONTAL_ALIGNMENT_CENTER, eff_w, p_font_size, -1, brk);
+	if (full_sz.y <= max_2line_h && full_sz.x <= eff_w + 0.5f) {
+		return p_full;
+	}
+	const String ell = String::utf8("…");
+	const int n = p_full.length();
+	if (n <= 4) {
+		return p_full;
+	}
+	int lo = 2;
+	int hi = n - 1;
+	String best = ell;
+	while (lo <= hi) {
+		int mid = (lo + hi) / 2;
+		int left_len = MAX(1, (mid * 55) / 100);
+		int right_len = MAX(1, mid - left_len);
+		if (left_len + right_len >= n) {
+			right_len = MAX(1, n - 1 - left_len);
+		}
+		String cand = p_full.substr(0, left_len) + ell + p_full.substr(n - right_len, right_len);
+		Size2 sz = p_font->get_multiline_string_size(cand, HORIZONTAL_ALIGNMENT_CENTER, eff_w, p_font_size, -1, brk);
+		if (sz.y <= max_2line_h && sz.x <= eff_w + 0.5f) {
+			best = cand;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return best;
+}
+
 // ============================================================================
 // ClockGearsTilesetCollisionEditor
 // ============================================================================
@@ -1354,6 +1475,9 @@ void ClockGearsDatabaseDialog::_refresh_record_list() {
 
 	record_list->clear();
 	const int icon_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	const int icon_px = 32 * icon_scale;
+	record_list->set_fixed_icon_size(Size2i(icon_px, icon_px));
+	record_list->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	Ref<Texture2D> cat_icon;
 	if (ClockGearsIcons::get_singleton()) {
 		cat_icon = ClockGearsIcons::get_singleton()->get_db_category_icon(current_category, float(icon_scale));
@@ -1363,7 +1487,8 @@ void ClockGearsDatabaseDialog::_refresh_record_list() {
 		Dictionary d = arr[i];
 		int id = d.get("id", i + 1);
 		String nm = d.get("name", "");
-		record_list->add_item(vformat("%03d: %s", id, nm), cat_icon);
+		Ref<Texture2D> row_icon = _build_record_list_icon_texture(current_category, d, icon_px, cat_icon);
+		record_list->add_item(vformat("%03d: %s", id, nm), row_icon);
 	}
 
 	if (prev_sel >= 0 && prev_sel < record_list->get_item_count()) {
@@ -1511,9 +1636,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		if (graphic_preview) {
 			graphic_preview->set_texture(Ref<Texture2D>());
 		}
-		if (graphic_path_label) {
-			graphic_path_label->set_text(CG_DB_TR("(Sin registro)"));
-		}
+		_set_graphic_path_label_text(CG_DB_TR("(Sin registro)"));
 		if (current_category == CAT_TILESETS) {
 			_refresh_tileset_slots_ui();
 		} else {
@@ -1707,14 +1830,7 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 
 		_refresh_anim_track_options();
 	} else {
-		String gpath = d.get("graphic_path", "");
-		Ref<Texture2D> tex = _load_texture_from_path(gpath);
-		if (graphic_preview) {
-			graphic_preview->set_texture(tex);
-		}
-		if (graphic_path_label) {
-			graphic_path_label->set_text(gpath.is_empty() ? CG_DB_TR("(Sin gráfico)") : gpath.get_file());
-		}
+		_update_graphic_preview_ui(d);
 	}
 
 	updating_ui = false;
@@ -1746,10 +1862,7 @@ void ClockGearsDatabaseDialog::_on_add_record_pressed() {
 	int last_idx = arr.size() - 1;
 	record_list->select(last_idx);
 	_on_record_selected(last_idx);
-	_save_database_to_disk();
-	if (current_category == CAT_TILESETS && ClockGearsMapPanel::get_singleton()) {
-		ClockGearsMapPanel::get_singleton()->load_persisted_tilesets();
-	}
+	_mark_database_dirty();
 	if (name_edit && name_edit->is_visible_in_tree()) {
 		name_edit->grab_focus();
 		name_edit->select_all();
@@ -1798,10 +1911,7 @@ void ClockGearsDatabaseDialog::_on_remove_record_pressed() {
 		record_list->select(next_sel);
 	}
 	_on_record_selected(next_sel);
-	_save_database_to_disk();
-	if (current_category == CAT_TILESETS && ClockGearsMapPanel::get_singleton()) {
-		ClockGearsMapPanel::get_singleton()->load_persisted_tilesets();
-	}
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_on_change_max_pressed() {
@@ -1832,7 +1942,7 @@ void ClockGearsDatabaseDialog::_on_change_max_confirmed() {
 	} else {
 		_on_record_selected(-1);
 	}
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_on_copy_record_pressed() {
@@ -1878,7 +1988,7 @@ void ClockGearsDatabaseDialog::_on_paste_record_pressed() {
 	_refresh_record_list();
 	record_list->select(target_idx);
 	_on_record_selected(target_idx);
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_on_param_changed() {
@@ -2060,7 +2170,11 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 	arr[idx] = d;
 	int id = d.get("id", idx + 1);
 	record_list->set_item_text(idx, vformat("%03d: %s", id, String(d["name"])));
-	_save_database_to_disk();
+	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
+		_invalidate_record_list_icon(current_category, idx);
+		_update_record_list_item_icon(idx);
+	}
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_on_param_text_changed(const String &p_new_text) {
@@ -2144,7 +2258,7 @@ void ClockGearsDatabaseDialog::_on_drop_field_changed(int p_slot) {
 	}
 	d["drops"] = drops;
 	arr[idx] = d;
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_refresh_action_patterns_tree(const Array &p_actions) {
@@ -2261,7 +2375,7 @@ void ClockGearsDatabaseDialog::_on_remove_action_pattern_pressed() {
 		d["actions"] = actions;
 		arr[rec_idx] = d;
 		_refresh_action_patterns_tree(actions);
-		_save_database_to_disk();
+		_mark_database_dirty();
 	}
 }
 
@@ -2296,7 +2410,7 @@ void ClockGearsDatabaseDialog::_on_action_pattern_confirmed() {
 	d["actions"] = actions;
 	arr[rec_idx] = d;
 	_refresh_action_patterns_tree(actions);
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_populate_trait_data_option(int p_trait_code) {
@@ -2437,7 +2551,7 @@ void ClockGearsDatabaseDialog::_on_remove_trait_pressed() {
 		d["traits"] = traits;
 		arr[rec_idx] = d;
 		_refresh_traits_tree(traits);
-		_save_database_to_disk();
+		_mark_database_dirty();
 	}
 }
 
@@ -2470,7 +2584,7 @@ void ClockGearsDatabaseDialog::_on_trait_confirmed() {
 	d["traits"] = traits;
 	arr[rec_idx] = d;
 	_refresh_traits_tree(traits);
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_populate_effect_data_option(int p_effect_code) {
@@ -2597,7 +2711,7 @@ void ClockGearsDatabaseDialog::_on_remove_effect_pressed() {
 		d["effects"] = effects;
 		arr[rec_idx] = d;
 		_refresh_effects_tree(effects);
-		_save_database_to_disk();
+		_mark_database_dirty();
 	}
 }
 
@@ -2631,7 +2745,7 @@ void ClockGearsDatabaseDialog::_on_effect_confirmed() {
 	d["effects"] = effects;
 	arr[rec_idx] = d;
 	_refresh_effects_tree(effects);
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::sync_system_player_start(const String &p_map_path, int p_x, int p_y) {
@@ -2774,7 +2888,7 @@ void ClockGearsDatabaseDialog::_on_add_party_member_pressed() {
 		party.push_back(actor_id);
 		system_config["party"] = party;
 		_refresh_system_maps_and_party();
-		_save_database_to_disk();
+		_mark_database_dirty();
 	}
 }
 
@@ -2791,7 +2905,7 @@ void ClockGearsDatabaseDialog::_on_remove_party_member_pressed() {
 		party.remove_at(sel[0]);
 		system_config["party"] = party;
 		_refresh_system_maps_and_party();
-		_save_database_to_disk();
+		_mark_database_dirty();
 	}
 }
 
@@ -2802,7 +2916,7 @@ void ClockGearsDatabaseDialog::_on_start_map_selected(int p_idx) {
 	String map_path = sys_start_map_option->get_item_metadata(p_idx);
 	system_config["start_map"] = map_path;
 	system_config["has_start_pos"] = !map_path.is_empty();
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_on_graphic_gui_input(const Ref<InputEvent> &p_event) {
@@ -2858,6 +2972,358 @@ void ClockGearsDatabaseDialog::_on_select_graphic_pressed() {
 	file_dialog->popup_centered(Size2(680, 460));
 }
 
+void ClockGearsDatabaseDialog::_set_pending_changes(bool p_pending) {
+	has_pending_changes = p_pending;
+	if (btn_apply_changes) {
+		btn_apply_changes->set_disabled(!has_pending_changes);
+	}
+}
+
+void ClockGearsDatabaseDialog::_mark_database_dirty() {
+	_set_pending_changes(true);
+}
+
+void ClockGearsDatabaseDialog::_on_db_apply_pressed() {
+	int keep_cat = current_category;
+	int keep_sel = -1;
+	if (record_list) {
+		Vector<int> sel = record_list->get_selected_items();
+		if (!sel.is_empty()) {
+			keep_sel = sel[0];
+		}
+	}
+	double keep_scroll = (record_list && record_list->get_v_scroll_bar()) ? record_list->get_v_scroll_bar()->get_value() : 0.0;
+
+	_save_database_to_disk();
+	_set_pending_changes(false);
+
+	if (ClockGearsMapPanel::get_singleton()) {
+		ClockGearsMapPanel::get_singleton()->load_persisted_tilesets();
+	}
+
+	if (record_list && current_category == keep_cat && keep_sel >= 0 && keep_sel < record_list->get_item_count()) {
+		record_list->select(keep_sel);
+		if (record_list->get_v_scroll_bar()) {
+			record_list->get_v_scroll_bar()->set_value(keep_scroll);
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_db_ok_pressed() {
+	_on_db_apply_pressed();
+	hide();
+}
+
+bool ClockGearsDatabaseDialog::_has_visible_child_dialog() const {
+	const Window *children[] = {
+		tile_picker_dialog,
+		file_dialog,
+		asset_warning_dialog,
+		change_max_dialog,
+		action_pattern_dialog,
+		trait_dialog,
+		effect_dialog,
+		troop_bg_dialog,
+		troop_bg_file_dialog,
+		troop_adjust_ui[0].dialog,
+		troop_adjust_ui[1].dialog,
+		battle_test_dialog,
+		new_anim_dialog,
+		rename_anim_dialog,
+		sheet_importer_dialog,
+	};
+	for (const Window *w : children) {
+		if (w && w->is_visible()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void ClockGearsDatabaseDialog::_input_from_window(const Ref<InputEvent> &p_event) {
+	if (p_event.is_valid() && p_event->is_action_pressed(SNAME("ui_close_dialog"), false, true) && _has_visible_child_dialog()) {
+		return;
+	}
+	AcceptDialog::_input_from_window(p_event);
+}
+
+void ClockGearsDatabaseDialog::cancel_pressed() {
+	if (_has_visible_child_dialog()) {
+		return;
+	}
+	AcceptDialog::cancel_pressed();
+}
+
+void ClockGearsDatabaseDialog::_restore_focus_after_subdialog() {
+	if (!is_inside_tree() || !is_visible()) {
+		return;
+	}
+	grab_focus();
+	if (btn_pick_tile_graphic && btn_pick_tile_graphic->is_visible_in_tree()) {
+		btn_pick_tile_graphic->grab_focus();
+	} else if (btn_select_graphic && btn_select_graphic->is_visible_in_tree()) {
+		btn_select_graphic->grab_focus();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_tile_picker_closed() {
+	if (tile_picker_dialog && tile_picker_dialog->is_visible()) {
+		tile_picker_dialog->hide();
+	}
+	if (is_inside_tree() && is_visible()) {
+		callable_mp(this, &ClockGearsDatabaseDialog::_restore_focus_after_subdialog).call_deferred();
+	}
+}
+
+void ClockGearsDatabaseDialog::_clear_record_list_icon_cache() const {
+	record_list_icon_cache.clear();
+}
+
+void ClockGearsDatabaseDialog::_invalidate_record_list_icon(int p_category, int p_index) const {
+	// Keyed by content hash; clear only entries belonging to this category/record if needed.
+	String prefix = vformat("%d|%d|", p_category, p_index);
+	Vector<String> to_erase;
+	for (const KeyValue<String, Ref<Texture2D>> &E : record_list_icon_cache) {
+		if (E.key.begins_with(prefix)) {
+			to_erase.push_back(E.key);
+		}
+	}
+	for (int i = 0; i < to_erase.size(); i++) {
+		record_list_icon_cache.erase(to_erase[i]);
+	}
+}
+
+Ref<Texture2D> ClockGearsDatabaseDialog::_build_record_list_icon_texture(int p_category, const Dictionary &p_rec, int p_icon_px, const Ref<Texture2D> &p_fallback) const {
+	if (!s_category_has_record_graphic(p_category) || p_icon_px <= 0) {
+		return p_fallback;
+	}
+
+	Ref<Image> src_crop;
+	String cache_key;
+
+	if (p_category == CAT_ACTORS || p_category == CAT_ENEMIES) {
+		Ref<Texture2D> sp_tex;
+		Rect2 sp_reg;
+		String sp_src;
+		ClockGearsBattleScene::resolve_enemy_preview_sprite(p_rec, sp_tex, sp_reg, sp_src);
+		if (sp_src == "placeholder" || sp_tex.is_null() || sp_tex->get_width() <= 0 || sp_tex->get_height() <= 0) {
+			return p_fallback;
+		}
+		String sp_path = sp_tex->get_path().is_empty() ? String(p_rec.get("graphic_path", "")) : sp_tex->get_path();
+		Rect2i full_r(0, 0, sp_tex->get_width(), sp_tex->get_height());
+		Rect2i r = (sp_reg.size.x > 0 && sp_reg.size.y > 0)
+				? Rect2i(int(sp_reg.position.x), int(sp_reg.position.y), int(sp_reg.size.x), int(sp_reg.size.y)).intersection(full_r)
+				: full_r;
+		if (r.size.x <= 0 || r.size.y <= 0) {
+			return p_fallback;
+		}
+		cache_key = vformat("%d|%d|%s|%d,%d,%d,%d", p_category, p_icon_px, sp_path, r.position.x, r.position.y, r.size.x, r.size.y);
+		if (record_list_icon_cache.has(cache_key)) {
+			return record_list_icon_cache[cache_key];
+		}
+		Ref<Image> img = sp_tex->get_image();
+		if (img.is_null() || img->is_empty()) {
+			return p_fallback;
+		}
+		r = r.intersection(Rect2i(0, 0, img->get_width(), img->get_height()));
+		if (r.size.x <= 0 || r.size.y <= 0) {
+			return p_fallback;
+		}
+		src_crop = img->get_region(r);
+	} else {
+		String gpath = String(p_rec.get("graphic_path", "")).strip_edges();
+		if (gpath.is_empty()) {
+			return p_fallback;
+		}
+		Vector2i tc;
+		bool has_tc = s_parse_tile_coords_variant(p_rec.get("tile_coords", Variant()), tc);
+		Vector2i blk = has_tc ? s_parse_tile_block_variant(p_rec.get("tile_block_size", Variant())) : Vector2i(1, 1);
+		cache_key = has_tc
+				? vformat("%d|%d|%s|%d,%d|%dx%d", p_category, p_icon_px, gpath, tc.x, tc.y, blk.x, blk.y)
+				: vformat("%d|%d|%s|full", p_category, p_icon_px, gpath);
+		if (record_list_icon_cache.has(cache_key)) {
+			return record_list_icon_cache[cache_key];
+		}
+		Ref<Texture2D> tex = _load_texture_from_path(gpath);
+		if (tex.is_null()) {
+			return p_fallback;
+		}
+		Ref<Image> img = tex->get_image();
+		if (img.is_null() || img->is_empty()) {
+			return p_fallback;
+		}
+		if (has_tc) {
+			const int tsz = 32;
+			Rect2i r(tc.x * tsz, tc.y * tsz, blk.x * tsz, blk.y * tsz);
+			r = r.intersection(Rect2i(0, 0, img->get_width(), img->get_height()));
+			if (r.size.x <= 0 || r.size.y <= 0) {
+				return p_fallback;
+			}
+			src_crop = img->get_region(r);
+		} else {
+			src_crop = img->duplicate();
+		}
+	}
+
+	if (src_crop.is_null() || src_crop->is_empty()) {
+		return p_fallback;
+	}
+	int sw = src_crop->get_width();
+	int sh = src_crop->get_height();
+	if (sw <= 0 || sh <= 0) {
+		return p_fallback;
+	}
+
+	int dw = sw;
+	int dh = sh;
+	if (sw <= p_icon_px && sh <= p_icon_px) {
+		int fit_mult = MAX(1, MIN(p_icon_px / sw, p_icon_px / sh));
+		int desired_mult = MAX(1, p_icon_px / 32);
+		int mult = CLAMP(desired_mult, 1, fit_mult);
+		dw = sw * mult;
+		dh = sh * mult;
+	} else {
+		int div = 2;
+		while ((sw / div) > p_icon_px || (sh / div) > p_icon_px) {
+			div++;
+		}
+		int cand_w = sw / div;
+		int cand_h = sh / div;
+		if ((cand_w >= 1 && cand_h >= 1 && sw % div == 0 && sh % div == 0) || (cand_w >= 8 && cand_h >= 8)) {
+			dw = cand_w;
+			dh = cand_h;
+		} else {
+			float s = MIN(float(p_icon_px) / float(sw), float(p_icon_px) / float(sh));
+			dw = MAX(1, int(Math::round(sw * s)));
+			dh = MAX(1, int(Math::round(sh * s)));
+		}
+	}
+
+	if (src_crop->get_format() != Image::FORMAT_RGBA8) {
+		src_crop->convert(Image::FORMAT_RGBA8);
+	}
+	if (dw != sw || dh != sh) {
+		src_crop->resize(dw, dh, Image::INTERPOLATE_NEAREST);
+	}
+
+	Ref<Image> canvas = Image::create_empty(p_icon_px, p_icon_px, false, Image::FORMAT_RGBA8);
+	canvas->fill(Color(0, 0, 0, 0));
+	canvas->blit_rect(src_crop, Rect2i(0, 0, dw, dh), Point2i((p_icon_px - dw) / 2, (p_icon_px - dh) / 2));
+
+	Ref<ImageTexture> out = ImageTexture::create_from_image(canvas);
+	if (out.is_null()) {
+		return p_fallback;
+	}
+	record_list_icon_cache[cache_key] = out;
+	return out;
+}
+
+void ClockGearsDatabaseDialog::_update_record_list_item_icon(int p_index) {
+	if (!record_list || current_category < 0 || current_category >= CAT_MAX) {
+		return;
+	}
+	const Array &arr = category_data[current_category];
+	if (p_index < 0 || p_index >= arr.size() || p_index >= record_list->get_item_count()) {
+		return;
+	}
+	const int icon_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	const int icon_px = 32 * icon_scale;
+	Ref<Texture2D> cat_icon;
+	if (ClockGearsIcons::get_singleton()) {
+		cat_icon = ClockGearsIcons::get_singleton()->get_db_category_icon(current_category, float(icon_scale));
+	}
+	Ref<Texture2D> row_icon = _build_record_list_icon_texture(current_category, Dictionary(arr[p_index]), icon_px, cat_icon);
+	record_list->set_item_icon(p_index, row_icon);
+}
+
+void ClockGearsDatabaseDialog::_refit_graphic_path_label() {
+	if (!graphic_path_label) {
+		return;
+	}
+	String full = graphic_path_full_text;
+	if (full.is_empty()) {
+		graphic_path_label->set_text("");
+		return;
+	}
+	Ref<Font> font = graphic_path_label->get_theme_font("font");
+	int font_size = graphic_path_label->get_theme_font_size("font_size");
+	float avail_w = graphic_path_label->get_size().x;
+	if (avail_w <= 16.0f && standard_graphic_box) {
+		avail_w = MAX(148.0f * EDSCALE, standard_graphic_box->get_custom_minimum_size().x - 8.0f * EDSCALE);
+	}
+	if (avail_w <= 16.0f) {
+		avail_w = 160.0f * EDSCALE;
+	}
+	graphic_path_label->set_text(s_middle_ellipsize_for_2lines(full, font, font_size, avail_w));
+}
+
+void ClockGearsDatabaseDialog::_set_graphic_path_label_text(const String &p_full_text) {
+	graphic_path_full_text = p_full_text;
+	if (!graphic_path_label) {
+		return;
+	}
+	graphic_path_label->set_tooltip_text(p_full_text.is_empty() ? CG_DB_TR("Ruta del gráfico asignado. Doble clic para asignar.") : p_full_text);
+	_refit_graphic_path_label();
+}
+
+void ClockGearsDatabaseDialog::_update_graphic_preview_ui(const Dictionary &p_rec) {
+	String gpath = String(p_rec.get("graphic_path", "")).strip_edges();
+	Ref<Texture2D> tex = gpath.is_empty() ? Ref<Texture2D>() : _load_texture_from_path(gpath);
+	Vector2i tc;
+	bool has_tc = s_parse_tile_coords_variant(p_rec.get("tile_coords", Variant()), tc);
+
+	if (has_tc && tex.is_valid()) {
+		Vector2i blk = s_parse_tile_block_variant(p_rec.get("tile_block_size", Variant()));
+		Ref<Image> src_img = tex->get_image();
+		bool cropped_ok = false;
+		if (src_img.is_valid() && !src_img->is_empty()) {
+			const int tsz = 32;
+			Rect2i reg(tc.x * tsz, tc.y * tsz, blk.x * tsz, blk.y * tsz);
+			reg = reg.intersection(Rect2i(0, 0, src_img->get_width(), src_img->get_height()));
+			if (reg.size.x > 0 && reg.size.y > 0) {
+				Ref<Image> sub = src_img->get_region(reg);
+				if (graphic_preview) {
+					graphic_preview->set_texture(ImageTexture::create_from_image(sub));
+				}
+				cropped_ok = true;
+			}
+		}
+		if (!cropped_ok && graphic_preview) {
+			graphic_preview->set_texture(tex);
+		}
+		_set_graphic_path_label_text(vformat("%s [%d,%d] (%dx%d)", gpath.get_file(), tc.x, tc.y, blk.x, blk.y));
+	} else {
+		if (graphic_preview) {
+			graphic_preview->set_texture(tex);
+		}
+		_set_graphic_path_label_text(gpath.is_empty() ? CG_DB_TR("(Sin gráfico)") : gpath.get_file());
+	}
+}
+
+void ClockGearsDatabaseDialog::_apply_record_graphic(int p_index, const String &p_path, bool p_has_tile, const Vector2i &p_tile_coords, const Vector2i &p_tile_block) {
+	if (current_category < 0 || current_category >= CAT_MAX) {
+		return;
+	}
+	Array &arr = category_data[current_category];
+	if (p_index < 0 || p_index >= arr.size()) {
+		return;
+	}
+	Dictionary d = arr[p_index];
+	d["graphic_path"] = p_path;
+	if (p_has_tile) {
+		d["tile_coords"] = s_tile_vec_to_json_array(p_tile_coords);
+		d["tile_block_size"] = s_tile_vec_to_json_array(Vector2i(MAX(1, p_tile_block.x), MAX(1, p_tile_block.y)));
+	} else {
+		d.erase("tile_coords");
+		d.erase("tile_block_size");
+	}
+	arr[p_index] = d;
+
+	_update_graphic_preview_ui(d);
+	_update_record_list_item_icon(p_index);
+	_mark_database_dirty();
+}
+
 void ClockGearsDatabaseDialog::_on_pick_tile_graphic_pressed() {
 	if (!tile_picker_dialog) {
 		return;
@@ -2868,16 +3334,42 @@ void ClockGearsDatabaseDialog::_on_pick_tile_graphic_pressed() {
 	}
 	int idx = sel[0];
 	const Array &arr = category_data[current_category];
+	String atlas_path;
+	Vector2i init_coords(-1, -1);
+	Vector2i init_block(1, 1);
 	Ref<Texture2D> tex;
 	if (idx >= 0 && idx < arr.size()) {
 		Dictionary d = arr[idx];
-		tex = _load_texture_from_path(d.get("graphic_path", ""));
+		atlas_path = String(d.get("graphic_path", "")).strip_edges();
+		if (!atlas_path.is_empty()) {
+			tex = _load_texture_from_path(atlas_path);
+		}
+		Vector2i parsed_tc;
+		if (s_parse_tile_coords_variant(d.get("tile_coords", Variant()), parsed_tc)) {
+			init_coords = parsed_tc;
+			init_block = s_parse_tile_block_variant(d.get("tile_block_size", Variant()));
+		}
 	}
 	if (tex.is_null() && !category_data[CAT_TILESETS].is_empty()) {
 		Dictionary ts0 = category_data[CAT_TILESETS][0];
-		tex = _load_texture_from_path(ts0.get("graphic_path", ""));
+		String fb_path = String(ts0.get("graphic_path", "")).strip_edges();
+		if (fb_path.is_empty() && ts0.has("slots") && ts0["slots"].get_type() == Variant::DICTIONARY) {
+			Dictionary slots = ts0["slots"];
+			const char *slot_order[] = { "B", "C", "D", "E", "A5", "A1", "A2", "A3", "A4" };
+			for (size_t s = 0; s < 9; s++) {
+				String sp = String(slots.get(slot_order[s], "")).strip_edges();
+				if (!sp.is_empty()) {
+					fb_path = sp;
+					break;
+				}
+			}
+		}
+		if (!fb_path.is_empty()) {
+			atlas_path = fb_path;
+			tex = _load_texture_from_path(atlas_path);
+		}
 	}
-	tile_picker_dialog->open_picker(tex, callable_mp(this, &ClockGearsDatabaseDialog::_on_tile_graphic_picked));
+	tile_picker_dialog->open_picker(tex, callable_mp(this, &ClockGearsDatabaseDialog::_on_tile_graphic_picked), atlas_path, init_coords, init_block);
 }
 
 void ClockGearsDatabaseDialog::_on_tile_graphic_picked(const Array &p_sel, const Vector2i &p_block) {
@@ -2899,28 +3391,24 @@ void ClockGearsDatabaseDialog::_on_tile_graphic_picked(const Array &p_sel, const
 		return;
 	}
 	Vector2i primary = pk->get_primary_selected_tile();
-	int tsz = pk->get_tile_size();
-	Dictionary d = arr[idx];
-	d["graphic_path"] = pk->get_atlas_path();
-	d["tile_coords"] = primary;
-	d["tile_block_size"] = p_block;
-	arr[idx] = d;
-
-	Ref<Image> src_img = atlas_tex->get_image();
-	if (src_img.is_valid() && !src_img->is_empty()) {
-		Rect2i reg(primary.x * tsz, primary.y * tsz, p_block.x * tsz, p_block.y * tsz);
-		reg = reg.intersection(Rect2i(0, 0, src_img->get_width(), src_img->get_height()));
-		if (reg.size.x > 0 && reg.size.y > 0) {
-			Ref<Image> sub = src_img->get_region(reg);
-			if (graphic_preview) {
-				graphic_preview->set_texture(ImageTexture::create_from_image(sub));
+	if (!p_sel.is_empty() && p_sel[0].get_type() == Variant::DICTIONARY) {
+		Dictionary first_sel = p_sel[0];
+		if (first_sel.has("atlas_coords")) {
+			Vector2i parsed;
+			if (s_parse_tile_coords_variant(first_sel["atlas_coords"], parsed)) {
+				primary = parsed;
 			}
 		}
 	}
-	if (graphic_path_label) {
-		graphic_path_label->set_text(vformat("%s [%d,%d] (%dx%d)", pk->get_atlas_path().get_file(), primary.x, primary.y, p_block.x, p_block.y));
+	String atlas_path = pk->get_atlas_path().strip_edges();
+	if (atlas_path.is_empty()) {
+		atlas_path = atlas_tex->get_path().strip_edges();
 	}
-	_save_database_to_disk();
+	if (atlas_path.is_empty()) {
+		Dictionary cur_d = arr[idx];
+		atlas_path = String(cur_d.get("graphic_path", "")).strip_edges();
+	}
+	_apply_record_graphic(idx, atlas_path, true, primary, p_block);
 }
 
 int ClockGearsDatabaseDialog::_ensure_active_tileset_record() {
@@ -3124,9 +3612,6 @@ void ClockGearsDatabaseDialog::_on_file_selected(const String &p_path) {
 	}
 
 	Dictionary d = arr[idx];
-	d["graphic_path"] = p_path;
-	arr[idx] = d;
-
 	ClockGearsProjectStructure::write_pixel_art_import_preset(p_path);
 
 	String target_folder = (current_category == CAT_ACTORS || current_category == CAT_FLORA || current_category == CAT_FAUNA)
@@ -3150,15 +3635,12 @@ void ClockGearsDatabaseDialog::_on_file_selected(const String &p_path) {
 			}
 		}
 	}
-	if (graphic_preview) {
-		graphic_preview->set_texture(tex);
-	}
-	if (graphic_path_label) {
-		graphic_path_label->set_text(p_path.get_file());
-	}
+
 	if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
 		String cur_anim_name = _get_active_anim_name();
-		if (cur_anim_name.is_empty()) cur_anim_name = "idle";
+		if (cur_anim_name.is_empty()) {
+			cur_anim_name = "idle";
+		}
 		if (!current_sprite_data.animations.has(cur_anim_name)) {
 			ClockGearsSpriteAnimation a;
 			a.name = cur_anim_name;
@@ -3174,9 +3656,16 @@ void ClockGearsDatabaseDialog::_on_file_selected(const String &p_path) {
 		_refresh_anim_preview();
 		d["sprite_data"] = current_sprite_data.to_dict();
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
+		d.erase("tile_coords");
+		d.erase("tile_block_size");
 		arr[idx] = d;
+		category_data[current_category] = arr;
+		_update_graphic_preview_ui(d);
+		_update_record_list_item_icon(idx);
+		_mark_database_dirty();
+	} else {
+		_apply_record_graphic(idx, p_path, false, Vector2i(), Vector2i(1, 1));
 	}
-	_save_database_to_disk();
 }
 
 void ClockGearsDatabaseDialog::_on_tileset_collision_changed() {
@@ -3405,10 +3894,13 @@ Dictionary ClockGearsDatabaseDialog::get_tileset_slot_tile_meta(const String &p_
 
 void ClockGearsDatabaseDialog::save_to_disk() {
 	_save_database_to_disk();
+	_set_pending_changes(false);
 }
 
 void ClockGearsDatabaseDialog::load_from_disk() {
+	_clear_record_list_icon_cache();
 	_load_database_from_disk();
+	_set_pending_changes(false);
 	_refresh_category_view();
 }
 
@@ -3486,7 +3978,7 @@ void ClockGearsDatabaseDialog::_on_system_field_changed() {
 	if (!String(system_config.get("start_map", "")).is_empty()) {
 		system_config["has_start_pos"] = true;
 	}
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_on_system_text_changed(const String &p_new_text) {
@@ -3500,7 +3992,7 @@ void ClockGearsDatabaseDialog::_on_system_spin_changed(double p_val) {
 void ClockGearsDatabaseDialog::_on_combat_mode_selected(int p_idx) {
 	current_combat_mode = p_idx;
 	system_config["combat_mode"] = p_idx;
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_bind_numeric_spinbox(SpinBox *p_spin) {
@@ -3878,7 +4370,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	standard_graphic_box = memnew(VBoxContainer);
 	standard_graphic_box->set_h_size_flags(Control::SIZE_FILL);
 	standard_graphic_box->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
-	standard_graphic_box->set_custom_minimum_size(Size2(140 * EDSCALE, 0));
+	standard_graphic_box->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
 	standard_graphic_box->add_theme_constant_override("separation", int(6 * EDSCALE));
 	gen_top_hbox->add_child(standard_graphic_box);
 
@@ -3910,9 +4402,13 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	graphic_path_label = memnew(Label(CG_DB_TR("(Sin gráfico)")));
 	graphic_path_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	graphic_path_label->set_custom_minimum_size(Size2(160 * EDSCALE, 0));
+	graphic_path_label->set_autowrap_mode(TextServer::AUTOWRAP_ARBITRARY);
+	graphic_path_label->set_max_lines_visible(2);
 	graphic_path_label->set_clip_text(true);
 	graphic_path_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	graphic_path_label->set_tooltip_text(CG_DB_TR("Ruta del gráfico asignado. Doble clic para asignar."));
+	graphic_path_label->connect("resized", callable_mp(this, &ClockGearsDatabaseDialog::_refit_graphic_path_label));
 	standard_graphic_box->add_child(graphic_path_label);
 
 	btn_select_graphic = memnew(Button(CG_DB_TR("Cambiar gráfico...")));
@@ -3929,6 +4425,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	standard_graphic_box->add_child(btn_pick_tile_graphic);
 
 	tile_picker_dialog = memnew(ClockGearsTilePickerDialog);
+	tile_picker_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tile_picker_closed));
+	tile_picker_dialog->connect("canceled", callable_mp(this, &ClockGearsDatabaseDialog::_on_tile_picker_closed));
+	tile_picker_dialog->connect("close_requested", callable_mp(this, &ClockGearsDatabaseDialog::_on_tile_picker_closed));
 	add_child(tile_picker_dialog);
 
 	Label *lbl_nom = memnew(Label(CG_DB_TR("Nombre:")));
@@ -5567,6 +6066,22 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	asset_warning_dialog->set_title(CG_DB_TR("Aviso Pixel Art (32x32)"));
 	add_child(asset_warning_dialog);
 
+	const float footer_btn_h = 32.0f * EDSCALE;
+	add_theme_constant_override("buttons_min_width", int(112 * EDSCALE));
+	add_theme_constant_override("buttons_min_height", int(footer_btn_h));
+	set_hide_on_ok(false);
+	connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_db_ok_pressed));
+	if (get_ok_button()) {
+		get_ok_button()->set_text(CG_DB_TR("OK"));
+		get_ok_button()->set_custom_minimum_size(Size2(112 * EDSCALE, footer_btn_h));
+	}
+	btn_apply_changes = add_button(CG_DB_TR("Aplicar"), true);
+	if (btn_apply_changes) {
+		btn_apply_changes->set_custom_minimum_size(Size2(112 * EDSCALE, footer_btn_h));
+		btn_apply_changes->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_db_apply_pressed));
+	}
+	_set_pending_changes(false);
+
 	Dictionary init_ui_state = _load_editor_ui_state();
 	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
 	if (init_cat < 0 || init_cat >= CAT_MAX) {
@@ -5599,6 +6114,15 @@ void ClockGearsDatabaseDialog::_refresh_icon_scale() {
 		record_list->set_fixed_icon_size(Size2i(icon_px, icon_px));
 		record_list->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	}
+	add_theme_constant_override("buttons_min_width", int(112 * EDSCALE));
+	add_theme_constant_override("buttons_min_height", int(row_h));
+	if (get_ok_button()) {
+		get_ok_button()->set_custom_minimum_size(Size2(112 * EDSCALE, row_h));
+	}
+	if (btn_apply_changes) {
+		btn_apply_changes->set_custom_minimum_size(Size2(112 * EDSCALE, row_h));
+	}
+	_clear_record_list_icon_cache();
 	_refresh_record_list();
 }
 
@@ -5705,6 +6229,8 @@ void ClockGearsDatabaseDialog::_load_database_from_disk() {
 	system_config = dm->get_system_config();
 	current_combat_mode = (int)system_config.get("combat_mode", COMBAT_MODE_TURN_BASED);
 	_clear_troop_texture_cache();
+	_clear_record_list_icon_cache();
+	_set_pending_changes(false);
 }
 
 // ============================================================================
@@ -6385,6 +6911,18 @@ void ClockGearsDatabaseDialog::_update_troop_hud_warning(const Dictionary &p_tro
 
 void ClockGearsDatabaseDialog::_on_editor_filesystem_changed() {
 	_clear_troop_texture_cache();
+	_clear_record_list_icon_cache();
+	_refresh_record_list();
+	if (current_category >= 0 && current_category < CAT_MAX && record_list) {
+		Vector<int> sel = record_list->get_selected_items();
+		if (!sel.is_empty()) {
+			int idx = sel[0];
+			const Array &arr = category_data[current_category];
+			if (idx >= 0 && idx < arr.size()) {
+				_update_graphic_preview_ui(arr[idx]);
+			}
+		}
+	}
 	_queue_troop_preview_redraw();
 	for (int i = 0; i < 2; i++) {
 		if (troop_adjust_ui[i].dialog && troop_adjust_ui[i].dialog->is_visible()) {
@@ -7352,7 +7890,7 @@ void ClockGearsDatabaseDialog::_update_enemy_element_rate_trait(int p_elem_id, d
 	d["traits"] = traits;
 	category_data[CAT_ENEMIES][rec_idx] = d;
 	_refresh_traits_tree(traits);
-	_save_database_to_disk();
+	_mark_database_dirty();
 }
 
 void ClockGearsDatabaseDialog::_ensure_enemy_fixed_anim_slots(Dictionary &r_enemy_dict) {
@@ -7633,7 +8171,7 @@ void ClockGearsDatabaseDialog::_on_enemy_cast_element_changed(int p_sel_idx, int
 		casts[p_idx] = cd;
 		d["cast_animations"] = casts;
 		category_data[CAT_ENEMIES][rec_idx] = d;
-		_save_database_to_disk();
+		_mark_database_dirty();
 	}
 }
 
@@ -8827,8 +9365,9 @@ bool ClockGearsDatabaseDialog::reassign_enemy_other_animation(int p_enemy_idx, c
 			_refresh_anim_track_options();
 			select_anim_slot(target);
 		}
+		_update_record_list_item_icon(p_enemy_idx);
 	}
-	_save_database_to_disk();
+	_mark_database_dirty();
 	return true;
 }
 
@@ -8866,8 +9405,9 @@ bool ClockGearsDatabaseDialog::remove_enemy_other_animation(int p_enemy_idx, con
 			_refresh_enemy_others_ui();
 			_refresh_anim_track_options();
 		}
+		_update_record_list_item_icon(p_enemy_idx);
 	}
-	_save_database_to_disk();
+	_mark_database_dirty();
 	return true;
 }
 

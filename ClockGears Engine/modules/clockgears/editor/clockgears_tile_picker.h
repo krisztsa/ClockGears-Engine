@@ -225,6 +225,7 @@ public:
 	Vector<Vector2i> get_selected_coords() const { return selected_tiles; }
 	Vector2i get_selection_block_size() const { return selection_block_size; }
 	Vector2i get_primary_selected_tile() const { return selected_tiles.is_empty() ? Vector2i(0, 0) : selected_tiles[0]; }
+	void set_selected_tile(const Vector2i &p_coords, const Vector2i &p_block_size = Vector2i(1, 1));
 
 	ClockGearsTilePicker();
 };
@@ -246,7 +247,7 @@ protected:
 
 public:
 	ClockGearsTilePicker *get_picker() const { return picker; }
-	void open_picker(const Ref<Texture2D> &p_tex, const Callable &p_on_confirmed = Callable());
+	void open_picker(const Ref<Texture2D> &p_tex, const Callable &p_on_confirmed = Callable(), const String &p_atlas_path = String(), const Vector2i &p_initial_coords = Vector2i(-1, -1), const Vector2i &p_initial_block = Vector2i(1, 1));
 
 	ClockGearsTilePickerDialog();
 };

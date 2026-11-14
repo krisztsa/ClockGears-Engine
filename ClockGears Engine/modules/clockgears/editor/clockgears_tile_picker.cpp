@@ -60,6 +60,8 @@ ClockGearsTilePickerCanvas::ClockGearsTilePickerCanvas(ClockGearsTilePicker *p_o
 // ============================================================================
 
 void ClockGearsTilePicker::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_selected_tiles_array"), &ClockGearsTilePicker::get_selected_tiles_array);
+	ClassDB::bind_method(D_METHOD("set_selected_tile", "coords", "block_size"), &ClockGearsTilePicker::set_selected_tile, DEFVAL(Vector2i(1, 1)));
 	ADD_SIGNAL(MethodInfo("tiles_selected", PropertyInfo(Variant::ARRAY, "selection"), PropertyInfo(Variant::VECTOR2I, "block_size")));
 	ADD_SIGNAL(MethodInfo("tile_metadata_changed", PropertyInfo(Variant::VECTOR2I, "coords"), PropertyInfo(Variant::DICTIONARY, "metadata")));
 }
@@ -717,6 +719,34 @@ Array ClockGearsTilePicker::get_selected_tiles_array() const {
 		arr.push_back(item);
 	}
 	return arr;
+}
+
+void ClockGearsTilePicker::set_selected_tile(const Vector2i &p_coords, const Vector2i &p_block_size) {
+	selected_tiles.clear();
+	if (p_coords.x < 0 || p_coords.y < 0) {
+		selection_block_size = Vector2i(1, 1);
+		_update_footer_info();
+		if (canvas) {
+			canvas->queue_redraw();
+		}
+		return;
+	}
+	int max_cols = current_atlas_texture.is_valid() ? MAX(1, int(current_atlas_texture->get_size().x) / MAX(1, tile_size)) : 1;
+	int max_rows = current_atlas_texture.is_valid() ? MAX(1, int(current_atlas_texture->get_size().y) / MAX(1, tile_size)) : 1;
+	Vector2i base(CLAMP(p_coords.x, 0, max_cols - 1), CLAMP(p_coords.y, 0, max_rows - 1));
+	Vector2i blk(CLAMP(p_block_size.x, 1, max_cols - base.x), CLAMP(p_block_size.y, 1, max_rows - base.y));
+	drag_start_tile = base;
+	for (int ty = base.y; ty < base.y + blk.y; ty++) {
+		for (int tx = base.x; tx < base.x + blk.x; tx++) {
+			selected_tiles.push_back(Vector2i(tx, ty));
+		}
+	}
+	selection_block_size = blk;
+	_update_footer_info();
+	if (canvas) {
+		canvas->queue_redraw();
+	}
+	_emit_selection_changed();
 }
 
 void ClockGearsTilePicker::_on_atlas_pressed() {
@@ -1679,13 +1709,23 @@ void ClockGearsTilePickerDialog::_on_dialog_confirmed() {
 	}
 }
 
-void ClockGearsTilePickerDialog::open_picker(const Ref<Texture2D> &p_tex, const Callable &p_on_confirmed) {
+void ClockGearsTilePickerDialog::open_picker(const Ref<Texture2D> &p_tex, const Callable &p_on_confirmed, const String &p_atlas_path, const Vector2i &p_initial_coords, const Vector2i &p_initial_block) {
 	if (ClockGearsTheme::get_singleton()) {
 		ClockGearsTheme::get_singleton()->apply_to_window(this);
 	}
+	set_transient(true);
+	set_exclusive(true);
+	set_hide_on_ok(true);
 	on_confirmed_callback = p_on_confirmed;
-	if (picker && p_tex.is_valid()) {
-		picker->set_atlas_texture(p_tex);
+	if (picker) {
+		if (p_tex.is_valid()) {
+			picker->set_atlas_texture(p_tex, p_atlas_path);
+		}
+		if (p_initial_coords.x >= 0 && p_initial_coords.y >= 0) {
+			picker->set_selected_tile(p_initial_coords, p_initial_block);
+		} else if (p_tex.is_valid()) {
+			picker->set_selected_tile(Vector2i(0, 0), Vector2i(1, 1));
+		}
 	}
 	popup_centered(Size2(720, 540) * EDSCALE);
 }
@@ -1694,6 +1734,8 @@ ClockGearsTilePickerDialog::ClockGearsTilePickerDialog() {
 	set_title(CG_TP_TR("Selector de Tiles (32x32) - ClockGears Engine"));
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
 	set_min_size(Size2(540, 420) * EDSCALE);
+	set_hide_on_ok(true);
+	set_close_on_escape(true);
 
 	picker = memnew(ClockGearsTilePicker);
 	picker->set_metadata_editing_enabled(false);
