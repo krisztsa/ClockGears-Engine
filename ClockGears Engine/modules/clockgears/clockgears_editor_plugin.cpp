@@ -8,6 +8,7 @@
 #include "core/input/input_event.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "editor/clockgears_theme.h"
@@ -527,11 +528,48 @@ void ClockGearsEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_generate_entity_dialog"), &ClockGearsEditorPlugin::get_generate_entity_dialog);
 }
 
+void ClockGearsExportPlugin::_export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) {
+	if (p_path != "res://clockgears_data/system.json" && !p_path.ends_with("/clockgears_data/system.json")) {
+		return;
+	}
+	Ref<FileAccess> fa = FileAccess::open(p_path, FileAccess::READ);
+	if (fa.is_null()) {
+		return;
+	}
+	String txt = fa->get_as_utf8_string();
+	Variant parsed = JSON::parse_string(txt);
+	if (parsed.get_type() != Variant::DICTIONARY) {
+		return;
+	}
+	Dictionary d = parsed;
+	if (!d.has("mannequin_size")) {
+		return;
+	}
+	d.erase("mannequin_size");
+	CharString utf8 = JSON::stringify(d, "\t").utf8();
+	Vector<uint8_t> bytes;
+	bytes.resize(utf8.length());
+	if (utf8.length() > 0) {
+		memcpy(bytes.ptrw(), utf8.get_data(), utf8.length());
+	}
+	add_file(p_path, bytes, false);
+	skip();
+}
+
 void ClockGearsEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			singleton = this;
 			set_process_shortcut_input(true);
+			if (cg_export_plugin.is_null()) {
+				cg_export_plugin.instantiate();
+			}
+			add_export_plugin(cg_export_plugin);
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			if (cg_export_plugin.is_valid()) {
+				remove_export_plugin(cg_export_plugin);
+			}
 		} break;
 		case NOTIFICATION_READY: {
 			if (ClockGearsDataManager::get_singleton() && FileAccess::exists("res://clockgears_data/actors.json")) {

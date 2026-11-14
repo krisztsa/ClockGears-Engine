@@ -1,7 +1,12 @@
 #include "clockgears_animation.h"
 #include "core/clockgears_data_manager.h"
 #include "core/io/image.h"
+#include "core/math/geometry_2d.h"
 #include "core/object/message_queue.h"
+#include "scene/resources/2d/capsule_shape_2d.h"
+#include "scene/resources/2d/circle_shape_2d.h"
+#include "scene/resources/2d/convex_polygon_shape_2d.h"
+#include "scene/resources/2d/rectangle_shape_2d.h"
 #include "scene/resources/image_texture.h"
 
 // ============================================================================
@@ -471,13 +476,16 @@ void ClockGearsCharacterStateRegistry::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_arpg_category_for_slot", "slot_id"), &ClockGearsCharacterStateRegistry::get_arpg_category_for_slot);
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_arpg_slot_label", "slot_id"), &ClockGearsCharacterStateRegistry::get_arpg_slot_label);
 
-	ClassDB::bind_method(D_METHOD("register_state", "id", "slot_prefix", "blocks_movement", "fallback_state_id", "fallback_freeze_frame0", "default_loop"),
-			&ClockGearsCharacterStateRegistry::register_state, DEFVAL(false), DEFVAL(""), DEFVAL(false), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("register_state", "id", "slot_prefix", "blocks_movement", "fallback_state_id", "fallback_freeze_frame0", "default_loop", "directional"),
+			&ClockGearsCharacterStateRegistry::register_state, DEFVAL(false), DEFVAL(""), DEFVAL(false), DEFVAL(true), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("has_state", "id"), &ClockGearsCharacterStateRegistry::has_state);
 	ClassDB::bind_method(D_METHOD("get_state_info", "id"), &ClockGearsCharacterStateRegistry::get_state_info);
 	ClassDB::bind_method(D_METHOD("does_state_block_movement", "id"), &ClockGearsCharacterStateRegistry::does_state_block_movement);
 	ClassDB::bind_method(D_METHOD("get_registered_state_ids"), &ClockGearsCharacterStateRegistry::get_registered_state_ids);
 	ClassDB::bind_method(D_METHOD("resolve_slot_for_state", "state_id", "direction"), &ClockGearsCharacterStateRegistry::resolve_slot_for_state);
+	ClassDB::bind_method(D_METHOD("resolve_state_animation_dict", "sprite_data", "directional_idle", "state_id", "direction"), &ClockGearsCharacterStateRegistry::resolve_state_animation_dict);
+	ClassDB::bind_method(D_METHOD("resolve_arpg_piece_with_body_anchor", "piece", "category", "state_id", "direction", "body_frame_idx", "directional_idle", "movement_directions", "body_sprite_data"),
+			&ClockGearsCharacterStateRegistry::resolve_arpg_piece_with_body_anchor, DEFVAL(Dictionary()));
 }
 
 bool ClockGearsCharacterStateRegistry::is_valid_direction(int p_dir) {
@@ -587,23 +595,30 @@ PackedStringArray ClockGearsCharacterStateRegistry::get_category_slot_ids(int p_
 
 	bool has_move = false;
 	bool has_run = false;
+	bool has_dodge = false;
 	bool has_attack = false;
 	bool has_block = false;
+	bool has_hit_death = false;
 
 	switch (p_category) {
 		case CAT_ACTORS:
 			has_move = true;
 			has_run = true;
+			has_dodge = is_arpg;
 			has_attack = is_arpg;
 			has_block = is_arpg;
+			has_hit_death = is_arpg;
 			break;
 		case CAT_NPCS:
 			has_move = true;
+			has_run = true;
 			break;
 		case CAT_ARPG_ENEMIES:
 		case CAT_ARPG_NPCS:
 			has_move = true;
+			has_run = true;
 			has_attack = is_arpg;
+			has_hit_death = is_arpg;
 			break;
 		case CAT_ARPG_WEAPONS:
 		case CAT_ARPG_ARMORS:
@@ -626,11 +641,18 @@ PackedStringArray ClockGearsCharacterStateRegistry::get_category_slot_ids(int p_
 	if (p_directional_idle) {
 		s_append_directional_slots(out, "quieto", allow8);
 	}
+	if (has_dodge) {
+		s_append_directional_slots(out, "esquivar", allow8);
+	}
 	if (has_attack) {
 		s_append_directional_slots(out, "atacar", allow8);
 	}
 	if (has_block) {
 		s_append_directional_slots(out, "bloquear", allow8);
+	}
+	if (has_hit_death) {
+		out.push_back("golpeado");
+		out.push_back("morir");
 	}
 	return out;
 }
@@ -645,10 +667,14 @@ PackedStringArray ClockGearsCharacterStateRegistry::get_category_slot_ids_by_key
 
 bool ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot(const String &p_slot_id) {
 	String low = p_slot_id.strip_edges().to_lower();
+	if (low == "golpeado" || low == "morir") {
+		return true;
+	}
 	PackedStringArray all_slots;
 	s_append_directional_slots(all_slots, "mover", true);
 	s_append_directional_slots(all_slots, "correr", true);
 	s_append_directional_slots(all_slots, "quieto", true);
+	s_append_directional_slots(all_slots, "esquivar", true);
 	s_append_directional_slots(all_slots, "atacar", true);
 	s_append_directional_slots(all_slots, "bloquear", true);
 	for (int i = 0; i < all_slots.size(); i++) {
@@ -707,7 +733,8 @@ void ClockGearsCharacterStateRegistry::register_state(
 		bool p_blocks_movement,
 		const String &p_fallback_state_id,
 		bool p_fallback_freeze_frame0,
-		bool p_default_loop) {
+		bool p_default_loop,
+		bool p_directional) {
 	String clean_id = p_id.strip_edges().to_lower();
 	if (clean_id.is_empty()) {
 		return;
@@ -719,6 +746,7 @@ void ClockGearsCharacterStateRegistry::register_state(
 	def.fallback_state_id = p_fallback_state_id.strip_edges().to_lower();
 	def.fallback_freeze_frame0 = p_fallback_freeze_frame0;
 	def.default_loop = p_default_loop;
+	def.directional = p_directional;
 
 	if (!states.has(clean_id)) {
 		state_order.push_back(clean_id);
@@ -759,6 +787,9 @@ String ClockGearsCharacterStateRegistry::resolve_slot_for_state(const String &p_
 	if (!states.has(k)) {
 		return "";
 	}
+	if (!states[k].directional) {
+		return states[k].slot_prefix;
+	}
 	return states[k].slot_prefix + "_" + direction_to_suffix(p_direction);
 }
 
@@ -775,6 +806,10 @@ bool ClockGearsCharacterStateRegistry::resolve_actor_animation(
 	String cur_state = p_state_id.strip_edges().to_lower();
 	if (cur_state.is_empty()) {
 		cur_state = "quieto";
+	} else if (cur_state == "idle") {
+		cur_state = "quieto";
+	} else if (cur_state == "mover" || cur_state == "walk") {
+		cur_state = "caminar";
 	}
 
 	int depth = 0;
@@ -788,20 +823,28 @@ bool ClockGearsCharacterStateRegistry::resolve_actor_animation(
 		// Si "Idle direccional" está desactivado, quieto ignora las ranuras quieto_* y cae al frame 0 de caminar
 		bool skip_own_slots = (cur_state == "quieto" && !p_directional_idle);
 		if (!skip_own_slots && !def.slot_prefix.is_empty()) {
-			String exact_key = def.slot_prefix + "_" + direction_to_suffix(p_direction);
-			if (p_sheet.animations.has(exact_key) && p_sheet.animations[exact_key].get_frame_count() > 0) {
-				r_anim = p_sheet.animations[exact_key];
-				r_resolved_slot = exact_key;
-				return true;
-			}
-			if (is_diagonal_direction(p_direction)) {
-				int horiz_dir = direction_to_nearest_horizontal(p_direction);
-				if (horiz_dir != 0) {
-					String horiz_key = def.slot_prefix + "_" + direction_to_suffix(horiz_dir);
-					if (p_sheet.animations.has(horiz_key) && p_sheet.animations[horiz_key].get_frame_count() > 0) {
-						r_anim = p_sheet.animations[horiz_key];
-						r_resolved_slot = horiz_key;
-						return true;
+			if (!def.directional) {
+				if (p_sheet.animations.has(def.slot_prefix) && p_sheet.animations[def.slot_prefix].get_frame_count() > 0) {
+					r_anim = p_sheet.animations[def.slot_prefix];
+					r_resolved_slot = def.slot_prefix;
+					return true;
+				}
+			} else {
+				String exact_key = def.slot_prefix + "_" + direction_to_suffix(p_direction);
+				if (p_sheet.animations.has(exact_key) && p_sheet.animations[exact_key].get_frame_count() > 0) {
+					r_anim = p_sheet.animations[exact_key];
+					r_resolved_slot = exact_key;
+					return true;
+				}
+				if (is_diagonal_direction(p_direction)) {
+					int horiz_dir = direction_to_nearest_horizontal(p_direction);
+					if (horiz_dir != 0) {
+						String horiz_key = def.slot_prefix + "_" + direction_to_suffix(horiz_dir);
+						if (p_sheet.animations.has(horiz_key) && p_sheet.animations[horiz_key].get_frame_count() > 0) {
+							r_anim = p_sheet.animations[horiz_key];
+							r_resolved_slot = horiz_key;
+							return true;
+						}
 					}
 				}
 			}
@@ -812,7 +855,27 @@ bool ClockGearsCharacterStateRegistry::resolve_actor_animation(
 		}
 		cur_state = def.fallback_state_id;
 	}
+	if (p_sheet.animations.has("idle") && p_sheet.animations["idle"].get_frame_count() > 0) {
+		r_anim = p_sheet.animations["idle"];
+		r_resolved_slot = "idle";
+		return true;
+	}
 	return false;
+}
+
+Dictionary ClockGearsCharacterStateRegistry::resolve_state_animation_dict(const Dictionary &p_sprite_data, bool p_directional_idle, const String &p_state_id, int p_direction) const {
+	Dictionary out;
+	ClockGearsSpriteSheetData sheet;
+	sheet.from_dict(p_sprite_data);
+	ClockGearsSpriteAnimation anim;
+	bool freeze_f0 = false;
+	String resolved_slot;
+	bool found = resolve_actor_animation(sheet, p_directional_idle, p_state_id, p_direction, anim, freeze_f0, resolved_slot);
+	out["found"] = found;
+	out["resolved_slot"] = resolved_slot;
+	out["freeze_frame0"] = freeze_f0;
+	out["animation"] = found ? anim.to_dict() : Dictionary();
+	return out;
 }
 
 int ClockGearsCharacterStateRegistry::get_default_arpg_layer_order(int p_category) {
@@ -984,14 +1047,68 @@ bool ClockGearsCharacterStateRegistry::resolve_arpg_piece_layer(
 	return true;
 }
 
+void ClockGearsCharacterStateRegistry::apply_weapon_anchor_to_layer(const ClockGearsWeaponAnchor &p_anchor, ClockGearsResolvedEquipLayer &r_layer) {
+	if (r_layer.is_completo || !p_anchor.enabled) {
+		return;
+	}
+	r_layer.has_anchor = true;
+	r_layer.anchor_x = p_anchor.position.x;
+	r_layer.anchor_y = p_anchor.position.y;
+	r_layer.rotation = p_anchor.rotation;
+	r_layer.offset_x += int(Math::round(p_anchor.position.x));
+	r_layer.offset_y += int(Math::round(p_anchor.position.y));
+}
+
+Dictionary ClockGearsCharacterStateRegistry::resolve_arpg_piece_with_body_anchor(
+		const Dictionary &p_piece,
+		int p_category,
+		const String &p_state_id,
+		int p_direction,
+		int p_body_frame_idx,
+		bool p_directional_idle,
+		int p_movement_directions,
+		const Dictionary &p_body_sprite_data) const {
+	Dictionary out;
+	ClockGearsResolvedEquipLayer layer;
+	bool ok = resolve_arpg_piece_layer(p_piece, p_category, p_state_id, p_direction, p_body_frame_idx, p_directional_idle, p_movement_directions, layer);
+	if (ok && !layer.is_completo && !p_body_sprite_data.is_empty()) {
+		ClockGearsSpriteSheetData body_sheet;
+		body_sheet.from_dict(p_body_sprite_data);
+		ClockGearsSpriteAnimation body_anim;
+		bool body_freeze = false;
+		String body_slot;
+		if (resolve_actor_animation(body_sheet, p_directional_idle, p_state_id, p_direction, body_anim, body_freeze, body_slot)) {
+			int fi = body_freeze ? 0 : CLAMP(p_body_frame_idx, 0, MAX(0, body_anim.get_frame_count() - 1));
+			ClockGearsWeaponAnchor anchor = body_sheet.get_frame_weapon_anchor(body_slot, fi);
+			apply_weapon_anchor_to_layer(anchor, layer);
+		}
+	}
+	out["visible"] = layer.visible;
+	out["is_completo"] = layer.is_completo;
+	out["texture_path"] = layer.texture_path;
+	out["region"] = layer.region;
+	out["offset_x"] = layer.offset_x;
+	out["offset_y"] = layer.offset_y;
+	out["behind_body"] = layer.behind_body;
+	out["layer_order"] = layer.layer_order;
+	out["has_anchor"] = layer.has_anchor;
+	out["anchor_x"] = layer.anchor_x;
+	out["anchor_y"] = layer.anchor_y;
+	out["rotation"] = layer.rotation;
+	return out;
+}
+
 ClockGearsCharacterStateRegistry::ClockGearsCharacterStateRegistry() {
 	singleton = this;
 	// Registrar exclusivamente estados del motor y ranuras ARPG por defecto
-	register_state("quieto", "quieto", false, "caminar", true, true);
-	register_state("caminar", "mover", false, "", false, true);
-	register_state("correr", "correr", false, "caminar", false, true);
-	register_state("atacar", "atacar", false, "", false, false);
-	register_state("bloquear", "bloquear", false, "", false, true);
+	register_state("quieto", "quieto", false, "caminar", true, true, true);
+	register_state("caminar", "mover", false, "", false, true, true);
+	register_state("correr", "correr", false, "caminar", false, true, true);
+	register_state("esquivar", "esquivar", false, "caminar", false, false, true);
+	register_state("atacar", "atacar", false, "", false, false, true);
+	register_state("bloquear", "bloquear", false, "", false, true, true);
+	register_state("golpeado", "golpeado", true, "quieto", false, false, false);
+	register_state("morir", "morir", true, "quieto", false, false, false);
 }
 
 ClockGearsCharacterStateRegistry::~ClockGearsCharacterStateRegistry() {
@@ -999,4 +1116,492 @@ ClockGearsCharacterStateRegistry::~ClockGearsCharacterStateRegistry() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+}
+
+// ============================================================================
+// ClockGearsShapeGeometry (Formas basadas en Shape2D de Godot)
+// ============================================================================
+void ClockGearsShapeGeometry::_bind_methods() {
+	BIND_CONSTANT(CG_SHAPE_CIRCLE);
+	BIND_CONSTANT(CG_SHAPE_RECT);
+	BIND_CONSTANT(CG_SHAPE_CAPSULE);
+	BIND_CONSTANT(CG_SHAPE_POLYGON);
+
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("direction_to_vector", "dir"), &ClockGearsShapeGeometry::direction_to_vector);
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("direction_to_angle_deg", "dir"), &ClockGearsShapeGeometry::direction_to_angle_deg);
+
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_circle_shape", "radius", "offset"), &ClockGearsShapeGeometry::make_circle_shape, DEFVAL(Vector2()));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_rect_shape", "size", "offset", "rotation_deg"), &ClockGearsShapeGeometry::make_rect_shape, DEFVAL(Vector2()), DEFVAL(0.0f));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_capsule_shape", "radius", "height", "offset", "rotation_deg"), &ClockGearsShapeGeometry::make_capsule_shape, DEFVAL(Vector2()), DEFVAL(0.0f));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("make_polygon_shape", "vertices", "offset", "rotation_deg"), &ClockGearsShapeGeometry::make_polygon_shape, DEFVAL(Vector2()), DEFVAL(0.0f));
+
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("get_shape_world_pose", "shape", "world_pos", "entity_dir", "authored_dir"),
+			&ClockGearsShapeGeometry::get_shape_world_pose, DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("shapes_overlap_world", "shape_a", "pos_a", "dir_a", "shape_b", "pos_b", "dir_b", "authored_dir_a", "authored_dir_b"),
+			&ClockGearsShapeGeometry::shapes_overlap_world, DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("point_in_shape_world", "point", "shape", "world_pos", "entity_dir", "authored_dir"),
+			&ClockGearsShapeGeometry::point_in_shape_world, DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("check_attack_hits_hurtbox", "hitbox_shapes", "attacker_pos", "attacker_dir", "hurtbox_data", "target_pos", "target_dir", "attacker_authored_dir", "target_authored_dir"),
+			&ClockGearsShapeGeometry::check_attack_hits_hurtbox, DEFVAL(0), DEFVAL(0));
+
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("copy_shape_between_directions", "shape", "from_dir", "to_dir", "mode"),
+			&ClockGearsShapeGeometry::copy_shape_between_directions, DEFVAL("auto"));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("copy_shapes_between_directions", "shapes", "from_dir", "to_dir", "mode"),
+			&ClockGearsShapeGeometry::copy_shapes_between_directions, DEFVAL("auto"));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("copy_weapon_anchor_between_directions", "anchor", "from_dir", "to_dir", "mode"),
+			&ClockGearsShapeGeometry::copy_weapon_anchor_between_directions, DEFVAL("auto"));
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("copy_slot_shapes_between_directions", "sprite_data", "slot_prefix", "from_dir", "to_dir", "mode", "copy_weapon_anchor", "copy_hurtbox_override"),
+			&ClockGearsShapeGeometry::copy_slot_shapes_between_directions, DEFVAL("auto"), DEFVAL(true), DEFVAL(false));
+
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("get_effective_hurtbox_for_frame", "sprite_data", "slot_name", "frame_idx"),
+			&ClockGearsShapeGeometry::get_effective_hurtbox_for_frame);
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("get_frame_hitbox_data", "sprite_data", "slot_name", "frame_idx"),
+			&ClockGearsShapeGeometry::get_frame_hitbox_data);
+	ClassDB::bind_static_method("ClockGearsShapeGeometry", D_METHOD("get_frame_weapon_anchor", "sprite_data", "slot_name", "frame_idx"),
+			&ClockGearsShapeGeometry::get_frame_weapon_anchor);
+}
+
+Vector2 ClockGearsShapeGeometry::direction_to_vector(int p_dir) {
+	switch (p_dir) {
+		case 1: return Vector2(-1.0f, 1.0f).normalized();
+		case 2: return Vector2(0.0f, 1.0f);
+		case 3: return Vector2(1.0f, 1.0f).normalized();
+		case 4: return Vector2(-1.0f, 0.0f);
+		case 6: return Vector2(1.0f, 0.0f);
+		case 7: return Vector2(-1.0f, -1.0f).normalized();
+		case 8: return Vector2(0.0f, -1.0f);
+		case 9: return Vector2(1.0f, -1.0f).normalized();
+		default: return Vector2(0.0f, 1.0f);
+	}
+}
+
+float ClockGearsShapeGeometry::direction_to_angle_deg(int p_dir) {
+	Vector2 v = direction_to_vector(p_dir);
+	return Math::rad_to_deg(Math::atan2(v.y, v.x));
+}
+
+Dictionary ClockGearsShapeGeometry::make_circle_shape(float p_radius, const Vector2 &p_offset) {
+	return ClockGearsHitShape::make_circle(p_radius, p_offset).to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::make_rect_shape(const Vector2 &p_size, const Vector2 &p_offset, float p_rotation_deg) {
+	return ClockGearsHitShape::make_rect(p_size, p_offset, p_rotation_deg).to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::make_capsule_shape(float p_radius, float p_height, const Vector2 &p_offset, float p_rotation_deg) {
+	return ClockGearsHitShape::make_capsule(p_radius, p_height, p_offset, p_rotation_deg).to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::make_polygon_shape(const PackedVector2Array &p_vertices, const Vector2 &p_offset, float p_rotation_deg) {
+	Vector<Vector2> verts;
+	verts.resize(p_vertices.size());
+	for (int i = 0; i < p_vertices.size(); i++) {
+		verts.write[i] = p_vertices[i];
+	}
+	return ClockGearsHitShape::make_polygon(verts, p_offset, p_rotation_deg).to_dict();
+}
+
+ClockGearsHitShape ClockGearsShapeGeometry::shape_from_variant(const Variant &p_var) {
+	ClockGearsHitShape s;
+	if (p_var.get_type() == Variant::DICTIONARY) {
+		s.from_dict(Dictionary(p_var));
+	}
+	return s;
+}
+
+static bool s_is_horizontal_mirror_pair(int p_a, int p_b) {
+	return (p_a == 4 && p_b == 6) || (p_a == 6 && p_b == 4) ||
+			(p_a == 1 && p_b == 3) || (p_a == 3 && p_b == 1) ||
+			(p_a == 7 && p_b == 9) || (p_a == 9 && p_b == 7);
+}
+
+static String s_resolve_copy_mode(const String &p_mode, int p_from_dir, int p_to_dir) {
+	String m = p_mode.strip_edges().to_lower();
+	if (m == "rotate" || m == "rotar" || m == "mirror_x" || m == "voltear_x" || m == "flip_x" || m == "mirror_y" || m == "voltear_y" || m == "flip_y") {
+		return m;
+	}
+	if (s_is_horizontal_mirror_pair(p_from_dir, p_to_dir)) {
+		return "mirror_x";
+	}
+	return "rotate";
+}
+
+ClockGearsHitShape ClockGearsShapeGeometry::transform_shape_between_directions(const ClockGearsHitShape &p_shape, int p_from_dir, int p_to_dir, const String &p_mode) {
+	ClockGearsHitShape out = p_shape;
+	String mode = s_resolve_copy_mode(p_mode, p_from_dir, p_to_dir);
+	if (mode == "mirror_x" || mode == "voltear_x" || mode == "flip_x") {
+		out.offset.x = -out.offset.x;
+		out.rotation = -out.rotation;
+		for (int i = 0; i < out.vertices.size(); i++) {
+			out.vertices.write[i].x = -out.vertices[i].x;
+		}
+		return out;
+	}
+	if (mode == "mirror_y" || mode == "voltear_y" || mode == "flip_y") {
+		out.offset.y = -out.offset.y;
+		out.rotation = -out.rotation;
+		for (int i = 0; i < out.vertices.size(); i++) {
+			out.vertices.write[i].y = -out.vertices[i].y;
+		}
+		return out;
+	}
+	float delta_deg = direction_to_angle_deg(p_to_dir) - direction_to_angle_deg(p_from_dir);
+	float delta_rad = Math::deg_to_rad(delta_deg);
+	out.offset = out.offset.rotated(delta_rad);
+	out.rotation = out.rotation + delta_deg;
+	return out;
+}
+
+ClockGearsWeaponAnchor ClockGearsShapeGeometry::transform_weapon_anchor_between_directions(const ClockGearsWeaponAnchor &p_anchor, int p_from_dir, int p_to_dir, const String &p_mode) {
+	ClockGearsWeaponAnchor out = p_anchor;
+	String mode = s_resolve_copy_mode(p_mode, p_from_dir, p_to_dir);
+	if (mode == "mirror_x" || mode == "voltear_x" || mode == "flip_x") {
+		out.position.x = -out.position.x;
+		out.rotation = -out.rotation;
+		return out;
+	}
+	if (mode == "mirror_y" || mode == "voltear_y" || mode == "flip_y") {
+		out.position.y = -out.position.y;
+		out.rotation = -out.rotation;
+		return out;
+	}
+	float delta_deg = direction_to_angle_deg(p_to_dir) - direction_to_angle_deg(p_from_dir);
+	float delta_rad = Math::deg_to_rad(delta_deg);
+	out.position = out.position.rotated(delta_rad);
+	out.rotation = out.rotation + delta_deg;
+	return out;
+}
+
+Transform2D ClockGearsShapeGeometry::compute_shape_world_transform(const ClockGearsHitShape &p_shape, const Vector2 &p_world_pos, int p_entity_dir, int p_authored_dir) {
+	ClockGearsHitShape eff = p_shape;
+	if (p_authored_dir > 0 && p_entity_dir > 0 && p_authored_dir != p_entity_dir) {
+		eff = transform_shape_between_directions(p_shape, p_authored_dir, p_entity_dir, "rotate");
+	}
+	return Transform2D(Math::deg_to_rad(eff.rotation), p_world_pos + eff.offset);
+}
+
+Dictionary ClockGearsShapeGeometry::get_shape_world_pose(const Dictionary &p_shape, const Vector2 &p_world_pos, int p_entity_dir, int p_authored_dir) {
+	ClockGearsHitShape s = shape_from_variant(p_shape);
+	ClockGearsHitShape eff = s;
+	if (p_authored_dir > 0 && p_entity_dir > 0 && p_authored_dir != p_entity_dir) {
+		eff = transform_shape_between_directions(s, p_authored_dir, p_entity_dir, "rotate");
+	}
+	Transform2D xf(Math::deg_to_rad(eff.rotation), p_world_pos + eff.offset);
+	Dictionary out;
+	out["type"] = ClockGearsHitShape::type_to_string(eff.type);
+	out["position"] = xf.get_origin();
+	out["rotation"] = eff.rotation;
+	if (eff.type == CG_SHAPE_POLYGON) {
+		PackedVector2Array wverts;
+		wverts.resize(eff.vertices.size());
+		for (int i = 0; i < eff.vertices.size(); i++) {
+			wverts.write[i] = xf.xform(eff.vertices[i]);
+		}
+		out["vertices"] = wverts;
+	}
+	return out;
+}
+
+static void s_build_godot_shapes(const ClockGearsHitShape &p_shape, Vector<Ref<Shape2D>> &r_shapes) {
+	r_shapes.clear();
+	switch (p_shape.type) {
+		case CG_SHAPE_CIRCLE: {
+			Ref<CircleShape2D> c;
+			c.instantiate();
+			c->set_radius(p_shape.get_radius());
+			r_shapes.push_back(c);
+		} break;
+		case CG_SHAPE_CAPSULE: {
+			Ref<CapsuleShape2D> cap;
+			cap.instantiate();
+			cap->set_radius(p_shape.get_radius());
+			cap->set_height(p_shape.get_capsule_height());
+			r_shapes.push_back(cap);
+		} break;
+		case CG_SHAPE_POLYGON: {
+			if (p_shape.vertices.size() < 3) {
+				return;
+			}
+			Vector<Vector<Vector2>> convex_parts = Geometry2D::decompose_polygon_in_convex(p_shape.vertices);
+			if (convex_parts.is_empty()) {
+				Vector<Vector2> rev;
+				rev.resize(p_shape.vertices.size());
+				for (int i = 0; i < p_shape.vertices.size(); i++) {
+					rev.write[i] = p_shape.vertices[p_shape.vertices.size() - 1 - i];
+				}
+				convex_parts = Geometry2D::decompose_polygon_in_convex(rev);
+			}
+			if (!convex_parts.is_empty()) {
+				for (int i = 0; i < convex_parts.size(); i++) {
+					if (convex_parts[i].size() < 3) {
+						continue;
+					}
+					Ref<ConvexPolygonShape2D> poly;
+					poly.instantiate();
+					poly->set_point_cloud(convex_parts[i]);
+					r_shapes.push_back(poly);
+				}
+			} else {
+				Ref<ConvexPolygonShape2D> poly;
+				poly.instantiate();
+				poly->set_point_cloud(p_shape.vertices);
+				r_shapes.push_back(poly);
+			}
+		} break;
+		case CG_SHAPE_RECT:
+		default: {
+			Ref<RectangleShape2D> rect;
+			rect.instantiate();
+			rect->set_size(Vector2(MAX(0.5f, p_shape.size.x), MAX(0.5f, p_shape.size.y)));
+			r_shapes.push_back(rect);
+		} break;
+	}
+}
+
+bool ClockGearsShapeGeometry::shapes_overlap_native(const ClockGearsHitShape &p_a, const Vector2 &p_pos_a, int p_dir_a, const ClockGearsHitShape &p_b, const Vector2 &p_pos_b, int p_dir_b, int p_authored_dir_a, int p_authored_dir_b) {
+	ClockGearsHitShape eff_a = (p_authored_dir_a > 0 && p_dir_a > 0 && p_authored_dir_a != p_dir_a)
+			? transform_shape_between_directions(p_a, p_authored_dir_a, p_dir_a, "rotate")
+			: p_a;
+	ClockGearsHitShape eff_b = (p_authored_dir_b > 0 && p_dir_b > 0 && p_authored_dir_b != p_dir_b)
+			? transform_shape_between_directions(p_b, p_authored_dir_b, p_dir_b, "rotate")
+			: p_b;
+	Transform2D xa(Math::deg_to_rad(eff_a.rotation), p_pos_a + eff_a.offset);
+	Transform2D xb(Math::deg_to_rad(eff_b.rotation), p_pos_b + eff_b.offset);
+
+	Vector<Ref<Shape2D>> sa;
+	Vector<Ref<Shape2D>> sb;
+	s_build_godot_shapes(eff_a, sa);
+	s_build_godot_shapes(eff_b, sb);
+
+	for (int i = 0; i < sa.size(); i++) {
+		if (sa[i].is_null()) continue;
+		for (int j = 0; j < sb.size(); j++) {
+			if (sb[j].is_null()) continue;
+			if (sa[i]->collide(xa, sb[j], xb)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool ClockGearsShapeGeometry::point_in_shape_native(const Vector2 &p_point, const ClockGearsHitShape &p_shape, const Vector2 &p_world_pos, int p_entity_dir, int p_authored_dir) {
+	ClockGearsHitShape eff = (p_authored_dir > 0 && p_entity_dir > 0 && p_authored_dir != p_entity_dir)
+			? transform_shape_between_directions(p_shape, p_authored_dir, p_entity_dir, "rotate")
+			: p_shape;
+	Transform2D xf(Math::deg_to_rad(eff.rotation), p_world_pos + eff.offset);
+
+	Vector<Ref<Shape2D>> shapes;
+	s_build_godot_shapes(eff, shapes);
+	if (shapes.is_empty()) {
+		return false;
+	}
+
+	Ref<CircleShape2D> probe;
+	probe.instantiate();
+	probe->set_radius(0.001f);
+	Transform2D probe_xf(0.0f, p_point);
+
+	for (int i = 0; i < shapes.size(); i++) {
+		if (shapes[i].is_valid() && shapes[i]->collide(xf, probe, probe_xf)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsShapeGeometry::shapes_overlap_world(const Dictionary &p_shape_a, const Vector2 &p_pos_a, int p_dir_a, const Dictionary &p_shape_b, const Vector2 &p_pos_b, int p_dir_b, int p_authored_dir_a, int p_authored_dir_b) {
+	return shapes_overlap_native(shape_from_variant(p_shape_a), p_pos_a, p_dir_a, shape_from_variant(p_shape_b), p_pos_b, p_dir_b, p_authored_dir_a, p_authored_dir_b);
+}
+
+bool ClockGearsShapeGeometry::point_in_shape_world(const Vector2 &p_point, const Dictionary &p_shape, const Vector2 &p_world_pos, int p_entity_dir, int p_authored_dir) {
+	return point_in_shape_native(p_point, shape_from_variant(p_shape), p_world_pos, p_entity_dir, p_authored_dir);
+}
+
+bool ClockGearsShapeGeometry::check_attack_hits_hurtbox(
+		const Array &p_hitbox_shapes,
+		const Vector2 &p_attacker_pos,
+		int p_attacker_dir,
+		const Dictionary &p_hurtbox_data,
+		const Vector2 &p_target_pos,
+		int p_target_dir,
+		int p_attacker_authored_dir,
+		int p_target_authored_dir) {
+	if (p_hitbox_shapes.is_empty() || p_hurtbox_data.is_empty()) {
+		return false;
+	}
+	ClockGearsHurtboxData hb;
+	hb.from_dict(p_hurtbox_data);
+	if (!hb.enabled) {
+		return false;
+	}
+	for (int i = 0; i < p_hitbox_shapes.size(); i++) {
+		if (p_hitbox_shapes[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		ClockGearsHitShape atk_shape;
+		atk_shape.from_dict(Dictionary(p_hitbox_shapes[i]));
+		if (shapes_overlap_native(atk_shape, p_attacker_pos, p_attacker_dir, hb.shape, p_target_pos, p_target_dir, p_attacker_authored_dir, p_target_authored_dir)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Dictionary ClockGearsShapeGeometry::copy_shape_between_directions(const Dictionary &p_shape, int p_from_dir, int p_to_dir, const String &p_mode) {
+	ClockGearsHitShape s = shape_from_variant(p_shape);
+	return transform_shape_between_directions(s, p_from_dir, p_to_dir, p_mode).to_dict();
+}
+
+Array ClockGearsShapeGeometry::copy_shapes_between_directions(const Array &p_shapes, int p_from_dir, int p_to_dir, const String &p_mode) {
+	Array out;
+	for (int i = 0; i < p_shapes.size(); i++) {
+		if (p_shapes[i].get_type() == Variant::DICTIONARY) {
+			out.push_back(copy_shape_between_directions(Dictionary(p_shapes[i]), p_from_dir, p_to_dir, p_mode));
+		}
+	}
+	return out;
+}
+
+Dictionary ClockGearsShapeGeometry::copy_weapon_anchor_between_directions(const Dictionary &p_anchor, int p_from_dir, int p_to_dir, const String &p_mode) {
+	ClockGearsWeaponAnchor wa;
+	wa.from_dict(p_anchor);
+	return transform_weapon_anchor_between_directions(wa, p_from_dir, p_to_dir, p_mode).to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::copy_slot_shapes_between_directions(
+		const Dictionary &p_sprite_data,
+		const String &p_slot_prefix,
+		int p_from_dir,
+		int p_to_dir,
+		const String &p_mode,
+		bool p_copy_weapon_anchor,
+		bool p_copy_hurtbox_override) {
+	ClockGearsSpriteSheetData sheet;
+	sheet.from_dict(p_sprite_data);
+
+	String prefix = p_slot_prefix.strip_edges().to_lower();
+	if (prefix.is_empty()) {
+		prefix = "atacar";
+	}
+	String src_key = prefix + "_" + ClockGearsCharacterStateRegistry::direction_to_suffix(p_from_dir);
+	String dst_key = prefix + "_" + ClockGearsCharacterStateRegistry::direction_to_suffix(p_to_dir);
+	if (!sheet.animations.has(src_key) || !sheet.animations.has(dst_key)) {
+		return sheet.to_dict();
+	}
+
+	const ClockGearsSpriteAnimation &src = sheet.animations[src_key];
+	ClockGearsSpriteAnimation &dst = sheet.animations[dst_key];
+	int count = MIN(src.frames_data.size(), dst.frames_data.size());
+	bool allow_hb = ClockGearsSpriteAnimation::is_attack_slot_name(dst_key);
+	for (int i = 0; i < count; i++) {
+		const ClockGearsAnimationFrame &sfr = src.frames_data[i];
+		ClockGearsAnimationFrame &dfr = dst.frames_data.write[i];
+		// Nunca voltea ni altera sprite (sheet_path / region): solo transforma formas y anclajes.
+		if (allow_hb) {
+			dfr.hitbox.damage_mult_pct = sfr.hitbox.damage_mult_pct;
+			dfr.hitbox.knockback = sfr.hitbox.knockback;
+			dfr.hitbox.hitstop_ms = sfr.hitbox.hitstop_ms;
+			dfr.hitbox.shapes.clear();
+			for (int si = 0; si < sfr.hitbox.shapes.size(); si++) {
+				dfr.hitbox.shapes.push_back(transform_shape_between_directions(sfr.hitbox.shapes[si], p_from_dir, p_to_dir, p_mode));
+			}
+		}
+		if (p_copy_weapon_anchor) {
+			dfr.weapon_anchor = transform_weapon_anchor_between_directions(sfr.weapon_anchor, p_from_dir, p_to_dir, p_mode);
+		}
+		if (p_copy_hurtbox_override) {
+			dfr.has_hurtbox_override = sfr.has_hurtbox_override;
+			if (sfr.has_hurtbox_override) {
+				dfr.hurtbox_override = sfr.hurtbox_override;
+				dfr.hurtbox_override.shape = transform_shape_between_directions(sfr.hurtbox_override.shape, p_from_dir, p_to_dir, p_mode);
+			}
+		}
+	}
+	return sheet.to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::get_effective_hurtbox_for_frame(const Dictionary &p_sprite_data, const String &p_slot_name, int p_frame_idx) {
+	ClockGearsSpriteSheetData sheet;
+	sheet.from_dict(p_sprite_data);
+	return sheet.get_effective_hurtbox(p_slot_name, p_frame_idx).to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::get_frame_hitbox_data(const Dictionary &p_sprite_data, const String &p_slot_name, int p_frame_idx) {
+	ClockGearsSpriteSheetData sheet;
+	sheet.from_dict(p_sprite_data);
+	if (ClockGearsSpriteAnimation::is_attack_slot_name(p_slot_name) && sheet.animations.has(p_slot_name)) {
+		const ClockGearsSpriteAnimation &a = sheet.animations[p_slot_name];
+		if (p_frame_idx >= 0 && p_frame_idx < a.frames_data.size()) {
+			return a.frames_data[p_frame_idx].hitbox.to_dict();
+		}
+	}
+	return ClockGearsFrameHitboxData().to_dict();
+}
+
+Dictionary ClockGearsShapeGeometry::get_frame_weapon_anchor(const Dictionary &p_sprite_data, const String &p_slot_name, int p_frame_idx) {
+	ClockGearsSpriteSheetData sheet;
+	sheet.from_dict(p_sprite_data);
+	return sheet.get_frame_weapon_anchor(p_slot_name, p_frame_idx).to_dict();
+}
+
+// ============================================================================
+// ClockGearsAttackSwingTracker
+// ============================================================================
+void ClockGearsAttackSwingTracker::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("start_new_swing"), &ClockGearsAttackSwingTracker::start_new_swing);
+	ClassDB::bind_method(D_METHOD("begin_swing", "swing_id"), &ClockGearsAttackSwingTracker::begin_swing);
+	ClassDB::bind_method(D_METHOD("has_hit_target", "swing_id", "target_id"), &ClockGearsAttackSwingTracker::has_hit_target);
+	ClassDB::bind_method(D_METHOD("register_hit", "swing_id", "target_id"), &ClockGearsAttackSwingTracker::register_hit);
+	ClassDB::bind_method(D_METHOD("end_swing", "swing_id"), &ClockGearsAttackSwingTracker::end_swing);
+	ClassDB::bind_method(D_METHOD("get_hit_targets", "swing_id"), &ClockGearsAttackSwingTracker::get_hit_targets);
+	ClassDB::bind_method(D_METHOD("clear_all"), &ClockGearsAttackSwingTracker::clear_all);
+}
+
+int64_t ClockGearsAttackSwingTracker::start_new_swing() {
+	int64_t sid = next_swing_id++;
+	begin_swing(sid);
+	return sid;
+}
+
+void ClockGearsAttackSwingTracker::begin_swing(int64_t p_swing_id) {
+	hit_targets_by_swing[p_swing_id] = HashSet<int64_t>();
+}
+
+bool ClockGearsAttackSwingTracker::has_hit_target(int64_t p_swing_id, int64_t p_target_id) const {
+	if (!hit_targets_by_swing.has(p_swing_id)) {
+		return false;
+	}
+	return hit_targets_by_swing[p_swing_id].has(p_target_id);
+}
+
+bool ClockGearsAttackSwingTracker::register_hit(int64_t p_swing_id, int64_t p_target_id) {
+	if (!hit_targets_by_swing.has(p_swing_id)) {
+		hit_targets_by_swing[p_swing_id] = HashSet<int64_t>();
+	}
+	HashSet<int64_t> &set = hit_targets_by_swing[p_swing_id];
+	if (set.has(p_target_id)) {
+		return false;
+	}
+	set.insert(p_target_id);
+	return true;
+}
+
+void ClockGearsAttackSwingTracker::end_swing(int64_t p_swing_id) {
+	hit_targets_by_swing.erase(p_swing_id);
+}
+
+Array ClockGearsAttackSwingTracker::get_hit_targets(int64_t p_swing_id) const {
+	Array out;
+	if (!hit_targets_by_swing.has(p_swing_id)) {
+		return out;
+	}
+	for (const int64_t &tid : hit_targets_by_swing[p_swing_id]) {
+		out.push_back(tid);
+	}
+	return out;
+}
+
+void ClockGearsAttackSwingTracker::clear_all() {
+	hit_targets_by_swing.clear();
 }

@@ -95,8 +95,13 @@ public:
 	bool update_record(int p_category, int p_id, const Dictionary &p_record);
 	bool delete_record_by_id(int p_category, int p_id);
 
+	static int normalize_mannequin_size(int p_size);
+
 	Dictionary get_system_config() const { return system_config.duplicate(true); }
 	void set_system_config(const Dictionary &p_cfg);
+	int get_mannequin_size() const;
+	void set_mannequin_size(int p_size);
+	Dictionary get_exported_system_config() const;
 
 	Dictionary get_vocabulary_config() const { return vocabulary_config.duplicate(true); }
 	void set_vocabulary_config(const Dictionary &p_vocab);

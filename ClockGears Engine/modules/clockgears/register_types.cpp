@@ -164,6 +164,8 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsAnimationTriggerTable);
 		GDREGISTER_CLASS(ClockGearsAnimationManager);
 		GDREGISTER_CLASS(ClockGearsCharacterStateRegistry);
+		GDREGISTER_CLASS(ClockGearsShapeGeometry);
+		GDREGISTER_CLASS(ClockGearsAttackSwingTracker);
 		GDREGISTER_CLASS(ClockGearsBattleUnit);
 		GDREGISTER_CLASS(ClockGearsBattleController);
 		GDREGISTER_CLASS(ClockGearsBattleScene);
@@ -180,6 +182,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(ClockGearsPreferencesDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsNewProjectDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsResourceManagerDialog);
+		GDREGISTER_INTERNAL_CLASS(ClockGearsExportPlugin);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsEditorPlugin);
 
 		EditorPlugins::add_by_type<ClockGearsEditorPlugin>();

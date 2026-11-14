@@ -76,6 +76,305 @@ struct ClockGearsAnimDef {
 };
 
 // ============================================================================
+// Formas Geométricas, Hitboxes, Hurtboxes y Anclaje de Arma (Tanda 2 / 9A)
+// ============================================================================
+enum ClockGearsShapeType {
+	CG_SHAPE_CIRCLE = 0,
+	CG_SHAPE_RECT = 1,
+	CG_SHAPE_CAPSULE = 2,
+	CG_SHAPE_POLYGON = 3,
+};
+
+struct ClockGearsHitShape {
+	int type = CG_SHAPE_RECT;
+	Vector2 offset;
+	Vector2 size = Vector2(32.0f, 32.0f); // circle: x=radius; rect: x=w,y=h; capsule: x=radius,y=height
+	float rotation = 0.0f; // grados
+	Vector<Vector2> vertices; // polígono en coordenadas locales
+
+	static String type_to_string(int p_type) {
+		switch (p_type) {
+			case CG_SHAPE_CIRCLE: return "circle";
+			case CG_SHAPE_CAPSULE: return "capsule";
+			case CG_SHAPE_POLYGON: return "polygon";
+			default: return "rect";
+		}
+	}
+
+	static int string_to_type(const String &p_str) {
+		String s = p_str.strip_edges().to_lower();
+		if (s == "circle" || s == "circulo" || s == "círculo") return CG_SHAPE_CIRCLE;
+		if (s == "capsule" || s == "capsula" || s == "cápsula") return CG_SHAPE_CAPSULE;
+		if (s == "polygon" || s == "poligono" || s == "polígono") return CG_SHAPE_POLYGON;
+		return CG_SHAPE_RECT;
+	}
+
+	static ClockGearsHitShape make_circle(float p_radius, const Vector2 &p_offset = Vector2()) {
+		ClockGearsHitShape s;
+		s.type = CG_SHAPE_CIRCLE;
+		s.offset = p_offset;
+		float r = MAX(0.5f, p_radius);
+		s.size = Vector2(r, r);
+		return s;
+	}
+
+	static ClockGearsHitShape make_rect(const Vector2 &p_size, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f) {
+		ClockGearsHitShape s;
+		s.type = CG_SHAPE_RECT;
+		s.offset = p_offset;
+		s.size = Vector2(MAX(0.5f, p_size.x), MAX(0.5f, p_size.y));
+		s.rotation = p_rotation_deg;
+		return s;
+	}
+
+	static ClockGearsHitShape make_capsule(float p_radius, float p_height, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f) {
+		ClockGearsHitShape s;
+		s.type = CG_SHAPE_CAPSULE;
+		s.offset = p_offset;
+		float r = MAX(0.5f, p_radius);
+		float h = MAX(r * 2.0f, p_height);
+		s.size = Vector2(r, h);
+		s.rotation = p_rotation_deg;
+		return s;
+	}
+
+	static ClockGearsHitShape make_polygon(const Vector<Vector2> &p_vertices, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f) {
+		ClockGearsHitShape s;
+		s.type = CG_SHAPE_POLYGON;
+		s.offset = p_offset;
+		s.rotation = p_rotation_deg;
+		s.vertices = p_vertices;
+		return s;
+	}
+
+	float get_radius() const {
+		return MAX(0.5f, size.x);
+	}
+
+	float get_capsule_height() const {
+		return MAX(get_radius() * 2.0f, size.y);
+	}
+
+	Dictionary to_dict() const {
+		Dictionary d;
+		d["type"] = type_to_string(type);
+		d["offset_x"] = offset.x;
+		d["offset_y"] = offset.y;
+		if (type == CG_SHAPE_CIRCLE) {
+			float r = get_radius();
+			d["radius"] = r;
+			d["size_x"] = r;
+			d["size_y"] = r;
+		} else if (type == CG_SHAPE_CAPSULE) {
+			float r = get_radius();
+			float h = get_capsule_height();
+			d["radius"] = r;
+			d["height"] = h;
+			d["size_x"] = r;
+			d["size_y"] = h;
+		} else {
+			d["size_x"] = MAX(0.5f, size.x);
+			d["size_y"] = MAX(0.5f, size.y);
+		}
+		d["rotation"] = rotation;
+		if (type == CG_SHAPE_POLYGON || !vertices.is_empty()) {
+			Array verts;
+			for (int i = 0; i < vertices.size(); i++) {
+				Dictionary vd;
+				vd["x"] = vertices[i].x;
+				vd["y"] = vertices[i].y;
+				verts.push_back(vd);
+			}
+			d["vertices"] = verts;
+		}
+		return d;
+	}
+
+	void from_dict(const Dictionary &p_d) {
+		if (p_d.is_empty()) {
+			return;
+		}
+		Variant t_var = p_d.get("type", "rect");
+		if (t_var.get_type() == Variant::INT || t_var.get_type() == Variant::FLOAT) {
+			type = CLAMP(int(t_var), int(CG_SHAPE_CIRCLE), int(CG_SHAPE_POLYGON));
+		} else {
+			type = string_to_type(String(t_var));
+		}
+
+		if (p_d.has("offset")) {
+			Variant ov = p_d["offset"];
+			if (ov.get_type() == Variant::VECTOR2 || ov.get_type() == Variant::VECTOR2I) {
+				offset = Vector2(ov);
+			} else if (ov.get_type() == Variant::DICTIONARY) {
+				Dictionary od = ov;
+				offset = Vector2(float(od.get("x", 0.0f)), float(od.get("y", 0.0f)));
+			}
+		} else {
+			offset = Vector2(float(p_d.get("offset_x", p_d.get("x", 0.0f))), float(p_d.get("offset_y", p_d.get("y", 0.0f))));
+		}
+
+		if (p_d.has("size") && (p_d["size"].get_type() == Variant::VECTOR2 || p_d["size"].get_type() == Variant::VECTOR2I)) {
+			size = Vector2(p_d["size"]);
+		} else {
+			float sx = float(p_d.get("size_x", p_d.get("w", p_d.get("radius", 32.0f))));
+			float sy = float(p_d.get("size_y", p_d.get("h", p_d.get("height", 32.0f))));
+			size = Vector2(sx, sy);
+		}
+		if (type == CG_SHAPE_CIRCLE) {
+			float r = MAX(0.5f, float(p_d.get("radius", size.x)));
+			size = Vector2(r, r);
+		} else if (type == CG_SHAPE_CAPSULE) {
+			float r = MAX(0.5f, float(p_d.get("radius", size.x)));
+			float h = MAX(r * 2.0f, float(p_d.get("height", size.y)));
+			size = Vector2(r, h);
+		} else {
+			size = Vector2(MAX(0.5f, size.x), MAX(0.5f, size.y));
+		}
+
+		rotation = float(p_d.get("rotation", 0.0f));
+		vertices.clear();
+		if (p_d.has("vertices")) {
+			Variant vv = p_d["vertices"];
+			if (vv.get_type() == Variant::PACKED_VECTOR2_ARRAY) {
+				PackedVector2Array pva = vv;
+				for (int i = 0; i < pva.size(); i++) {
+					vertices.push_back(pva[i]);
+				}
+			} else if (vv.get_type() == Variant::ARRAY) {
+				Array va = vv;
+				for (int i = 0; i < va.size(); i++) {
+					if (va[i].get_type() == Variant::VECTOR2 || va[i].get_type() == Variant::VECTOR2I) {
+						vertices.push_back(Vector2(va[i]));
+					} else if (va[i].get_type() == Variant::DICTIONARY) {
+						Dictionary vd = va[i];
+						vertices.push_back(Vector2(float(vd.get("x", 0.0f)), float(vd.get("y", 0.0f))));
+					}
+				}
+			}
+		}
+	}
+};
+
+struct ClockGearsWeaponAnchor {
+	bool enabled = false;
+	Vector2 position;
+	float rotation = 0.0f;
+
+	Dictionary to_dict() const {
+		Dictionary d;
+		d["enabled"] = enabled;
+		d["x"] = position.x;
+		d["y"] = position.y;
+		d["rotation"] = rotation;
+		return d;
+	}
+
+	void from_dict(const Dictionary &p_d) {
+		if (p_d.is_empty()) {
+			enabled = false;
+			position = Vector2();
+			rotation = 0.0f;
+			return;
+		}
+		enabled = bool(p_d.get("enabled", p_d.has("x") || p_d.has("y") || p_d.has("rotation") || p_d.has("position")));
+		if (p_d.has("position") && (p_d["position"].get_type() == Variant::VECTOR2 || p_d["position"].get_type() == Variant::VECTOR2I)) {
+			position = Vector2(p_d["position"]);
+		} else {
+			position = Vector2(float(p_d.get("x", 0.0f)), float(p_d.get("y", 0.0f)));
+		}
+		rotation = float(p_d.get("rotation", 0.0f));
+	}
+};
+
+struct ClockGearsHurtboxData {
+	bool enabled = true;
+	float damage_mult_pct = 100.0f;
+	ClockGearsHitShape shape;
+
+	static ClockGearsHurtboxData make_default_for_frame(int p_fw, int p_fh) {
+		ClockGearsHurtboxData hb;
+		hb.enabled = true;
+		hb.damage_mult_pct = 100.0f;
+		hb.shape = ClockGearsHitShape::make_rect(Vector2(float(MAX(1, p_fw)), float(MAX(1, p_fh))));
+		return hb;
+	}
+
+	Dictionary to_dict() const {
+		Dictionary d;
+		d["enabled"] = enabled;
+		d["damage_mult_pct"] = damage_mult_pct;
+		d["shape"] = shape.to_dict();
+		return d;
+	}
+
+	void from_dict(const Dictionary &p_d, int p_default_fw = 32, int p_default_fh = 32) {
+		if (p_d.is_empty()) {
+			*this = make_default_for_frame(p_default_fw, p_default_fh);
+			return;
+		}
+		enabled = bool(p_d.get("enabled", true));
+		damage_mult_pct = MAX(0.0f, float(p_d.get("damage_mult_pct", 100.0f)));
+		if (p_d.has("shape") && p_d["shape"].get_type() == Variant::DICTIONARY && !Dictionary(p_d["shape"]).is_empty()) {
+			shape.from_dict(Dictionary(p_d["shape"]));
+		} else {
+			shape = ClockGearsHitShape::make_rect(Vector2(float(MAX(1, p_default_fw)), float(MAX(1, p_default_fh))));
+		}
+	}
+};
+
+struct ClockGearsFrameHitboxData {
+	Vector<ClockGearsHitShape> shapes;
+	float damage_mult_pct = 100.0f;
+	float knockback = 0.0f; // 0 = sin empuje
+	int hitstop_ms = 0;     // 0 = desactivada
+
+	bool is_empty() const {
+		return shapes.is_empty();
+	}
+
+	void clear() {
+		shapes.clear();
+		damage_mult_pct = 100.0f;
+		knockback = 0.0f;
+		hitstop_ms = 0;
+	}
+
+	Dictionary to_dict() const {
+		Dictionary d;
+		Array arr;
+		for (int i = 0; i < shapes.size(); i++) {
+			arr.push_back(shapes[i].to_dict());
+		}
+		d["shapes"] = arr;
+		d["damage_mult_pct"] = damage_mult_pct;
+		d["knockback"] = knockback;
+		d["hitstop_ms"] = hitstop_ms;
+		return d;
+	}
+
+	void from_dict(const Dictionary &p_d) {
+		shapes.clear();
+		damage_mult_pct = 100.0f;
+		knockback = 0.0f;
+		hitstop_ms = 0;
+		if (p_d.is_empty()) {
+			return;
+		}
+		damage_mult_pct = MAX(0.0f, float(p_d.get("damage_mult_pct", 100.0f)));
+		knockback = MAX(0.0f, float(p_d.get("knockback", 0.0f)));
+		hitstop_ms = MAX(0, int(p_d.get("hitstop_ms", 0)));
+		Array arr = p_d.get("shapes", Array());
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() == Variant::DICTIONARY) {
+				ClockGearsHitShape s;
+				s.from_dict(Dictionary(arr[i]));
+				shapes.push_back(s);
+			}
+		}
+	}
+};
+
+// ============================================================================
 // Frame individual de Animación (Ruta de spritesheet + región propia)
 // ============================================================================
 struct ClockGearsAnimationFrame {
@@ -85,6 +384,10 @@ struct ClockGearsAnimationFrame {
 	bool is_random_duration = false;
 	float duration_min = 0.1f;
 	float duration_max = 0.5f;
+	ClockGearsFrameHitboxData hitbox;
+	bool has_hurtbox_override = false;
+	ClockGearsHurtboxData hurtbox_override;
+	ClockGearsWeaponAnchor weapon_anchor;
 
 	float get_duration(float p_default_fps = 6.0f) const {
 		if (is_random_duration) {
@@ -110,7 +413,7 @@ struct ClockGearsAnimationFrame {
 		return 1.0f / MAX(0.1f, p_default_fps);
 	}
 
-	Dictionary to_dict() const {
+	Dictionary to_dict(bool p_include_hitbox = true) const {
 		Dictionary d;
 		d["sheet"] = sheet_path;
 		d["x"] = region.position.x;
@@ -121,10 +424,19 @@ struct ClockGearsAnimationFrame {
 		d["is_random_duration"] = is_random_duration;
 		d["duration_min"] = duration_min;
 		d["duration_max"] = duration_max;
+		if (p_include_hitbox) {
+			d["hitbox"] = hitbox.to_dict();
+		}
+		if (has_hurtbox_override) {
+			d["hurtbox_override"] = hurtbox_override.to_dict();
+		}
+		if (weapon_anchor.enabled || !weapon_anchor.position.is_zero_approx() || Math::abs(weapon_anchor.rotation) > 0.001f) {
+			d["weapon_anchor"] = weapon_anchor.to_dict();
+		}
 		return d;
 	}
 
-	void from_dict(const Dictionary &p_d) {
+	void from_dict(const Dictionary &p_d, bool p_allow_hitbox = true, int p_default_fw = 32, int p_default_fh = 32) {
 		sheet_path = p_d.get("sheet", p_d.get("texture_path", p_d.get("spritesheet_path", "")));
 		if (p_d.has("region")) {
 			Rect2 r = p_d.get("region", Rect2());
@@ -132,14 +444,34 @@ struct ClockGearsAnimationFrame {
 		} else {
 			int x = int(p_d.get("x", 0));
 			int y = int(p_d.get("y", 0));
-			int w = int(p_d.get("w", 32));
-			int h = int(p_d.get("h", 32));
+			int w = int(p_d.get("w", p_default_fw));
+			int h = int(p_d.get("h", p_default_fh));
 			region = Rect2i(x, y, w, h);
 		}
 		duration = float(p_d.get("duration", 0.0f));
 		is_random_duration = bool(p_d.get("is_random_duration", false));
 		duration_min = float(p_d.get("duration_min", 0.1f));
 		duration_max = float(p_d.get("duration_max", 0.5f));
+		hitbox.clear();
+		if (p_allow_hitbox && p_d.has("hitbox") && p_d["hitbox"].get_type() == Variant::DICTIONARY) {
+			hitbox.from_dict(Dictionary(p_d["hitbox"]));
+		}
+		has_hurtbox_override = false;
+		if (p_d.has("hurtbox_override") && p_d["hurtbox_override"].get_type() == Variant::DICTIONARY && !Dictionary(p_d["hurtbox_override"]).is_empty()) {
+			has_hurtbox_override = true;
+			int fw = region.size.x > 0 ? region.size.x : p_default_fw;
+			int fh = region.size.y > 0 ? region.size.y : p_default_fh;
+			hurtbox_override.from_dict(Dictionary(p_d["hurtbox_override"]), fw, fh);
+		} else {
+			hurtbox_override = ClockGearsHurtboxData::make_default_for_frame(
+					region.size.x > 0 ? region.size.x : p_default_fw,
+					region.size.y > 0 ? region.size.y : p_default_fh);
+		}
+		if (p_d.has("weapon_anchor") && p_d["weapon_anchor"].get_type() == Variant::DICTIONARY) {
+			weapon_anchor.from_dict(Dictionary(p_d["weapon_anchor"]));
+		} else {
+			weapon_anchor = ClockGearsWeaponAnchor();
+		}
 	}
 };
 
@@ -245,6 +577,11 @@ struct ClockGearsSpriteAnimation {
 		return Rect2i(x, y, effective_fw, effective_fh);
 	}
 
+	static bool is_attack_slot_name(const String &p_slot_name) {
+		String low = p_slot_name.strip_edges().to_lower();
+		return low == "atacar" || low.begins_with("atacar_");
+	}
+
 	Dictionary to_dict() const {
 		Dictionary d;
 		d["name"] = name;
@@ -258,9 +595,10 @@ struct ClockGearsSpriteAnimation {
 		d["random_order"] = random_order;
 		d["behind_body"] = behind_body;
 
+		bool allow_hitbox = is_attack_slot_name(name);
 		Array arr;
 		for (int i = 0; i < frames_data.size(); i++) {
-			arr.push_back(frames_data[i].to_dict());
+			arr.push_back(frames_data[i].to_dict(allow_hitbox));
 		}
 		d["frames_data"] = arr;
 
@@ -287,6 +625,7 @@ struct ClockGearsSpriteAnimation {
 		random_order = bool(p_d.get("random_order", false));
 		behind_body = bool(p_d.get("behind_body", false));
 
+		bool allow_hitbox = is_attack_slot_name(name);
 		frames_data.clear();
 		frames.clear();
 
@@ -295,7 +634,7 @@ struct ClockGearsSpriteAnimation {
 			for (int i = 0; i < arr.size(); i++) {
 				if (arr[i].get_type() == Variant::DICTIONARY) {
 					ClockGearsAnimationFrame f;
-					f.from_dict(Dictionary(arr[i]));
+					f.from_dict(Dictionary(arr[i]), allow_hitbox, frame_w, frame_h);
 					if (f.sheet_path.is_empty()) {
 						f.sheet_path = spritesheet_path;
 					}
@@ -308,7 +647,7 @@ struct ClockGearsSpriteAnimation {
 		for (int i = 0; i < legacy.size(); i++) {
 			if (legacy[i].get_type() == Variant::DICTIONARY) {
 				ClockGearsAnimationFrame f;
-				f.from_dict(Dictionary(legacy[i]));
+				f.from_dict(Dictionary(legacy[i]), allow_hitbox, frame_w, frame_h);
 				if (f.sheet_path.is_empty()) {
 					f.sheet_path = spritesheet_path;
 				}
@@ -345,7 +684,43 @@ struct ClockGearsSpriteSheetData {
 	int rows = 1;
 	int margin = 0;
 	int spacing = 0;
+	ClockGearsHurtboxData hurtbox;
 	HashMap<String, ClockGearsSpriteAnimation> animations;
+
+	ClockGearsSpriteSheetData() {
+		hurtbox = ClockGearsHurtboxData::make_default_for_frame(frame_w, frame_h);
+	}
+
+	void ensure_default_hurtbox() {
+		int fw = frame_w > 0 ? frame_w : 32;
+		int fh = frame_h > 0 ? frame_h : 32;
+		if (hurtbox.shape.size.x <= 0.5f || hurtbox.shape.size.y <= 0.5f) {
+			hurtbox = ClockGearsHurtboxData::make_default_for_frame(fw, fh);
+		}
+	}
+
+	ClockGearsHurtboxData get_effective_hurtbox(const String &p_slot_name, int p_frame_idx) const {
+		if (!p_slot_name.is_empty() && animations.has(p_slot_name)) {
+			const ClockGearsSpriteAnimation &a = animations[p_slot_name];
+			if (p_frame_idx >= 0 && p_frame_idx < a.frames_data.size()) {
+				const ClockGearsAnimationFrame &fr = a.frames_data[p_frame_idx];
+				if (fr.has_hurtbox_override) {
+					return fr.hurtbox_override;
+				}
+			}
+		}
+		return hurtbox;
+	}
+
+	ClockGearsWeaponAnchor get_frame_weapon_anchor(const String &p_slot_name, int p_frame_idx) const {
+		if (!p_slot_name.is_empty() && animations.has(p_slot_name)) {
+			const ClockGearsSpriteAnimation &a = animations[p_slot_name];
+			if (p_frame_idx >= 0 && p_frame_idx < a.frames_data.size()) {
+				return a.frames_data[p_frame_idx].weapon_anchor;
+			}
+		}
+		return ClockGearsWeaponAnchor();
+	}
 
 	Rect2i get_frame_rect(int p_frame_index, int p_tex_w, int p_tex_h, const String &p_anim = "") const {
 		if (!p_anim.is_empty() && animations.has(p_anim)) {
@@ -375,6 +750,7 @@ struct ClockGearsSpriteSheetData {
 		d["rows"] = rows;
 		d["margin"] = margin;
 		d["spacing"] = spacing;
+		d["hurtbox"] = hurtbox.to_dict();
 		Dictionary anims;
 		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : animations) {
 			anims[E.key] = E.value.to_dict();
@@ -394,6 +770,8 @@ struct ClockGearsSpriteSheetData {
 		animations.clear();
 		Dictionary anims = p_d.get("animations", Dictionary());
 		Array keys = anims.keys();
+		int detected_fw = frame_w;
+		int detected_fh = frame_h;
 		for (int i = 0; i < keys.size(); i++) {
 			String k = keys[i];
 			Dictionary ad = anims[k];
@@ -405,7 +783,18 @@ struct ClockGearsSpriteSheetData {
 			a.cols = cols;
 			a.rows = rows;
 			a.from_dict(ad);
+			if (!p_d.has("frame_w") && a.frame_w > 0) {
+				detected_fw = a.frame_w;
+			}
+			if (!p_d.has("frame_h") && a.frame_h > 0) {
+				detected_fh = a.frame_h;
+			}
 			animations[k] = a;
+		}
+		if (p_d.has("hurtbox") && p_d["hurtbox"].get_type() == Variant::DICTIONARY && !Dictionary(p_d["hurtbox"]).is_empty()) {
+			hurtbox.from_dict(Dictionary(p_d["hurtbox"]), detected_fw > 0 ? detected_fw : frame_w, detected_fh > 0 ? detected_fh : frame_h);
+		} else {
+			hurtbox = ClockGearsHurtboxData::make_default_for_frame(detected_fw > 0 ? detected_fw : frame_w, detected_fh > 0 ? detected_fh : frame_h);
 		}
 	}
 
@@ -810,6 +1199,7 @@ struct ClockGearsCharacterStateDef {
 	bool fallback_freeze_frame0 = false;
 	bool blocks_movement = false;
 	bool default_loop = true;
+	bool directional = true;
 
 	Dictionary to_dict() const {
 		Dictionary d;
@@ -819,6 +1209,7 @@ struct ClockGearsCharacterStateDef {
 		d["fallback_freeze_frame0"] = fallback_freeze_frame0;
 		d["blocks_movement"] = blocks_movement;
 		d["default_loop"] = default_loop;
+		d["directional"] = directional;
 		return d;
 	}
 };
@@ -832,6 +1223,10 @@ struct ClockGearsResolvedEquipLayer {
 	int offset_y = 0;
 	bool behind_body = false;
 	int layer_order = 0;
+	bool has_anchor = false;
+	float anchor_x = 0.0f;
+	float anchor_y = 0.0f;
+	float rotation = 0.0f;
 };
 
 class ClockGearsCharacterStateRegistry : public Object {
@@ -868,6 +1263,7 @@ public:
 	static String get_arpg_simple_group_for_state(const String &p_state_id);
 	static Vector2 compute_layer_sprite_position(bool p_is_completo, int p_tile_size, int p_fw, int p_fh, int p_offset_x, int p_offset_y);
 	static int compute_layer_z_index(bool p_behind_body, int p_layer_order, int p_slot_index);
+	static void apply_weapon_anchor_to_layer(const ClockGearsWeaponAnchor &p_anchor, ClockGearsResolvedEquipLayer &r_layer);
 
 	bool resolve_arpg_piece_layer(
 			const Dictionary &p_piece,
@@ -880,7 +1276,7 @@ public:
 			ClockGearsResolvedEquipLayer &r_out) const;
 
 	// Registro extensible de estados de acción (sin modificar estados ya registrados)
-	void register_state(const String &p_id, const String &p_slot_prefix, bool p_blocks_movement = false, const String &p_fallback_state_id = "", bool p_fallback_freeze_frame0 = false, bool p_default_loop = true);
+	void register_state(const String &p_id, const String &p_slot_prefix, bool p_blocks_movement = false, const String &p_fallback_state_id = "", bool p_fallback_freeze_frame0 = false, bool p_default_loop = true, bool p_directional = true);
 	bool has_state(const String &p_id) const;
 	Dictionary get_state_info(const String &p_id) const;
 	bool does_state_block_movement(const String &p_id) const;
@@ -896,6 +1292,99 @@ public:
 			bool &r_freeze_frame0,
 			String &r_resolved_slot) const;
 
+	// Alias legible para resolver en GDScript cualquier estado registrado con fallback automático
+	Dictionary resolve_state_animation_dict(const Dictionary &p_sprite_data, bool p_directional_idle, const String &p_state_id, int p_direction) const;
+	Dictionary resolve_arpg_piece_with_body_anchor(
+			const Dictionary &p_piece,
+			int p_category,
+			const String &p_state_id,
+			int p_direction,
+			int p_body_frame_idx,
+			bool p_directional_idle,
+			int p_movement_directions,
+			const Dictionary &p_body_sprite_data) const;
+
 	ClockGearsCharacterStateRegistry();
 	~ClockGearsCharacterStateRegistry();
+};
+
+// ============================================================================
+// Geometría de Formas (reutilizando Shape2D de Godot) y Copia Direccional
+// ============================================================================
+class ClockGearsShapeGeometry : public Object {
+	GDCLASS(ClockGearsShapeGeometry, Object);
+
+protected:
+	static void _bind_methods();
+
+public:
+	static Vector2 direction_to_vector(int p_dir);
+	static float direction_to_angle_deg(int p_dir);
+
+	static Dictionary make_circle_shape(float p_radius, const Vector2 &p_offset = Vector2());
+	static Dictionary make_rect_shape(const Vector2 &p_size, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
+	static Dictionary make_capsule_shape(float p_radius, float p_height, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
+	static Dictionary make_polygon_shape(const PackedVector2Array &p_vertices, const Vector2 &p_offset = Vector2(), float p_rotation_deg = 0.0f);
+
+	static ClockGearsHitShape shape_from_variant(const Variant &p_var);
+	static Transform2D compute_shape_world_transform(const ClockGearsHitShape &p_shape, const Vector2 &p_world_pos, int p_entity_dir = 0, int p_authored_dir = 0);
+	static Dictionary get_shape_world_pose(const Dictionary &p_shape, const Vector2 &p_world_pos, int p_entity_dir = 0, int p_authored_dir = 0);
+
+	static bool shapes_overlap_native(const ClockGearsHitShape &p_a, const Vector2 &p_pos_a, int p_dir_a, const ClockGearsHitShape &p_b, const Vector2 &p_pos_b, int p_dir_b, int p_authored_dir_a = 0, int p_authored_dir_b = 0);
+	static bool point_in_shape_native(const Vector2 &p_point, const ClockGearsHitShape &p_shape, const Vector2 &p_world_pos, int p_entity_dir = 0, int p_authored_dir = 0);
+
+	static bool shapes_overlap_world(const Dictionary &p_shape_a, const Vector2 &p_pos_a, int p_dir_a, const Dictionary &p_shape_b, const Vector2 &p_pos_b, int p_dir_b, int p_authored_dir_a = 0, int p_authored_dir_b = 0);
+	static bool point_in_shape_world(const Vector2 &p_point, const Dictionary &p_shape, const Vector2 &p_world_pos, int p_entity_dir = 0, int p_authored_dir = 0);
+
+	static bool check_attack_hits_hurtbox(
+			const Array &p_hitbox_shapes,
+			const Vector2 &p_attacker_pos,
+			int p_attacker_dir,
+			const Dictionary &p_hurtbox_data,
+			const Vector2 &p_target_pos,
+			int p_target_dir,
+			int p_attacker_authored_dir = 0,
+			int p_target_authored_dir = 0);
+
+	static ClockGearsHitShape transform_shape_between_directions(const ClockGearsHitShape &p_shape, int p_from_dir, int p_to_dir, const String &p_mode = "auto");
+	static ClockGearsWeaponAnchor transform_weapon_anchor_between_directions(const ClockGearsWeaponAnchor &p_anchor, int p_from_dir, int p_to_dir, const String &p_mode = "auto");
+
+	static Dictionary copy_shape_between_directions(const Dictionary &p_shape, int p_from_dir, int p_to_dir, const String &p_mode = "auto");
+	static Array copy_shapes_between_directions(const Array &p_shapes, int p_from_dir, int p_to_dir, const String &p_mode = "auto");
+	static Dictionary copy_weapon_anchor_between_directions(const Dictionary &p_anchor, int p_from_dir, int p_to_dir, const String &p_mode = "auto");
+	static Dictionary copy_slot_shapes_between_directions(
+			const Dictionary &p_sprite_data,
+			const String &p_slot_prefix,
+			int p_from_dir,
+			int p_to_dir,
+			const String &p_mode = "auto",
+			bool p_copy_weapon_anchor = true,
+			bool p_copy_hurtbox_override = false);
+
+	static Dictionary get_effective_hurtbox_for_frame(const Dictionary &p_sprite_data, const String &p_slot_name, int p_frame_idx);
+	static Dictionary get_frame_hitbox_data(const Dictionary &p_sprite_data, const String &p_slot_name, int p_frame_idx);
+	static Dictionary get_frame_weapon_anchor(const Dictionary &p_sprite_data, const String &p_slot_name, int p_frame_idx);
+};
+
+// ============================================================================
+// Registro de Golpes por Swing (1 golpe máximo por objetivo en cada swing)
+// ============================================================================
+class ClockGearsAttackSwingTracker : public RefCounted {
+	GDCLASS(ClockGearsAttackSwingTracker, RefCounted);
+
+private:
+	int64_t next_swing_id = 1;
+	HashMap<int64_t, HashSet<int64_t>> hit_targets_by_swing;
+
+protected:
+	static void _bind_methods();
+
+public:
+	int64_t start_new_swing();
+	void begin_swing(int64_t p_swing_id);
+	bool has_hit_target(int64_t p_swing_id, int64_t p_target_id) const;
+	bool register_hit(int64_t p_swing_id, int64_t p_target_id);
+	void end_swing(int64_t p_swing_id);
+	Array get_hit_targets(int64_t p_swing_id) const;
+	void clear_all();
 };

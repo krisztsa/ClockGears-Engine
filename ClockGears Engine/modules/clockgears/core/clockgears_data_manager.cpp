@@ -84,6 +84,7 @@ void ClockGearsDataManager::init_empty() {
 	system_config["currency_unit"] = "G";
 	system_config["combat_mode"] = 0; // 0 = Turnos Clásico, 1 = Action RPG Tiempo Real
 	system_config["movement_directions"] = 4; // 4 o 8 direcciones de movimiento
+	system_config["mannequin_size"] = 32; // Tamaño de maniquí de referencia (32, 48, 64; no se exporta)
 	system_config["arpg_move_while_attacking"] = true;
 	system_config["arpg_attack_move_speed_pct"] = 100;
 	system_config["arpg_move_while_blocking"] = false;
@@ -293,6 +294,47 @@ void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary
 			int atk_pct = r_record.has("attack_speed_pct") ? int(r_record["attack_speed_pct"]) : 100;
 			r_record["attack_speed_pct"] = MAX(1, atk_pct);
 		}
+	}
+
+	const bool is_sprite_anim_cat = (p_category == CAT_ACTORS ||
+			p_category == CAT_NPCS ||
+			p_category == CAT_ARPG_NPCS ||
+			p_category == CAT_ARPG_ENEMIES ||
+			(p_category >= CAT_ARPG_WEAPONS && p_category <= CAT_ARPG_ACCESSORIES) ||
+			p_category == CAT_ENEMIES);
+	if (is_sprite_anim_cat) {
+		Dictionary sp_dict;
+		if (r_record.has("sprite_data") && r_record["sprite_data"].get_type() == Variant::DICTIONARY) {
+			sp_dict = Dictionary(r_record["sprite_data"]).duplicate(true);
+		}
+		if (!sp_dict.has("animations") && r_record.has("animations") && r_record["animations"].get_type() == Variant::DICTIONARY) {
+			sp_dict["animations"] = Dictionary(r_record["animations"]).duplicate(true);
+		}
+		if (!sp_dict.has("graphic_path") && r_record.has("graphic_path")) {
+			sp_dict["graphic_path"] = r_record["graphic_path"];
+		}
+		ClockGearsSpriteSheetData sp;
+		if (!sp_dict.is_empty()) {
+			sp.from_dict(sp_dict);
+		} else if (r_record.has("battler_frames") && !String(r_record.get("graphic_path", "")).is_empty()) {
+			int old_frames = MAX(1, int(r_record.get("battler_frames", 1)));
+			float old_fps = float(r_record.get("battler_fps", 8.0));
+			sp.cols = old_frames;
+			sp.rows = 1;
+			ClockGearsSpriteAnimation idle_anim;
+			idle_anim.name = "idle";
+			idle_anim.spritesheet_path = String(r_record.get("graphic_path", ""));
+			idle_anim.fps = old_fps > 0.0f ? old_fps : 6.0f;
+			idle_anim.loop = true;
+			for (int f = 0; f < old_frames; f++) {
+				idle_anim.frames.push_back(f);
+			}
+			sp.animations[idle_anim.name] = idle_anim;
+		}
+		sp.ensure_default_hurtbox();
+		Dictionary out_sp = sp.to_dict();
+		r_record["sprite_data"] = out_sp;
+		r_record["animations"] = Dictionary(out_sp.get("animations", Dictionary())).duplicate(true);
 	}
 
 	if (p_category != CAT_ARPG_ENEMIES) {
@@ -763,10 +805,37 @@ bool ClockGearsDataManager::delete_record_by_id(int p_category, int p_id) {
 	return false;
 }
 
+int ClockGearsDataManager::normalize_mannequin_size(int p_size) {
+	if (p_size == 48) {
+		return 48;
+	}
+	if (p_size == 64) {
+		return 64;
+	}
+	return 32;
+}
+
 void ClockGearsDataManager::set_system_config(const Dictionary &p_cfg) {
 	system_config = p_cfg.duplicate(true);
+	system_config["mannequin_size"] = normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
 	dirty = true;
 	emit_signal("data_changed", "system", 0);
+}
+
+int ClockGearsDataManager::get_mannequin_size() const {
+	return normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
+}
+
+void ClockGearsDataManager::set_mannequin_size(int p_size) {
+	system_config["mannequin_size"] = normalize_mannequin_size(p_size);
+	dirty = true;
+	emit_signal("data_changed", "system", 0);
+}
+
+Dictionary ClockGearsDataManager::get_exported_system_config() const {
+	Dictionary out = system_config.duplicate(true);
+	out.erase("mannequin_size");
+	return out;
 }
 
 void ClockGearsDataManager::set_vocabulary_config(const Dictionary &p_vocab) {
@@ -914,6 +983,7 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 	int loaded_dirs = int(system_config.get("movement_directions", 4));
 	system_config["movement_directions"] = (loaded_dirs == 8) ? 8 : 4;
+	system_config["mannequin_size"] = normalize_mannequin_size(int(system_config.get("mannequin_size", 32)));
 	if (!system_config.has("arpg_move_while_attacking")) {
 		system_config["arpg_move_while_attacking"] = true;
 	} else {
@@ -1337,8 +1407,12 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("delete_record_by_id", "category", "id"), &ClockGearsDataManager::delete_record_by_id);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_normalized_record", "category", "record"), &ClockGearsDataManager::get_normalized_record);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_arpg_ai_types"), &ClockGearsDataManager::get_arpg_ai_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_mannequin_size", "size"), &ClockGearsDataManager::normalize_mannequin_size);
 	ClassDB::bind_method(D_METHOD("get_system_config"), &ClockGearsDataManager::get_system_config);
 	ClassDB::bind_method(D_METHOD("set_system_config", "config"), &ClockGearsDataManager::set_system_config);
+	ClassDB::bind_method(D_METHOD("get_mannequin_size"), &ClockGearsDataManager::get_mannequin_size);
+	ClassDB::bind_method(D_METHOD("set_mannequin_size", "size"), &ClockGearsDataManager::set_mannequin_size);
+	ClassDB::bind_method(D_METHOD("get_exported_system_config"), &ClockGearsDataManager::get_exported_system_config);
 	ClassDB::bind_method(D_METHOD("get_vocabulary_config"), &ClockGearsDataManager::get_vocabulary_config);
 	ClassDB::bind_method(D_METHOD("set_vocabulary_config", "vocab"), &ClockGearsDataManager::set_vocabulary_config);
 	ClassDB::bind_method(D_METHOD("get_switches_names"), &ClockGearsDataManager::get_switches_names);

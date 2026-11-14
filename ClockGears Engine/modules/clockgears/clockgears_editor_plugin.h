@@ -1,5 +1,6 @@
 #pragma once
 
+#include "editor/export/editor_export_plugin.h"
 #include "editor/plugins/editor_plugin.h"
 #include "core/os/os.h"
 #include "clockgears_top_bar.h"
@@ -76,10 +77,21 @@ public:
 	ClockGearsGenerateEntityDialog();
 };
 
+class ClockGearsExportPlugin : public EditorExportPlugin {
+	GDCLASS(ClockGearsExportPlugin, EditorExportPlugin);
+
+protected:
+	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override;
+
+public:
+	virtual String get_name() const override { return "ClockGearsSystemExportFilter"; }
+};
+
 class ClockGearsEditorPlugin : public EditorPlugin {
 	GDCLASS(ClockGearsEditorPlugin, EditorPlugin);
 
 private:
+	Ref<ClockGearsExportPlugin> cg_export_plugin;
 	ClockGearsTopBar *top_bar = nullptr;
 	ClockGearsDatabaseDialog *database_dialog = nullptr;
 	ClockGearsEventEditorDialog *event_editor_dialog = nullptr;
