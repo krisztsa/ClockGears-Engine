@@ -206,6 +206,14 @@ private:
 	LineEdit *sys_game_title_edit = nullptr;
 	LineEdit *sys_currency_edit = nullptr;
 	OptionButton *combat_mode_selector = nullptr;
+	Label *lbl_sys_arpg_atk_move = nullptr;
+	CheckBox *sys_arpg_move_atk_chk = nullptr;
+	Label *lbl_sys_arpg_atk_spd = nullptr;
+	SpinBox *sys_arpg_atk_spd_spin = nullptr;
+	Label *lbl_sys_arpg_blk_move = nullptr;
+	CheckBox *sys_arpg_move_blk_chk = nullptr;
+	Label *lbl_sys_arpg_blk_spd = nullptr;
+	SpinBox *sys_arpg_blk_spd_spin = nullptr;
 	OptionButton *sys_movement_dirs_opt = nullptr;
 	OptionButton *sys_start_map_option = nullptr;
 	SpinBox *sys_start_x_spin = nullptr;
@@ -312,6 +320,7 @@ private:
 	mutable HashMap<String, Ref<Texture2D>> record_list_icon_cache;
 
 	// Sección B: Editor de Sprites y Animaciones (SpriteFrames Style - Fase 8A)
+	Label *anim_empty_state_label = nullptr;
 	VBoxContainer *sprite_anim_editor_box = nullptr;
 	ScrollContainer *anim_editor_scroll = nullptr;
 
@@ -578,6 +587,11 @@ private:
 	void _on_system_field_changed();
 	void _on_system_text_changed(const String &p_new_text);
 	void _on_system_spin_changed(double p_val);
+	void _update_system_arpg_controls_visibility();
+	void _on_system_arpg_controls_changed();
+	bool _has_valid_selected_record() const;
+	void _set_anim_editor_controls_enabled(bool p_enabled);
+	void _clear_and_disable_anim_editor();
 	void _on_combat_mode_selected(int p_idx);
 
 	Ref<Texture2D> _load_texture_from_path(const String &p_path) const;

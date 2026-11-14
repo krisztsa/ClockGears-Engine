@@ -1,5 +1,6 @@
 #include "clockgears_runtime.h"
 #include "../clockgears_battle_window.h"
+#include "../clockgears_debug_panel.h"
 #include "../core/clockgears_data_manager.h"
 #include "../core/clockgears_system_catalog.h"
 #include "core/config/engine.h"
@@ -240,7 +241,7 @@ bool ClockGearsPlayer::is_action_state_blocking_movement() const {
 
 void ClockGearsPlayer::_sync_locomotion_state() {
 	if (action_state_id != "quieto" && action_state_id != "caminar" && action_state_id != "correr") {
-		return; // Respetar estados de acción personalizados registrados externamente
+		return; // Respetar estados de acción personalizados o de combate (atacar / bloquear)
 	}
 	String next_state = "quieto";
 	if (moving_step) {
@@ -253,6 +254,13 @@ void ClockGearsPlayer::_sync_locomotion_state() {
 	}
 }
 
+void ClockGearsPlayer::_end_temporary_action_to_locomotion() {
+	action_state_id = moving_step ? (dashing ? "correr" : "caminar") : "quieto";
+	slot_anim_timer = 0.0f;
+	slot_anim_frame_idx = 0;
+	_update_sprite_frame();
+}
+
 void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
 	if (!reg) {
@@ -262,12 +270,22 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 	bool freeze_f0 = false;
 	String res_slot;
 	if (!reg->resolve_actor_animation(actor_sprite_data, directional_idle, action_state_id, direction, anim, freeze_f0, res_slot)) {
-		return;
-	}
-	if (freeze_f0 || anim.get_frame_count() <= 1) {
+		if (action_state_id == "atacar" || action_state_id == "bloquear") {
+			_end_temporary_action_to_locomotion();
+		}
 		return;
 	}
 	int total = anim.get_frame_count();
+	if (total <= 0) {
+		if (action_state_id == "atacar" || action_state_id == "bloquear") {
+			_end_temporary_action_to_locomotion();
+		}
+		return;
+	}
+	const bool is_attack = (action_state_id == "atacar");
+	if (freeze_f0 || (total <= 1 && !is_attack)) {
+		return;
+	}
 	int cur_idx = CLAMP(slot_anim_frame_idx, 0, total - 1);
 	ClockGearsAnimationFrame cur_f = anim.get_frame(cur_idx, 0, 0);
 	float target_dur = cur_f.get_duration();
@@ -276,12 +294,16 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 	}
 	slot_anim_timer += p_delta;
 	bool changed = false;
+	const bool allow_loop = is_attack ? false : anim.loop;
 	while (slot_anim_timer >= target_dur) {
 		slot_anim_timer -= target_dur;
 		if (slot_anim_frame_idx + 1 < total) {
 			slot_anim_frame_idx++;
-		} else if (anim.loop) {
+		} else if (allow_loop) {
 			slot_anim_frame_idx = 0;
+		} else if (is_attack) {
+			_end_temporary_action_to_locomotion();
+			return;
 		} else {
 			slot_anim_frame_idx = total - 1;
 			slot_anim_timer = 0.0f;
@@ -905,11 +927,14 @@ bool ClockGearsPlayer::try_step(int p_dir, bool p_is_dash) {
 	if (event_interpreter && event_interpreter->is_blocking_player()) {
 		return false;
 	}
-	if (is_action_state_blocking_movement()) {
+	float act_spd_mult = 1.0f;
+	if (!_can_move_during_current_action(act_spd_mult)) {
 		return false;
 	}
 
-	set_direction(p_dir);
+	if (action_state_id != "atacar" && action_state_id != "bloquear") {
+		set_direction(p_dir);
+	}
 	Vector2i delta = direction_to_vector(p_dir);
 	Vector2i target_cell = grid_cell + delta;
 
@@ -1087,6 +1112,17 @@ void ClockGearsPlayer::_notification(int p_what) {
 
 		case NOTIFICATION_READY: {
 			set_physics_process(true);
+			set_process_unhandled_input(true);
+		} break;
+
+		case NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		case NOTIFICATION_APPLICATION_FOCUS_OUT: {
+			if (arpg_block_held || action_state_id == "bloquear") {
+				arpg_block_held = false;
+				if (action_state_id == "bloquear") {
+					_end_temporary_action_to_locomotion();
+				}
+			}
 		} break;
 
 		case NOTIFICATION_PHYSICS_PROCESS: {
@@ -1097,32 +1133,46 @@ void ClockGearsPlayer::_notification(int p_what) {
 				action_cooldown -= dt;
 			}
 
-			if (moving_step) {
-				Vector2 diff = step_target_px - step_exact_px;
-				float dist = diff.length();
-				float move_dist = current_step_speed * dt;
-
-				anim_timer += dt * (current_step_speed / walk_speed);
-				if (anim_timer >= 0.14f) {
-					anim_timer = 0.0f;
-					anim_pattern_idx = (anim_pattern_idx + 1) % 4;
-					_update_sprite_frame();
+			if (action_state_id == "bloquear") {
+				if (!arpg_block_held || !is_arpg_action_allowed()) {
+					arpg_block_held = false;
+					_end_temporary_action_to_locomotion();
 				}
-				_advance_slot_animation(dt);
+			} else if (!is_arpg_action_allowed()) {
+				arpg_block_held = false;
+			}
 
-				if (dist <= move_dist) {
-					step_exact_px = step_target_px;
-					set_position(step_target_px.round());
-					moving_step = false;
-					dashing = false;
-					_sync_locomotion_state();
-					_update_sprite_frame();
-					emit_signal("step_finished", grid_cell);
-					check_touch_events_at(grid_cell);
-				} else {
-					step_exact_px += diff.normalized() * move_dist;
-					// A4.1: Redondear posición visual a píxel entero
-					set_position(step_exact_px.round());
+			if (moving_step) {
+				float act_spd_mult = 1.0f;
+				bool can_move_now = _can_move_during_current_action(act_spd_mult);
+				_advance_slot_animation(dt);
+				if (can_move_now) {
+					Vector2 diff = step_target_px - step_exact_px;
+					float dist = diff.length();
+					float eff_speed = current_step_speed * act_spd_mult;
+					float move_dist = eff_speed * dt;
+
+					anim_timer += dt * (eff_speed / walk_speed);
+					if (anim_timer >= 0.14f) {
+						anim_timer = 0.0f;
+						anim_pattern_idx = (anim_pattern_idx + 1) % 4;
+						_update_sprite_frame();
+					}
+
+					if (dist <= move_dist) {
+						step_exact_px = step_target_px;
+						set_position(step_target_px.round());
+						moving_step = false;
+						dashing = false;
+						_sync_locomotion_state();
+						_update_sprite_frame();
+						emit_signal("step_finished", grid_cell);
+						check_touch_events_at(grid_cell);
+					} else {
+						step_exact_px += diff.normalized() * move_dist;
+						// A4.1: Redondear posición visual a píxel entero
+						set_position(step_exact_px.round());
+					}
 				}
 			} else {
 				_sync_locomotion_state();
@@ -1227,6 +1277,10 @@ bool ClockGearsPlayer::is_arpg_action_allowed() const {
 	if (mw && (mw->is_busy() || mw->is_history_open())) {
 		return false;
 	}
+	ClockGearsDebugOverlay *dbg = ClockGearsDebugOverlay::get_singleton();
+	if (dbg && dbg->is_panel_open()) {
+		return false;
+	}
 	if (is_inside_tree()) {
 		SceneTree *st = get_tree();
 		if (st && st->is_paused()) {
@@ -1235,8 +1289,13 @@ bool ClockGearsPlayer::is_arpg_action_allowed() const {
 		Window *root = st ? st->get_root() : nullptr;
 		if (root) {
 			for (int i = 0; i < root->get_child_count(); i++) {
-				Window *sub_w = Object::cast_to<Window>(root->get_child(i));
+				Node *ch = root->get_child(i);
+				Window *sub_w = Object::cast_to<Window>(ch);
 				if (sub_w && sub_w->is_visible() && sub_w->is_exclusive()) {
+					return false;
+				}
+				ClockGearsBattleScene *bs = Object::cast_to<ClockGearsBattleScene>(ch);
+				if (bs && bs->is_visible()) {
 					return false;
 				}
 			}
@@ -1249,16 +1308,149 @@ bool ClockGearsPlayer::is_arpg_action_allowed() const {
 	return true;
 }
 
+int ClockGearsPlayer::_get_held_movement_direction() const {
+	Input *inp = Input::get_singleton();
+	if (!inp) {
+		return 0;
+	}
+	bool up = inp->is_key_pressed(Key::UP) || inp->is_key_pressed(Key::W);
+	bool down = inp->is_key_pressed(Key::DOWN) || inp->is_key_pressed(Key::S);
+	bool left = inp->is_key_pressed(Key::LEFT) || inp->is_key_pressed(Key::A);
+	bool right = inp->is_key_pressed(Key::RIGHT) || inp->is_key_pressed(Key::D);
+	if (allow_diagonal) {
+		int ix = (right ? 1 : 0) - (left ? 1 : 0);
+		int iy = (down ? 1 : 0) - (up ? 1 : 0);
+		if (ix != 0 || iy != 0) {
+			return ClockGearsCharacterStateRegistry::vector_to_direction(Vector2i(ix, iy));
+		}
+		return 0;
+	}
+	if (down) return 2;
+	if (up) return 8;
+	if (left) return 4;
+	if (right) return 6;
+	return 0;
+}
+
+bool ClockGearsPlayer::_has_usable_action_slot(const String &p_state_id, int p_dir) const {
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return false;
+	}
+	ClockGearsSpriteAnimation anim;
+	bool freeze_f0 = false;
+	String res_slot;
+	if (!reg->resolve_actor_animation(actor_sprite_data, directional_idle, p_state_id, p_dir, anim, freeze_f0, res_slot)) {
+		return false;
+	}
+	return !freeze_f0 && anim.get_frame_count() > 0;
+}
+
+bool ClockGearsPlayer::_can_move_during_current_action(float &r_speed_mult) const {
+	r_speed_mult = 1.0f;
+	if (is_action_state_blocking_movement()) {
+		r_speed_mult = 0.0f;
+		return false;
+	}
+	if (action_state_id == "atacar" || action_state_id == "bloquear") {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		Dictionary sys = dm ? dm->get_system_config() : Dictionary();
+		if (action_state_id == "atacar") {
+			bool allow_move = sys.has("arpg_move_while_attacking") ? bool(sys["arpg_move_while_attacking"]) : true;
+			int pct = CLAMP(int(sys.get("arpg_attack_move_speed_pct", 100)), 0, 200);
+			if (!allow_move || pct <= 0) {
+				r_speed_mult = 0.0f;
+				return false;
+			}
+			r_speed_mult = float(pct) / 100.0f;
+			return true;
+		}
+		bool allow_move = sys.has("arpg_move_while_blocking") ? bool(sys["arpg_move_while_blocking"]) : false;
+		int pct = CLAMP(int(sys.get("arpg_block_move_speed_pct", 50)), 0, 200);
+		if (!allow_move || pct <= 0) {
+			r_speed_mult = 0.0f;
+			return false;
+		}
+		r_speed_mult = float(pct) / 100.0f;
+		return true;
+	}
+	return true;
+}
+
+void ClockGearsPlayer::unhandled_input(const Ref<InputEvent> &p_event) {
+	if (p_event.is_null()) {
+		return;
+	}
+	if (p_event->is_action_released("bloquear")) {
+		arpg_block_held = false;
+		if (action_state_id == "bloquear") {
+			_end_temporary_action_to_locomotion();
+			if (Viewport *vp = get_viewport()) {
+				vp->set_input_as_handled();
+			}
+		}
+		return;
+	}
+
+	String action;
+	if (!should_handle_arpg_input(p_event, action)) {
+		return;
+	}
+
+	// Respetar paneles de UI que puedan estar bajo el cursor
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && is_inside_tree()) {
+		Window *root = get_tree() ? get_tree()->get_root() : nullptr;
+		Control *hovered = root ? root->gui_get_hovered_control() : nullptr;
+		if (hovered && hovered->is_visible_in_tree() && hovered->get_mouse_filter() == Control::MOUSE_FILTER_STOP) {
+			return;
+		}
+	}
+
+	if (action == "atacar") {
+		if (action_state_id == "atacar" || action_state_id == "bloquear" || arpg_block_held) {
+			return;
+		}
+		int held_dir = _get_held_movement_direction();
+		int atk_dir = (held_dir != 0) ? held_dir : direction;
+		if (!_has_usable_action_slot("atacar", atk_dir)) {
+			return;
+		}
+		direction = atk_dir;
+		set_action_state("atacar");
+		if (Viewport *vp = get_viewport()) {
+			vp->set_input_as_handled();
+		}
+		return;
+	}
+
+	if (action == "bloquear") {
+		if (action_state_id == "atacar") {
+			return;
+		}
+		if (!_has_usable_action_slot("bloquear", direction)) {
+			return;
+		}
+		arpg_block_held = true;
+		if (action_state_id != "bloquear") {
+			set_action_state("bloquear");
+		}
+		if (Viewport *vp = get_viewport()) {
+			vp->set_input_as_handled();
+		}
+	}
+}
+
 bool ClockGearsPlayer::should_handle_arpg_input(const Ref<InputEvent> &p_event, String &r_action_out) const {
 	r_action_out = "";
 	if (p_event.is_null() || !is_arpg_action_allowed()) {
 		return false;
 	}
-	if (p_event->is_action_pressed("atacar")) {
+	if (p_event->is_action_pressed("atacar", false, true)) {
 		r_action_out = "atacar";
 		return true;
 	}
-	if (p_event->is_action_pressed("bloquear")) {
+	if (p_event->is_action_pressed("bloquear", false, true)) {
 		r_action_out = "bloquear";
 		return true;
 	}
@@ -1267,6 +1459,7 @@ bool ClockGearsPlayer::should_handle_arpg_input(const Ref<InputEvent> &p_event, 
 
 ClockGearsPlayer::ClockGearsPlayer() {
 	ensure_default_arpg_input_actions();
+	set_process_unhandled_input(true);
 	set_z_index(3);
 	set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	sprite = memnew(Sprite2D);

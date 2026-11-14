@@ -83,6 +83,10 @@ void ClockGearsDataManager::init_empty() {
 	system_config["currency_unit"] = "G";
 	system_config["combat_mode"] = 0; // 0 = Turnos Clásico, 1 = Action RPG Tiempo Real
 	system_config["movement_directions"] = 4; // 4 o 8 direcciones de movimiento
+	system_config["arpg_move_while_attacking"] = true;
+	system_config["arpg_attack_move_speed_pct"] = 100;
+	system_config["arpg_move_while_blocking"] = false;
+	system_config["arpg_block_move_speed_pct"] = 50;
 	system_config["start_map"] = "";
 	system_config["start_x"] = 0;
 	system_config["start_y"] = 0;
@@ -657,6 +661,18 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 	int loaded_dirs = int(system_config.get("movement_directions", 4));
 	system_config["movement_directions"] = (loaded_dirs == 8) ? 8 : 4;
+	if (!system_config.has("arpg_move_while_attacking")) {
+		system_config["arpg_move_while_attacking"] = true;
+	} else {
+		system_config["arpg_move_while_attacking"] = bool(system_config["arpg_move_while_attacking"]);
+	}
+	system_config["arpg_attack_move_speed_pct"] = CLAMP(int(system_config.get("arpg_attack_move_speed_pct", 100)), 0, 200);
+	if (!system_config.has("arpg_move_while_blocking")) {
+		system_config["arpg_move_while_blocking"] = false;
+	} else {
+		system_config["arpg_move_while_blocking"] = bool(system_config["arpg_move_while_blocking"]);
+	}
+	system_config["arpg_block_move_speed_pct"] = CLAMP(int(system_config.get("arpg_block_move_speed_pct", 50)), 0, 200);
 
 	Variant types_var;
 	if (_read_json_with_backup(p_dir_path.path_join("types.json"), types_var) && types_var.get_type() == Variant::DICTIONARY) {

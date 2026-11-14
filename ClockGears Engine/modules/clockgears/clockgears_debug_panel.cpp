@@ -247,6 +247,10 @@ bool ClockGearsDebugOverlay::is_playtest_mode() {
 
 static Vector<String> s_battle_log_history;
 static ClockGearsDebugOverlay *s_overlay_singleton = nullptr;
+
+ClockGearsDebugOverlay *ClockGearsDebugOverlay::get_singleton() {
+	return s_overlay_singleton;
+}
 static bool s_show_battle_turns = false;
 static bool s_show_battle_formulas = false;
 static bool s_battle_settings_loaded = false;
@@ -1025,6 +1029,10 @@ void ClockGearsDebugOverlay::_update_hud() {
 void ClockGearsDebugOverlay::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
 		_update_hud();
+	} else if (p_what == NOTIFICATION_EXIT_TREE) {
+		if (s_overlay_singleton == this) {
+			s_overlay_singleton = nullptr;
+		}
 	}
 }
 

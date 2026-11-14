@@ -114,6 +114,7 @@ protected:
 	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	static ClockGearsDebugOverlay *get_singleton();
 	static bool is_playtest_mode();
 	static void log_battle(const String &p_entry);
 	static String get_battle_log_text();

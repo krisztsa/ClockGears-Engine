@@ -72,6 +72,7 @@ private:
 	bool action_key_released = true;
 	float action_cooldown = 0.0f;
 	bool diag_key_blocked_printed = false;
+	bool arpg_block_held = false;
 
 	Sprite2D *sprite = nullptr;
 	HashMap<String, Sprite2D *> arpg_layer_sprites;
@@ -82,11 +83,15 @@ private:
 	Ref<Texture2D> _create_fallback_actor_texture(const Color &p_primary, const Color &p_accent) const;
 	Ref<Texture2D> _get_cached_slot_texture(const String &p_path);
 	void _sync_locomotion_state();
+	void _end_temporary_action_to_locomotion();
 	void _advance_slot_animation(float p_delta);
 	void _update_body_sprite_frame();
 	void _update_sprite_frame();
 	void _on_dm_data_changed(const String &p_category, int p_id);
 	int _direction_to_row(int p_dir) const;
+	int _get_held_movement_direction() const;
+	bool _has_usable_action_slot(const String &p_state_id, int p_dir) const;
+	bool _can_move_during_current_action(float &r_speed_mult) const;
 	bool _is_tile_counter(const Vector2i &p_cell) const;
 	int _get_tile_passage_mode(const Vector2i &p_cell, int &r_dir4_mask) const;
 	bool _can_pass_cardinal_step(const Vector2i &p_from, const Vector2i &p_to, int p_dir, ClockGearsEvent **r_blocking_event) const;
@@ -94,6 +99,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void setup_on_map(ClockGearsMap *p_map, ClockGearsFollowerManager *p_followers = nullptr, ClockGearsEventInterpreter *p_interpreter = nullptr);
