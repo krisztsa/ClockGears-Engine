@@ -1,4 +1,5 @@
 #include "clockgears_debug_panel.h"
+#include "clockgears_animation.h"
 #include "clockgears_map.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_pixel_art.h"
@@ -199,6 +200,8 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 void ClockGearsDebugOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("toggle_debug_panel"), &ClockGearsDebugOverlay::toggle_debug_panel);
 	ClassDB::bind_method(D_METHOD("is_panel_open"), &ClockGearsDebugOverlay::is_panel_open);
+	ClassDB::bind_method(D_METHOD("refresh_arpg_equip_tab"), &ClockGearsDebugOverlay::refresh_arpg_equip_tab);
+	ClassDB::bind_method(D_METHOD("set_arpg_equip_debug_slot", "actor_id", "slot_key", "item_id"), &ClockGearsDebugOverlay::set_arpg_equip_debug_slot);
 	ClassDB::bind_method(D_METHOD("set_show_events", "show"), &ClockGearsDebugOverlay::set_show_events);
 	ClassDB::bind_method(D_METHOD("is_show_events"), &ClockGearsDebugOverlay::is_show_events);
 	ClassDB::bind_method(D_METHOD("set_show_collisions", "show"), &ClockGearsDebugOverlay::set_show_collisions);
@@ -492,11 +495,61 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 		battle_log_rtl->append_text(s_battle_log_history[i] + "\n");
 	}
 
+	// Pestaña 5: Equipo ARPG (Tanda 1C - Pruebas visuales y bonos en vivo)
+	VBoxContainer *tab_arpg = memnew(VBoxContainer);
+	tab_arpg->set_name(CG_DBG_TR("Equipo ARPG"));
+	tab_arpg->add_theme_constant_override("separation", 6);
+	tabs->add_child(tab_arpg);
+
+	Label *lbl_arpg_desc = memnew(Label(CG_DBG_TR("Equipamiento ARPG visible en tiempo real (F5):")));
+	lbl_arpg_desc->add_theme_color_override("font_color", Color(0.85f, 0.85f, 0.85f));
+	tab_arpg->add_child(lbl_arpg_desc);
+
+	HBoxContainer *arpg_act_hb = memnew(HBoxContainer);
+	arpg_act_hb->add_theme_constant_override("separation", 6);
+	arpg_act_hb->add_child(memnew(Label(CG_DBG_TR("Actor:"))));
+	arpg_actor_opt = memnew(OptionButton);
+	arpg_actor_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_actor_opt->connect("item_selected", callable_mp(this, &ClockGearsDebugOverlay::_on_arpg_actor_selected));
+	arpg_act_hb->add_child(arpg_actor_opt);
+	tab_arpg->add_child(arpg_act_hb);
+
+	tab_arpg->add_child(memnew(HSeparator));
+
+	Array def_slots = ClockGearsDataManager::get_default_arpg_equip_slots();
+	arpg_slot_keys.clear();
+	arpg_slot_opts.clear();
+	for (int si = 0; si < def_slots.size(); si++) {
+		Dictionary sd = def_slots[si];
+		String skey = String(sd.get("slot", ""));
+		if (skey.is_empty()) continue;
+		arpg_slot_keys.push_back(skey);
+		HBoxContainer *shb = memnew(HBoxContainer);
+		shb->add_theme_constant_override("separation", 6);
+		Label *slbl = memnew(Label(ClockGearsCharacterStateRegistry::get_arpg_slot_label(skey) + ":"));
+		slbl->set_custom_minimum_size(Size2(96, 0));
+		shb->add_child(slbl);
+		OptionButton *sopt = memnew(OptionButton);
+		sopt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		sopt->connect("item_selected", callable_mp(this, &ClockGearsDebugOverlay::_on_arpg_slot_item_selected).bind(arpg_slot_opts.size()));
+		shb->add_child(sopt);
+		tab_arpg->add_child(shb);
+		arpg_slot_opts.push_back(sopt);
+	}
+
+	tab_arpg->add_child(memnew(HSeparator));
+
+	lbl_arpg_stats = memnew(Label(""));
+	lbl_arpg_stats->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	lbl_arpg_stats->add_theme_color_override("font_color", Color(0.60f, 0.90f, 1.0f));
+	tab_arpg->add_child(lbl_arpg_stats);
+
 	// Inicia oculta
 	floating_window->hide();
 
 	_load_settings();
 	_populate_vars_tree();
+	_populate_arpg_equip_tab();
 }
 
 ClockGearsDebugOverlay::~ClockGearsDebugOverlay() {
@@ -574,6 +627,7 @@ void ClockGearsDebugOverlay::setup_overlay(ClockGearsMap *p_map, ClockGearsPlaye
 		world_canvas->setup(p_map, p_camera);
 	}
 	_on_chk_toggled(false);
+	_populate_arpg_equip_tab();
 }
 
 void ClockGearsDebugOverlay::toggle_debug_panel() {
@@ -585,6 +639,7 @@ void ClockGearsDebugOverlay::toggle_debug_panel() {
 		floating_window->set_visible(!was_vis);
 		if (!was_vis) {
 			_populate_vars_tree();
+			_populate_arpg_equip_tab();
 		}
 	}
 }
@@ -772,6 +827,152 @@ void ClockGearsDebugOverlay::_populate_vars_tree() {
 		item->set_text(2, itos(vval));
 		item->set_custom_color(2, Color(0.4f, 0.8f, 1.0f));
 	}
+}
+
+void ClockGearsDebugOverlay::refresh_arpg_equip_tab() {
+	_populate_arpg_equip_tab();
+}
+
+void ClockGearsDebugOverlay::_populate_arpg_equip_tab() {
+	if (!arpg_actor_opt) return;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+
+	int prev_actor_id = 0;
+	if (arpg_actor_opt->get_selected() >= 0 && arpg_actor_opt->get_selected() < arpg_actor_opt->get_item_count()) {
+		prev_actor_id = int(arpg_actor_opt->get_item_metadata(arpg_actor_opt->get_selected()));
+	}
+
+	arpg_actor_opt->clear();
+	Array actors = dm->get_category_array(CAT_ACTORS);
+	int sel_actor_idx = 0;
+	for (int i = 0; i < actors.size(); i++) {
+		Dictionary act = actors[i];
+		int aid = int(act.get("id", i + 1));
+		String aname = String(act.get("name", ""));
+		String disp = vformat("%03d: %s", aid, aname.is_empty() ? CG_DBG_TR("(Sin Nombre)") : aname);
+		int idx = arpg_actor_opt->get_item_count();
+		arpg_actor_opt->add_item(disp, idx);
+		arpg_actor_opt->set_item_metadata(idx, aid);
+		if (aid == prev_actor_id) {
+			sel_actor_idx = idx;
+		}
+	}
+
+	if (arpg_actor_opt->get_item_count() == 0) {
+		for (int si = 0; si < arpg_slot_opts.size(); si++) {
+			if (arpg_slot_opts[si]) arpg_slot_opts[si]->clear();
+		}
+		if (lbl_arpg_stats) lbl_arpg_stats->set_text(CG_DBG_TR("Sin actores definidos."));
+		return;
+	}
+
+	arpg_actor_opt->select(sel_actor_idx);
+	int actor_id = int(arpg_actor_opt->get_item_metadata(sel_actor_idx));
+
+	for (int si = 0; si < arpg_slot_opts.size() && si < arpg_slot_keys.size(); si++) {
+		OptionButton *opt = arpg_slot_opts[si];
+		if (!opt) continue;
+		String skey = arpg_slot_keys[si];
+		int cat_id = ClockGearsCharacterStateRegistry::get_arpg_category_for_slot(skey);
+		int equipped_id = dm->get_actor_arpg_equip(actor_id, skey);
+
+		opt->clear();
+		opt->add_item(CG_DBG_TR("000: (Ninguno)"), 0);
+		opt->set_item_metadata(0, 0);
+		int sel_item_idx = 0;
+
+		Array items = (cat_id < 0) ? Array() : dm->get_category_array(cat_id);
+		for (int ii = 0; ii < items.size(); ii++) {
+			Dictionary item = items[ii];
+			int iid = int(item.get("id", ii + 1));
+			String iname = String(item.get("name", ""));
+			String disp = vformat("%03d: %s", iid, iname.is_empty() ? CG_DBG_TR("(Sin Nombre)") : iname);
+			int nidx = opt->get_item_count();
+			opt->add_item(disp, nidx);
+			opt->set_item_metadata(nidx, iid);
+			if (iid == equipped_id) {
+				sel_item_idx = nidx;
+			}
+		}
+		opt->select(sel_item_idx);
+	}
+
+	if (lbl_arpg_stats) {
+		Dictionary eff = dm->get_actor_effective_stats(actor_id);
+		Dictionary bon = dm->get_actor_arpg_equip_bonuses(actor_id);
+		lbl_arpg_stats->set_text(vformat(
+			CG_DBG_TR("Stats efectivos | HP:%d(%+d) MP:%d(%+d) | ATK:%d(%+d) DEF:%d(%+d) | MAT:%d(%+d) MDF:%d(%+d) AGI:%d(%+d) LUK:%d(%+d)"),
+			int(eff.get("hp", eff.get("HP", 0))), int(bon.get("hp", bon.get("HP", 0))),
+			int(eff.get("mp", eff.get("MP", 0))), int(bon.get("mp", bon.get("MP", 0))),
+			int(eff.get("atk", eff.get("ATK", 0))), int(bon.get("atk", bon.get("ATK", 0))),
+			int(eff.get("def", eff.get("DEF", 0))), int(bon.get("def", bon.get("DEF", 0))),
+			int(eff.get("mat", eff.get("MAT", 0))), int(bon.get("mat", bon.get("MAT", 0))),
+			int(eff.get("mdf", eff.get("MDF", 0))), int(bon.get("mdf", bon.get("MDF", 0))),
+			int(eff.get("agi", eff.get("AGI", 0))), int(bon.get("agi", bon.get("AGI", 0))),
+			int(eff.get("luk", eff.get("LUK", 0))), int(bon.get("luk", bon.get("LUK", 0)))
+		));
+	}
+}
+
+void ClockGearsDebugOverlay::_on_arpg_actor_selected(int p_idx) {
+	_populate_arpg_equip_tab();
+}
+
+void ClockGearsDebugOverlay::_on_arpg_slot_item_selected(int p_idx, int p_slot_idx) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !arpg_actor_opt || arpg_actor_opt->get_selected() < 0) return;
+	if (p_slot_idx < 0 || p_slot_idx >= arpg_slot_keys.size() || p_slot_idx >= arpg_slot_opts.size()) return;
+
+	OptionButton *opt = arpg_slot_opts[p_slot_idx];
+	if (!opt || p_idx < 0 || p_idx >= opt->get_item_count()) return;
+
+	int actor_id = int(arpg_actor_opt->get_item_metadata(arpg_actor_opt->get_selected()));
+	String slot_key = arpg_slot_keys[p_slot_idx];
+	int item_id = int(opt->get_item_metadata(p_idx));
+
+	dm->set_actor_arpg_equip(actor_id, slot_key, item_id);
+	if (player) {
+		player->refresh_arpg_equip_layers();
+	}
+	_populate_arpg_equip_tab();
+}
+
+void ClockGearsDebugOverlay::set_arpg_equip_debug_slot(int p_actor_id, const String &p_slot_key, int p_item_id) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+	_populate_arpg_equip_tab();
+	if (arpg_actor_opt) {
+		for (int ai = 0; ai < arpg_actor_opt->get_item_count(); ai++) {
+			if (int(arpg_actor_opt->get_item_metadata(ai)) == p_actor_id) {
+				arpg_actor_opt->select(ai);
+				_populate_arpg_equip_tab();
+				break;
+			}
+		}
+	}
+	int target_slot_idx = -1;
+	for (int si = 0; si < arpg_slot_keys.size(); si++) {
+		if (arpg_slot_keys[si] == p_slot_key) {
+			target_slot_idx = si;
+			break;
+		}
+	}
+	if (target_slot_idx >= 0 && target_slot_idx < arpg_slot_opts.size() && arpg_slot_opts[target_slot_idx]) {
+		OptionButton *opt = arpg_slot_opts[target_slot_idx];
+		for (int ii = 0; ii < opt->get_item_count(); ii++) {
+			if (int(opt->get_item_metadata(ii)) == p_item_id) {
+				opt->select(ii);
+				_on_arpg_slot_item_selected(ii, target_slot_idx);
+				return;
+			}
+		}
+	}
+	dm->set_actor_arpg_equip(p_actor_id, p_slot_key, p_item_id);
+	if (player) {
+		player->refresh_arpg_equip_layers();
+	}
+	_populate_arpg_equip_tab();
 }
 
 void ClockGearsDebugOverlay::_update_hud() {

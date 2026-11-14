@@ -107,6 +107,7 @@ ClockGearsCommandSelector::ClockGearsCommandSelector() {
 	_create_cmd_button(grid2, CG_TR("◆ Añadir Objeto..."), CMD_ADD_ITEM);
 	_create_cmd_button(grid2, CG_TR("◆ Cambiar Dinero..."), CMD_CHANGE_GOLD);
 	_create_cmd_button(grid2, CG_TR("◆ Cambiar HP/MP..."), CMD_CHANGE_HP_MP);
+	_create_cmd_button(grid2, CG_TR("◆ Cambiar Equipo ARPG..."), CMD_CHANGE_ARPG_EQUIP);
 
 	// =============================================================
 	// Pestaña 3: Escena y Multimedia

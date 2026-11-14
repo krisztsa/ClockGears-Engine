@@ -174,6 +174,23 @@ static bool s_is_anim_slot_category(int p_category) {
 	return p_category == CAT_ACTORS || p_category == CAT_NPCS || s_is_arpg_category(p_category);
 }
 
+static bool s_is_arpg_equip_category(int p_category) {
+	return p_category >= CAT_ARPG_WEAPONS && p_category <= CAT_ARPG_ACCESSORIES;
+}
+
+static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
+	if (p_combat_mode == COMBAT_MODE_ACTION_RPG) {
+		if (p_category == CAT_WEAPONS || p_category == CAT_ARMORS || p_category == CAT_ACCESSORIES) {
+			return false;
+		}
+	} else {
+		if (s_is_arpg_equip_category(p_category)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool s_has_event_tab_category(int p_category) {
 	return p_category == CAT_NPCS || p_category == CAT_ARPG_NPCS || p_category == CAT_ARPG_ENEMIES;
 }
@@ -583,19 +600,22 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 	d["tertiary_type"] = 0;
 	d["formula"] = "max(a.atk * 4 - b.def * 2, 0)";
 	bool is_equip = (p_category == CAT_WEAPONS || p_category == CAT_ARMORS || p_category == CAT_ACCESSORIES);
-	d["hp"] = is_equip ? 0 : 100;
-	d["mp"] = is_equip ? 0 : 20;
-	d["atk"] = is_equip ? 0 : 10;
-	d["def"] = is_equip ? 0 : 10;
-	d["mat"] = is_equip ? 0 : 10;
-	d["mdf"] = is_equip ? 0 : 10;
-	d["agi"] = is_equip ? 0 : 10;
-	d["luk"] = is_equip ? 0 : 10;
+	bool is_arpg_equip = s_is_arpg_equip_category(p_category);
+	bool zero_stats = is_equip || is_arpg_equip;
+	d["hp"] = zero_stats ? 0 : 100;
+	d["mp"] = zero_stats ? 0 : 20;
+	d["atk"] = zero_stats ? 0 : 10;
+	d["def"] = zero_stats ? 0 : 10;
+	d["mat"] = zero_stats ? 0 : 10;
+	d["mdf"] = zero_stats ? 0 : 10;
+	d["agi"] = zero_stats ? 0 : 10;
+	d["luk"] = zero_stats ? 0 : 10;
 	d["graphic_path"] = "";
 	d["traits"] = Array();
 	if (p_category == CAT_ACTORS) {
 		d["class_id"] = 0;
 		d["directional_idle"] = false;
+		d["arpg_equip_slots"] = ClockGearsDataManager::get_default_arpg_equip_slots();
 		Dictionary ca;
 		ca["idle"] = "";
 		ca["attack"] = "";
@@ -607,6 +627,11 @@ Dictionary ClockGearsDatabaseDialog::_create_empty_record(int p_category, int p_
 	} else if (s_is_anim_slot_category(p_category)) {
 		d["directional_idle"] = false;
 		d["sprite_data"] = Dictionary();
+		if (is_arpg_equip) {
+			d["draw_mode"] = "completo";
+			d["layer_order"] = ClockGearsCharacterStateRegistry::get_default_arpg_layer_order(p_category);
+			d["simple_images"] = Dictionary();
+		}
 		if (s_has_event_tab_category(p_category)) {
 			d["event_pages"] = Array();
 		}
@@ -925,24 +950,62 @@ int ClockGearsDatabaseDialog::_find_chapter_for_category(int p_category) const {
 	return 0;
 }
 
+void ClockGearsDatabaseDialog::_update_chapter_and_category_visibility() {
+	int mode = current_combat_mode;
+	if (ClockGearsDataManager::get_singleton()) {
+		Dictionary dm_sys = ClockGearsDataManager::get_singleton()->get_system_config();
+		if (dm_sys.has("combat_mode")) {
+			mode = int(dm_sys["combat_mode"]);
+			current_combat_mode = mode;
+			system_config["combat_mode"] = mode;
+		}
+	}
+
+	for (int i = 0; i < chapters.size() && i < chapter_buttons.size(); i++) {
+		bool any_visible = false;
+		for (int j = 0; j < chapters[i].categories.size(); j++) {
+			if (s_is_category_visible_in_mode(chapters[i].categories[j], mode)) {
+				any_visible = true;
+				break;
+			}
+		}
+		if (chapter_buttons[i]) {
+			chapter_buttons[i]->set_visible(any_visible);
+			chapter_buttons[i]->set_pressed_no_signal(i == current_chapter);
+		}
+	}
+
+	const Vector<int> &chap_cats = (current_chapter >= 0 && current_chapter < chapters.size())
+			? chapters[current_chapter].categories
+			: Vector<int>();
+	for (int c = 0; c < category_buttons.size(); c++) {
+		if (category_buttons[c]) {
+			bool vis = (chap_cats.is_empty() || chap_cats.has(c)) && s_is_category_visible_in_mode(c, mode);
+			category_buttons[c]->set_visible(vis);
+			category_buttons[c]->set_pressed_no_signal(c == current_category);
+		}
+	}
+}
+
 void ClockGearsDatabaseDialog::_on_chapter_selected(int p_chapter_idx) {
 	if (p_chapter_idx < 0 || p_chapter_idx >= chapters.size()) {
 		return;
 	}
+	int mode = ClockGearsDataManager::get_singleton()
+			? int(ClockGearsDataManager::get_singleton()->get_system_config().get("combat_mode", current_combat_mode))
+			: current_combat_mode;
 	current_chapter = p_chapter_idx;
-	for (int i = 0; i < chapter_buttons.size(); i++) {
-		if (chapter_buttons[i]) {
-			chapter_buttons[i]->set_pressed_no_signal(i == current_chapter);
-		}
-	}
+	_update_chapter_and_category_visibility();
 	const Vector<int> &cats = chapters[current_chapter].categories;
-	for (int c = 0; c < category_buttons.size(); c++) {
-		if (category_buttons[c]) {
-			category_buttons[c]->set_visible(cats.has(c));
+	int first_vis = -1;
+	for (int i = 0; i < cats.size(); i++) {
+		if (s_is_category_visible_in_mode(cats[i], mode)) {
+			first_vis = cats[i];
+			break;
 		}
 	}
-	if (!cats.has(current_category) && !cats.is_empty()) {
-		_on_category_selected(cats[0]);
+	if ((!cats.has(current_category) || !s_is_category_visible_in_mode(current_category, mode)) && first_vis >= 0) {
+		_on_category_selected(first_vis);
 	} else {
 		_save_editor_ui_state();
 	}
@@ -1000,22 +1063,14 @@ void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 		}
 	}
 	current_category = p_category;
+	int mode = ClockGearsDataManager::get_singleton()
+			? int(ClockGearsDataManager::get_singleton()->get_system_config().get("combat_mode", current_combat_mode))
+			: current_combat_mode;
+	if (!s_is_category_visible_in_mode(current_category, mode)) {
+		current_category = CAT_ACTORS;
+	}
 	current_chapter = _find_chapter_for_category(current_category);
-
-	for (int i = 0; i < chapter_buttons.size(); i++) {
-		if (chapter_buttons[i]) {
-			chapter_buttons[i]->set_pressed_no_signal(i == current_chapter);
-		}
-	}
-	const Vector<int> &chap_cats = (current_chapter >= 0 && current_chapter < chapters.size())
-			? chapters[current_chapter].categories
-			: Vector<int>();
-	for (int i = 0; i < category_buttons.size(); i++) {
-		if (category_buttons[i]) {
-			category_buttons[i]->set_visible(chap_cats.is_empty() || chap_cats.has(i));
-			category_buttons[i]->set_pressed_no_signal(i == current_category);
-		}
-	}
+	_update_chapter_and_category_visibility();
 	_save_editor_ui_state();
 	_refresh_category_view();
 }
@@ -1038,6 +1093,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_actor = (current_category == CAT_ACTORS);
 	bool is_classes = (current_category == CAT_CLASSES);
 	bool is_anim_slot_cat = s_is_anim_slot_category(current_category);
+	bool is_arpg_equip = s_is_arpg_equip_category(current_category);
 	bool is_actor_or_enemy = (is_anim_slot_cat || is_enemy);
 	bool has_event_tab = s_has_event_tab_category(current_category);
 	bool has_single_graphic = (current_category == CAT_ITEMS || current_category == CAT_WEAPONS ||
@@ -1056,6 +1112,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 			system_config["movement_directions"] = dm_sys["movement_directions"];
 		}
 	}
+	_update_chapter_and_category_visibility();
 
 	if (col1_box) {
 		col1_box->set_visible(!is_system);
@@ -1072,7 +1129,8 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (main_editor_tabs) {
 		main_editor_tabs->set_tabs_visible(is_actor_or_enemy);
 		main_editor_tabs->set_tab_hidden(0, false);
-		main_editor_tabs->set_tab_hidden(1, !is_enemy);
+		main_editor_tabs->set_tab_title(1, is_arpg_equip ? CG_DB_TR("Rasgos") : CG_DB_TR("Combate"));
+		main_editor_tabs->set_tab_hidden(1, !(is_enemy || is_arpg_equip));
 		main_editor_tabs->set_tab_hidden(2, !is_actor_or_enemy);
 		if (main_editor_tabs->get_tab_count() > 3) {
 			main_editor_tabs->set_tab_hidden(3, !has_event_tab);
@@ -1085,8 +1143,17 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (event_tab_scroll) {
 		event_tab_scroll->set_visible(has_event_tab);
 	}
+	if (stats_section_box && combat_tab_vbox && col2_box) {
+		s_reparent_control(stats_section_box, is_arpg_equip ? (Control *)combat_tab_vbox : (Control *)col2_box);
+		if (is_arpg_equip) {
+			combat_tab_vbox->move_child(stats_section_box, 0);
+		} else {
+			int g_idx = general_section_box && general_section_box->get_parent() == col2_box ? general_section_box->get_index() : -1;
+			col2_box->move_child(stats_section_box, g_idx >= 0 ? g_idx + 1 : 0);
+		}
+	}
 	if (traits_box && combat_tab_vbox && col2_box) {
-		s_reparent_control(traits_box, is_enemy ? combat_tab_vbox : col2_box);
+		s_reparent_control(traits_box, (is_enemy || is_arpg_equip) ? (Control *)combat_tab_vbox : (Control *)col2_box);
 	}
 	if (sprite_anim_editor_box) {
 		sprite_anim_editor_box->set_visible(is_actor_or_enemy);
@@ -1176,6 +1243,16 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (actor_dir_idle_chk) {
 		actor_dir_idle_chk->set_visible(is_anim_slot_cat);
 	}
+	if (anim_behind_body_chk) {
+		anim_behind_body_chk->set_visible(is_arpg_equip);
+	}
+	if (arpg_piece_mode_bar) {
+		arpg_piece_mode_bar->set_visible(is_arpg_equip);
+	}
+	if (arpg_preview_box) {
+		arpg_preview_box->set_visible(is_arpg_equip);
+	}
+	_refresh_arpg_piece_anim_mode_ui();
 	if (btn_add_anim) {
 		btn_add_anim->set_text(is_enemy ? CG_DB_TR("Nueva") : CG_DB_TR("Nueva"));
 		btn_add_anim->set_tooltip_text(is_enemy ? CG_DB_TR("Añadir una nueva ranura de Lanzamiento") : CG_DB_TR("Añadir una nueva animación vacía"));
@@ -1580,17 +1657,19 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		enemy_actions_box->set_visible(is_enemy);
 	}
 
+	bool is_arpg_equip_cur = s_is_arpg_equip_category(current_category);
 	bool show_stats = (current_category == CAT_ACTORS || current_category == CAT_CLASSES ||
-			is_equip || is_enemy);
+			is_equip || is_arpg_equip_cur || is_enemy);
 	if (stats_section_box) {
 		stats_section_box->set_visible(show_stats);
 	}
+	bool allow_neg_stats = (is_equip || is_arpg_equip_cur);
 	for (int i = 0; i < 8; i++) {
 		stat_labels[i]->set_visible(show_stats);
 		stat_spins[i]->set_visible(show_stats);
 		// Sección 5.1: Equipamiento permite modificadores negativos (-999..9999)
-		stat_spins[i]->set_min(is_equip ? -999 : 0);
-		stat_spins[i]->set_max(is_equip ? 9999 : 999999);
+		stat_spins[i]->set_min(allow_neg_stats ? -999 : 0);
+		stat_spins[i]->set_max(allow_neg_stats ? 9999 : 999999);
 	}
 
 	bool show_formula = (is_skill || is_item || current_category == CAT_COMMON_EVENTS);
@@ -1610,9 +1689,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		tileset_slots_box->set_visible(is_tileset);
 	}
 
-	// Sección 4.2 / 4.3 / 5.1 / 5.2 / 5.3: Mostrar editor de Rasgos (Traits) o Efectos en Columna 3
+	// Sección 4.2 / 4.3 / 5.1 / 5.2 / 5.3: Mostrar editor de Rasgos (Traits) o Efectos
 	bool show_traits = (current_category == CAT_ACTORS || current_category == CAT_CLASSES ||
-			is_equip || is_enemy || current_category == CAT_STATES);
+			is_equip || is_arpg_equip_cur || is_enemy || current_category == CAT_STATES);
 	if (traits_box) {
 		traits_box->set_visible(show_traits);
 	}
@@ -1993,6 +2072,21 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 		}
 
 		_refresh_anim_track_options();
+		if (s_is_arpg_equip_category(current_category)) {
+			String dm_mode = String(d.get("draw_mode", "completo")).strip_edges().to_lower();
+			int lorder = d.has("layer_order") ? int(d["layer_order"]) : ClockGearsCharacterStateRegistry::get_default_arpg_layer_order(current_category);
+			if (arpg_draw_mode_opt) {
+				arpg_draw_mode_opt->select(dm_mode == "simple" ? 1 : 0);
+			}
+			if (arpg_layer_order_spin) {
+				arpg_layer_order_spin->set_value(lorder);
+				arpg_layer_order_spin->set_meta("cg_last_valid_val", double(lorder));
+			}
+			_refresh_arpg_piece_anim_mode_ui();
+			_refresh_arpg_simple_fields();
+			_refresh_arpg_preview_selectors();
+			_update_arpg_preview_canvas();
+		}
 		if (s_has_event_tab_category(current_category)) {
 			_refresh_event_tab_summary();
 		}
@@ -2290,6 +2384,14 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 		}
 		d["sprite_data"] = current_sprite_data.to_dict();
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
+		if (s_is_arpg_equip_category(current_category)) {
+			if (arpg_draw_mode_opt) {
+				d["draw_mode"] = (arpg_draw_mode_opt->get_selected() == 1) ? "simple" : "completo";
+			}
+			if (arpg_layer_order_spin) {
+				d["layer_order"] = int(arpg_layer_order_spin->get_value());
+			}
+		}
 		if (current_category == CAT_ACTORS || current_category == CAT_ENEMIES) {
 			Dictionary ca = d.get("combat_animations", Dictionary());
 			if (current_category == CAT_ENEMIES) {
@@ -3908,6 +4010,14 @@ void ClockGearsDatabaseDialog::_on_file_selected(const String &p_path) {
 		_refresh_anim_preview();
 		d["sprite_data"] = current_sprite_data.to_dict();
 		d["animations"] = current_sprite_data.to_dict().get("animations", Dictionary());
+		if (s_is_arpg_equip_category(current_category)) {
+			if (arpg_draw_mode_opt) {
+				d["draw_mode"] = (arpg_draw_mode_opt->get_selected() == 1) ? "simple" : "completo";
+			}
+			if (arpg_layer_order_spin) {
+				d["layer_order"] = int(arpg_layer_order_spin->get_value());
+			}
+		}
 		d.erase("tile_coords");
 		d.erase("tile_block_size");
 		arr[idx] = d;
@@ -4252,6 +4362,11 @@ void ClockGearsDatabaseDialog::_on_system_movement_dirs_selected(int p_idx) {
 	if (s_is_anim_slot_category(current_category)) {
 		_refresh_anim_track_options();
 	}
+	if (s_is_arpg_equip_category(current_category)) {
+		_refresh_arpg_simple_fields();
+		_refresh_arpg_preview_selectors();
+		_update_arpg_preview_canvas();
+	}
 	_mark_database_dirty();
 }
 
@@ -4262,6 +4377,9 @@ void ClockGearsDatabaseDialog::_on_actor_directional_idle_toggled(bool p_pressed
 	_on_param_changed();
 	if (s_is_anim_slot_category(current_category)) {
 		_refresh_anim_track_options();
+	}
+	if (s_is_arpg_equip_category(current_category)) {
+		_update_arpg_preview_canvas();
 	}
 }
 
@@ -4279,6 +4397,7 @@ void ClockGearsDatabaseDialog::_on_combat_mode_selected(int p_idx) {
 	if (ClockGearsDataManager::get_singleton()) {
 		ClockGearsDataManager::get_singleton()->set_system_config(system_config);
 	}
+	_update_chapter_and_category_visibility();
 	if (s_is_anim_slot_category(current_category)) {
 		_refresh_anim_track_options();
 	}
@@ -5853,7 +5972,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	// ========================================================================
 	// PESTAÑA ANIMACIONES (Enemigos y Actores: UN SOLO selector desplegable + Tira de frames HFlow + Vista previa 128px)
 	// ========================================================================
-	VBoxContainer *anim_sel_sec = memnew(VBoxContainer);
+	_setup_arpg_equip_anim_ui();
+
+	anim_sel_sec = memnew(VBoxContainer);
 	anim_sel_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	anim_sel_sec->add_theme_constant_override("separation", int(8 * EDSCALE));
 	sprite_anim_editor_box->add_child(anim_sel_sec);
@@ -5951,6 +6072,13 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	anim_loop_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
 	settings_row->add_child(anim_loop_chk);
 
+	anim_behind_body_chk = memnew(CheckBox(CG_DB_TR("Dibujar detrás del cuerpo")));
+	anim_behind_body_chk->set_custom_minimum_size(Size2(0, row_h));
+	anim_behind_body_chk->set_pressed(false);
+	anim_behind_body_chk->set_visible(false);
+	anim_behind_body_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
+	settings_row->add_child(anim_behind_body_chk);
+
 	anim_random_order_chk = memnew(CheckBox(CG_DB_TR("Orden aleatorio")));
 	anim_random_order_chk->set_custom_minimum_size(Size2(0, row_h));
 	anim_random_order_chk->set_pressed(false);
@@ -5964,15 +6092,15 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	settings_row->add_child(btn_anim_play);
 
 	// Tira de frames (con salto de línea HFlowContainer, NUNCA scroll horizontal) + Vista previa 128px a un lado
-	VBoxContainer *frames_sec = memnew(VBoxContainer);
-	frames_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	frames_sec->add_theme_constant_override("separation", int(8 * EDSCALE));
-	sprite_anim_editor_box->add_child(frames_sec);
+	anim_frames_sec = memnew(VBoxContainer);
+	anim_frames_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_frames_sec->add_theme_constant_override("separation", int(8 * EDSCALE));
+	sprite_anim_editor_box->add_child(anim_frames_sec);
 
 	HBoxContainer *frames_bar = memnew(HBoxContainer);
 	frames_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	frames_bar->add_theme_constant_override("separation", int(12 * EDSCALE));
-	frames_sec->add_child(frames_bar);
+	anim_frames_sec->add_child(frames_bar);
 
 	Label *lbl_b3 = memnew(Label(CG_DB_TR("Frames y vista previa")));
 	lbl_b3->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -5984,12 +6112,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	btn_open_sheet_importer->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_open_sheet_importer_pressed));
 	frames_bar->add_child(btn_open_sheet_importer);
 
-	frames_sec->add_child(memnew(HSeparator));
+	anim_frames_sec->add_child(memnew(HSeparator));
 
 	HBoxContainer *frames_and_preview_hb = memnew(HBoxContainer);
 	frames_and_preview_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	frames_and_preview_hb->add_theme_constant_override("separation", int(16 * EDSCALE));
-	frames_sec->add_child(frames_and_preview_hb);
+	anim_frames_sec->add_child(frames_and_preview_hb);
 
 	frames_strip_scroll = nullptr;
 	frames_strip_hbox = memnew(HFlowContainer);
@@ -8969,10 +9097,12 @@ void ClockGearsDatabaseDialog::_on_anim_track_selected(int p_idx) {
 		if (anim_fps_spin) anim_fps_spin->set_value(a.fps > 0 ? a.fps : (s_is_anim_slot_category(current_category) ? 8.0f : 6.0f));
 		if (anim_loop_chk) anim_loop_chk->set_pressed(a.loop);
 		if (anim_random_order_chk) anim_random_order_chk->set_pressed(a.random_order);
+		if (anim_behind_body_chk) anim_behind_body_chk->set_pressed(a.behind_body);
 	} else {
 		if (anim_fps_spin) anim_fps_spin->set_value(8.0f);
 		if (anim_loop_chk) anim_loop_chk->set_pressed(true);
 		if (anim_random_order_chk) anim_random_order_chk->set_pressed(false);
+		if (anim_behind_body_chk) anim_behind_body_chk->set_pressed(false);
 	}
 	if (anim_item_list) {
 		for (int i = 0; i < anim_item_list->get_item_count(); i++) {
@@ -9731,6 +9861,9 @@ void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 				}
 				anim_preview_atlas->set_region(reg);
 				if (anim_preview_rect) anim_preview_rect->set_texture(anim_preview_atlas);
+				if (s_is_arpg_equip_category(current_category)) {
+					_update_arpg_preview_canvas();
+				}
 				return;
 			}
 		} else {
@@ -9752,13 +9885,20 @@ void ClockGearsDatabaseDialog::_refresh_anim_preview() {
 				anim_preview_atlas->set_atlas(tex);
 				anim_preview_atlas->set_region(Rect2(0, row_idx * fh, fw, fh));
 				if (anim_preview_rect) anim_preview_rect->set_texture(anim_preview_atlas);
+				if (s_is_arpg_equip_category(current_category)) {
+					_update_arpg_preview_canvas();
+				}
 				return;
 			}
 		}
 
 		anim_preview_playing = false;
 		if (btn_anim_play) btn_anim_play->set_text(CG_DB_TR("▶ Probar"));
+		if (btn_arpg_prev_play) btn_arpg_prev_play->set_text(CG_DB_TR("▶ Probar"));
 		if (anim_preview_rect) anim_preview_rect->set_texture(ClockGearsCharacterStateRegistry::get_missing_question_marker_texture());
+		if (s_is_arpg_equip_category(current_category)) {
+			_update_arpg_preview_canvas();
+		}
 		return;
 	}
 
@@ -9869,7 +10009,11 @@ void ClockGearsDatabaseDialog::_on_anim_playback_settings_changed() {
 	if (anim_fps_spin) a.fps = float(anim_fps_spin->get_value());
 	if (anim_loop_chk) a.loop = anim_loop_chk->is_pressed();
 	if (anim_random_order_chk) a.random_order = anim_random_order_chk->is_pressed();
+	if (anim_behind_body_chk) a.behind_body = anim_behind_body_chk->is_pressed();
 	_on_param_changed();
+	if (s_is_arpg_equip_category(current_category)) {
+		_update_arpg_preview_canvas();
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_anim_play_pressed() {
@@ -9882,19 +10026,45 @@ void ClockGearsDatabaseDialog::_on_anim_play_pressed() {
 		if (a.get_frame_count() > 0) {
 			anim_preview_frame_target_dur = a.get_frame(0, 0, 0).get_duration();
 		}
+	} else {
+		anim_preview_frame_target_dur = 0.125f;
 	}
 	if (btn_anim_play) {
 		btn_anim_play->set_text(anim_preview_playing ? CG_DB_TR("⏹ Detener") : CG_DB_TR("▶ Probar"));
 	}
+	if (btn_arpg_prev_play) {
+		btn_arpg_prev_play->set_text(anim_preview_playing ? CG_DB_TR("⏹ Detener") : CG_DB_TR("▶ Probar"));
+	}
+	_update_arpg_preview_canvas();
 }
 
 void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 	if (!anim_preview_playing) return;
 	String cur_name = _get_active_anim_name();
-	if (!current_sprite_data.animations.has(cur_name)) return;
+	if (!current_sprite_data.animations.has(cur_name)) {
+		if (s_is_arpg_equip_category(current_category)) {
+			anim_preview_timer += p_delta;
+			if (anim_preview_timer >= 0.125f) {
+				anim_preview_timer = fmod(anim_preview_timer, 0.125f);
+				anim_preview_frame_idx = (anim_preview_frame_idx + 1) % 256;
+				_update_arpg_preview_canvas();
+			}
+		}
+		return;
+	}
 	const ClockGearsSpriteAnimation &a = current_sprite_data.animations[cur_name];
 	int total = a.get_frame_count();
-	if (total == 0) return;
+	if (total == 0) {
+		if (s_is_arpg_equip_category(current_category)) {
+			anim_preview_timer += p_delta;
+			if (anim_preview_timer >= 0.125f) {
+				anim_preview_timer = fmod(anim_preview_timer, 0.125f);
+				anim_preview_frame_idx = (anim_preview_frame_idx + 1) % 256;
+				_update_arpg_preview_canvas();
+			}
+		}
+		return;
+	}
 
 	if (anim_preview_frame_target_dur <= 0.001f) {
 		float speed = MAX(0.5f, a.fps);
@@ -9943,6 +10113,7 @@ void ClockGearsDatabaseDialog::_update_anim_playback(float p_delta) {
 			anim_preview_rect->set_texture(anim_preview_atlas);
 		}
 	}
+	_update_arpg_preview_canvas();
 }
 
 Dictionary ClockGearsDatabaseDialog::get_troop_member_preview_info(int p_troop_idx, int p_member_idx) const {
@@ -10559,5 +10730,698 @@ Ref<Texture2D> ClockGearsDatabaseDialog::get_record_list_icon(int p_row_idx) con
 		return Ref<Texture2D>();
 	}
 	return record_list->get_item_icon(p_row_idx);
+}
+
+// ============================================================================
+// Equipo ARPG: Modo Completo/Simple, Orden de Capa y Vista Previa en Capas
+// ============================================================================
+
+void ClockGearsDatabaseDialog::_setup_arpg_equip_anim_ui() {
+	const float row_h = 32.0f * EDSCALE;
+
+	arpg_piece_mode_bar = memnew(HFlowContainer);
+	arpg_piece_mode_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_piece_mode_bar->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	arpg_piece_mode_bar->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	arpg_piece_mode_bar->set_visible(false);
+	sprite_anim_editor_box->add_child(arpg_piece_mode_bar);
+
+	Label *lbl_dm = memnew(Label(CG_DB_TR("Modo de dibujo:")));
+	arpg_piece_mode_bar->add_child(lbl_dm);
+
+	arpg_draw_mode_opt = memnew(OptionButton);
+	arpg_draw_mode_opt->set_custom_minimum_size(Size2(220 * EDSCALE, row_h));
+	arpg_draw_mode_opt->add_item(CG_DB_TR("Completo (animado)"), 0);
+	arpg_draw_mode_opt->add_item(CG_DB_TR("Simple (imagen estática)"), 1);
+	arpg_draw_mode_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_draw_mode_selected));
+	arpg_piece_mode_bar->add_child(arpg_draw_mode_opt);
+
+	Label *lbl_lo = memnew(Label(CG_DB_TR("Orden de capa:")));
+	arpg_piece_mode_bar->add_child(lbl_lo);
+
+	arpg_layer_order_spin = memnew(SpinBox);
+	arpg_layer_order_spin->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	arpg_layer_order_spin->set_min(-99);
+	arpg_layer_order_spin->set_max(99);
+	arpg_layer_order_spin->set_value(1);
+	_bind_numeric_spinbox(arpg_layer_order_spin);
+	arpg_layer_order_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_layer_order_changed));
+	arpg_piece_mode_bar->add_child(arpg_layer_order_spin);
+
+	// Subpanel Modo Simple
+	arpg_simple_editor_box = memnew(VBoxContainer);
+	arpg_simple_editor_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_simple_editor_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	arpg_simple_editor_box->set_visible(false);
+	sprite_anim_editor_box->add_child(arpg_simple_editor_box);
+
+	Label *lbl_simp_hdr = memnew(Label(CG_DB_TR("Imagen estática por grupo y dirección")));
+	lbl_simp_hdr->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
+	arpg_simple_editor_box->add_child(lbl_simp_hdr);
+	arpg_simple_editor_box->add_child(memnew(HSeparator));
+
+	HFlowContainer *simp_sel_row = memnew(HFlowContainer);
+	simp_sel_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	simp_sel_row->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	simp_sel_row->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	arpg_simple_editor_box->add_child(simp_sel_row);
+
+	simp_sel_row->add_child(memnew(Label(CG_DB_TR("Grupo:"))));
+	arpg_simple_group_opt = memnew(OptionButton);
+	arpg_simple_group_opt->set_custom_minimum_size(Size2(130 * EDSCALE, row_h));
+	arpg_simple_group_opt->add_item(CG_DB_TR("Normal"), 0);
+	arpg_simple_group_opt->set_item_metadata(0, "normal");
+	arpg_simple_group_opt->add_item(CG_DB_TR("Atacar"), 1);
+	arpg_simple_group_opt->set_item_metadata(1, "atacar");
+	arpg_simple_group_opt->add_item(CG_DB_TR("Bloquear"), 2);
+	arpg_simple_group_opt->set_item_metadata(2, "bloquear");
+	arpg_simple_group_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_group_or_dir_changed));
+	simp_sel_row->add_child(arpg_simple_group_opt);
+
+	simp_sel_row->add_child(memnew(Label(CG_DB_TR("Dirección:"))));
+	arpg_simple_dir_opt = memnew(OptionButton);
+	arpg_simple_dir_opt->set_custom_minimum_size(Size2(170 * EDSCALE, row_h));
+	arpg_simple_dir_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_group_or_dir_changed));
+	simp_sel_row->add_child(arpg_simple_dir_opt);
+
+	HBoxContainer *simp_path_hb = memnew(HBoxContainer);
+	simp_path_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	simp_path_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	arpg_simple_editor_box->add_child(simp_path_hb);
+
+	simp_path_hb->add_child(memnew(Label(CG_DB_TR("Archivo PNG:"))));
+	arpg_simple_path_edit = memnew(LineEdit);
+	arpg_simple_path_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_simple_path_edit->set_editable(false);
+	arpg_simple_path_edit->set_placeholder(CG_DB_TR("(Ninguna imagen asignada)"));
+	simp_path_hb->add_child(arpg_simple_path_edit);
+
+	arpg_simple_browse_btn = memnew(Button(CG_DB_TR("Imagen...")));
+	arpg_simple_browse_btn->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	arpg_simple_browse_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_browse_pressed));
+	simp_path_hb->add_child(arpg_simple_browse_btn);
+
+	arpg_simple_clear_btn = memnew(Button(CG_DB_TR("Limpiar")));
+	arpg_simple_clear_btn->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	arpg_simple_clear_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_clear_pressed));
+	simp_path_hb->add_child(arpg_simple_clear_btn);
+
+	arpg_simple_file_dialog = memnew(FileDialog);
+	arpg_simple_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
+	arpg_simple_file_dialog->set_access(FileDialog::ACCESS_RESOURCES);
+	arpg_simple_file_dialog->add_filter("*.png", "Imágenes PNG");
+	arpg_simple_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_file_selected));
+	add_child(arpg_simple_file_dialog);
+
+	HFlowContainer *simp_off_row = memnew(HFlowContainer);
+	simp_off_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	simp_off_row->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	simp_off_row->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	arpg_simple_editor_box->add_child(simp_off_row);
+
+	simp_off_row->add_child(memnew(Label(CG_DB_TR("Desplazamiento X:"))));
+	arpg_simple_offset_x_spin = memnew(SpinBox);
+	arpg_simple_offset_x_spin->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	arpg_simple_offset_x_spin->set_min(-256);
+	arpg_simple_offset_x_spin->set_max(256);
+	_bind_numeric_spinbox(arpg_simple_offset_x_spin);
+	arpg_simple_offset_x_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_prop_changed).unbind(1));
+	simp_off_row->add_child(arpg_simple_offset_x_spin);
+
+	simp_off_row->add_child(memnew(Label(CG_DB_TR("Y:"))));
+	arpg_simple_offset_y_spin = memnew(SpinBox);
+	arpg_simple_offset_y_spin->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	arpg_simple_offset_y_spin->set_min(-256);
+	arpg_simple_offset_y_spin->set_max(256);
+	_bind_numeric_spinbox(arpg_simple_offset_y_spin);
+	arpg_simple_offset_y_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_prop_changed).unbind(1));
+	simp_off_row->add_child(arpg_simple_offset_y_spin);
+
+	arpg_simple_center_btn = memnew(Button(CG_DB_TR("Centrar")));
+	arpg_simple_center_btn->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	arpg_simple_center_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_center_pressed));
+	simp_off_row->add_child(arpg_simple_center_btn);
+
+	arpg_simple_behind_chk = memnew(CheckBox(CG_DB_TR("Dibujar detrás del cuerpo")));
+	arpg_simple_behind_chk->set_custom_minimum_size(Size2(0, row_h));
+	arpg_simple_behind_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_prop_changed).unbind(1));
+	simp_off_row->add_child(arpg_simple_behind_chk);
+
+	// Vista previa compuesta sobre el cuerpo del actor (funciona tanto en Completo como en Simple)
+	arpg_preview_box = memnew(VBoxContainer);
+	arpg_preview_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_preview_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	arpg_preview_box->set_visible(false);
+	sprite_anim_editor_box->add_child(arpg_preview_box);
+
+	arpg_preview_box->add_child(memnew(HSeparator));
+	Label *lbl_ap_hdr = memnew(Label(CG_DB_TR("Vista previa sobre personaje")));
+	lbl_ap_hdr->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
+	arpg_preview_box->add_child(lbl_ap_hdr);
+
+	HFlowContainer *ap_ctrl_row = memnew(HFlowContainer);
+	ap_ctrl_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ap_ctrl_row->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	ap_ctrl_row->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	arpg_preview_box->add_child(ap_ctrl_row);
+
+	ap_ctrl_row->add_child(memnew(Label(CG_DB_TR("Actor:"))));
+	arpg_prev_actor_opt = memnew(OptionButton);
+	arpg_prev_actor_opt->set_custom_minimum_size(Size2(150 * EDSCALE, row_h));
+	arpg_prev_actor_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_prev_selector_changed));
+	ap_ctrl_row->add_child(arpg_prev_actor_opt);
+
+	ap_ctrl_row->add_child(memnew(Label(CG_DB_TR("Estado:"))));
+	arpg_prev_state_opt = memnew(OptionButton);
+	arpg_prev_state_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	arpg_prev_state_opt->add_item(CG_DB_TR("Mover"), 0);
+	arpg_prev_state_opt->set_item_metadata(0, "caminar");
+	arpg_prev_state_opt->add_item(CG_DB_TR("Quieto"), 1);
+	arpg_prev_state_opt->set_item_metadata(1, "quieto");
+	arpg_prev_state_opt->add_item(CG_DB_TR("Atacar"), 2);
+	arpg_prev_state_opt->set_item_metadata(2, "atacar");
+	arpg_prev_state_opt->add_item(CG_DB_TR("Bloquear"), 3);
+	arpg_prev_state_opt->set_item_metadata(3, "bloquear");
+	arpg_prev_state_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_prev_selector_changed));
+	ap_ctrl_row->add_child(arpg_prev_state_opt);
+
+	ap_ctrl_row->add_child(memnew(Label(CG_DB_TR("Dirección:"))));
+	arpg_prev_dir_opt = memnew(OptionButton);
+	arpg_prev_dir_opt->set_custom_minimum_size(Size2(160 * EDSCALE, row_h));
+	arpg_prev_dir_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_prev_selector_changed));
+	ap_ctrl_row->add_child(arpg_prev_dir_opt);
+
+	arpg_prev_show_rest_chk = memnew(CheckBox(CG_DB_TR("Mostrar el resto del equipo")));
+	arpg_prev_show_rest_chk->set_custom_minimum_size(Size2(0, row_h));
+	arpg_prev_show_rest_chk->set_pressed(false);
+	arpg_prev_show_rest_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_prev_show_rest_toggled));
+	ap_ctrl_row->add_child(arpg_prev_show_rest_chk);
+
+	btn_arpg_prev_play = memnew(Button(CG_DB_TR("▶ Probar")));
+	btn_arpg_prev_play->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	btn_arpg_prev_play->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_play_pressed));
+	ap_ctrl_row->add_child(btn_arpg_prev_play);
+
+	PanelContainer *ap_panel = memnew(PanelContainer);
+	ap_panel->set_custom_minimum_size(Size2(220 * EDSCALE, 190 * EDSCALE));
+	Ref<StyleBoxFlat> ap_sb;
+	ap_sb.instantiate();
+	ap_sb->set_anti_aliased(true);
+	ap_sb->set_bg_color(Color(0.11f, 0.13f, 0.17f, 1.0f));
+	ap_sb->set_border_width_all(1);
+	ap_sb->set_border_color(Color(0.32f, 0.37f, 0.48f, 0.85f));
+	ap_sb->set_corner_radius_all(6);
+	ap_panel->add_theme_style_override("panel", ap_sb);
+	arpg_preview_box->add_child(ap_panel);
+
+	arpg_prev_canvas = memnew(Control);
+	arpg_prev_canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_prev_canvas->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_prev_canvas->set_custom_minimum_size(Size2(200 * EDSCALE, 180 * EDSCALE));
+	arpg_prev_canvas->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	arpg_prev_canvas->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	arpg_prev_canvas->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_prev_canvas_draw));
+	arpg_prev_canvas->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_prev_canvas_gui_input));
+	ap_panel->add_child(arpg_prev_canvas);
+}
+
+static void s_populate_direction_option(OptionButton *p_opt, int p_dirs) {
+	if (!p_opt) {
+		return;
+	}
+	int prev_dir = (p_opt->get_selected() >= 0) ? int(p_opt->get_selected_metadata()) : 2;
+	p_opt->clear();
+	struct DirEntry {
+		int code;
+		const char *label;
+	};
+	static const DirEntry cards[4] = {
+		{ 2, "Abajo" },
+		{ 4, "Izquierda" },
+		{ 6, "Derecha" },
+		{ 8, "Arriba" }
+	};
+	static const DirEntry diags[4] = {
+		{ 1, "Abajo-Izquierda" },
+		{ 3, "Abajo-Derecha" },
+		{ 7, "Arriba-Izquierda" },
+		{ 9, "Arriba-Derecha" }
+	};
+	int sel_idx = 0;
+	for (int i = 0; i < 4; i++) {
+		int idx = p_opt->get_item_count();
+		p_opt->add_item(CG_DB_TR(cards[i].label), cards[i].code);
+		p_opt->set_item_metadata(idx, cards[i].code);
+		if (cards[i].code == prev_dir) sel_idx = idx;
+	}
+	if (p_dirs == 8) {
+		for (int i = 0; i < 4; i++) {
+			int idx = p_opt->get_item_count();
+			p_opt->add_item(CG_DB_TR(diags[i].label), diags[i].code);
+			p_opt->set_item_metadata(idx, diags[i].code);
+			if (diags[i].code == prev_dir) sel_idx = idx;
+		}
+	}
+	if (p_opt->get_item_count() > 0) {
+		p_opt->select(sel_idx);
+	}
+}
+
+void ClockGearsDatabaseDialog::_refresh_arpg_piece_anim_mode_ui() {
+	bool is_arpg_eq = s_is_arpg_equip_category(current_category);
+	bool is_simple = is_arpg_eq && arpg_draw_mode_opt && arpg_draw_mode_opt->get_selected() == 1;
+	if (anim_sel_sec) {
+		anim_sel_sec->set_visible(!is_simple);
+	}
+	if (anim_frames_sec) {
+		anim_frames_sec->set_visible(!is_simple);
+	}
+	if (arpg_simple_editor_box) {
+		arpg_simple_editor_box->set_visible(is_simple);
+	}
+	if (btn_arpg_prev_play) {
+		btn_arpg_prev_play->set_visible(!is_simple);
+	}
+	if (arpg_preview_box && sprite_anim_editor_box && arpg_preview_box->get_parent() == sprite_anim_editor_box) {
+		sprite_anim_editor_box->move_child(arpg_preview_box, sprite_anim_editor_box->get_child_count() - 1);
+	}
+}
+
+static int _db_selected_record_index(ItemList *p_list) {
+	if (!p_list) {
+		return -1;
+	}
+	Vector<int> sel = p_list->get_selected_items();
+	return sel.is_empty() ? -1 : sel[0];
+}
+
+void ClockGearsDatabaseDialog::_refresh_arpg_simple_fields() {
+	if (!s_is_arpg_equip_category(current_category)) {
+		return;
+	}
+	int dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	s_populate_direction_option(arpg_simple_dir_opt, dirs);
+
+	int idx = _db_selected_record_index(record_list);
+	Dictionary entry;
+	if (idx >= 0 && idx < category_data[current_category].size()) {
+		Dictionary d = category_data[current_category][idx];
+		Dictionary simp = d.get("simple_images", Dictionary());
+		String grp = arpg_simple_group_opt && arpg_simple_group_opt->get_selected() >= 0
+				? String(arpg_simple_group_opt->get_selected_metadata())
+				: "normal";
+		int dir_code = arpg_simple_dir_opt && arpg_simple_dir_opt->get_selected() >= 0
+				? int(arpg_simple_dir_opt->get_selected_metadata())
+				: 2;
+		String dsuf = ClockGearsCharacterStateRegistry::direction_to_suffix(dir_code);
+		if (simp.has(grp) && simp[grp].get_type() == Variant::DICTIONARY) {
+			Dictionary gd = simp[grp];
+			if (gd.has(dsuf) && gd[dsuf].get_type() == Variant::DICTIONARY) {
+				entry = gd[dsuf];
+			}
+		}
+	}
+	if (arpg_simple_path_edit) {
+		arpg_simple_path_edit->set_text(String(entry.get("path", "")));
+	}
+	if (arpg_simple_offset_x_spin) {
+		int ox = int(entry.get("offset_x", 0));
+		arpg_simple_offset_x_spin->set_value(ox);
+		arpg_simple_offset_x_spin->set_meta("cg_last_valid_val", double(ox));
+	}
+	if (arpg_simple_offset_y_spin) {
+		int oy = int(entry.get("offset_y", 0));
+		arpg_simple_offset_y_spin->set_value(oy);
+		arpg_simple_offset_y_spin->set_meta("cg_last_valid_val", double(oy));
+	}
+	if (arpg_simple_behind_chk) {
+		arpg_simple_behind_chk->set_pressed(bool(entry.get("behind_body", false)));
+	}
+	updating_ui = prev_upd;
+}
+
+void ClockGearsDatabaseDialog::_refresh_arpg_preview_selectors() {
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	int dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
+	s_populate_direction_option(arpg_prev_dir_opt, dirs);
+	if (arpg_prev_actor_opt) {
+		int prev_id = (arpg_prev_actor_opt->get_selected() >= 0) ? arpg_prev_actor_opt->get_selected_id() : 0;
+		_populate_db_records_option(arpg_prev_actor_opt, CAT_ACTORS, CG_DB_TR("(ningún actor)"), false);
+		if (prev_id > 0) {
+			_select_option_by_id_or_index(arpg_prev_actor_opt, prev_id);
+		} else if (arpg_prev_actor_opt->get_item_count() > 1 && arpg_prev_actor_opt->get_item_id(0) == 0) {
+			// Por defecto seleccionar el primer actor real disponible
+			arpg_prev_actor_opt->select(1);
+		}
+	}
+	updating_ui = prev_upd;
+}
+
+void ClockGearsDatabaseDialog::_update_arpg_preview_canvas() {
+	if (arpg_prev_canvas) {
+		arpg_prev_canvas->queue_redraw();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_draw_mode_selected(int p_idx) {
+	if (updating_ui) return;
+	_refresh_arpg_piece_anim_mode_ui();
+	_on_param_changed();
+	_update_arpg_preview_canvas();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_layer_order_changed(double p_val) {
+	if (updating_ui) return;
+	_on_param_changed();
+	_update_arpg_preview_canvas();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_simple_group_or_dir_changed(int p_idx) {
+	if (updating_ui) return;
+	_refresh_arpg_simple_fields();
+	// Sincronizar selector de Vista Previa para que editar una postura sea inmediato
+	if (arpg_simple_group_opt && arpg_prev_state_opt) {
+		String grp = String(arpg_simple_group_opt->get_selected_metadata());
+		String target_state = (grp == "atacar") ? "atacar" : ((grp == "bloquear") ? "bloquear" : "caminar");
+		for (int i = 0; i < arpg_prev_state_opt->get_item_count(); i++) {
+			if (String(arpg_prev_state_opt->get_item_metadata(i)) == target_state) {
+				arpg_prev_state_opt->select(i);
+				break;
+			}
+		}
+	}
+	if (arpg_simple_dir_opt && arpg_prev_dir_opt && arpg_simple_dir_opt->get_selected() >= 0) {
+		int dcode = int(arpg_simple_dir_opt->get_selected_metadata());
+		for (int i = 0; i < arpg_prev_dir_opt->get_item_count(); i++) {
+			if (int(arpg_prev_dir_opt->get_item_metadata(i)) == dcode) {
+				arpg_prev_dir_opt->select(i);
+				break;
+			}
+		}
+	}
+	_update_arpg_preview_canvas();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_simple_browse_pressed() {
+	if (arpg_simple_file_dialog) {
+		arpg_simple_file_dialog->popup_centered_ratio(0.6);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_simple_file_selected(const String &p_path) {
+	if (arpg_simple_path_edit) {
+		arpg_simple_path_edit->set_text(p_path);
+	}
+	_on_arpg_simple_prop_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_simple_clear_pressed() {
+	if (arpg_simple_path_edit) {
+		arpg_simple_path_edit->set_text("");
+	}
+	_on_arpg_simple_prop_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_simple_center_pressed() {
+	updating_ui = true;
+	if (arpg_simple_offset_x_spin) {
+		arpg_simple_offset_x_spin->set_value(0);
+		arpg_simple_offset_x_spin->set_meta("cg_last_valid_val", 0.0);
+	}
+	if (arpg_simple_offset_y_spin) {
+		arpg_simple_offset_y_spin->set_value(0);
+		arpg_simple_offset_y_spin->set_meta("cg_last_valid_val", 0.0);
+	}
+	updating_ui = false;
+	_on_arpg_simple_prop_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_simple_prop_changed() {
+	if (updating_ui || !s_is_arpg_equip_category(current_category)) {
+		return;
+	}
+	int idx = _db_selected_record_index(record_list);
+	if (idx < 0 || idx >= category_data[current_category].size()) {
+		return;
+	}
+	Dictionary d = category_data[current_category][idx];
+	Dictionary simp = d.has("simple_images") && d["simple_images"].get_type() == Variant::DICTIONARY
+			? Dictionary(d["simple_images"]).duplicate(true)
+			: Dictionary();
+	String grp = arpg_simple_group_opt && arpg_simple_group_opt->get_selected() >= 0
+			? String(arpg_simple_group_opt->get_selected_metadata())
+			: "normal";
+	int dir_code = arpg_simple_dir_opt && arpg_simple_dir_opt->get_selected() >= 0
+			? int(arpg_simple_dir_opt->get_selected_metadata())
+			: 2;
+	String dsuf = ClockGearsCharacterStateRegistry::direction_to_suffix(dir_code);
+	Dictionary gd = simp.has(grp) && simp[grp].get_type() == Variant::DICTIONARY
+			? Dictionary(simp[grp]).duplicate(true)
+			: Dictionary();
+	Dictionary entry;
+	entry["path"] = arpg_simple_path_edit ? arpg_simple_path_edit->get_text().strip_edges() : "";
+	entry["offset_x"] = arpg_simple_offset_x_spin ? int(arpg_simple_offset_x_spin->get_value()) : 0;
+	entry["offset_y"] = arpg_simple_offset_y_spin ? int(arpg_simple_offset_y_spin->get_value()) : 0;
+	entry["behind_body"] = arpg_simple_behind_chk ? arpg_simple_behind_chk->is_pressed() : false;
+	gd[dsuf] = entry;
+	simp[grp] = gd;
+	d["simple_images"] = simp;
+	category_data[current_category][idx] = d;
+	_mark_database_dirty();
+	_update_arpg_preview_canvas();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_prev_selector_changed(int p_idx) {
+	if (updating_ui) return;
+	_update_arpg_preview_canvas();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_prev_show_rest_toggled(bool p_pressed) {
+	if (updating_ui) return;
+	_update_arpg_preview_canvas();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_prev_canvas_draw() {
+	if (!arpg_prev_canvas || !s_is_arpg_equip_category(current_category)) {
+		return;
+	}
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!reg) {
+		return;
+	}
+	Size2 csz = arpg_prev_canvas->get_size();
+	arpg_prev_canvas->draw_rect(Rect2(Vector2(), csz), Color(0.11f, 0.13f, 0.17f, 1.0f));
+	int scale = MAX(1, arpg_prev_draw_scale);
+	const int tile_size = 32;
+	Vector2 cell_origin((csz.x - tile_size * scale) * 0.5f, (csz.y - tile_size * scale) * 0.5f);
+	arpg_prev_canvas->draw_rect(Rect2(cell_origin, Size2(tile_size * scale, tile_size * scale)), Color(1, 1, 1, 0.08f), false, 1.0f);
+
+	String state_id = arpg_prev_state_opt && arpg_prev_state_opt->get_selected() >= 0
+			? String(arpg_prev_state_opt->get_selected_metadata())
+			: "caminar";
+	int dir = arpg_prev_dir_opt && arpg_prev_dir_opt->get_selected() >= 0
+			? int(arpg_prev_dir_opt->get_selected_metadata())
+			: 2;
+	int move_dirs = (int(system_config.get("movement_directions", 4)) == 8) ? 8 : 4;
+
+	// Obtener actor seleccionado (por defecto el primero disponible)
+	Dictionary actor_rec;
+	int actor_id = arpg_prev_actor_opt ? arpg_prev_actor_opt->get_selected_id() : 0;
+	for (int i = 0; i < category_data[CAT_ACTORS].size(); i++) {
+		if (category_data[CAT_ACTORS][i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary ad = category_data[CAT_ACTORS][i];
+		if (actor_id <= 0 || int(ad.get("id", 0)) == actor_id) {
+			actor_rec = ad;
+			actor_id = int(ad.get("id", 0));
+			break;
+		}
+	}
+	bool act_dir_idle = bool(actor_rec.get("directional_idle", false));
+
+	struct DrawLayerItem {
+		int z = 0;
+		Ref<Texture2D> tex;
+		bool use_region = false;
+		Rect2 region;
+		Vector2 pos_px;
+		Size2 size_px;
+	};
+	Vector<DrawLayerItem> items;
+
+	// 1. Capa del cuerpo del actor (z = 0)
+	if (!actor_rec.is_empty()) {
+		ClockGearsSpriteSheetData act_sheet;
+		if (actor_rec.has("sprite_data") && actor_rec["sprite_data"].get_type() == Variant::DICTIONARY) {
+			act_sheet.from_dict(Dictionary(actor_rec["sprite_data"]));
+		}
+		ClockGearsSpriteAnimation act_anim;
+		bool act_freeze = false;
+		String act_slot;
+		if (reg->resolve_actor_animation(act_sheet, act_dir_idle, state_id, dir, act_anim, act_freeze, act_slot) && act_anim.get_frame_count() > 0) {
+			int total = act_anim.get_frame_count();
+			int fi = act_freeze ? 0 : (anim_preview_frame_idx % total);
+			ClockGearsAnimationFrame fr = act_anim.get_frame(fi, 0, 0);
+			String spath = !fr.sheet_path.is_empty() ? fr.sheet_path : act_anim.spritesheet_path;
+			if (spath.is_empty()) spath = String(actor_rec.get("graphic_path", ""));
+			Ref<Texture2D> btex = _load_texture_from_path(spath);
+			if (btex.is_valid()) {
+				ClockGearsAnimationFrame fr_tex = act_anim.get_frame(fi, btex->get_width(), btex->get_height());
+				Rect2 reg_r(fr_tex.region);
+				if (reg_r.size.x <= 0 || reg_r.size.y <= 0 || reg_r.position.x + reg_r.size.x > btex->get_width() || reg_r.position.y + reg_r.size.y > btex->get_height()) {
+					reg_r = Rect2(0, 0, btex->get_width(), btex->get_height());
+				}
+				DrawLayerItem body_it;
+				body_it.z = 0;
+				body_it.tex = btex;
+				body_it.use_region = true;
+				body_it.region = reg_r;
+				body_it.size_px = reg_r.size;
+				body_it.pos_px = ClockGearsCharacterStateRegistry::compute_layer_sprite_position(true, tile_size, int(reg_r.size.x), int(reg_r.size.y), 0, 0);
+				items.push_back(body_it);
+			}
+		} else {
+			String gp = String(actor_rec.get("graphic_path", ""));
+			Ref<Texture2D> btex = _load_texture_from_path(gp);
+			if (btex.is_valid()) {
+				int rows = (btex->get_height() >= btex->get_width() * 2) ? 8 : 4;
+				int cols = MAX(1, act_sheet.cols > 0 ? act_sheet.cols : 4);
+				int fw = MAX(1, btex->get_width() / cols);
+				int fh = MAX(1, btex->get_height() / rows);
+				int row_idx = ClockGearsCharacterStateRegistry::direction_to_sheet_row(dir, rows);
+				int fi = (anim_preview_frame_idx % cols);
+				DrawLayerItem body_it;
+				body_it.z = 0;
+				body_it.tex = btex;
+				body_it.use_region = true;
+				body_it.region = Rect2(fi * fw, row_idx * fh, fw, fh);
+				body_it.size_px = Size2(fw, fh);
+				body_it.pos_px = ClockGearsCharacterStateRegistry::compute_layer_sprite_position(true, tile_size, fw, fh, 0, 0);
+				items.push_back(body_it);
+			}
+		}
+	}
+
+	// 2. Pieza actual en edición (usando datos en vivo)
+	int cur_idx = _db_selected_record_index(record_list);
+	int cur_piece_id = 0;
+	if (cur_idx >= 0 && cur_idx < category_data[current_category].size()) {
+		Dictionary live_piece = Dictionary(category_data[current_category][cur_idx]).duplicate(true);
+		cur_piece_id = int(live_piece.get("id", 0));
+		live_piece["sprite_data"] = current_sprite_data.to_dict();
+		if (arpg_draw_mode_opt) {
+			live_piece["draw_mode"] = (arpg_draw_mode_opt->get_selected() == 1) ? "simple" : "completo";
+		}
+		if (arpg_layer_order_spin) {
+			live_piece["layer_order"] = int(arpg_layer_order_spin->get_value());
+		}
+		ClockGearsResolvedEquipLayer rl;
+		if (reg->resolve_arpg_piece_layer(live_piece, current_category, state_id, dir, anim_preview_frame_idx, act_dir_idle, move_dirs, rl) && rl.visible) {
+			Ref<Texture2D> ptex = _load_texture_from_path(rl.texture_path);
+			if (ptex.is_valid()) {
+				int fw = rl.is_completo && rl.region.size.x > 0 ? rl.region.size.x : ptex->get_width();
+				int fh = rl.is_completo && rl.region.size.y > 0 ? rl.region.size.y : ptex->get_height();
+				DrawLayerItem pi;
+				pi.z = ClockGearsCharacterStateRegistry::compute_layer_z_index(rl.behind_body, rl.layer_order, 0);
+				pi.tex = ptex;
+				pi.use_region = rl.is_completo && rl.region.size.x > 0 && rl.region.size.y > 0;
+				pi.region = Rect2(rl.region);
+				pi.size_px = Size2(fw, fh);
+				pi.pos_px = ClockGearsCharacterStateRegistry::compute_layer_sprite_position(rl.is_completo, tile_size, fw, fh, rl.offset_x, rl.offset_y);
+				items.push_back(pi);
+			}
+		}
+	}
+
+	// 3. Resto del equipo del actor si "Mostrar el resto del equipo" está marcado
+	if (arpg_prev_show_rest_chk && arpg_prev_show_rest_chk->is_pressed() && actor_id > 0 && ClockGearsDataManager::get_singleton()) {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		Array eq_slots = dm->get_actor_arpg_equip_slots(actor_id);
+		for (int s = 0; s < eq_slots.size(); s++) {
+			if (eq_slots[s].get_type() != Variant::DICTIONARY) continue;
+			Dictionary sd = eq_slots[s];
+			int pid = int(sd.get("piece_id", 0));
+			int pcat = ClockGearsDataManager::get_category_from_key(String(sd.get("category", "")));
+			if (pid <= 0 || pcat < 0 || (pcat == current_category && pid == cur_piece_id)) {
+				continue;
+			}
+			Dictionary other_piece = dm->get_record_by_id(pcat, pid);
+			ClockGearsResolvedEquipLayer ol;
+			if (reg->resolve_arpg_piece_layer(other_piece, pcat, state_id, dir, anim_preview_frame_idx, act_dir_idle, move_dirs, ol) && ol.visible) {
+				Ref<Texture2D> otex = _load_texture_from_path(ol.texture_path);
+				if (otex.is_valid()) {
+					int fw = ol.is_completo && ol.region.size.x > 0 ? ol.region.size.x : otex->get_width();
+					int fh = ol.is_completo && ol.region.size.y > 0 ? ol.region.size.y : otex->get_height();
+					DrawLayerItem oi;
+					oi.z = ClockGearsCharacterStateRegistry::compute_layer_z_index(ol.behind_body, ol.layer_order, s + 1);
+					oi.tex = otex;
+					oi.use_region = ol.is_completo && ol.region.size.x > 0 && ol.region.size.y > 0;
+					oi.region = Rect2(ol.region);
+					oi.size_px = Size2(fw, fh);
+					oi.pos_px = ClockGearsCharacterStateRegistry::compute_layer_sprite_position(ol.is_completo, tile_size, fw, fh, ol.offset_x, ol.offset_y);
+					items.push_back(oi);
+				}
+			}
+		}
+	}
+
+	// Orden estable detrás -> delante por z
+	for (int i = 1; i < items.size(); i++) {
+		DrawLayerItem key = items[i];
+		int j = i - 1;
+		while (j >= 0 && items[j].z > key.z) {
+			items.write[j + 1] = items[j];
+			j--;
+		}
+		items.write[j + 1] = key;
+	}
+
+	for (int i = 0; i < items.size(); i++) {
+		const DrawLayerItem &it = items[i];
+		Rect2 dst(cell_origin + it.pos_px * float(scale), it.size_px * float(scale));
+		if (it.use_region) {
+			arpg_prev_canvas->draw_texture_rect_region(it.tex, dst, it.region);
+		} else {
+			arpg_prev_canvas->draw_texture_rect(it.tex, dst, false);
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_prev_canvas_gui_input(const Ref<InputEvent> &p_ev) {
+	if (!s_is_arpg_equip_category(current_category) || !arpg_draw_mode_opt || arpg_draw_mode_opt->get_selected() != 1) {
+		return;
+	}
+	Ref<InputEventMouseButton> mb = p_ev;
+	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
+		if (mb->is_pressed()) {
+			arpg_prev_dragging = true;
+			arpg_prev_drag_start_mouse = mb->get_position();
+			arpg_prev_drag_start_ox = arpg_simple_offset_x_spin ? int(arpg_simple_offset_x_spin->get_value()) : 0;
+			arpg_prev_drag_start_oy = arpg_simple_offset_y_spin ? int(arpg_simple_offset_y_spin->get_value()) : 0;
+		} else {
+			arpg_prev_dragging = false;
+		}
+		return;
+	}
+	Ref<InputEventMouseMotion> mm = p_ev;
+	if (mm.is_valid() && arpg_prev_dragging) {
+		Vector2 delta = mm->get_position() - arpg_prev_drag_start_mouse;
+		int scale = MAX(1, arpg_prev_draw_scale);
+		int nx = arpg_prev_drag_start_ox + int(Math::round(delta.x / float(scale)));
+		int ny = arpg_prev_drag_start_oy + int(Math::round(delta.y / float(scale)));
+		updating_ui = true;
+		if (arpg_simple_offset_x_spin) {
+			arpg_simple_offset_x_spin->set_value(nx);
+			arpg_simple_offset_x_spin->set_meta("cg_last_valid_val", double(nx));
+		}
+		if (arpg_simple_offset_y_spin) {
+			arpg_simple_offset_y_spin->set_value(ny);
+			arpg_simple_offset_y_spin->set_meta("cg_last_valid_val", double(ny));
+		}
+		updating_ui = false;
+		_on_arpg_simple_prop_changed();
+	}
 }
 

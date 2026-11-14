@@ -1,4 +1,5 @@
 #include "clockgears_event_editor_dialog.h"
+#include "clockgears_animation.h"
 #include "clockgears_choice_utils.h"
 #include "clockgears_editor_plugin.h"
 #include "core/clockgears_data_manager.h"
@@ -618,6 +619,48 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 		if (hp_mp_op_opt) hp_mp_op_opt->select(d.get("op", "+") == "+" ? 0 : 1);
 		if (hp_mp_amount_spin) hp_mp_amount_spin->set_value(int(d.get("amount", 50)));
 		dlg_hp_mp->popup_centered(Size2(380, 180) * EDSCALE);
+	} else if (type == "change_arpg_equip" && dlg_change_arpg_equip) {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		if (dm && dm->get_category_array(CAT_ACTORS).is_empty() && FileAccess::exists("res://clockgears_data/actors.json")) {
+			dm->load_all("res://clockgears_data");
+		}
+		int actor_id = int(d.get("actor_id", 1));
+		String actor_name;
+		if (dm) {
+			Dictionary act = dm->get_record_by_id(CAT_ACTORS, actor_id);
+			if (!act.is_empty()) {
+				actor_name = String(act.get("name", ""));
+			}
+			if (actor_name.is_empty()) {
+				actor_name = vformat("Actor%03d", actor_id);
+			}
+		} else {
+			actor_name = itos(actor_id);
+		}
+		if (arpg_eq_actor_edit) arpg_eq_actor_edit->set_text(actor_name);
+		String slot_key = String(d.get("slot", "weapon"));
+		if (arpg_eq_slot_opt) {
+			int sel_slot = 0;
+			for (int si = 0; si < arpg_eq_slot_opt->get_item_count(); si++) {
+				if (String(arpg_eq_slot_opt->get_item_metadata(si)) == slot_key) {
+					sel_slot = si;
+					break;
+				}
+			}
+			arpg_eq_slot_opt->select(sel_slot);
+		}
+		arpg_eq_selected_piece_id = int(d.get("piece_id", d.get("item_id", 0)));
+		String piece_disp = CG_TR("000: (Quitar pieza)");
+		if (arpg_eq_selected_piece_id > 0 && dm) {
+			int cat_id = ClockGearsCharacterStateRegistry::get_arpg_category_for_slot(slot_key);
+			Dictionary item = (cat_id < 0) ? Dictionary() : dm->get_record_by_id(cat_id, arpg_eq_selected_piece_id);
+			String iname = item.is_empty() ? CG_TR("(Desconocido)") : String(item.get("name", ""));
+			piece_disp = vformat("%03d: %s", arpg_eq_selected_piece_id, iname.is_empty() ? CG_TR("(Sin Nombre)") : iname);
+		} else if (arpg_eq_selected_piece_id > 0) {
+			piece_disp = vformat("%03d", arpg_eq_selected_piece_id);
+		}
+		if (arpg_eq_piece_edit) arpg_eq_piece_edit->set_text(piece_disp);
+		dlg_change_arpg_equip->popup_centered(Size2(440, 220) * EDSCALE);
 	} else if (type == "audio" && dlg_bgm) {
 		if (bgm_file_edit) bgm_file_edit->set_text(d.get("file", ""));
 		if (bgm_volume_spin) bgm_volume_spin->set_value(int(d.get("volume", 90)));
@@ -895,6 +938,31 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 			break;
 		case CMD_CHANGE_HP_MP:
 			if (dlg_hp_mp) dlg_hp_mp->popup_centered(Size2(380, 180) * EDSCALE);
+			break;
+		case CMD_CHANGE_ARPG_EQUIP:
+			if (dlg_change_arpg_equip) {
+				ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+				if (dm && dm->get_category_array(CAT_ACTORS).is_empty() && FileAccess::exists("res://clockgears_data/actors.json")) {
+					dm->load_all("res://clockgears_data");
+				}
+				if (arpg_eq_actor_edit && arpg_eq_actor_edit->get_text().strip_edges().is_empty() && dm) {
+					Array acts = dm->get_category_array(CAT_ACTORS);
+					if (!acts.is_empty()) {
+						Dictionary first_act = acts[0];
+						String aname = String(first_act.get("name", ""));
+						int aid = int(first_act.get("id", 1));
+						arpg_eq_actor_edit->set_text(aname.is_empty() ? vformat("Actor%03d", aid) : aname);
+					}
+				}
+				if (arpg_eq_slot_opt && arpg_eq_slot_opt->get_item_count() > 0) {
+					arpg_eq_slot_opt->select(0);
+				}
+				arpg_eq_selected_piece_id = 0;
+				if (arpg_eq_piece_edit) {
+					arpg_eq_piece_edit->set_text(CG_TR("000: (Quitar pieza)"));
+				}
+				dlg_change_arpg_equip->popup_centered(Size2(440, 220) * EDSCALE);
+			}
 			break;
 		case CMD_PLAY_BGM:
 			if (dlg_bgm) dlg_bgm->popup_centered(Size2(400, 200) * EDSCALE);
@@ -1447,6 +1515,150 @@ void ClockGearsEventEditorDialog::_on_confirm_hp_mp() {
 	cmd["stat"] = hp_mp_stat_opt->get_selected() == 0 ? "HP" : "MP";
 	cmd["op"] = hp_mp_op_opt->get_selected() == 0 ? "+" : "-";
 	cmd["amount"] = int(hp_mp_amount_spin->get_value());
+	_append_command_to_active_page(cmd);
+}
+
+static int _resolve_arpg_actor_id_from_text(ClockGearsDataManager *p_dm, const String &p_text) {
+	if (!p_dm) return 1;
+	String trimmed = p_text.strip_edges();
+	Array acts = p_dm->get_category_array(CAT_ACTORS);
+	if (!trimmed.is_empty()) {
+		for (int i = 0; i < acts.size(); i++) {
+			Dictionary act = acts[i];
+			int aid = int(act.get("id", i + 1));
+			String name = String(act.get("name", ""));
+			if (name == trimmed || vformat("Actor%03d", aid) == trimmed || vformat("%03d: %s", aid, name) == trimmed) {
+				return aid;
+			}
+		}
+		if (trimmed.is_valid_int()) {
+			return trimmed.to_int();
+		}
+	}
+	if (!acts.is_empty()) {
+		Dictionary first_act = acts[0];
+		return int(first_act.get("id", 1));
+	}
+	return 1;
+}
+
+void ClockGearsEventEditorDialog::_on_arpg_eq_slot_selected(int p_idx) {
+	arpg_eq_selected_piece_id = 0;
+	if (arpg_eq_piece_edit) {
+		arpg_eq_piece_edit->set_text(CG_TR("000: (Quitar pieza)"));
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_arpg_eq_clear_piece_pressed() {
+	arpg_eq_selected_piece_id = 0;
+	if (arpg_eq_piece_edit) {
+		arpg_eq_piece_edit->set_text(CG_TR("000: (Quitar pieza)"));
+	}
+}
+
+void ClockGearsEventEditorDialog::_open_arpg_piece_picker() {
+	if (arpg_piece_picker_search) {
+		arpg_piece_picker_search->clear();
+	}
+	_refresh_arpg_piece_picker_list();
+	if (dlg_arpg_piece_picker) {
+		dlg_arpg_piece_picker->popup_centered(Size2(400, 340) * EDSCALE);
+	}
+}
+
+void ClockGearsEventEditorDialog::_refresh_arpg_piece_picker_list() {
+	if (!arpg_piece_picker_list) return;
+	arpg_piece_picker_list->clear();
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+
+	String slot_key = "weapon";
+	if (arpg_eq_slot_opt && arpg_eq_slot_opt->get_selected() >= 0) {
+		slot_key = String(arpg_eq_slot_opt->get_item_metadata(arpg_eq_slot_opt->get_selected()));
+	}
+	int cat_id = ClockGearsCharacterStateRegistry::get_arpg_category_for_slot(slot_key);
+	if (cat_id >= 0 && dm->get_category_array(cat_id).is_empty() && FileAccess::exists("res://clockgears_data/actors.json")) {
+		dm->load_all("res://clockgears_data");
+	}
+
+	String filter = arpg_piece_picker_search ? arpg_piece_picker_search->get_text().strip_edges().to_lower() : "";
+	int select_idx = -1;
+
+	if (filter.is_empty() || String("000 quitar ninguno empty none").contains(filter)) {
+		int qidx = arpg_piece_picker_list->add_item(CG_TR("000: (Quitar pieza)"));
+		arpg_piece_picker_list->set_item_metadata(qidx, 0);
+		if (arpg_eq_selected_piece_id == 0) {
+			select_idx = qidx;
+		}
+	}
+
+	if (cat_id >= 0) {
+		Array arr = dm->get_category_array(cat_id);
+		for (int i = 0; i < arr.size(); i++) {
+			Dictionary d = arr[i];
+			int id = int(d.get("id", i + 1));
+			String name = String(d.get("name", ""));
+			if (!filter.is_empty()) {
+				String id_str = String::num_int64(id);
+				if (!name.to_lower().contains(filter) && !id_str.contains(filter)) {
+					continue;
+				}
+			}
+			String disp = vformat("%03d: %s", id, name.is_empty() ? CG_TR("(Sin Nombre)") : name);
+			int nidx = arpg_piece_picker_list->add_item(disp);
+			arpg_piece_picker_list->set_item_metadata(nidx, id);
+			if (id == arpg_eq_selected_piece_id) {
+				select_idx = nidx;
+			}
+		}
+	}
+
+	if (select_idx >= 0) {
+		arpg_piece_picker_list->select(select_idx);
+		arpg_piece_picker_list->ensure_current_is_visible();
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_arpg_piece_picker_search_changed(const String &p_text) {
+	_refresh_arpg_piece_picker_list();
+}
+
+void ClockGearsEventEditorDialog::_on_arpg_piece_picker_item_activated(int p_idx) {
+	_on_arpg_piece_picker_confirmed();
+}
+
+void ClockGearsEventEditorDialog::_on_arpg_piece_picker_confirmed() {
+	if (arpg_piece_picker_list) {
+		Vector<int> sel = arpg_piece_picker_list->get_selected_items();
+		if (!sel.is_empty() && sel[0] >= 0 && sel[0] < arpg_piece_picker_list->get_item_count()) {
+			arpg_eq_selected_piece_id = int(arpg_piece_picker_list->get_item_metadata(sel[0]));
+			if (arpg_eq_piece_edit) {
+				arpg_eq_piece_edit->set_text(arpg_piece_picker_list->get_item_text(sel[0]));
+			}
+		}
+	}
+	if (dlg_arpg_piece_picker) {
+		dlg_arpg_piece_picker->hide();
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_change_arpg_equip() {
+	if (!target_event && !db_edit_mode) return;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm && dm->get_category_array(CAT_ACTORS).is_empty() && FileAccess::exists("res://clockgears_data/actors.json")) {
+		dm->load_all("res://clockgears_data");
+	}
+	int actor_id = _resolve_arpg_actor_id_from_text(dm, arpg_eq_actor_edit ? arpg_eq_actor_edit->get_text() : "");
+	String slot_key = "weapon";
+	if (arpg_eq_slot_opt && arpg_eq_slot_opt->get_selected() >= 0) {
+		slot_key = String(arpg_eq_slot_opt->get_item_metadata(arpg_eq_slot_opt->get_selected()));
+	}
+
+	Dictionary cmd;
+	cmd["type"] = "change_arpg_equip";
+	cmd["actor_id"] = actor_id;
+	cmd["slot"] = slot_key;
+	cmd["piece_id"] = arpg_eq_selected_piece_id;
 	_append_command_to_active_page(cmd);
 }
 
@@ -2392,6 +2604,85 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	hpv->add_child(hph2);
 	dlg_hp_mp->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_hp_mp));
 	add_child(dlg_hp_mp);
+
+	// 9b. Cambiar Equipo ARPG (Tanda 1C)
+	dlg_change_arpg_equip = memnew(ConfirmationDialog);
+	dlg_change_arpg_equip->set_title(CG_TR("Cambiar Equipo ARPG"));
+	dlg_change_arpg_equip->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_change_arpg_equip->set_cancel_button_text(CG_TR("Cancelar"));
+	VBoxContainer *aeqv = memnew(VBoxContainer);
+	aeqv->add_theme_constant_override("separation", 8);
+	dlg_change_arpg_equip->add_child(aeqv);
+
+	HBoxContainer *aeq_h1 = memnew(HBoxContainer);
+	aeq_h1->add_theme_constant_override("separation", 6);
+	aeq_h1->add_child(memnew(Label(CG_TR("Actor:"))));
+	arpg_eq_actor_edit = memnew(LineEdit);
+	arpg_eq_actor_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_eq_actor_edit->set_placeholder(CG_TR("Actor..."));
+	aeq_h1->add_child(arpg_eq_actor_edit);
+	Button *btn_pick_arpg_actor = memnew(Button("..."));
+	btn_pick_arpg_actor->set_tooltip_text(CG_TR("Elegir Actor"));
+	btn_pick_arpg_actor->connect("pressed", callable_mp(this, &ClockGearsEventEditorDialog::_open_actor_picker).bind(arpg_eq_actor_edit));
+	aeq_h1->add_child(btn_pick_arpg_actor);
+	aeqv->add_child(aeq_h1);
+
+	HBoxContainer *aeq_h2 = memnew(HBoxContainer);
+	aeq_h2->add_theme_constant_override("separation", 6);
+	aeq_h2->add_child(memnew(Label(CG_TR("Hueco:"))));
+	arpg_eq_slot_opt = memnew(OptionButton);
+	arpg_eq_slot_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	Array def_slots = ClockGearsDataManager::get_default_arpg_equip_slots();
+	for (int si = 0; si < def_slots.size(); si++) {
+		Dictionary sd = def_slots[si];
+		String skey = String(sd.get("slot", ""));
+		if (skey.is_empty()) continue;
+		int opt_idx = arpg_eq_slot_opt->get_item_count();
+		arpg_eq_slot_opt->add_item(ClockGearsCharacterStateRegistry::get_arpg_slot_label(skey), opt_idx);
+		arpg_eq_slot_opt->set_item_metadata(opt_idx, skey);
+	}
+	arpg_eq_slot_opt->connect("item_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_arpg_eq_slot_selected));
+	aeq_h2->add_child(arpg_eq_slot_opt);
+	aeqv->add_child(aeq_h2);
+
+	HBoxContainer *aeq_h3 = memnew(HBoxContainer);
+	aeq_h3->add_theme_constant_override("separation", 6);
+	aeq_h3->add_child(memnew(Label(CG_TR("Pieza:"))));
+	arpg_eq_piece_edit = memnew(LineEdit);
+	arpg_eq_piece_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_eq_piece_edit->set_editable(false);
+	arpg_eq_piece_edit->set_text(CG_TR("000: (Quitar pieza)"));
+	aeq_h3->add_child(arpg_eq_piece_edit);
+	Button *btn_pick_arpg_piece = memnew(Button(CG_TR("Seleccionar...")));
+	btn_pick_arpg_piece->connect("pressed", callable_mp(this, &ClockGearsEventEditorDialog::_open_arpg_piece_picker));
+	aeq_h3->add_child(btn_pick_arpg_piece);
+	Button *btn_clear_arpg_piece = memnew(Button(CG_TR("Quitar")));
+	btn_clear_arpg_piece->connect("pressed", callable_mp(this, &ClockGearsEventEditorDialog::_on_arpg_eq_clear_piece_pressed));
+	aeq_h3->add_child(btn_clear_arpg_piece);
+	aeqv->add_child(aeq_h3);
+
+	dlg_change_arpg_equip->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_change_arpg_equip));
+	add_child(dlg_change_arpg_equip);
+
+	dlg_arpg_piece_picker = memnew(ConfirmationDialog);
+	dlg_arpg_piece_picker->set_title(CG_TR("Seleccionar Pieza ARPG"));
+	dlg_arpg_piece_picker->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_arpg_piece_picker->set_cancel_button_text(CG_TR("Cancelar"));
+	VBoxContainer *appv = memnew(VBoxContainer);
+	appv->add_theme_constant_override("separation", 6);
+	dlg_arpg_piece_picker->add_child(appv);
+	arpg_piece_picker_search = memnew(LineEdit);
+	arpg_piece_picker_search->set_placeholder(CG_TR("Buscar por ID o nombre..."));
+	arpg_piece_picker_search->set_clear_button_enabled(true);
+	arpg_piece_picker_search->connect("text_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_arpg_piece_picker_search_changed));
+	appv->add_child(arpg_piece_picker_search);
+	arpg_piece_picker_list = memnew(ItemList);
+	arpg_piece_picker_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_piece_picker_list->set_custom_minimum_size(Size2(340, 220) * EDSCALE);
+	arpg_piece_picker_list->connect("item_activated", callable_mp(this, &ClockGearsEventEditorDialog::_on_arpg_piece_picker_item_activated));
+	appv->add_child(arpg_piece_picker_list);
+	dlg_arpg_piece_picker->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_arpg_piece_picker_confirmed));
+	add_child(dlg_arpg_piece_picker);
 
 	// 10. Reproducir BGM/SE
 	dlg_bgm = memnew(ConfirmationDialog);
@@ -4335,6 +4626,31 @@ String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) co
 		return vformat(CG_TR("◆ Cambiar Dinero: %s%d Oro"), d.get("op", "+"), int(d.get("amount", 0)));
 	} else if (type == "hp_mp") {
 		return vformat(CG_TR("◆ Cambiar %s: %s%d"), d.get("stat", "HP"), d.get("op", "+"), int(d.get("amount", 50)));
+	} else if (type == "change_arpg_equip") {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		int actor_id = int(d.get("actor_id", 1));
+		String slot_key = String(d.get("slot", "weapon"));
+		int item_id = int(d.get("piece_id", d.get("item_id", 0)));
+		String actor_label = vformat("Actor %03d", actor_id);
+		if (dm) {
+			Dictionary act = dm->get_record_by_id(CAT_ACTORS, actor_id);
+			if (!act.is_empty() && !String(act.get("name", "")).is_empty()) {
+				actor_label = String(act.get("name", ""));
+			}
+		}
+		String slot_label = ClockGearsCharacterStateRegistry::get_arpg_slot_label(slot_key);
+		String piece_label = CG_TR("(Quitar)");
+		if (item_id > 0) {
+			piece_label = vformat("%03d", item_id);
+			if (dm) {
+				int cat_id = ClockGearsCharacterStateRegistry::get_arpg_category_for_slot(slot_key);
+				Dictionary piece = (cat_id < 0) ? Dictionary() : dm->get_record_by_id(cat_id, item_id);
+				if (!piece.is_empty() && !String(piece.get("name", "")).is_empty()) {
+					piece_label = String(piece.get("name", ""));
+				}
+			}
+		}
+		return vformat(CG_TR("◆ Cambiar Equipo ARPG: %s [%s] -> %s"), actor_label, slot_label, piece_label);
 	} else if (type == "audio") {
 		return vformat(CG_TR("◆ Reproducir Audio: %s"), d.get("file", ""));
 	} else if (type == "se") {

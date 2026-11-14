@@ -96,6 +96,7 @@ enum ClockGearsCommandID {
 	CMD_ADD_ITEM = 203,
 	CMD_CHANGE_GOLD = 204,
 	CMD_CHANGE_HP_MP = 205,
+	CMD_CHANGE_ARPG_EQUIP = 206,
 
 	// Pestaña 3: Escena y Multimedia
 	CMD_PLAY_BGM = 301,

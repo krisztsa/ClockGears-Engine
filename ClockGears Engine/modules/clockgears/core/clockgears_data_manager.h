@@ -53,6 +53,7 @@ private:
 	Dictionary runtime_switches;
 	Dictionary runtime_variables;
 	Dictionary runtime_inventory;
+	Dictionary runtime_arpg_equips;
 	int runtime_gold = 0;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
@@ -113,6 +114,17 @@ public:
 	void set_gold(int p_gold) { runtime_gold = MAX(0, p_gold); }
 	void change_gold(int p_amount) { runtime_gold = MAX(0, runtime_gold + p_amount); }
 	void reset_runtime_state();
+
+	// Equipo ARPG por actor (Tanda 1C)
+	static Array get_default_arpg_equip_slots();
+	static Array normalize_arpg_equip_slots(const Array &p_raw_slots);
+	Array get_actor_arpg_equip_slots(int p_actor_id) const;
+	bool set_actor_arpg_equip(int p_actor_id, const String &p_slot_id, int p_piece_id);
+	int get_actor_arpg_equip(int p_actor_id, const String &p_slot_id) const;
+	Dictionary get_actor_arpg_equip_bonuses(int p_actor_id) const;
+	Dictionary get_actor_effective_stats(int p_actor_id) const;
+	Dictionary export_runtime_state() const;
+	void import_runtime_state(const Dictionary &p_state);
 
 	String format_text(const String &p_text) const;
 

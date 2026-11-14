@@ -74,6 +74,7 @@ private:
 	bool diag_key_blocked_printed = false;
 
 	Sprite2D *sprite = nullptr;
+	HashMap<String, Sprite2D *> arpg_layer_sprites;
 	ClockGearsMap *current_map = nullptr;
 	ClockGearsFollowerManager *follower_manager = nullptr;
 	ClockGearsEventInterpreter *event_interpreter = nullptr;
@@ -82,7 +83,9 @@ private:
 	Ref<Texture2D> _get_cached_slot_texture(const String &p_path);
 	void _sync_locomotion_state();
 	void _advance_slot_animation(float p_delta);
+	void _update_body_sprite_frame();
 	void _update_sprite_frame();
+	void _on_dm_data_changed(const String &p_category, int p_id);
 	int _direction_to_row(int p_dir) const;
 	bool _is_tile_counter(const Vector2i &p_cell) const;
 	int _get_tile_passage_mode(const Vector2i &p_cell, int &r_dir4_mask) const;
@@ -130,6 +133,10 @@ public:
 	String get_active_visual_slot() const { return active_resolved_slot; }
 	bool is_using_freeze_frame0() const { return active_freeze_frame0; }
 	int get_active_slot_frame_index() const { return slot_anim_frame_idx; }
+	void refresh_arpg_equip_layers();
+	int get_active_arpg_equip_layer_count() const;
+	Array get_arpg_equip_layer_info() const;
+	void debug_advance_animation(float p_delta);
 
 	static void ensure_default_arpg_input_actions();
 	static bool is_arpg_combat_mode();

@@ -113,6 +113,11 @@ void ClockGearsDataManager::init_empty() {
 
 	switches_names.clear();
 	variables_names.clear();
+	runtime_switches.clear();
+	runtime_variables.clear();
+	runtime_inventory.clear();
+	runtime_arpg_equips.clear();
+	runtime_gold = 0;
 	dirty = false;
 }
 
@@ -582,6 +587,11 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 		}
 	}
 
+	// 5c. Guardar estado de partida / equipo ARPG runtime (runtime_state.json)
+	if (!_write_json_atomic(p_dir_path.path_join("runtime_state.json"), export_runtime_state())) {
+		return false;
+	}
+
 	// 6. Guardar database.json índice con schema_version
 	Dictionary index_doc;
 	index_doc["engine"] = "ClockGears Engine";
@@ -678,6 +688,13 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		}
 	}
 
+	Variant rt_var;
+	if (_read_json_with_backup(p_dir_path.path_join("runtime_state.json"), rt_var) && rt_var.get_type() == Variant::DICTIONARY) {
+		import_runtime_state(Dictionary(rt_var));
+	} else {
+		reset_runtime_state();
+	}
+
 	_migrate_schema_if_needed(loaded_schema);
 	dirty = false;
 	return true;
@@ -747,6 +764,227 @@ void ClockGearsDataManager::reset_runtime_state() {
 	runtime_variables.clear();
 	runtime_inventory.clear();
 	runtime_gold = 0;
+	runtime_arpg_equips.clear();
+	for (int i = 0; i < category_data[CAT_ACTORS].size(); i++) {
+		if (category_data[CAT_ACTORS][i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary act = category_data[CAT_ACTORS][i];
+		int aid = int(act.get("id", 0));
+		if (aid > 0) {
+			Array init_slots = act.has("arpg_equip_slots") && act["arpg_equip_slots"].get_type() == Variant::ARRAY
+					? normalize_arpg_equip_slots(Array(act["arpg_equip_slots"]))
+					: get_default_arpg_equip_slots();
+			runtime_arpg_equips[String::num_int64(aid)] = init_slots;
+		}
+	}
+}
+
+Array ClockGearsDataManager::get_default_arpg_equip_slots() {
+	Array out;
+	struct SlotSpec {
+		const char *id;
+		const char *label;
+		const char *cat;
+	};
+	static const SlotSpec specs[5] = {
+		{ "weapon", "Arma", "arpg_weapons" },
+		{ "armor", "Armadura", "arpg_armors" },
+		{ "shield", "Escudo", "arpg_shields" },
+		{ "accessory_1", "Accesorio 1", "arpg_accessories" },
+		{ "accessory_2", "Accesorio 2", "arpg_accessories" }
+	};
+	for (int i = 0; i < 5; i++) {
+		Dictionary d;
+		d["slot"] = String(specs[i].id);
+		d["label"] = String::utf8(specs[i].label);
+		d["category"] = String(specs[i].cat);
+		d["piece_id"] = 0;
+		out.push_back(d);
+	}
+	return out;
+}
+
+Array ClockGearsDataManager::normalize_arpg_equip_slots(const Array &p_raw_slots) {
+	Array out;
+	Array defaults = get_default_arpg_equip_slots();
+	HashMap<String, int> seen_piece_by_slot;
+	for (int i = 0; i < p_raw_slots.size(); i++) {
+		if (p_raw_slots[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary raw = p_raw_slots[i];
+		String s_id = String(raw.get("slot", "")).strip_edges().to_lower();
+		if (!s_id.is_empty()) {
+			seen_piece_by_slot[s_id] = int(raw.get("piece_id", 0));
+		}
+	}
+	// Mantener los huecos fijos por defecto primero (preservando cualquier hueco adicional al final)
+	HashMap<String, bool> used;
+	for (int i = 0; i < defaults.size(); i++) {
+		Dictionary d = Dictionary(defaults[i]).duplicate(true);
+		String s_id = String(d["slot"]);
+		if (seen_piece_by_slot.has(s_id)) {
+			d["piece_id"] = seen_piece_by_slot[s_id];
+		}
+		used[s_id] = true;
+		out.push_back(d);
+	}
+	for (int i = 0; i < p_raw_slots.size(); i++) {
+		if (p_raw_slots[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary raw = p_raw_slots[i];
+		String s_id = String(raw.get("slot", "")).strip_edges().to_lower();
+		if (!s_id.is_empty() && !used.has(s_id)) {
+			Dictionary extra = raw.duplicate(true);
+			extra["slot"] = s_id;
+			out.push_back(extra);
+			used[s_id] = true;
+		}
+	}
+	return out;
+}
+
+Array ClockGearsDataManager::get_actor_arpg_equip_slots(int p_actor_id) const {
+	String key = String::num_int64(p_actor_id);
+	if (runtime_arpg_equips.has(key) && runtime_arpg_equips[key].get_type() == Variant::ARRAY) {
+		return normalize_arpg_equip_slots(Array(runtime_arpg_equips[key]));
+	}
+	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
+	if (!act.is_empty() && act.has("arpg_equip_slots") && act["arpg_equip_slots"].get_type() == Variant::ARRAY) {
+		return normalize_arpg_equip_slots(Array(act["arpg_equip_slots"]));
+	}
+	return get_default_arpg_equip_slots();
+}
+
+bool ClockGearsDataManager::set_actor_arpg_equip(int p_actor_id, const String &p_slot_id, int p_piece_id) {
+	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
+	if (act.is_empty()) {
+		return false;
+	}
+	String norm_slot = p_slot_id.strip_edges().to_lower();
+	Array slots = get_actor_arpg_equip_slots(p_actor_id);
+	int target_idx = -1;
+	String target_cat_key;
+	for (int i = 0; i < slots.size(); i++) {
+		Dictionary sd = slots[i];
+		if (String(sd.get("slot", "")).strip_edges().to_lower() == norm_slot) {
+			target_idx = i;
+			target_cat_key = String(sd.get("category", ""));
+			break;
+		}
+	}
+	if (target_idx < 0) {
+		return false;
+	}
+	int cat = get_category_from_key(target_cat_key);
+	if (p_piece_id > 0) {
+		if (cat < 0 || get_record_by_id(cat, p_piece_id).is_empty()) {
+			return false;
+		}
+	}
+	Dictionary sd = slots[target_idx];
+	sd["piece_id"] = MAX(0, p_piece_id);
+	slots[target_idx] = sd;
+	runtime_arpg_equips[String::num_int64(p_actor_id)] = slots;
+	emit_signal("data_changed", "arpg_equip", p_actor_id);
+	return true;
+}
+
+int ClockGearsDataManager::get_actor_arpg_equip(int p_actor_id, const String &p_slot_id) const {
+	String norm_slot = p_slot_id.strip_edges().to_lower();
+	Array slots = get_actor_arpg_equip_slots(p_actor_id);
+	for (int i = 0; i < slots.size(); i++) {
+		if (slots[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sd = slots[i];
+		if (String(sd.get("slot", "")).strip_edges().to_lower() == norm_slot) {
+			return int(sd.get("piece_id", 0));
+		}
+	}
+	return 0;
+}
+
+Dictionary ClockGearsDataManager::get_actor_arpg_equip_bonuses(int p_actor_id) const {
+	static const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+	Dictionary sum;
+	for (int k = 0; k < 8; k++) {
+		sum[stat_keys[k]] = 0;
+	}
+	Array slots = get_actor_arpg_equip_slots(p_actor_id);
+	for (int i = 0; i < slots.size(); i++) {
+		if (slots[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sd = slots[i];
+		int pid = int(sd.get("piece_id", 0));
+		if (pid <= 0) {
+			continue;
+		}
+		int cat = get_category_from_key(String(sd.get("category", "")));
+		if (cat < 0) {
+			continue;
+		}
+		Dictionary piece = get_record_by_id(cat, pid);
+		if (piece.is_empty()) {
+			continue;
+		}
+		for (int k = 0; k < 8; k++) {
+			sum[stat_keys[k]] = int(sum[stat_keys[k]]) + int(piece.get(stat_keys[k], 0));
+		}
+	}
+	return sum;
+}
+
+Dictionary ClockGearsDataManager::get_actor_effective_stats(int p_actor_id) const {
+	static const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+	Dictionary act = get_record_by_id(CAT_ACTORS, p_actor_id);
+	Dictionary bonuses = get_actor_arpg_equip_bonuses(p_actor_id);
+	Dictionary res;
+	for (int k = 0; k < 8; k++) {
+		res[stat_keys[k]] = int(act.get(stat_keys[k], 0)) + int(bonuses.get(stat_keys[k], 0));
+	}
+	return res;
+}
+
+Dictionary ClockGearsDataManager::export_runtime_state() const {
+	Dictionary d;
+	d["switches"] = runtime_switches.duplicate(true);
+	d["variables"] = runtime_variables.duplicate(true);
+	d["inventory"] = runtime_inventory.duplicate(true);
+	d["gold"] = runtime_gold;
+	d["arpg_equips"] = runtime_arpg_equips.duplicate(true);
+	return d;
+}
+
+void ClockGearsDataManager::import_runtime_state(const Dictionary &p_state) {
+	if (p_state.has("switches") && p_state["switches"].get_type() == Variant::DICTIONARY) {
+		runtime_switches = Dictionary(p_state["switches"]).duplicate(true);
+	} else {
+		runtime_switches.clear();
+	}
+	if (p_state.has("variables") && p_state["variables"].get_type() == Variant::DICTIONARY) {
+		runtime_variables = Dictionary(p_state["variables"]).duplicate(true);
+	} else {
+		runtime_variables.clear();
+	}
+	if (p_state.has("inventory") && p_state["inventory"].get_type() == Variant::DICTIONARY) {
+		runtime_inventory = Dictionary(p_state["inventory"]).duplicate(true);
+	} else {
+		runtime_inventory.clear();
+	}
+	runtime_gold = MAX(0, int(p_state.get("gold", 0)));
+	runtime_arpg_equips.clear();
+	if (p_state.has("arpg_equips") && p_state["arpg_equips"].get_type() == Variant::DICTIONARY) {
+		Dictionary eq = p_state["arpg_equips"];
+		for (const Variant &k : eq.keys()) {
+			if (eq[k].get_type() == Variant::ARRAY) {
+				runtime_arpg_equips[String(k)] = normalize_arpg_equip_slots(Array(eq[k]));
+			}
+		}
+	}
 }
 
 String ClockGearsDataManager::format_text(const String &p_text) const {
@@ -842,6 +1080,14 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_gold", "gold"), &ClockGearsDataManager::set_gold);
 	ClassDB::bind_method(D_METHOD("change_gold", "amount"), &ClockGearsDataManager::change_gold);
 	ClassDB::bind_method(D_METHOD("reset_runtime_state"), &ClockGearsDataManager::reset_runtime_state);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_arpg_equip_slots"), &ClockGearsDataManager::get_default_arpg_equip_slots);
+	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip_slots", "actor_id"), &ClockGearsDataManager::get_actor_arpg_equip_slots);
+	ClassDB::bind_method(D_METHOD("set_actor_arpg_equip", "actor_id", "slot_id", "piece_id"), &ClockGearsDataManager::set_actor_arpg_equip);
+	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip", "actor_id", "slot_id"), &ClockGearsDataManager::get_actor_arpg_equip);
+	ClassDB::bind_method(D_METHOD("get_actor_arpg_equip_bonuses", "actor_id"), &ClockGearsDataManager::get_actor_arpg_equip_bonuses);
+	ClassDB::bind_method(D_METHOD("get_actor_effective_stats", "actor_id"), &ClockGearsDataManager::get_actor_effective_stats);
+	ClassDB::bind_method(D_METHOD("export_runtime_state"), &ClockGearsDataManager::export_runtime_state);
+	ClassDB::bind_method(D_METHOD("import_runtime_state", "state"), &ClockGearsDataManager::import_runtime_state);
 	ClassDB::bind_method(D_METHOD("format_text", "text"), &ClockGearsDataManager::format_text);
 
 	ClassDB::bind_method(D_METHOD("set_editor_map", "map"), &ClockGearsDataManager::set_editor_map);

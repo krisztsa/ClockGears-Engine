@@ -67,6 +67,7 @@ enum ClockGearsCommandCodes {
 	CG_CMD_CHANGE_CLASS = 321,
 	CG_CMD_CHANGE_ACTOR_GRAPHIC = 322,
 	CG_CMD_CHANGE_NICKNAME = 324,
+	CG_CMD_CHANGE_ARPG_EQUIP = 325,
 
 	// Pestaña 3: Escena, Audio y Sistema
 	CG_CMD_FADEOUT_SCREEN = 221,

@@ -202,6 +202,15 @@ private:
 	OptionButton *hp_mp_op_opt = nullptr;
 	SpinBox *hp_mp_amount_spin = nullptr;
 
+	ConfirmationDialog *dlg_change_arpg_equip = nullptr;
+	LineEdit *arpg_eq_actor_edit = nullptr;
+	OptionButton *arpg_eq_slot_opt = nullptr;
+	LineEdit *arpg_eq_piece_edit = nullptr;
+	int arpg_eq_selected_piece_id = 0;
+	ConfirmationDialog *dlg_arpg_piece_picker = nullptr;
+	LineEdit *arpg_piece_picker_search = nullptr;
+	ItemList *arpg_piece_picker_list = nullptr;
+
 	ConfirmationDialog *dlg_bgm = nullptr;
 	LineEdit *bgm_file_edit = nullptr;
 	Button *bgm_file_browse_btn = nullptr;
@@ -416,6 +425,14 @@ private:
 	void _on_confirm_item();
 	void _on_confirm_gold();
 	void _on_confirm_hp_mp();
+	void _open_arpg_piece_picker();
+	void _refresh_arpg_piece_picker_list();
+	void _on_arpg_piece_picker_search_changed(const String &p_text);
+	void _on_arpg_piece_picker_item_activated(int p_idx);
+	void _on_arpg_piece_picker_confirmed();
+	void _on_arpg_eq_slot_selected(int p_idx);
+	void _on_arpg_eq_clear_piece_pressed();
+	void _on_confirm_change_arpg_equip();
 	void _on_confirm_bgm();
 	void _on_confirm_se();
 	void _on_confirm_flash();

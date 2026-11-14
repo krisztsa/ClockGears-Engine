@@ -158,6 +158,10 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_active_visual_slot"), &ClockGearsPlayer::get_active_visual_slot);
 	ClassDB::bind_method(D_METHOD("is_using_freeze_frame0"), &ClockGearsPlayer::is_using_freeze_frame0);
 	ClassDB::bind_method(D_METHOD("get_active_slot_frame_index"), &ClockGearsPlayer::get_active_slot_frame_index);
+	ClassDB::bind_method(D_METHOD("refresh_arpg_equip_layers"), &ClockGearsPlayer::refresh_arpg_equip_layers);
+	ClassDB::bind_method(D_METHOD("get_active_arpg_equip_layer_count"), &ClockGearsPlayer::get_active_arpg_equip_layer_count);
+	ClassDB::bind_method(D_METHOD("get_arpg_equip_layer_info"), &ClockGearsPlayer::get_arpg_equip_layer_info);
+	ClassDB::bind_method(D_METHOD("debug_advance_animation", "delta"), &ClockGearsPlayer::debug_advance_animation);
 	ClassDB::bind_method(D_METHOD("load_actor_data", "actor_id"), &ClockGearsPlayer::load_actor_data);
 	ClassDB::bind_method(D_METHOD("setup_on_map", "map", "followers", "interpreter"), &ClockGearsPlayer::setup_on_map, DEFVAL(Variant()), DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("can_pass", "from", "to", "dir"), &ClockGearsPlayer::can_pass);
@@ -296,6 +300,11 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 }
 
 void ClockGearsPlayer::_update_sprite_frame() {
+	_update_body_sprite_frame();
+	refresh_arpg_equip_layers();
+}
+
+void ClockGearsPlayer::_update_body_sprite_frame() {
 	if (!sprite) {
 		return;
 	}
@@ -461,6 +470,149 @@ void ClockGearsPlayer::setup_on_map(ClockGearsMap *p_map, ClockGearsFollowerMana
 		tile_size = MAX(16, current_map->get_grid_resolution());
 	}
 	_update_sprite_frame();
+}
+
+void ClockGearsPlayer::debug_advance_animation(float p_delta) {
+	_advance_slot_animation(p_delta);
+	refresh_arpg_equip_layers();
+}
+
+void ClockGearsPlayer::_on_dm_data_changed(const String &p_category, int p_id) {
+	if (p_category == "arpg_equip" || p_category == "system" || p_category.begins_with("arpg_")) {
+		cached_slot_textures.clear();
+		refresh_arpg_equip_layers();
+	}
+}
+
+void ClockGearsPlayer::refresh_arpg_equip_layers() {
+	auto hide_all_layers = [&]() {
+		for (KeyValue<String, Sprite2D *> &E : arpg_layer_sprites) {
+			if (E.value) {
+				E.value->set_visible(false);
+			}
+		}
+	};
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	ClockGearsCharacterStateRegistry *reg = ClockGearsCharacterStateRegistry::get_singleton();
+	if (!dm || !reg || !is_arpg_combat_mode() || actor_id <= 0) {
+		hide_all_layers();
+		return;
+	}
+
+	if (sprite) {
+		sprite->set_z_index(0);
+	}
+
+	Dictionary sys_cfg = dm->get_system_config();
+	int move_dirs = (int(sys_cfg.get("movement_directions", 4)) == 8) ? 8 : 4;
+	int cur_body_fi = active_freeze_frame0 ? 0 : MAX(0, slot_anim_frame_idx);
+
+	Array slots = dm->get_actor_arpg_equip_slots(actor_id);
+	HashMap<String, bool> active_slot_keys;
+	for (int s = 0; s < slots.size(); s++) {
+		if (slots[s].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sd = slots[s];
+		String slot_id = String(sd.get("slot", "")).strip_edges().to_lower();
+		if (slot_id.is_empty()) {
+			continue;
+		}
+		active_slot_keys[slot_id] = true;
+
+		Sprite2D *lsp = arpg_layer_sprites.has(slot_id) ? arpg_layer_sprites[slot_id] : nullptr;
+		if (!lsp) {
+			lsp = memnew(Sprite2D);
+			lsp->set_name("ARPG_Layer_" + slot_id);
+			lsp->set_centered(false);
+			lsp->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			lsp->set_visible(false);
+			add_child(lsp);
+			arpg_layer_sprites[slot_id] = lsp;
+		}
+
+		int pid = int(sd.get("piece_id", 0));
+		int pcat = ClockGearsDataManager::get_category_from_key(String(sd.get("category", "")));
+		if (pid <= 0 || pcat < 0) {
+			lsp->set_visible(false);
+			continue;
+		}
+
+		Dictionary piece = dm->get_record_by_id(pcat, pid);
+		ClockGearsResolvedEquipLayer rl;
+		if (!reg->resolve_arpg_piece_layer(piece, pcat, action_state_id, direction, cur_body_fi, directional_idle, move_dirs, rl) || !rl.visible) {
+			lsp->set_visible(false);
+			continue;
+		}
+
+		Ref<Texture2D> tex = _get_cached_slot_texture(rl.texture_path);
+		if (tex.is_null()) {
+			lsp->set_visible(false);
+			continue;
+		}
+
+		int tw = tex->get_width();
+		int th = tex->get_height();
+		int fw = tw;
+		int fh = th;
+		lsp->set_texture(tex);
+		lsp->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		lsp->set_scale(Vector2(1, 1));
+		lsp->set_hframes(1);
+		lsp->set_vframes(1);
+		lsp->set_frame(0);
+
+		if (rl.is_completo && rl.region.size.x > 0 && rl.region.size.y > 0) {
+			Rect2 reg_r(rl.region);
+			if (reg_r.position.x + reg_r.size.x > tw || reg_r.position.y + reg_r.size.y > th) {
+				reg_r = Rect2(0, 0, tw, th);
+			}
+			lsp->set_region_enabled(true);
+			lsp->set_region_rect(reg_r);
+			fw = int(reg_r.size.x);
+			fh = int(reg_r.size.y);
+		} else {
+			lsp->set_region_enabled(false);
+		}
+
+		lsp->set_position(ClockGearsCharacterStateRegistry::compute_layer_sprite_position(rl.is_completo, tile_size, fw, fh, rl.offset_x, rl.offset_y));
+		lsp->set_z_index(ClockGearsCharacterStateRegistry::compute_layer_z_index(rl.behind_body, rl.layer_order, s));
+		lsp->set_visible(true);
+	}
+
+	for (KeyValue<String, Sprite2D *> &E : arpg_layer_sprites) {
+		if (!active_slot_keys.has(E.key) && E.value) {
+			E.value->set_visible(false);
+		}
+	}
+}
+
+int ClockGearsPlayer::get_active_arpg_equip_layer_count() const {
+	int cnt = 0;
+	for (const KeyValue<String, Sprite2D *> &E : arpg_layer_sprites) {
+		if (E.value && E.value->is_visible()) {
+			cnt++;
+		}
+	}
+	return cnt;
+}
+
+Array ClockGearsPlayer::get_arpg_equip_layer_info() const {
+	Array out;
+	for (const KeyValue<String, Sprite2D *> &E : arpg_layer_sprites) {
+		if (!E.value) {
+			continue;
+		}
+		Dictionary d;
+		d["slot"] = E.key;
+		d["visible"] = E.value->is_visible();
+		d["z_index"] = E.value->get_z_index();
+		d["position"] = E.value->get_position();
+		d["region"] = E.value->is_region_enabled() ? E.value->get_region_rect() : Rect2();
+		out.push_back(d);
+	}
+	return out;
 }
 
 void ClockGearsPlayer::set_grid_cell_immediate(const Vector2i &p_cell, int p_dir) {
@@ -915,6 +1067,24 @@ void ClockGearsPlayer::_notification(int p_what) {
 		return;
 	}
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+				Callable cb = callable_mp(this, &ClockGearsPlayer::_on_dm_data_changed);
+				if (!dm->is_connected("data_changed", cb)) {
+					dm->connect("data_changed", cb);
+				}
+			}
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+				Callable cb = callable_mp(this, &ClockGearsPlayer::_on_dm_data_changed);
+				if (dm->is_connected("data_changed", cb)) {
+					dm->disconnect("data_changed", cb);
+				}
+			}
+		} break;
+
 		case NOTIFICATION_READY: {
 			set_physics_process(true);
 		} break;
@@ -1100,6 +1270,8 @@ ClockGearsPlayer::ClockGearsPlayer() {
 	set_z_index(3);
 	set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	sprite = memnew(Sprite2D);
+	sprite->set_name("Sprite");
+	sprite->set_z_index(0);
 	sprite->set_centered(false);
 	sprite->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	add_child(sprite);
@@ -1919,6 +2091,19 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		int amt = int(p_cmd.get("amount", 0));
 		if (dm) {
 			dm->change_gold((op == "-") ? -amt : amt);
+		}
+		return true;
+	}
+
+	if (type == "change_arpg_equip" || code == CMD_CHANGE_ARPG_EQUIP || code == CG_CMD_CHANGE_ARPG_EQUIP) {
+		int aid = int(p_cmd.get("actor_id", 0));
+		String slot_id = String(p_cmd.get("slot", "")).strip_edges().to_lower();
+		int pid = int(p_cmd.get("piece_id", 0));
+		if (dm && aid > 0 && !slot_id.is_empty()) {
+			dm->set_actor_arpg_equip(aid, slot_id, pid);
+			if (player) {
+				player->refresh_arpg_equip_layers();
+			}
 		}
 		return true;
 	}

@@ -467,6 +467,9 @@ void ClockGearsCharacterStateRegistry::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_category_slot_ids_by_key", "category_key", "movement_directions", "directional_idle", "combat_mode"), &ClockGearsCharacterStateRegistry::get_category_slot_ids_by_key);
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("is_actor_fixed_directional_slot", "slot_id"), &ClockGearsCharacterStateRegistry::is_actor_fixed_directional_slot);
 	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_missing_question_marker_texture"), &ClockGearsCharacterStateRegistry::get_missing_question_marker_texture);
+	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_default_arpg_layer_order", "category"), &ClockGearsCharacterStateRegistry::get_default_arpg_layer_order);
+	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_arpg_category_for_slot", "slot_id"), &ClockGearsCharacterStateRegistry::get_arpg_category_for_slot);
+	ClassDB::bind_static_method("ClockGearsCharacterStateRegistry", D_METHOD("get_arpg_slot_label", "slot_id"), &ClockGearsCharacterStateRegistry::get_arpg_slot_label);
 
 	ClassDB::bind_method(D_METHOD("register_state", "id", "slot_prefix", "blocks_movement", "fallback_state_id", "fallback_freeze_frame0", "default_loop"),
 			&ClockGearsCharacterStateRegistry::register_state, DEFVAL(false), DEFVAL(""), DEFVAL(false), DEFVAL(true));
@@ -810,6 +813,175 @@ bool ClockGearsCharacterStateRegistry::resolve_actor_animation(
 		cur_state = def.fallback_state_id;
 	}
 	return false;
+}
+
+int ClockGearsCharacterStateRegistry::get_default_arpg_layer_order(int p_category) {
+	switch (p_category) {
+		case CAT_ARPG_ARMORS:
+			return 1;
+		case CAT_ARPG_ACCESSORIES:
+			return 2;
+		case CAT_ARPG_WEAPONS:
+			return 3;
+		case CAT_ARPG_SHIELDS:
+			return 4;
+		default:
+			return 2;
+	}
+}
+
+int ClockGearsCharacterStateRegistry::get_arpg_category_for_slot(const String &p_slot_id) {
+	String s = p_slot_id.strip_edges().to_lower();
+	if (s == "weapon" || s == "arma") {
+		return CAT_ARPG_WEAPONS;
+	}
+	if (s == "armor" || s == "armadura") {
+		return CAT_ARPG_ARMORS;
+	}
+	if (s == "shield" || s == "escudo") {
+		return CAT_ARPG_SHIELDS;
+	}
+	if (s == "accessory_1" || s == "accessory_2" || s == "accesorio_1" || s == "accesorio_2" || s == "accessory") {
+		return CAT_ARPG_ACCESSORIES;
+	}
+	return -1;
+}
+
+String ClockGearsCharacterStateRegistry::get_arpg_slot_label(const String &p_slot_id) {
+	String s = p_slot_id.strip_edges().to_lower();
+	if (s == "weapon" || s == "arma") return String::utf8("Arma");
+	if (s == "armor" || s == "armadura") return String::utf8("Armadura");
+	if (s == "shield" || s == "escudo") return String::utf8("Escudo");
+	if (s == "accessory_1" || s == "accesorio_1") return String::utf8("Accesorio 1");
+	if (s == "accessory_2" || s == "accesorio_2") return String::utf8("Accesorio 2");
+	return p_slot_id;
+}
+
+String ClockGearsCharacterStateRegistry::get_arpg_simple_group_for_state(const String &p_state_id) {
+	String s = p_state_id.strip_edges().to_lower();
+	if (s == "atacar" || s == "attack") {
+		return "atacar";
+	}
+	if (s == "bloquear" || s == "block" || s == "defend") {
+		return "bloquear";
+	}
+	return "normal";
+}
+
+Vector2 ClockGearsCharacterStateRegistry::compute_layer_sprite_position(bool p_is_completo, int p_tile_size, int p_fw, int p_fh, int p_offset_x, int p_offset_y) {
+	if (p_is_completo) {
+		return Vector2((p_tile_size - p_fw) / 2, p_tile_size - p_fh);
+	}
+	return Vector2((p_tile_size - p_fw) / 2 + p_offset_x, (p_tile_size - p_fh) / 2 + p_offset_y);
+}
+
+int ClockGearsCharacterStateRegistry::compute_layer_z_index(bool p_behind_body, int p_layer_order, int p_slot_index) {
+	if (p_behind_body) {
+		return CLAMP(-1000 + p_layer_order * 16 + p_slot_index, -4096, -1);
+	}
+	return CLAMP(100 + p_layer_order * 16 + p_slot_index, 1, 4096);
+}
+
+static bool s_try_lookup_simple_dir_entry(const Dictionary &p_group_dict, int p_dir, int p_movement_directions, Dictionary &r_entry) {
+	if (p_group_dict.is_empty()) {
+		return false;
+	}
+	String exact_suffix = ClockGearsCharacterStateRegistry::direction_to_suffix(p_dir);
+	if (p_group_dict.has(exact_suffix) && p_group_dict[exact_suffix].get_type() == Variant::DICTIONARY) {
+		Dictionary d = p_group_dict[exact_suffix];
+		if (!String(d.get("path", "")).strip_edges().is_empty()) {
+			r_entry = d;
+			return true;
+		}
+	}
+	if (p_movement_directions == 8 && ClockGearsCharacterStateRegistry::is_diagonal_direction(p_dir)) {
+		int horiz_dir = ClockGearsCharacterStateRegistry::direction_to_nearest_horizontal(p_dir);
+		if (horiz_dir != 0) {
+			String horiz_suffix = ClockGearsCharacterStateRegistry::direction_to_suffix(horiz_dir);
+			if (p_group_dict.has(horiz_suffix) && p_group_dict[horiz_suffix].get_type() == Variant::DICTIONARY) {
+				Dictionary d = p_group_dict[horiz_suffix];
+				if (!String(d.get("path", "")).strip_edges().is_empty()) {
+					r_entry = d;
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+bool ClockGearsCharacterStateRegistry::resolve_arpg_piece_layer(
+		const Dictionary &p_piece,
+		int p_category,
+		const String &p_state_id,
+		int p_direction,
+		int p_body_frame_idx,
+		bool p_directional_idle,
+		int p_movement_directions,
+		ClockGearsResolvedEquipLayer &r_out) const {
+	r_out = ClockGearsResolvedEquipLayer();
+	if (p_piece.is_empty()) {
+		return false;
+	}
+	r_out.layer_order = p_piece.has("layer_order") ? int(p_piece["layer_order"]) : get_default_arpg_layer_order(p_category);
+	String draw_mode = String(p_piece.get("draw_mode", "completo")).strip_edges().to_lower();
+	String norm_state = p_state_id.strip_edges().to_lower();
+	if (norm_state == "mover") {
+		norm_state = "caminar";
+	} else if (norm_state.is_empty()) {
+		norm_state = "quieto";
+	}
+
+	if (draw_mode == "simple") {
+		r_out.is_completo = false;
+		Dictionary simple_imgs = p_piece.get("simple_images", Dictionary());
+		String group = get_arpg_simple_group_for_state(norm_state);
+		Dictionary entry;
+		bool found = false;
+		if (simple_imgs.has(group) && simple_imgs[group].get_type() == Variant::DICTIONARY) {
+			found = s_try_lookup_simple_dir_entry(Dictionary(simple_imgs[group]), p_direction, p_movement_directions, entry);
+		}
+		if (!found && group != "normal" && simple_imgs.has("normal") && simple_imgs["normal"].get_type() == Variant::DICTIONARY) {
+			found = s_try_lookup_simple_dir_entry(Dictionary(simple_imgs["normal"]), p_direction, p_movement_directions, entry);
+		}
+		if (!found) {
+			return false;
+		}
+		r_out.texture_path = String(entry.get("path", "")).strip_edges();
+		r_out.offset_x = int(entry.get("offset_x", 0));
+		r_out.offset_y = int(entry.get("offset_y", 0));
+		r_out.behind_body = bool(entry.get("behind_body", false));
+		r_out.visible = !r_out.texture_path.is_empty();
+		return r_out.visible;
+	}
+
+	// Modo "completo": mismo estado y dirección que el cuerpo, sincronizando índice de frame (clamp al último)
+	r_out.is_completo = true;
+	ClockGearsSpriteSheetData sheet;
+	if (p_piece.has("sprite_data") && p_piece["sprite_data"].get_type() == Variant::DICTIONARY) {
+		sheet.from_dict(Dictionary(p_piece["sprite_data"]));
+	}
+	bool piece_dir_idle = bool(p_piece.get("directional_idle", p_directional_idle));
+	ClockGearsSpriteAnimation anim;
+	bool piece_freeze_f0 = false;
+	String resolved_slot;
+	if (!resolve_actor_animation(sheet, piece_dir_idle, norm_state, p_direction, anim, piece_freeze_f0, resolved_slot)) {
+		return false;
+	}
+	int total = anim.get_frame_count();
+	if (total <= 0) {
+		return false;
+	}
+	int fi = piece_freeze_f0 ? 0 : CLAMP(p_body_frame_idx, 0, total - 1);
+	ClockGearsAnimationFrame fr = anim.get_frame(fi, 0, 0);
+	r_out.texture_path = !fr.sheet_path.is_empty() ? fr.sheet_path : anim.spritesheet_path;
+	if (r_out.texture_path.is_empty()) {
+		return false;
+	}
+	r_out.region = fr.region;
+	r_out.behind_body = anim.behind_body;
+	r_out.visible = true;
+	return true;
 }
 
 ClockGearsCharacterStateRegistry::ClockGearsCharacterStateRegistry() {

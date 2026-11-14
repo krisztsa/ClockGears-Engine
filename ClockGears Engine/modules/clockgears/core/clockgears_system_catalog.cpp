@@ -220,6 +220,7 @@ void ClockGearsSystemCatalog::_init_system_defaults() {
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_PARAMETER, "Cambiar Parámetro...", "Actor"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_SKILL, "Cambiar Habilidad...", "Actor"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_EQUIPMENT, "Cambiar Equipamiento...", "Actor"));
+	command_definitions.push_back(_make_def(CG_CMD_CHANGE_ARPG_EQUIP, "Cambiar Equipo ARPG...", "Actor"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_NAME, "Cambiar Nombre...", "Actor"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_CLASS, "Cambiar Clase...", "Actor"));
 	command_definitions.push_back(_make_def(CG_CMD_CHANGE_NICKNAME, "Cambiar Apodo...", "Actor"));

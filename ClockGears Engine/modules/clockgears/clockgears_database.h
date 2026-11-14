@@ -367,6 +367,39 @@ private:
 	float anim_preview_frame_target_dur = 0.1f;
 	ClockGearsSpriteSheetData current_sprite_data;
 
+	// Sección B2: Equipo ARPG (Modo Completo / Simple, Orden de Capa, Detrás del Cuerpo y Vista Previa en Capas - Tanda 1C)
+	VBoxContainer *anim_sel_sec = nullptr;
+	VBoxContainer *anim_frames_sec = nullptr;
+	HFlowContainer *arpg_piece_mode_bar = nullptr;
+	OptionButton *arpg_draw_mode_opt = nullptr;
+	SpinBox *arpg_layer_order_spin = nullptr;
+	CheckBox *anim_behind_body_chk = nullptr;
+
+	VBoxContainer *arpg_simple_editor_box = nullptr;
+	OptionButton *arpg_simple_group_opt = nullptr;
+	OptionButton *arpg_simple_dir_opt = nullptr;
+	LineEdit *arpg_simple_path_edit = nullptr;
+	Button *arpg_simple_browse_btn = nullptr;
+	Button *arpg_simple_clear_btn = nullptr;
+	FileDialog *arpg_simple_file_dialog = nullptr;
+	SpinBox *arpg_simple_offset_x_spin = nullptr;
+	SpinBox *arpg_simple_offset_y_spin = nullptr;
+	Button *arpg_simple_center_btn = nullptr;
+	CheckBox *arpg_simple_behind_chk = nullptr;
+
+	VBoxContainer *arpg_preview_box = nullptr;
+	OptionButton *arpg_prev_actor_opt = nullptr;
+	OptionButton *arpg_prev_state_opt = nullptr;
+	OptionButton *arpg_prev_dir_opt = nullptr;
+	CheckBox *arpg_prev_show_rest_chk = nullptr;
+	Button *btn_arpg_prev_play = nullptr;
+	Control *arpg_prev_canvas = nullptr;
+	bool arpg_prev_dragging = false;
+	Vector2 arpg_prev_drag_start_mouse;
+	int arpg_prev_drag_start_ox = 0;
+	int arpg_prev_drag_start_oy = 0;
+	int arpg_prev_draw_scale = 3;
+
 	// Sección: Conexión - Animaciones de combate (Actores y Enemigos)
 	VBoxContainer *combat_anims_box = nullptr;
 	OptionButton *opt_anim_idle = nullptr;
@@ -461,6 +494,7 @@ private:
 	void _init_chapters();
 	int _find_chapter_for_category(int p_category) const;
 	void _on_chapter_selected(int p_chapter_idx);
+	void _update_chapter_and_category_visibility();
 	void _save_editor_ui_state();
 	Dictionary _load_editor_ui_state() const;
 	void _on_category_selected(int p_category);
@@ -659,6 +693,24 @@ private:
 	void _on_anim_playback_settings_changed();
 	void _on_anim_play_pressed();
 	void _update_anim_playback(float p_delta);
+
+	void _setup_arpg_equip_anim_ui();
+	void _refresh_arpg_piece_anim_mode_ui();
+	void _refresh_arpg_simple_fields();
+	void _refresh_arpg_preview_selectors();
+	void _update_arpg_preview_canvas();
+	void _on_arpg_draw_mode_selected(int p_idx);
+	void _on_arpg_layer_order_changed(double p_val);
+	void _on_arpg_simple_group_or_dir_changed(int p_idx);
+	void _on_arpg_simple_browse_pressed();
+	void _on_arpg_simple_file_selected(const String &p_path);
+	void _on_arpg_simple_clear_pressed();
+	void _on_arpg_simple_center_pressed();
+	void _on_arpg_simple_prop_changed();
+	void _on_arpg_prev_selector_changed(int p_idx = 0);
+	void _on_arpg_prev_show_rest_toggled(bool p_pressed);
+	void _on_arpg_prev_canvas_draw();
+	void _on_arpg_prev_canvas_gui_input(const Ref<InputEvent> &p_ev);
 
 	void _refresh_event_tab_summary();
 	void _on_open_record_event_editor_pressed();

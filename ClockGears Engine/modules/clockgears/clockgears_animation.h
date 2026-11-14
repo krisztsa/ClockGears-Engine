@@ -144,6 +144,7 @@ struct ClockGearsSpriteAnimation {
 	float fps = 6.0f;
 	bool loop = true;
 	bool random_order = false;
+	bool behind_body = false;
 	Vector<ClockGearsAnimationFrame> frames_data;
 	Vector<int> frames;
 
@@ -212,6 +213,7 @@ struct ClockGearsSpriteAnimation {
 		d["fps"] = fps;
 		d["loop"] = loop;
 		d["random_order"] = random_order;
+		d["behind_body"] = behind_body;
 
 		Array arr;
 		for (int i = 0; i < frames_data.size(); i++) {
@@ -240,6 +242,7 @@ struct ClockGearsSpriteAnimation {
 		fps = float(p_d.get("fps", fps > 0 ? fps : 6.0f));
 		loop = bool(p_d.get("loop", loop));
 		random_order = bool(p_d.get("random_order", false));
+		behind_body = bool(p_d.get("behind_body", false));
 
 		frames_data.clear();
 		frames.clear();
@@ -777,6 +780,17 @@ struct ClockGearsCharacterStateDef {
 	}
 };
 
+struct ClockGearsResolvedEquipLayer {
+	bool visible = false;
+	bool is_completo = true;
+	String texture_path;
+	Rect2i region;
+	int offset_x = 0;
+	int offset_y = 0;
+	bool behind_body = false;
+	int layer_order = 0;
+};
+
 class ClockGearsCharacterStateRegistry : public Object {
 	GDCLASS(ClockGearsCharacterStateRegistry, Object);
 
@@ -803,6 +817,24 @@ public:
 	static PackedStringArray get_category_slot_ids_by_key(const String &p_category_key, int p_movement_directions, bool p_directional_idle, int p_combat_mode);
 	static bool is_actor_fixed_directional_slot(const String &p_slot_id);
 	static Ref<Texture2D> get_missing_question_marker_texture();
+
+	// Resolución compartida de capas de equipo ARPG (DB Preview + F5 Jugador)
+	static int get_default_arpg_layer_order(int p_category);
+	static int get_arpg_category_for_slot(const String &p_slot_id);
+	static String get_arpg_slot_label(const String &p_slot_id);
+	static String get_arpg_simple_group_for_state(const String &p_state_id);
+	static Vector2 compute_layer_sprite_position(bool p_is_completo, int p_tile_size, int p_fw, int p_fh, int p_offset_x, int p_offset_y);
+	static int compute_layer_z_index(bool p_behind_body, int p_layer_order, int p_slot_index);
+
+	bool resolve_arpg_piece_layer(
+			const Dictionary &p_piece,
+			int p_category,
+			const String &p_state_id,
+			int p_direction,
+			int p_body_frame_idx,
+			bool p_directional_idle,
+			int p_movement_directions,
+			ClockGearsResolvedEquipLayer &r_out) const;
 
 	// Registro extensible de estados de acción (sin modificar estados ya registrados)
 	void register_state(const String &p_id, const String &p_slot_prefix, bool p_blocks_movement = false, const String &p_fallback_state_id = "", bool p_fallback_freeze_frame0 = false, bool p_default_loop = true);

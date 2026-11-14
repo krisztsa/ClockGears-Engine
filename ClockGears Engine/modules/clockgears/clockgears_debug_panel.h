@@ -9,6 +9,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/tree.h"
@@ -89,6 +90,12 @@ private:
 	CheckBox *chk_battle_formulas = nullptr;
 	RichTextLabel *battle_log_rtl = nullptr;
 
+	// Equipo ARPG (Tanda 1C)
+	OptionButton *arpg_actor_opt = nullptr;
+	Vector<OptionButton *> arpg_slot_opts;
+	Vector<String> arpg_slot_keys;
+	Label *lbl_arpg_stats = nullptr;
+
 	void _on_chk_toggled(bool p_val);
 	void _on_battle_chk_toggled(bool p_val);
 	void _on_noclip_toggled(bool p_val);
@@ -97,6 +104,9 @@ private:
 	void _load_settings();
 	void _update_hud();
 	void _populate_vars_tree();
+	void _populate_arpg_equip_tab();
+	void _on_arpg_actor_selected(int p_idx);
+	void _on_arpg_slot_item_selected(int p_idx, int p_slot_idx);
 
 protected:
 	static void _bind_methods();
@@ -118,6 +128,8 @@ public:
 	void setup_overlay(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsPixelCamera2D *p_camera);
 	void toggle_debug_panel();
 	bool is_panel_open() const;
+	void refresh_arpg_equip_tab();
+	void set_arpg_equip_debug_slot(int p_actor_id, const String &p_slot_key, int p_item_id);
 
 	void set_show_events(bool p_show);
 	bool is_show_events() const;
