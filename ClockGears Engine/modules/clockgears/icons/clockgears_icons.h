@@ -6,6 +6,8 @@
 #include "core/templates/hash_map.h"
 #include "scene/resources/texture.h"
 
+class Node;
+
 class ClockGearsIcons : public Object {
 	GDCLASS(ClockGearsIcons, Object);
 
@@ -32,6 +34,7 @@ protected:
 
 public:
 	static ClockGearsIcons *get_singleton() { return singleton; }
+	static int get_editor_icon_scale(Node *p_for_node = nullptr);
 
 	Ref<Texture2D> get_icon(const String &p_name, float p_scale = 1.0f) const;
 	Ref<Texture2D> get_db_category_icon(int p_category, float p_scale = 1.0f) const;

@@ -79,6 +79,10 @@ private:
 	Vector<Button *> category_buttons;
 	int current_chapter = 0;
 	int current_category = CAT_ACTORS;
+	int last_icon_scale = 0;
+
+	void _refresh_icon_scale();
+	void _on_editor_settings_changed();
 
 	// Editor Tabs (Enemigos: General | Combate | Animaciones; Actores: General | Animaciones; Resto: General sin pestañas)
 	TabContainer *main_editor_tabs = nullptr;

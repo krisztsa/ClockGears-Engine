@@ -27,8 +27,17 @@ class ClockGearsTopBar : public PanelContainer {
 	Vector<Control *> all_separators;
 	int split_group_index = 4;
 	int last_two_row_state = -1;
+	int last_icon_scale = 0;
 	float bar_h_padding = 14.0f;
 	float last_layout_width = -1.0f;
+
+	struct ToolbarIconEntry {
+		Button *button = nullptr;
+		String png_name;
+		String svg_src;
+		StringName editor_icon_name;
+	};
+	Vector<ToolbarIconEntry> icon_entries;
 
 	Button *database_btn = nullptr;
 	Button *map_mode_btn = nullptr;
@@ -54,6 +63,8 @@ class ClockGearsTopBar : public PanelContainer {
 	Button *_make_icon_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Ref<ButtonGroup> &p_group, const Ref<Theme> &p_editor_theme, int p_int_scale);
 	Control *_make_group_separator(int p_int_scale) const;
 	void _relayout_rows();
+	void _refresh_icon_scale();
+	void _on_editor_settings_changed();
 
 	void _on_undo_pressed();
 	void _on_redo_pressed();

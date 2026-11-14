@@ -17,6 +17,7 @@
 #include "editor/clockgears_tile_picker.h"
 #include "editor/editor_node.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/gui/button.h"
@@ -32,9 +33,10 @@
 static Ref<StyleBoxFlat> _clockgears_card_style() {
 	Ref<StyleBoxFlat> style;
 	style.instantiate();
+	style->set_anti_aliased(true);
 	style->set_bg_color(Color(0.098, 0.106, 0.125));
-	style->set_corner_radius_all(8);
-	style->set_content_margin_all(8);
+	style->set_corner_radius_all(6);
+	style->set_content_margin_all(12);
 	style->set_border_width_all(1);
 	style->set_border_color(Color(1, 1, 1, 0.08));
 	return style;
@@ -472,11 +474,14 @@ Control *ClockGearsMapPanel::_make_section_header(const String &p_title, bool p_
 	} else {
 		Button *new_button = memnew(Button);
 		_clockgears_icon_button(new_button, SNAME("New"), CG_TR("Nuevo mapa (Abre Propiedades)"));
+		new_map_button = new_button;
 		if (ClockGearsIcons::get_singleton()) {
-			const int int_scale = MAX(1, (int)Math::floor(EDSCALE + 0.001f));
+			const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
+			last_icon_scale = int_scale;
+			const int icon_px = 32 * int_scale;
 			new_button->set_button_icon(ClockGearsIcons::get_singleton()->get_icon("nuevo_mapa_icono", float(int_scale)));
-			new_button->set_custom_minimum_size(Size2(36, 36) * int_scale);
-			new_button->add_theme_constant_override("icon_max_width", 32 * int_scale);
+			new_button->set_custom_minimum_size(Size2(icon_px + 8, icon_px + 8));
+			new_button->add_theme_constant_override("icon_max_width", icon_px);
 			new_button->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 			new_button->add_theme_color_override("icon_normal_color", Color(1, 1, 1, 1));
 			new_button->add_theme_color_override("icon_hover_color", Color(1, 1, 1, 1));
@@ -1426,6 +1431,38 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 	add_child(tileset_change_dialog);
 
 	singleton = this;
+}
+
+void ClockGearsMapPanel::_refresh_icon_scale() {
+	const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	last_icon_scale = int_scale;
+	if (new_map_button && ClockGearsIcons::get_singleton()) {
+		const int icon_px = 32 * int_scale;
+		new_map_button->set_button_icon(ClockGearsIcons::get_singleton()->get_icon("nuevo_mapa_icono", float(int_scale)));
+		new_map_button->set_custom_minimum_size(Size2(icon_px + 8, icon_px + 8));
+		new_map_button->add_theme_constant_override("icon_max_width", icon_px);
+	}
+}
+
+void ClockGearsMapPanel::_on_editor_settings_changed() {
+	if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
+		_refresh_icon_scale();
+	}
+}
+
+void ClockGearsMapPanel::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE) {
+		if (EditorSettings::get_singleton() && !EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed))) {
+			EditorSettings::get_singleton()->connect("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed));
+		}
+		if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
+			_refresh_icon_scale();
+		}
+	} else if (p_what == NOTIFICATION_EXIT_TREE) {
+		if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed))) {
+			EditorSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed));
+		}
+	}
 }
 
 ClockGearsMapPanel::~ClockGearsMapPanel() {

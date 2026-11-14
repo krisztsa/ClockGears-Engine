@@ -89,6 +89,8 @@ class ClockGearsMapPanel : public VBoxContainer {
 	ClockGearsTilePickerDialog *advanced_tile_picker_dialog = nullptr;
 
 	Tree *map_tree = nullptr;
+	Button *new_map_button = nullptr;
+	int last_icon_scale = 0;
 	PopupMenu *map_context_menu = nullptr;
 	ClockGearsMapPropertiesDialog *map_properties_dialog = nullptr;
 	ConfirmationDialog *tileset_change_dialog = nullptr;
@@ -128,6 +130,8 @@ class ClockGearsMapPanel : public VBoxContainer {
 
 	int _count_maps(TreeItem *p_item) const;
 	void _select_map_item(TreeItem *p_item);
+	void _refresh_icon_scale();
+	void _on_editor_settings_changed();
 
 	Control *_make_section_header(const String &p_title, bool p_with_tileset_action);
 
@@ -139,6 +143,7 @@ public:
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
 	static ClockGearsMapPanel *get_singleton() { return singleton; }

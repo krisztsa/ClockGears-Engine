@@ -9561,6 +9561,9 @@ msgstr "El ajuste personalizado puede configurarse más en el editor."
 msgid "Display Scale"
 msgstr "Escala de Visualización"
 
+msgid "Icon Scale"
+msgstr "Escala de iconos"
+
 msgid "Network Mode"
 msgstr "Modo de Red"
 

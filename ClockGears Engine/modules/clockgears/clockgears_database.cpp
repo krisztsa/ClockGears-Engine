@@ -20,6 +20,7 @@
 #include "editor/editor_node.h"
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_file_system.h"
+#include "editor/settings/editor_settings.h"
 #endif
 #include "editor/file_system/editor_paths.h"
 #include "editor/themes/editor_scale.h"
@@ -209,7 +210,13 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 					efs->connect("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported));
 				}
 			}
+			if (EditorSettings::get_singleton() && !EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_settings_changed))) {
+				EditorSettings::get_singleton()->connect("settings_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_settings_changed));
+			}
 #endif
+			if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
+				_refresh_icon_scale();
+			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 #ifdef TOOLS_ENABLED
@@ -221,6 +228,9 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 				if (efs->is_connected("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported))) {
 					efs->disconnect("resources_reimported", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_resources_reimported));
 				}
+			}
+			if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_settings_changed))) {
+				EditorSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_settings_changed));
 			}
 #endif
 		} break;
@@ -1333,12 +1343,17 @@ void ClockGearsDatabaseDialog::_refresh_record_list() {
 	}
 
 	record_list->clear();
+	const int icon_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	Ref<Texture2D> cat_icon;
+	if (ClockGearsIcons::get_singleton()) {
+		cat_icon = ClockGearsIcons::get_singleton()->get_db_category_icon(current_category, float(icon_scale));
+	}
 	const Array &arr = category_data[current_category];
 	for (int i = 0; i < arr.size(); i++) {
 		Dictionary d = arr[i];
 		int id = d.get("id", i + 1);
 		String nm = d.get("name", "");
-		record_list->add_item(vformat("%03d: %s", id, nm));
+		record_list->add_item(vformat("%03d: %s", id, nm), cat_icon);
 	}
 
 	if (prev_sel >= 0 && prev_sel < record_list->get_item_count()) {
@@ -3573,7 +3588,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	col3_title = nullptr;
 	anim_item_list = nullptr;
 
-	const int int_scale = MAX(1, (int)Math::floor(EDSCALE + 0.001f));
+	const int icon_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	last_icon_scale = icon_scale;
+	const int icon_px = 32 * icon_scale;
 	const float row_h = 32.0f * EDSCALE;
 
 	MarginContainer *root_margin = memnew(MarginContainer);
@@ -3583,7 +3600,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	root_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
 	root_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
 	root_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	root_margin->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
 	add_child(root_margin);
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
@@ -3598,10 +3615,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	PanelContainer *chapters_panel = memnew(PanelContainer);
 	chapters_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	Ref<StyleBoxFlat> chap_bar_style = memnew(StyleBoxFlat);
-	chap_bar_style->set_anti_aliased(false);
+	chap_bar_style->set_anti_aliased(true);
 	chap_bar_style->set_bg_color(Color(0.11f, 0.12f, 0.15f, 1.0f));
-	chap_bar_style->set_content_margin_all(int(4 * EDSCALE));
-	chap_bar_style->set_corner_radius_all(4);
+	chap_bar_style->set_border_width_all(1);
+	chap_bar_style->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.10f));
+	chap_bar_style->set_content_margin_individual(int(8 * EDSCALE), int(6 * EDSCALE), int(8 * EDSCALE), int(6 * EDSCALE));
+	chap_bar_style->set_corner_radius_all(int(6 * EDSCALE));
 	chapters_panel->add_theme_style_override("panel", chap_bar_style);
 	main_vbox->add_child(chapters_panel);
 
@@ -3612,6 +3631,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	for (int c = 0; c < chapters.size(); c++) {
 		Button *cbtn = memnew(Button(chapters[c].name));
+		cbtn->set_theme_type_variation("ClockGearsTabButton");
 		cbtn->set_toggle_mode(true);
 		cbtn->set_pressed(c == 0);
 		cbtn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -3622,29 +3642,34 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	}
 
 	// ========================================================================
-	// TOP BAR 2: CATEGORÍAS DEL CAPÍTULO ACTIVO (Icono pequeño + Nombre)
+	// TOP BAR 2: CATEGORÍAS DEL CAPÍTULO ACTIVO (Icono 32x32*entero + Nombre)
 	// ========================================================================
 	PanelContainer *cats_panel = memnew(PanelContainer);
 	cats_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	Ref<StyleBoxFlat> cat_bar_style = memnew(StyleBoxFlat);
-	cat_bar_style->set_anti_aliased(false);
+	cat_bar_style->set_anti_aliased(true);
 	cat_bar_style->set_bg_color(Color(0.14f, 0.15f, 0.19f, 1.0f));
-	cat_bar_style->set_content_margin_all(int(4 * EDSCALE));
-	cat_bar_style->set_corner_radius_all(4);
+	cat_bar_style->set_border_width_all(1);
+	cat_bar_style->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.10f));
+	cat_bar_style->set_content_margin_individual(int(8 * EDSCALE), int(6 * EDSCALE), int(8 * EDSCALE), int(6 * EDSCALE));
+	cat_bar_style->set_corner_radius_all(int(6 * EDSCALE));
 	cats_panel->add_theme_style_override("panel", cat_bar_style);
 	main_vbox->add_child(cats_panel);
 
-	HBoxContainer *cats_bar = memnew(HBoxContainer);
+	HFlowContainer *cats_bar = memnew(HFlowContainer);
 	cats_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	cats_bar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	cats_bar->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	cats_bar->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	cats_panel->add_child(cats_bar);
 
+	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
 	for (int i = 0; i < CAT_MAX; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
+		btn->set_theme_type_variation("ClockGearsTabButton");
 		btn->set_toggle_mode(true);
-		btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+		btn->set_custom_minimum_size(Size2(0, cat_btn_h));
 		btn->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-		btn->add_theme_constant_override("icon_max_width", 20 * int_scale);
+		btn->add_theme_constant_override("icon_max_width", icon_px);
 		btn->add_theme_color_override("icon_normal_color", Color(1, 1, 1, 1));
 		btn->add_theme_color_override("icon_hover_color", Color(1, 1, 1, 1));
 		btn->add_theme_color_override("icon_pressed_color", Color(1, 1, 1, 1));
@@ -3652,7 +3677,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn->add_theme_color_override("icon_focus_color", Color(1, 1, 1, 1));
 		btn->add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.4f));
 		if (ClockGearsIcons::get_singleton()) {
-			btn->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, float(int_scale)));
+			btn->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, float(icon_scale)));
 		}
 		btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_category_selected).bind(i));
 		cats_bar->add_child(btn);
@@ -3660,7 +3685,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	}
 
 	// ========================================================================
-	// MAIN AREA: SOLO DOS COLUMNAS (Columna 1: Lista ~208px | Columna 2: Editor)
+	// MAIN AREA: SOLO DOS COLUMNAS (Columna 1: Lista | Columna 2: Editor)
 	// ========================================================================
 	HBoxContainer *two_col_hbox = memnew(HBoxContainer);
 	two_col_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -3668,9 +3693,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	two_col_hbox->add_theme_constant_override("separation", int(12 * EDSCALE));
 	main_vbox->add_child(two_col_hbox);
 
-	// --- COLUMNA 1: Lista de registros (~208px fijo) + "+", "-", "Max", "Copiar", "Pegar" ---
+	// --- COLUMNA 1: Lista de registros + "+", "-", "Max", "Copiar", "Pegar" ---
 	col1_box = memnew(VBoxContainer);
-	col1_box->set_custom_minimum_size(Size2(208 * EDSCALE, 0));
+	col1_box->set_custom_minimum_size(Size2(MAX(256.0f * EDSCALE, float(icon_px + 192)), 0));
 	col1_box->set_h_size_flags(Control::SIZE_FILL);
 	col1_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	col1_box->add_theme_constant_override("separation", int(8 * EDSCALE));
@@ -3685,43 +3710,46 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	record_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	record_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	record_list->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
+	record_list->set_fixed_icon_size(Size2i(icon_px, icon_px));
+	record_list->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	record_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_record_selected));
 	col1_box->add_child(record_list);
 
-	HBoxContainer *list_btn_row = memnew(HBoxContainer);
+	HFlowContainer *list_btn_row = memnew(HFlowContainer);
 	list_btn_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	list_btn_row->set_v_size_flags(Control::SIZE_SHRINK_END);
-	list_btn_row->add_theme_constant_override("separation", int(3 * EDSCALE));
+	list_btn_row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	list_btn_row->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	col1_box->add_child(list_btn_row);
 
 	btn_add_record = memnew(Button("+"));
-	btn_add_record->set_custom_minimum_size(Size2(24 * EDSCALE, row_h));
+	btn_add_record->set_custom_minimum_size(Size2(0, row_h));
 	btn_add_record->set_tooltip_text(CG_DB_TR("Añadir nuevo registro"));
 	btn_add_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_record_pressed));
 	list_btn_row->add_child(btn_add_record);
 
 	btn_remove_record = memnew(Button("-"));
-	btn_remove_record->set_custom_minimum_size(Size2(24 * EDSCALE, row_h));
+	btn_remove_record->set_custom_minimum_size(Size2(0, row_h));
 	btn_remove_record->set_tooltip_text(CG_DB_TR("Eliminar registro seleccionado"));
 	btn_remove_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_record_pressed));
 	list_btn_row->add_child(btn_remove_record);
 
 	btn_change_max = memnew(Button(CG_DB_TR("Max")));
-	btn_change_max->set_custom_minimum_size(Size2(38 * EDSCALE, row_h));
+	btn_change_max->set_custom_minimum_size(Size2(0, row_h));
 	btn_change_max->set_tooltip_text(CG_DB_TR("Cambiar cantidad máxima de registros"));
 	btn_change_max->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_change_max_pressed));
 	list_btn_row->add_child(btn_change_max);
 
 	btn_copy_record = memnew(Button(CG_DB_TR("Copiar")));
 	btn_copy_record->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_copy_record->set_custom_minimum_size(Size2(52 * EDSCALE, row_h));
+	btn_copy_record->set_custom_minimum_size(Size2(0, row_h));
 	btn_copy_record->set_tooltip_text(CG_DB_TR("Copiar el registro seleccionado"));
 	btn_copy_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_copy_record_pressed));
 	list_btn_row->add_child(btn_copy_record);
 
 	btn_paste_record = memnew(Button(CG_DB_TR("Pegar")));
 	btn_paste_record->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_paste_record->set_custom_minimum_size(Size2(50 * EDSCALE, row_h));
+	btn_paste_record->set_custom_minimum_size(Size2(0, row_h));
 	btn_paste_record->set_tooltip_text(CG_DB_TR("Pegar el registro copiado"));
 	btn_paste_record->set_disabled(true);
 	btn_paste_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_paste_record_pressed));
@@ -3847,8 +3875,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	graphic_frame = memnew(PanelContainer);
 	graphic_frame->set_custom_minimum_size(Size2(96 * EDSCALE, 96 * EDSCALE));
 	Ref<StyleBoxFlat> dark_frame = memnew(StyleBoxFlat);
-	dark_frame->set_anti_aliased(false);
+	dark_frame->set_anti_aliased(true);
 	dark_frame->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
+	dark_frame->set_corner_radius_all(int(6 * EDSCALE));
 	dark_frame->set_border_width_all(1);
 	dark_frame->set_border_color(Color(0.28f, 0.31f, 0.37f, 1.0f));
 	dark_frame->set_content_margin_all(4);
@@ -4367,32 +4396,32 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_members_box->add_child(t_actions_flow);
 
 	btn_remove_troop_member_sel = memnew(Button(CG_DB_TR("Eliminar")));
-	btn_remove_troop_member_sel->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	btn_remove_troop_member_sel->set_custom_minimum_size(Size2(0, row_h));
 	btn_remove_troop_member_sel->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_selected_troop_member_pressed));
 	t_actions_flow->add_child(btn_remove_troop_member_sel);
 
 	btn_clear_troop_members = memnew(Button(CG_DB_TR("Vaciar")));
-	btn_clear_troop_members->set_custom_minimum_size(Size2(76 * EDSCALE, row_h));
+	btn_clear_troop_members->set_custom_minimum_size(Size2(0, row_h));
 	btn_clear_troop_members->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_clear_troop_members_pressed));
 	t_actions_flow->add_child(btn_clear_troop_members);
 
 	btn_align_troop_members = memnew(Button(CG_DB_TR("Alinear")));
-	btn_align_troop_members->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	btn_align_troop_members->set_custom_minimum_size(Size2(0, row_h));
 	btn_align_troop_members->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_align_troop_members_pressed));
 	t_actions_flow->add_child(btn_align_troop_members);
 
 	btn_autoname_troop = memnew(Button(CG_DB_TR("Autonombre")));
-	btn_autoname_troop->set_custom_minimum_size(Size2(104 * EDSCALE, row_h));
+	btn_autoname_troop->set_custom_minimum_size(Size2(0, row_h));
 	btn_autoname_troop->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_autoname_troop_pressed));
 	t_actions_flow->add_child(btn_autoname_troop);
 
 	btn_change_troop_bg = memnew(Button(CG_DB_TR("Cambiar fondo")));
-	btn_change_troop_bg->set_custom_minimum_size(Size2(118 * EDSCALE, row_h));
+	btn_change_troop_bg->set_custom_minimum_size(Size2(0, row_h));
 	btn_change_troop_bg->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_change_troop_bg_pressed));
 	t_actions_flow->add_child(btn_change_troop_bg);
 
 	btn_adjust_troop_bg = memnew(Button(CG_DB_TR("Ajustar")));
-	btn_adjust_troop_bg->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	btn_adjust_troop_bg->set_custom_minimum_size(Size2(0, row_h));
 	btn_adjust_troop_bg->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_adjust_troop_bg_pressed));
 	t_actions_flow->add_child(btn_adjust_troop_bg);
 
@@ -4403,7 +4432,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	add_child(troop_bg_adjust_menu);
 
 	btn_battle_test_troop = memnew(Button(CG_DB_TR("Prueba de batalla")));
-	btn_battle_test_troop->set_custom_minimum_size(Size2(130 * EDSCALE, row_h));
+	btn_battle_test_troop->set_custom_minimum_size(Size2(0, row_h));
 	btn_battle_test_troop->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_troop_pressed));
 	t_actions_flow->add_child(btn_battle_test_troop);
 
@@ -5068,10 +5097,11 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	prev_panel->set_custom_minimum_size(Size2(136 * EDSCALE, 136 * EDSCALE));
 	Ref<StyleBoxFlat> prev_sb;
 	prev_sb.instantiate();
+	prev_sb->set_anti_aliased(true);
 	prev_sb->set_bg_color(Color(0.12f, 0.14f, 0.18f, 0.95f));
 	prev_sb->set_border_width_all(1);
 	prev_sb->set_border_color(Color(0.3f, 0.35f, 0.45f, 0.8f));
-	prev_sb->set_corner_radius_all(4);
+	prev_sb->set_corner_radius_all(6);
 	prev_sb->set_content_margin_all(int(4 * EDSCALE));
 	prev_panel->add_theme_style_override("panel", prev_sb);
 	prev_col->add_child(prev_panel);
@@ -5524,9 +5554,45 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	_on_category_selected(init_cat);
 }
 
+void ClockGearsDatabaseDialog::_refresh_icon_scale() {
+	const int icon_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	last_icon_scale = icon_scale;
+	const int icon_px = 32 * icon_scale;
+	const float row_h = 32.0f * EDSCALE;
+	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
+
+	for (int i = 0; i < category_buttons.size(); i++) {
+		if (!category_buttons[i]) {
+			continue;
+		}
+		category_buttons[i]->add_theme_constant_override("icon_max_width", icon_px);
+		category_buttons[i]->set_custom_minimum_size(Size2(0, cat_btn_h));
+		if (ClockGearsIcons::get_singleton()) {
+			category_buttons[i]->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, float(icon_scale)));
+		}
+	}
+	if (col1_box) {
+		col1_box->set_custom_minimum_size(Size2(MAX(256.0f * EDSCALE, float(icon_px + 192)), 0));
+	}
+	if (record_list) {
+		record_list->set_fixed_icon_size(Size2i(icon_px, icon_px));
+		record_list->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	}
+	_refresh_record_list();
+}
+
+void ClockGearsDatabaseDialog::_on_editor_settings_changed() {
+	if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
+		_refresh_icon_scale();
+	}
+}
+
 void ClockGearsDatabaseDialog::open_database() {
 	if (ClockGearsTheme::get_singleton()) {
 		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
+	if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
+		_refresh_icon_scale();
 	}
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
@@ -5938,11 +6004,12 @@ void ClockGearsDatabaseDialog::_start_battle_test(int p_troop_id) {
 		battle_test_summary_panel->set_custom_minimum_size(Size2(440, 260) * EDSCALE);
 		Ref<StyleBoxFlat> sb;
 		sb.instantiate();
+		sb->set_anti_aliased(true);
 		sb->set_bg_color(Color(0.11f, 0.13f, 0.19f, 0.98f));
-		sb->set_border_width_all(2);
+		sb->set_border_width_all(1);
 		sb->set_border_color(Color(0.85f, 0.72f, 0.35f, 0.95f));
-		sb->set_corner_radius_all(8);
-		sb->set_content_margin_all(int(18 * EDSCALE));
+		sb->set_corner_radius_all(6);
+		sb->set_content_margin_all(int(12 * EDSCALE));
 		battle_test_summary_panel->add_theme_style_override("panel", sb);
 		cc->add_child(battle_test_summary_panel);
 
@@ -8149,10 +8216,11 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 
 		Ref<StyleBoxFlat> sb;
 		sb.instantiate();
+		sb->set_anti_aliased(true);
 		sb->set_bg_color(Color(0.14f, 0.16f, 0.22f, 0.95f));
 		sb->set_border_width_all(1);
 		sb->set_border_color(Color(0.35f, 0.4f, 0.55f, 0.8f));
-		sb->set_corner_radius_all(4);
+		sb->set_corner_radius_all(6);
 		pnl->add_theme_style_override("panel", sb);
 
 		VBoxContainer *vb = memnew(VBoxContainer);

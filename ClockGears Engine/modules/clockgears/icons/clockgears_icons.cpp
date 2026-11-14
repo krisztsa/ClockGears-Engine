@@ -2,7 +2,13 @@
 #include "clockgears_png_icons.gen.h"
 #include "core/clockgears_data_manager.h"
 #include "core/io/image.h"
+#include "scene/main/node.h"
+#include "scene/main/window.h"
 #include "scene/resources/image_texture.h"
+#include "servers/display/display_server.h"
+#ifdef TOOLS_ENABLED
+#include "editor/settings/editor_settings.h"
+#endif
 
 #include <cstring>
 
@@ -122,53 +128,70 @@ void ClockGearsIcons::_register_builtin_svgs() {
 			"<path fill=\"none\" stroke=\"#9aa0ab\" stroke-width=\"1.5\" d=\"M12 5.5a3.5 3.5 0 0 1 0 5\"/>"
 			"</svg>";
 
-	// Categorías de la Base de Datos
+	// Categorías de la Base de Datos (resolución base 32x32, múltiplo entero)
 	svg_sources["db_actors"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<circle cx=\"8\" cy=\"5\" r=\"3\" fill=\"#4da6ff\"/>"
 			"<path fill=\"#4da6ff\" d=\"M3 14c0-3 2.5-4.5 5-4.5s5 1.5 5 4.5z\"/>"
 			"</svg>";
 
 	svg_sources["db_classes"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#e0a040\" d=\"M8 2l5 2.5v4c0 3.2-2.2 5.2-5 6.5-2.8-1.3-5-3.3-5-6.5v-4z\"/>"
 			"</svg>";
 
 	svg_sources["db_skills"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#45c4d6\" d=\"M9 1L3 9h4l-1 6 7-8H9z\"/>"
 			"</svg>";
 
 	svg_sources["db_items"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#4cc38a\" d=\"M6 2h4v2l3 4v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8l3-4z\"/>"
 			"</svg>";
 
 	svg_sources["db_weapons"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#e5534b\" d=\"M12.5 1.5l2 2-7.5 7.5-2-2zM3.5 10.5l2 2L3 15l-2-2z\"/>"
 			"</svg>";
 
 	svg_sources["db_armors"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#9aa0ab\" d=\"M4 2h8l2 3-2 2v6H4V7L2 5z\"/>"
 			"</svg>";
 
 	svg_sources["db_enemies"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#e5534b\" d=\"M3 3l2.5 2h5L13 3l-1 8a4 4 0 0 1-8 0z\"/>"
 			"</svg>";
 
 	svg_sources["db_flora"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<path fill=\"#5cd67a\" d=\"M8 2C5 5 4 9 8 14c4-5 3-9 0-12z\"/>"
 			"</svg>";
 
 	svg_sources["db_fauna"] =
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
 			"<circle cx=\"5\" cy=\"5\" r=\"1.6\" fill=\"#e0a040\"/>"
 			"<circle cx=\"11\" cy=\"5\" r=\"1.6\" fill=\"#e0a040\"/>"
 			"<ellipse cx=\"8\" cy=\"10\" rx=\"3.8\" ry=\"3\" fill=\"#e0a040\"/>"
+			"</svg>";
+
+	svg_sources["db_tilesets"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
+			"<rect x=\"2.5\" y=\"3.5\" width=\"11\" height=\"9\" fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.8\"/>"
+			"<path stroke=\"#e0a040\" stroke-width=\"1.2\" d=\"M8 3.5v9M2.5 8h11\"/>"
+			"</svg>";
+
+	svg_sources["db_events"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"#e0a040\" d=\"M8 1.5L14.5 8 8 14.5 1.5 8z\"/>"
+			"</svg>";
+
+	svg_sources["db_system"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 24 24\">"
+			"<path fill=\"#e0a040\" d=\"M10 2h4l.8 3.2 2 .8 2.6-2 2.8 2.8-2 2.6.8 2L24 12.2v3.6l-3 .8-.8 2 2 2.6-2.8 2.8-2.6-2-2 .8L14 26h-4l-.8-3.2-2-.8-2.6 2-2.8-2.8 2-2.6-.8-2L0 15.8v-3.6l3-.8.8-2-2-2.6L4.6 4l2.6 2 2-.8z\" transform=\"scale(0.85) translate(2,0)\"/>"
+			"<circle cx=\"12\" cy=\"12\" r=\"4\" fill=\"#1b1d23\"/>"
 			"</svg>";
 }
 
@@ -233,8 +256,54 @@ Ref<Texture2D> ClockGearsIcons::_rasterize_svg(const String &p_svg, float p_scal
 	return ImageTexture::create_from_image(img);
 }
 
+int ClockGearsIcons::get_editor_icon_scale(Node *p_for_node) {
+#ifdef TOOLS_ENABLED
+	if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->has_setting("interface/editor/appearance/icon_scale")) {
+		const int mode = (int)EditorSettings::get_singleton()->get_setting("interface/editor/appearance/icon_scale");
+		if (mode >= 1 && mode <= 3) {
+			return mode;
+		}
+	}
+#endif
+	DisplayServer *ds = DisplayServer::get_singleton();
+	if (!ds) {
+		return 1;
+	}
+	int scr = ds->window_get_current_screen();
+	if (p_for_node && p_for_node->is_inside_tree()) {
+		Window *win = Object::cast_to<Window>(p_for_node);
+		if (!win) {
+			win = p_for_node->get_window();
+		}
+		if (win) {
+			const int wscr = win->get_current_screen();
+			if (wscr >= 0) {
+				scr = wscr;
+			}
+		}
+	}
+	if (scr < 0) {
+		scr = 0;
+	}
+	const Size2i ssz = ds->screen_get_size(scr);
+	int phys_h = ssz.y;
+#ifndef WINDOWS_ENABLED
+	const float os_scale = ds->screen_get_scale(scr);
+	if (os_scale > 1.01f && phys_h > 0 && phys_h < 1440) {
+		phys_h = int(Math::round(float(phys_h) * os_scale));
+	}
+#endif
+	if (phys_h < 1440) {
+		return 1;
+	}
+	if (phys_h < 2160) {
+		return 2;
+	}
+	return 3;
+}
+
 Ref<Texture2D> ClockGearsIcons::get_icon(const String &p_name, float p_scale) const {
-	const int int_scale = MAX(1, (int)Math::floor(p_scale + 0.001f));
+	const int int_scale = MAX(1, (int)Math::round(p_scale));
 	if (const PngIconRef *png_ptr = png_sources.getptr(p_name)) {
 		String png_key = vformat("png_%s_%d", p_name, int_scale);
 		if (icon_cache.has(png_key) && icon_cache[png_key].is_valid()) {
@@ -250,7 +319,7 @@ Ref<Texture2D> ClockGearsIcons::get_icon(const String &p_name, float p_scale) co
 		return tex;
 	}
 
-	String cache_key = vformat("%s_%.2f", p_name, p_scale);
+	String cache_key = vformat("%s_int_%d", p_name, int_scale);
 	if (icon_cache.has(cache_key) && icon_cache[cache_key].is_valid()) {
 		return icon_cache[cache_key];
 	}
@@ -259,7 +328,7 @@ Ref<Texture2D> ClockGearsIcons::get_icon(const String &p_name, float p_scale) co
 		WARN_PRINT(vformat("ClockGearsIcons: Icono '%s' no registrado; usando icono de respaldo 16x16.", p_name));
 		return _get_fallback_icon();
 	}
-	Ref<Texture2D> tex = _rasterize_svg(*svg_ptr, p_scale);
+	Ref<Texture2D> tex = _rasterize_svg(*svg_ptr, float(int_scale));
 	if (tex.is_null()) {
 		WARN_PRINT(vformat("ClockGearsIcons: Fallo al rasterizar el SVG del icono '%s'; usando icono de respaldo 16x16.", p_name));
 		tex = _get_fallback_icon();
@@ -283,10 +352,10 @@ Ref<Texture2D> ClockGearsIcons::get_db_category_icon(int p_category, float p_sca
 		case CAT_TROOPS: return get_icon("db_enemies", p_scale);
 		case CAT_FLORA: return get_icon("db_flora", p_scale);
 		case CAT_FAUNA: return get_icon("db_fauna", p_scale);
-		case CAT_TILESETS: return get_icon("rectangle", p_scale);
+		case CAT_TILESETS: return get_icon("db_tilesets", p_scale);
 		case CAT_COMMON_EVENTS:
-		case CAT_SWITCHES_VARS: return get_icon("cmd_flow", p_scale);
-		default: return get_icon("gear", p_scale);
+		case CAT_SWITCHES_VARS: return get_icon("db_events", p_scale);
+		default: return get_icon("db_system", p_scale);
 	}
 }
 
@@ -335,6 +404,7 @@ void ClockGearsIcons::clear_cache() {
 }
 
 void ClockGearsIcons::_bind_methods() {
+	ClassDB::bind_static_method("ClockGearsIcons", D_METHOD("get_editor_icon_scale", "for_node"), &ClockGearsIcons::get_editor_icon_scale, DEFVAL((Node *)nullptr));
 	ClassDB::bind_method(D_METHOD("get_icon", "name", "scale"), &ClockGearsIcons::get_icon, DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("get_db_category_icon", "category", "scale"), &ClockGearsIcons::get_db_category_icon, DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("get_command_category_icon", "category", "scale"), &ClockGearsIcons::get_command_category_icon, DEFVAL(1.0f));
