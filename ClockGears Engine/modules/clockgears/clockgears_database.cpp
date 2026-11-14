@@ -27,6 +27,7 @@
 #include "editor/file_system/editor_paths.h"
 #include "editor/themes/editor_scale.h"
 #include "icons/clockgears_icons.h"
+#include "runtime/clockgears_game_menu.h"
 #include "runtime/clockgears_title_screen.h"
 #include "runtime/clockgears_window_style.h"
 #include "scene/gui/aspect_ratio_container.h"
@@ -210,7 +211,8 @@ static bool s_is_arpg_shape_category(int p_category) {
 
 static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
 	if (p_category == ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_WINDOW_STYLES) {
+			p_category == ClockGearsDatabaseDialog::DB_CAT_WINDOW_STYLES ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU) {
 		return true;
 	}
 	if (p_combat_mode == COMBAT_MODE_ACTION_RPG) {
@@ -487,6 +489,15 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("select_window_style", "index"), &ClockGearsDatabaseDialog::select_window_style);
 	ClassDB::bind_method(D_METHOD("get_window_styles_ui_handles"), &ClockGearsDatabaseDialog::get_window_styles_ui_handles);
 	ClassDB::bind_method(D_METHOD("get_window_style_preview_info"), &ClockGearsDatabaseDialog::get_window_style_preview_info);
+	ClassDB::bind_method(D_METHOD("get_game_menu_draft_copy"), &ClockGearsDatabaseDialog::get_game_menu_draft_copy);
+	ClassDB::bind_method(D_METHOD("set_game_menu_entry_state", "id", "enabled", "text"), &ClockGearsDatabaseDialog::set_game_menu_entry_state);
+	ClassDB::bind_method(D_METHOD("move_game_menu_entry", "id", "delta"), &ClockGearsDatabaseDialog::move_game_menu_entry);
+	ClassDB::bind_method(D_METHOD("select_game_menu_preview_screen", "screen_id"), &ClockGearsDatabaseDialog::select_game_menu_preview_screen);
+	ClassDB::bind_method(D_METHOD("set_game_menu_screen_background", "screen_id", "type", "color_or_path", "scale_mode", "filter"), &ClockGearsDatabaseDialog::set_game_menu_screen_background, DEFVAL("fit"), DEFVAL("nearest"));
+	ClassDB::bind_method(D_METHOD("get_game_menu_live_preview"), &ClockGearsDatabaseDialog::get_game_menu_live_preview);
+	ClassDB::bind_method(D_METHOD("open_game_menu_test_popup"), &ClockGearsDatabaseDialog::open_game_menu_test_popup);
+	ClassDB::bind_method(D_METHOD("get_game_menu_test_popup"), &ClockGearsDatabaseDialog::get_game_menu_test_popup);
+	ClassDB::bind_method(D_METHOD("get_game_menu_editor_ui_handles"), &ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -610,6 +621,7 @@ void ClockGearsDatabaseDialog::_init_empty_database() {
 	system_config["camera_clamp"] = true;
 	system_config["party"] = Array();
 	menu_title_config = ClockGearsDataManager::get_default_title_menu_config();
+	game_menu_config_draft = ClockGearsDataManager::get_default_game_menu_config();
 }
 
 String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
@@ -670,6 +682,8 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 			return CG_DB_TR("Menú principal");
 		case DB_CAT_WINDOW_STYLES:
 			return CG_DB_TR("Estilos de ventana");
+		case DB_CAT_GAME_MENU:
+			return CG_DB_TR("Menú del juego");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -1010,7 +1024,7 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 	add_chap("Animaciones", { CAT_ANIMATIONS });
 	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
 	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
-	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES });
+	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES, DB_CAT_GAME_MENU });
 
 	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
 	for (int c = 0; c < CAT_MAX; c++) {
@@ -1136,7 +1150,7 @@ void ClockGearsDatabaseDialog::_save_editor_ui_state() {
 }
 
 void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
-	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES)) {
+	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES && p_category != DB_CAT_GAME_MENU)) {
 		return;
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -1179,7 +1193,8 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_system = (current_category == CAT_SYSTEM);
 	bool is_main_menu = (current_category == DB_CAT_MAIN_MENU);
 	bool is_window_styles = (current_category == DB_CAT_WINDOW_STYLES);
-	bool hide_record_col = (is_system || is_main_menu);
+	bool is_game_menu = (current_category == DB_CAT_GAME_MENU);
+	bool hide_record_col = (is_system || is_main_menu || is_game_menu);
 	bool is_tileset = (current_category == CAT_TILESETS);
 	bool is_troops = (current_category == CAT_TROOPS);
 	bool is_enemy = (current_category == CAT_ENEMIES);
@@ -1244,6 +1259,12 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	}
 	if (window_styles_editor_panel) {
 		window_styles_editor_panel->set_visible(is_window_styles);
+	}
+	if (game_menu_editor_panel) {
+		game_menu_editor_panel->set_visible(is_game_menu);
+		if (is_game_menu) {
+			_refresh_game_menu_editor_ui();
+		}
 	}
 	if (main_editor_tabs) {
 		main_editor_tabs->set_tabs_visible(is_actor_or_enemy);
@@ -5474,7 +5495,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cats_panel->add_child(cats_bar);
 
 	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
-	for (int i = 0; i <= DB_CAT_WINDOW_STYLES; i++) {
+	for (int i = 0; i <= DB_CAT_GAME_MENU; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_theme_type_variation("ClockGearsTabButton");
 		btn->set_toggle_mode(true);
@@ -7111,6 +7132,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	_setup_main_menu_editor_ui();
 	_setup_window_styles_editor_ui();
+	_setup_game_menu_editor_ui();
 
 	// Vista previa de colocación de tropas debajo de los miembros (todo el ancho disponible hasta 960px, proporción 16:9, sin hueco arriba)
 	troop_placement_col3_box = memnew(VBoxContainer);
@@ -7971,7 +7993,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Dictionary init_ui_state = _load_editor_ui_state();
 	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
-	if (init_cat < 0 || init_cat > DB_CAT_WINDOW_STYLES) {
+	if (init_cat < 0 || init_cat > DB_CAT_GAME_MENU) {
 		init_cat = CAT_ACTORS;
 	}
 	_on_category_selected(init_cat);
@@ -8033,7 +8055,7 @@ void ClockGearsDatabaseDialog::open_database() {
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
 	int last_cat = int(ui_state.get("last_category", current_category));
-	if (last_cat >= 0 && last_cat <= DB_CAT_WINDOW_STYLES) {
+	if (last_cat >= 0 && last_cat <= DB_CAT_GAME_MENU) {
 		current_category = last_cat;
 	}
 	_on_category_selected(current_category);
@@ -8107,6 +8129,7 @@ void ClockGearsDatabaseDialog::_save_database_to_disk() {
 	dm->set_system_config(system_config);
 	dm->set_title_menu_config(ClockGearsDataManager::normalize_title_menu_config(menu_title_config));
 	dm->set_window_styles_config(ClockGearsDataManager::normalize_window_styles_config(window_styles_config_draft));
+	dm->set_game_menu_config(ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft));
 	dm->save_all("res://clockgears_data");
 }
 
@@ -8122,6 +8145,7 @@ void ClockGearsDatabaseDialog::_load_database_from_disk() {
 	system_config = dm->get_system_config();
 	menu_title_config = ClockGearsDataManager::normalize_title_menu_config(dm->get_title_menu_config());
 	window_styles_config_draft = ClockGearsDataManager::normalize_window_styles_config(dm->get_window_styles_config());
+	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(dm->get_game_menu_config());
 	current_combat_mode = (int)system_config.get("combat_mode", COMBAT_MODE_TURN_BASED);
 	_clear_troop_texture_cache();
 	_clear_record_list_icon_cache();
@@ -12314,6 +12338,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 				ckey = "main_menu";
 			} else if (cid == DB_CAT_WINDOW_STYLES) {
 				ckey = "window_styles";
+			} else if (cid == DB_CAT_GAME_MENU) {
+				ckey = "game_menu";
 			} else {
 				ckey = ClockGearsDataManager::get_category_key(cid);
 			}
@@ -12338,6 +12364,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 		out["current_category_key"] = String("main_menu");
 	} else if (current_category == DB_CAT_WINDOW_STYLES) {
 		out["current_category_key"] = String("window_styles");
+	} else if (current_category == DB_CAT_GAME_MENU) {
+		out["current_category_key"] = String("game_menu");
 	} else {
 		out["current_category_key"] = ClockGearsDataManager::get_category_key(current_category);
 	}
@@ -12352,6 +12380,10 @@ void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
 	}
 	if (p_key == "window_styles") {
 		_on_category_selected(DB_CAT_WINDOW_STYLES);
+		return;
+	}
+	if (p_key == "game_menu") {
+		_on_category_selected(DB_CAT_GAME_MENU);
 		return;
 	}
 	for (int i = 0; i < CAT_MAX; i++) {
@@ -15205,6 +15237,9 @@ void ClockGearsDatabaseDialog::adapt_to_window_size(const Vector2i &p_window_siz
 	if (ws_main_split) {
 		ws_main_split->set_vertical(p_window_size.x < 1100);
 	}
+	if (gm_main_split) {
+		gm_main_split->set_vertical(p_window_size.x < 1100);
+	}
 }
 
 bool ClockGearsDatabaseDialog::is_realtime_combat_section_visible() const {
@@ -17386,4 +17421,670 @@ Dictionary ClockGearsDatabaseDialog::get_window_style_preview_info() const {
 	out["preview_size_id"] = ws_preview_size_opt ? ws_preview_size_opt->get_selected_id() : 960;
 	return out;
 }
+
+// ============================================================================
+// Menús -> Menú del juego Editor (9B Tanda 3 UI)
+// ============================================================================
+
+static String _gm_entry_default_label(const String &p_id) {
+	if (p_id == "items") return CG_DB_TR("Objetos");
+	if (p_id == "equip") return CG_DB_TR("Equipo");
+	if (p_id == "status") return CG_DB_TR("Estado");
+	if (p_id == "save") return CG_DB_TR("Guardar");
+	if (p_id == "options") return CG_DB_TR("Opciones");
+	if (p_id == "to_title") return CG_DB_TR("Salir al título");
+	return p_id;
+}
+
+const char *ClockGearsDatabaseDialog::_gm_bg_screen_key(int p_tab_idx) {
+	switch (p_tab_idx) {
+		case 1: return "items";
+		case 2: return "equip";
+		case 3: return "status";
+		default: return "menu";
+	}
+}
+
+void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
+	if (game_menu_editor_panel || !col2_box) {
+		return;
+	}
+	const float row_h = 30.0f * EDSCALE;
+	game_menu_config_draft = ClockGearsDataManager::get_default_game_menu_config();
+	if (ClockGearsDataManager::get_singleton()) {
+		game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(ClockGearsDataManager::get_singleton()->get_game_menu_config());
+	}
+	gm_active_bg_screen = "menu";
+
+	game_menu_editor_panel = memnew(VBoxContainer);
+	game_menu_editor_panel->set_name("GameMenuEditorPanel");
+	game_menu_editor_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	game_menu_editor_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	game_menu_editor_panel->add_theme_constant_override("separation", int(12 * EDSCALE));
+	game_menu_editor_panel->hide();
+	col2_box->add_child(game_menu_editor_panel);
+
+	gm_main_split = memnew(BoxContainer);
+	gm_main_split->set_vertical(false);
+	gm_main_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_main_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
+	game_menu_editor_panel->add_child(gm_main_split);
+
+	VBoxContainer *left_col = memnew(VBoxContainer);
+	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	left_col->set_stretch_ratio(1.1f);
+	left_col->add_theme_constant_override("separation", int(12 * EDSCALE));
+	gm_main_split->add_child(left_col);
+
+	auto make_card = [&](const String &p_title, VBoxContainer *&r_body) {
+		PanelContainer *card = memnew(PanelContainer);
+		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+		left_col->add_child(card);
+
+		r_body = memnew(VBoxContainer);
+		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
+		card->add_child(r_body);
+
+		Label *sec = memnew(Label(p_title));
+		sec->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+		r_body->add_child(sec);
+		r_body->add_child(memnew(HSeparator));
+	};
+
+	// 1) Entradas del menú del juego
+	VBoxContainer *entries_card = nullptr;
+	make_card(CG_DB_TR("Entradas del menú del juego"), entries_card);
+
+	Label *entries_hint = memnew(Label(CG_DB_TR("Activa, renombra o reordena las opciones del menú de pausa en el mapa.")));
+	entries_hint->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	entries_hint->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
+	entries_card->add_child(entries_hint);
+
+	gm_entries_list_vbox = memnew(VBoxContainer);
+	gm_entries_list_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_entries_list_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
+	entries_card->add_child(gm_entries_list_vbox);
+
+	// 2) Fondo por pantalla
+	VBoxContainer *bg_card = nullptr;
+	make_card(CG_DB_TR("Fondo por pantalla"), bg_card);
+
+	gm_bg_screen_tabs = memnew(TabBar);
+	gm_bg_screen_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_screen_tabs->add_tab(CG_DB_TR("Menú"));
+	gm_bg_screen_tabs->add_tab(CG_DB_TR("Objetos"));
+	gm_bg_screen_tabs->add_tab(CG_DB_TR("Equipo"));
+	gm_bg_screen_tabs->add_tab(CG_DB_TR("Estado"));
+	gm_bg_screen_tabs->set_current_tab(0);
+	gm_bg_screen_tabs->connect("tab_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_screen_tab_changed));
+	bg_card->add_child(gm_bg_screen_tabs);
+
+	GridContainer *bg_grid = memnew(GridContainer);
+	bg_grid->set_columns(2);
+	bg_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bg_grid->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	bg_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	bg_card->add_child(bg_grid);
+
+	auto add_grid_label = [&](GridContainer *p_grid, const String &p_text) {
+		Label *l = memnew(Label(p_text));
+		l->set_custom_minimum_size(Size2(110 * EDSCALE, 0));
+		p_grid->add_child(l);
+	};
+
+	add_grid_label(bg_grid, CG_DB_TR("Tipo:"));
+	gm_bg_type_opt = memnew(OptionButton);
+	gm_bg_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_type_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_bg_type_opt->add_item(CG_DB_TR("Color sólido"), 0);
+	gm_bg_type_opt->add_item(CG_DB_TR("Imagen"), 1);
+	gm_bg_type_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_field_changed));
+	bg_grid->add_child(gm_bg_type_opt);
+
+	add_grid_label(bg_grid, CG_DB_TR("Color:"));
+	gm_bg_color_btn = memnew(ColorPickerButton);
+	gm_bg_color_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_color_btn->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	gm_bg_color_btn->set_edit_alpha(false);
+	gm_bg_color_btn->connect("color_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_color_changed));
+	bg_grid->add_child(gm_bg_color_btn);
+
+	add_grid_label(bg_grid, CG_DB_TR("Imagen:"));
+	HBoxContainer *bg_img_hb = memnew(HBoxContainer);
+	bg_img_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bg_img_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	gm_bg_image_edit = memnew(LineEdit);
+	gm_bg_image_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_image_edit->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	gm_bg_image_edit->set_placeholder("res://img/menus/...");
+	gm_bg_image_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_image_text_changed));
+	bg_img_hb->add_child(gm_bg_image_edit);
+
+	gm_bg_import_btn = memnew(Button(CG_DB_TR("Importar")));
+	gm_bg_import_btn->set_custom_minimum_size(Size2(88 * EDSCALE, row_h));
+	gm_bg_import_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_import_bg_pressed));
+	bg_img_hb->add_child(gm_bg_import_btn);
+
+	gm_bg_clear_btn = memnew(Button(CG_DB_TR("Limpiar")));
+	gm_bg_clear_btn->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
+	gm_bg_clear_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_clear_bg_pressed));
+	bg_img_hb->add_child(gm_bg_clear_btn);
+	bg_grid->add_child(bg_img_hb);
+
+	add_grid_label(bg_grid, CG_DB_TR("Modo imagen:"));
+	gm_bg_scale_opt = memnew(OptionButton);
+	gm_bg_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_scale_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_bg_scale_opt->add_item(CG_DB_TR("Ajustar (Fit)"), 0);
+	gm_bg_scale_opt->add_item(CG_DB_TR("Rellenar (Fill)"), 1);
+	gm_bg_scale_opt->add_item(CG_DB_TR("Estirar (Stretch)"), 2);
+	gm_bg_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_field_changed));
+	bg_grid->add_child(gm_bg_scale_opt);
+
+	add_grid_label(bg_grid, CG_DB_TR("Filtro:"));
+	gm_bg_filter_opt = memnew(OptionButton);
+	gm_bg_filter_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_filter_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_bg_filter_opt->add_item(CG_DB_TR("Nearest (Pixel Art)"), 0);
+	gm_bg_filter_opt->add_item(CG_DB_TR("Linear (Suavizado)"), 1);
+	gm_bg_filter_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_field_changed));
+	bg_grid->add_child(gm_bg_filter_opt);
+
+	// Columna derecha: Vista previa en vivo + Probar
+	PanelContainer *prev_card = memnew(PanelContainer);
+	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_card->set_stretch_ratio(1.0f);
+	prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+	gm_main_split->add_child(prev_card);
+
+	VBoxContainer *prev_vb = memnew(VBoxContainer);
+	prev_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	prev_card->add_child(prev_vb);
+
+	HBoxContainer *prev_hdr = memnew(HBoxContainer);
+	prev_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
+	prev_vb->add_child(prev_hdr);
+
+	Label *prev_lbl = memnew(Label(CG_DB_TR("Vista previa en vivo (960x540)")));
+	prev_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+	prev_hdr->add_child(prev_lbl);
+
+	gm_test_btn = memnew(Button(CG_DB_TR("Probar")));
+	gm_test_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	gm_test_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::open_game_menu_test_popup));
+	prev_hdr->add_child(gm_test_btn);
+
+	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
+	aspect->set_ratio(16.0f / 9.0f);
+	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
+	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
+	prev_vb->add_child(aspect);
+
+	SubViewportContainer *svc = memnew(SubViewportContainer);
+	svc->set_stretch(true);
+	svc->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	svc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	aspect->add_child(svc);
+
+	gm_preview_viewport = memnew(SubViewport);
+	gm_preview_viewport->set_size(Size2i(960, 540));
+	gm_preview_viewport->set_disable_3d(true);
+	gm_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
+	svc->add_child(gm_preview_viewport);
+
+	gm_live_preview = memnew(ClockGearsGameMenu);
+	gm_live_preview->set_preview_mode(true);
+	gm_preview_viewport->add_child(gm_live_preview);
+
+	gm_asset_file_dialog = memnew(FileDialog);
+	gm_asset_file_dialog->set_access(FileDialog::ACCESS_FILESYSTEM);
+	gm_asset_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
+	gm_asset_file_dialog->set_title(CG_DB_TR("Importar imagen de fondo"));
+	gm_asset_file_dialog->add_filter("*.png, *.webp, *.jpg, *.jpeg ; " + CG_DB_TR("Imágenes"));
+	gm_asset_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_file_selected));
+	add_child(gm_asset_file_dialog);
+
+	gm_test_window = memnew(Window);
+	gm_test_window->set_title(CG_DB_TR("Probar menú del juego (960x540)"));
+	gm_test_window->set_visible(false);
+	gm_test_window->set_transient(true);
+	gm_test_window->set_content_scale_size(Size2i(960, 540));
+	gm_test_window->set_content_scale_mode(Window::CONTENT_SCALE_MODE_CANVAS_ITEMS);
+	gm_test_window->set_content_scale_aspect(Window::CONTENT_SCALE_ASPECT_KEEP);
+	gm_test_window->connect("close_requested", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_test_popup_close_requested));
+	add_child(gm_test_window);
+
+	gm_test_menu = memnew(ClockGearsGameMenu);
+	gm_test_menu->set_editor_test_popup_mode(true);
+	gm_test_menu->connect("menu_closed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_test_popup_close_requested));
+	gm_test_window->add_child(gm_test_menu);
+}
+
+void ClockGearsDatabaseDialog::_rebuild_game_menu_entries_rows() {
+	if (!gm_entries_list_vbox) {
+		return;
+	}
+	for (int i = gm_entries_list_vbox->get_child_count() - 1; i >= 0; i--) {
+		Node *ch = gm_entries_list_vbox->get_child(i);
+		gm_entries_list_vbox->remove_child(ch);
+		memdelete(ch);
+	}
+
+	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft);
+	Array entries = game_menu_config_draft.get("entries", Array());
+	Vector<Dictionary> sorted;
+	for (int i = 0; i < entries.size(); i++) {
+		if (entries[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary e = entries[i];
+		String eid = String(e.get("id", ""));
+		if (eid == "magic" || bool(e.get("reserved", false))) {
+			continue; // Entrada reservada oculta por diseño
+		}
+		sorted.push_back(e);
+	}
+	struct Cmp {
+		bool operator()(const Dictionary &a, const Dictionary &b) const {
+			return int(a.get("order", 0)) < int(b.get("order", 0));
+		}
+	};
+	sorted.sort_custom<Cmp>();
+
+	const float row_h = 30.0f * EDSCALE;
+	for (int i = 0; i < sorted.size(); i++) {
+		const Dictionary &e = sorted[i];
+		String eid = String(e.get("id", ""));
+		String etxt = String(e.get("text", _gm_entry_default_label(eid)));
+		bool enabled = bool(e.get("enabled", true));
+
+		HBoxContainer *row = memnew(HBoxContainer);
+		row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		row->set_meta("cg_entry_id", eid);
+		row->add_theme_constant_override("separation", int(6 * EDSCALE));
+		gm_entries_list_vbox->add_child(row);
+
+		CheckBox *chk = memnew(CheckBox(CG_DB_TR("Activa")));
+		chk->set_pressed_no_signal(enabled);
+		chk->set_meta("cg_entry_id", eid);
+		chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_entry_toggled).bind(eid));
+		row->add_child(chk);
+
+		LineEdit *edit = memnew(LineEdit);
+		edit->set_text(etxt);
+		edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		edit->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+		edit->set_meta("cg_entry_id", eid);
+		edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_entry_text_changed).bind(eid));
+		row->add_child(edit);
+
+		Label *tag = memnew(Label(vformat("[%s]", _gm_entry_default_label(eid))));
+		tag->set_custom_minimum_size(Size2(92 * EDSCALE, 0));
+		tag->set_clip_text(true);
+		tag->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
+		row->add_child(tag);
+
+		Button *btn_up = memnew(Button(String::utf8("↑")));
+		btn_up->set_tooltip_text(CG_DB_TR("Subir"));
+		btn_up->set_custom_minimum_size(Size2(32 * EDSCALE, row_h));
+		btn_up->set_disabled(i == 0);
+		btn_up->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_entry_move_pressed).bind(eid, -1));
+		row->add_child(btn_up);
+
+		Button *btn_down = memnew(Button(String::utf8("↓")));
+		btn_down->set_tooltip_text(CG_DB_TR("Bajar"));
+		btn_down->set_custom_minimum_size(Size2(32 * EDSCALE, row_h));
+		btn_down->set_disabled(i == sorted.size() - 1);
+		btn_down->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_entry_move_pressed).bind(eid, 1));
+		row->add_child(btn_down);
+	}
+}
+
+void ClockGearsDatabaseDialog::_update_game_menu_live_preview() {
+	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft);
+	if (gm_live_preview) {
+		gm_live_preview->apply_game_menu_config_preview(game_menu_config_draft, gm_active_bg_screen);
+	}
+	if (gm_test_window && gm_test_window->is_visible() && gm_test_menu) {
+		gm_test_menu->apply_game_menu_config_preview(game_menu_config_draft);
+	}
+}
+
+void ClockGearsDatabaseDialog::_refresh_game_menu_editor_ui() {
+	if (!game_menu_editor_panel) {
+		return;
+	}
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft);
+
+	_rebuild_game_menu_entries_rows();
+
+	Dictionary bgs = game_menu_config_draft.get("backgrounds", Dictionary());
+	Dictionary bg = bgs.has(gm_active_bg_screen) ? Dictionary(bgs[gm_active_bg_screen]) : Dictionary();
+	if (gm_bg_type_opt) {
+		gm_bg_type_opt->select(String(bg.get("type", "color")) == "image" ? 1 : 0);
+	}
+	if (gm_bg_color_btn) {
+		String col_str = String(bg.get("color", "#0e111a"));
+		gm_bg_color_btn->set_pick_color(Color::html_is_valid(col_str) ? Color::html(col_str) : Color::html("#0e111a"));
+	}
+	if (gm_bg_image_edit) {
+		gm_bg_image_edit->set_text(String(bg.get("image_path", "")));
+	}
+	if (gm_bg_scale_opt) {
+		String sc = String(bg.get("scale_mode", "fit"));
+		gm_bg_scale_opt->select(sc == "fill" ? 1 : (sc == "stretch" ? 2 : 0));
+	}
+	if (gm_bg_filter_opt) {
+		gm_bg_filter_opt->select(String(bg.get("filter", "nearest")) == "linear" ? 1 : 0);
+	}
+
+	_update_game_menu_live_preview();
+	updating_ui = prev_upd;
+}
+
+void ClockGearsDatabaseDialog::_on_gm_entry_toggled(bool p_enabled, String p_entry_id) {
+	if (updating_ui || p_entry_id == "magic") {
+		return;
+	}
+	Array entries = game_menu_config_draft.get("entries", Array());
+	for (int i = 0; i < entries.size(); i++) {
+		if (entries[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = entries[i];
+		if (String(e.get("id", "")) == p_entry_id) {
+			e["enabled"] = p_enabled;
+			entries[i] = e;
+			break;
+		}
+	}
+	game_menu_config_draft["entries"] = entries;
+	_update_game_menu_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_entry_text_changed(const String &p_text, String p_entry_id) {
+	if (updating_ui || p_entry_id == "magic") {
+		return;
+	}
+	Array entries = game_menu_config_draft.get("entries", Array());
+	for (int i = 0; i < entries.size(); i++) {
+		if (entries[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = entries[i];
+		if (String(e.get("id", "")) == p_entry_id) {
+			e["text"] = p_text;
+			entries[i] = e;
+			break;
+		}
+	}
+	game_menu_config_draft["entries"] = entries;
+	_update_game_menu_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_entry_move_pressed(String p_entry_id, int p_delta) {
+	if (move_game_menu_entry(p_entry_id, p_delta)) {
+		_mark_database_dirty();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_gm_bg_screen_tab_changed(int p_tab_idx) {
+	gm_active_bg_screen = String(_gm_bg_screen_key(p_tab_idx));
+	_refresh_game_menu_editor_ui();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_bg_field_changed(int p_unused) {
+	if (updating_ui) {
+		return;
+	}
+	Dictionary bgs = game_menu_config_draft.get("backgrounds", Dictionary());
+	Dictionary bg = bgs.has(gm_active_bg_screen) ? Dictionary(bgs[gm_active_bg_screen]) : Dictionary();
+	if (gm_bg_type_opt) {
+		bg["type"] = (gm_bg_type_opt->get_selected() == 1) ? "image" : "color";
+	}
+	if (gm_bg_color_btn) {
+		bg["color"] = "#" + gm_bg_color_btn->get_pick_color().to_html(false);
+	}
+	if (gm_bg_image_edit) {
+		bg["image_path"] = gm_bg_image_edit->get_text().strip_edges();
+	}
+	if (gm_bg_scale_opt) {
+		int sc = gm_bg_scale_opt->get_selected();
+		bg["scale_mode"] = (sc == 1) ? "fill" : ((sc == 2) ? "stretch" : "fit");
+	}
+	if (gm_bg_filter_opt) {
+		bg["filter"] = (gm_bg_filter_opt->get_selected() == 1) ? "linear" : "nearest";
+	}
+	bgs[gm_active_bg_screen] = bg;
+	game_menu_config_draft["backgrounds"] = bgs;
+	_update_game_menu_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_bg_color_changed(const Color &p_col) {
+	_on_gm_bg_field_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_bg_image_text_changed(const String &p_text) {
+	_on_gm_bg_field_changed();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_import_bg_pressed() {
+	if (gm_asset_file_dialog) {
+		gm_asset_file_dialog->popup_centered_ratio(0.60f);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_gm_clear_bg_pressed() {
+	Dictionary bgs = game_menu_config_draft.get("backgrounds", Dictionary());
+	Dictionary bg = bgs.has(gm_active_bg_screen) ? Dictionary(bgs[gm_active_bg_screen]) : Dictionary();
+	bg["image_path"] = "";
+	if (bg.get("type", "color") == "image") {
+		bg["type"] = "color";
+	}
+	bgs[gm_active_bg_screen] = bg;
+	game_menu_config_draft["backgrounds"] = bgs;
+	if (gm_bg_image_edit) gm_bg_image_edit->set_text("");
+	if (gm_bg_type_opt) gm_bg_type_opt->select(0);
+	_update_game_menu_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_bg_file_selected(const String &p_path) {
+	bool pixel = gm_bg_filter_opt ? (gm_bg_filter_opt->get_selected() == 0) : true;
+	String final_path = _import_menu_asset_file(p_path, "img/menus", pixel);
+	Dictionary bgs = game_menu_config_draft.get("backgrounds", Dictionary());
+	Dictionary bg = bgs.has(gm_active_bg_screen) ? Dictionary(bgs[gm_active_bg_screen]) : Dictionary();
+	bg["type"] = "image";
+	bg["image_path"] = final_path;
+	bgs[gm_active_bg_screen] = bg;
+	game_menu_config_draft["backgrounds"] = bgs;
+	if (gm_bg_type_opt) gm_bg_type_opt->select(1);
+	if (gm_bg_image_edit) gm_bg_image_edit->set_text(final_path);
+	_update_game_menu_live_preview();
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_gm_test_popup_close_requested() {
+	if (gm_test_window) {
+		gm_test_window->hide();
+	}
+}
+
+Dictionary ClockGearsDatabaseDialog::get_game_menu_draft_copy() const {
+	return ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft);
+}
+
+void ClockGearsDatabaseDialog::set_game_menu_entry_state(const String &p_id, bool p_enabled, const String &p_text) {
+	if (p_id == "magic") {
+		return;
+	}
+	Array entries = game_menu_config_draft.get("entries", Array());
+	for (int i = 0; i < entries.size(); i++) {
+		if (entries[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = entries[i];
+		if (String(e.get("id", "")) == p_id) {
+			e["enabled"] = p_enabled;
+			if (!p_text.is_empty()) {
+				e["text"] = p_text;
+			}
+			entries[i] = e;
+			break;
+		}
+	}
+	game_menu_config_draft["entries"] = entries;
+	_refresh_game_menu_editor_ui();
+	_mark_database_dirty();
+}
+
+bool ClockGearsDatabaseDialog::move_game_menu_entry(const String &p_id, int p_delta) {
+	if (p_delta == 0 || p_id == "magic") {
+		return false;
+	}
+	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft);
+	Array entries = game_menu_config_draft.get("entries", Array());
+	Vector<Dictionary> visible_rows;
+	Vector<Dictionary> hidden_rows;
+	for (int i = 0; i < entries.size(); i++) {
+		if (entries[i].get_type() == Variant::DICTIONARY) {
+			Dictionary e = entries[i];
+			if (String(e.get("id", "")) == "magic" || bool(e.get("reserved", false))) {
+				hidden_rows.push_back(e);
+			} else {
+				visible_rows.push_back(e);
+			}
+		}
+	}
+	struct Cmp {
+		bool operator()(const Dictionary &a, const Dictionary &b) const {
+			return int(a.get("order", 0)) < int(b.get("order", 0));
+		}
+	};
+	visible_rows.sort_custom<Cmp>();
+
+	int idx = -1;
+	for (int i = 0; i < visible_rows.size(); i++) {
+		if (String(visible_rows[i].get("id", "")) == p_id) {
+			idx = i;
+			break;
+		}
+	}
+	int target = idx + p_delta;
+	if (idx < 0 || target < 0 || target >= visible_rows.size()) {
+		return false;
+	}
+	Dictionary tmp = visible_rows[idx];
+	visible_rows.set(idx, visible_rows[target]);
+	visible_rows.set(target, tmp);
+
+	Array updated;
+	for (int i = 0; i < visible_rows.size(); i++) {
+		Dictionary d = visible_rows[i];
+		d["order"] = i;
+		updated.push_back(d);
+	}
+	for (int i = 0; i < hidden_rows.size(); i++) {
+		Dictionary d = hidden_rows[i];
+		d["order"] = visible_rows.size() + i;
+		updated.push_back(d);
+	}
+	game_menu_config_draft["entries"] = updated;
+	_refresh_game_menu_editor_ui();
+	_mark_database_dirty();
+	return true;
+}
+
+void ClockGearsDatabaseDialog::select_game_menu_preview_screen(const String &p_screen_id) {
+	String sid = p_screen_id.strip_edges().to_lower();
+	int tab_idx = 0;
+	if (sid == "items") {
+		tab_idx = 1;
+	} else if (sid == "equip") {
+		tab_idx = 2;
+	} else if (sid == "status") {
+		tab_idx = 3;
+	} else {
+		sid = "menu";
+		tab_idx = 0;
+	}
+	gm_active_bg_screen = sid;
+	if (gm_bg_screen_tabs && gm_bg_screen_tabs->get_current_tab() != tab_idx) {
+		gm_bg_screen_tabs->set_current_tab(tab_idx);
+	}
+	_refresh_game_menu_editor_ui();
+}
+
+void ClockGearsDatabaseDialog::set_game_menu_screen_background(const String &p_screen_id, const String &p_type, const String &p_color_or_path, const String &p_scale_mode, const String &p_filter) {
+	String sid = p_screen_id.strip_edges().to_lower();
+	if (sid != "items" && sid != "equip" && sid != "status") {
+		sid = "menu";
+	}
+	gm_active_bg_screen = sid;
+	Dictionary bgs = game_menu_config_draft.get("backgrounds", Dictionary());
+	Dictionary bg = bgs.has(sid) ? Dictionary(bgs[sid]) : Dictionary();
+	String tp = (p_type == "image") ? "image" : "color";
+	bg["type"] = tp;
+	if (tp == "image") {
+		bg["image_path"] = p_color_or_path.strip_edges();
+	} else {
+		bg["color"] = Color::html_is_valid(p_color_or_path) ? ("#" + Color::html(p_color_or_path).to_html(false)) : "#0e111a";
+	}
+	if (!p_scale_mode.is_empty()) {
+		bg["scale_mode"] = p_scale_mode;
+	}
+	if (!p_filter.is_empty()) {
+		bg["filter"] = p_filter;
+	}
+	bgs[sid] = bg;
+	game_menu_config_draft["backgrounds"] = bgs;
+	select_game_menu_preview_screen(sid);
+	_mark_database_dirty();
+}
+
+Window *ClockGearsDatabaseDialog::open_game_menu_test_popup() {
+	if (!gm_test_window || !gm_test_menu) {
+		return nullptr;
+	}
+	gm_test_menu->set_editor_test_popup_mode(true);
+	gm_test_menu->apply_game_menu_config_preview(ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft), "menu");
+	gm_test_menu->open_menu();
+	Size2i target(960, 540);
+	if (DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		Size2i usable = DisplayServer::get_singleton()->screen_get_usable_rect(scr).size;
+		if (usable.x > 0 && usable.y > 0) {
+			target = target.min(usable);
+		}
+	}
+	gm_test_window->popup_centered(target);
+	return gm_test_window;
+}
+
+Dictionary ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles() const {
+	Dictionary out;
+	out["panel"] = game_menu_editor_panel;
+	out["main_split"] = gm_main_split;
+	out["entries_vbox"] = gm_entries_list_vbox;
+	out["bg_screen_tabs"] = gm_bg_screen_tabs;
+	out["bg_type_opt"] = gm_bg_type_opt;
+	out["bg_color_btn"] = gm_bg_color_btn;
+	out["bg_image_edit"] = gm_bg_image_edit;
+	out["bg_scale_opt"] = gm_bg_scale_opt;
+	out["bg_filter_opt"] = gm_bg_filter_opt;
+	out["test_btn"] = gm_test_btn;
+	out["live_preview"] = gm_live_preview;
+	out["test_window"] = gm_test_window;
+	out["test_menu"] = gm_test_menu;
+	out["active_bg_screen"] = gm_active_bg_screen;
+	return out;
+}
+
 

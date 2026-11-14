@@ -27,6 +27,7 @@
 
 class ClockGearsBattleScene;
 class ClockGearsEventEditorDialog;
+class ClockGearsGameMenu;
 class ClockGearsNineSlicePreview;
 class ClockGearsShapeEditor;
 class ClockGearsTitleScreen;
@@ -716,6 +717,27 @@ private:
 	int ws_image_pick_slot = 0;
 	int ws_image_pick_kind = 0; // 0 = frame image, 1 = fill image
 
+	// Menús -> Menú del juego (9B Tanda 3 UI)
+	Dictionary game_menu_config_draft;
+	String gm_active_bg_screen = "menu";
+	VBoxContainer *game_menu_editor_panel = nullptr;
+	BoxContainer *gm_main_split = nullptr;
+	VBoxContainer *gm_entries_list_vbox = nullptr;
+	TabBar *gm_bg_screen_tabs = nullptr;
+	OptionButton *gm_bg_type_opt = nullptr;
+	ColorPickerButton *gm_bg_color_btn = nullptr;
+	LineEdit *gm_bg_image_edit = nullptr;
+	Button *gm_bg_import_btn = nullptr;
+	Button *gm_bg_clear_btn = nullptr;
+	OptionButton *gm_bg_scale_opt = nullptr;
+	OptionButton *gm_bg_filter_opt = nullptr;
+	Button *gm_test_btn = nullptr;
+	SubViewport *gm_preview_viewport = nullptr;
+	ClockGearsGameMenu *gm_live_preview = nullptr;
+	Window *gm_test_window = nullptr;
+	ClockGearsGameMenu *gm_test_menu = nullptr;
+	FileDialog *gm_asset_file_dialog = nullptr;
+
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
 	bool updating_ui = false;
 
@@ -1078,6 +1100,24 @@ private:
 	void _on_ws_default_style_selected(int p_idx);
 	void _on_ws_assignment_selected(int p_idx, int p_row_idx);
 
+	// Menús -> Menú del juego helpers (9B Tanda 3 UI)
+	static const char *_gm_bg_screen_key(int p_tab_idx);
+	void _setup_game_menu_editor_ui();
+	void _refresh_game_menu_editor_ui();
+	void _rebuild_game_menu_entries_rows();
+	void _update_game_menu_live_preview();
+	void _on_gm_entry_toggled(bool p_enabled, String p_entry_id);
+	void _on_gm_entry_text_changed(const String &p_text, String p_entry_id);
+	void _on_gm_entry_move_pressed(String p_entry_id, int p_delta);
+	void _on_gm_bg_screen_tab_changed(int p_tab_idx);
+	void _on_gm_bg_field_changed(int p_unused = 0);
+	void _on_gm_bg_color_changed(const Color &p_col);
+	void _on_gm_bg_image_text_changed(const String &p_text);
+	void _on_gm_import_bg_pressed();
+	void _on_gm_clear_bg_pressed();
+	void _on_gm_bg_file_selected(const String &p_path);
+	void _on_gm_test_popup_close_requested();
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -1085,7 +1125,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1 };
+	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2 };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -1157,6 +1197,16 @@ public:
 	void select_window_style(int p_index);
 	Dictionary get_window_styles_ui_handles() const;
 	Dictionary get_window_style_preview_info() const;
+
+	Dictionary get_game_menu_draft_copy() const;
+	void set_game_menu_entry_state(const String &p_id, bool p_enabled, const String &p_text);
+	bool move_game_menu_entry(const String &p_id, int p_delta);
+	void select_game_menu_preview_screen(const String &p_screen_id);
+	void set_game_menu_screen_background(const String &p_screen_id, const String &p_type, const String &p_color_or_path, const String &p_scale_mode = "fit", const String &p_filter = "nearest");
+	ClockGearsGameMenu *get_game_menu_live_preview() const { return gm_live_preview; }
+	Window *open_game_menu_test_popup();
+	Window *get_game_menu_test_popup() const { return gm_test_window; }
+	Dictionary get_game_menu_editor_ui_handles() const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

@@ -3,6 +3,7 @@
 
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/center_container.h"
 #include "scene/gui/color_rect.h"
 #include "scene/gui/control.h"
 #include "scene/gui/label.h"
@@ -36,18 +37,24 @@ private:
 	TextureRect *bg_texture_rect = nullptr;
 	Control *content_root = nullptr;
 
-	// Vista principal (Comandos a la izquierda + Grupo/Oro a la derecha)
+	// Vista principal (Comandos + Tarjeta Moneda/Tiempo a la izquierda + Grupo a la derecha)
 	HBoxContainer *main_view = nullptr;
+	VBoxContainer *main_left_col = nullptr;
 	PanelContainer *main_cmd_panel = nullptr;
 	VBoxContainer *entries_box = nullptr;
+	PanelContainer *currency_time_card = nullptr;
 	Label *gold_label = nullptr;
+	Label *playtime_label = nullptr;
 	Button *btn_close_menu = nullptr;
 	PanelContainer *party_panel = nullptr;
 	VBoxContainer *party_list_box = nullptr;
 
 	// Subpantalla Objetos
 	PanelContainer *items_panel = nullptr;
+	HBoxContainer *items_member_selector = nullptr;
+	Button *btn_items_prev_actor = nullptr;
 	OptionButton *items_target_option = nullptr;
+	Button *btn_items_next_actor = nullptr;
 	VBoxContainer *items_list_box = nullptr;
 	Label *item_detail_name = nullptr;
 	Label *item_detail_desc = nullptr;
@@ -59,7 +66,10 @@ private:
 
 	// Subpantalla Equipo
 	PanelContainer *equip_panel = nullptr;
+	HBoxContainer *equip_member_selector = nullptr;
+	Button *btn_equip_prev_actor = nullptr;
 	OptionButton *equip_actor_option = nullptr;
+	Button *btn_equip_next_actor = nullptr;
 	Label *equip_mode_label = nullptr;
 	VBoxContainer *equip_slots_box = nullptr;
 	VBoxContainer *equip_candidates_box = nullptr;
@@ -71,7 +81,11 @@ private:
 
 	// Subpantalla Estado
 	PanelContainer *status_panel = nullptr;
+	HBoxContainer *status_member_selector = nullptr;
+	Button *btn_status_prev_actor = nullptr;
 	OptionButton *status_actor_option = nullptr;
+	Button *btn_status_next_actor = nullptr;
+	TextureRect *status_portrait_rect = nullptr;
 	Label *status_basic_label = nullptr;
 	Label *status_params_label = nullptr;
 	Label *status_states_label = nullptr;
@@ -89,6 +103,7 @@ private:
 	ClockGearsOptionsBox *options_box = nullptr;
 
 	// Confirmación Salir al Título
+	CenterContainer *confirm_title_overlay = nullptr;
 	PanelContainer *confirm_title_panel = nullptr;
 	Label *confirm_title_label = nullptr;
 	Button *btn_confirm_title_yes = nullptr;
@@ -106,11 +121,18 @@ private:
 	int selected_status_actor_id = 1;
 	bool last_returned_to_title = false;
 	String last_applied_style_type;
+	bool preview_mode = false;
+	bool editor_test_popup_mode = false;
+	bool preview_config_override_active = false;
+	Dictionary preview_config_override;
+	int nav_focus_index = 0;
+	double playtime_refresh_accum = 0.0;
 
 	void _build_ui();
 	void _apply_unified_styles();
 	void _update_responsive_layout();
 	void _refresh_background();
+	void _refresh_playtime_label();
 	void _refresh_main_view();
 	void _refresh_items_view();
 	void _refresh_equip_view();
@@ -118,21 +140,29 @@ private:
 	void _refresh_status_view();
 	void _refresh_save_view();
 
-	void _populate_actor_selector(OptionButton *p_opt, int &r_selected_actor_id);
+	Dictionary _get_effective_game_menu_config() const;
+	Ref<Texture2D> _resolve_actor_portrait_or_sprite(int p_actor_id) const;
+	void _populate_actor_selector(OptionButton *p_opt, HBoxContainer *p_selector_box, int &r_selected_actor_id);
+	void _cycle_actor_selector(OptionButton *p_opt, int p_delta, int &r_actor_id, const String &p_subscreen);
+	void _collect_nav_buttons(Control *p_root, Vector<Button *> &r_buttons) const;
+	Control *_get_active_subscreen_control() const;
 	Dictionary _build_runtime_save_context() const;
 
 	void _on_entry_pressed(const String &p_id);
 	void _on_subscreen_back();
 	void _on_item_row_pressed(const String &p_key);
 	void _on_items_target_selected(int p_idx);
+	void _on_items_actor_cycle(int p_delta);
 	void _on_use_item_pressed();
 	void _on_discard_item_pressed();
 	void _on_equip_actor_selected(int p_idx);
+	void _on_equip_actor_cycle(int p_delta);
 	void _on_equip_slot_pressed(int p_slot_idx);
 	void _on_equip_candidate_pressed(const String &p_key);
 	void _on_equip_apply_pressed();
 	void _on_equip_clear_pressed();
 	void _on_status_actor_selected(int p_idx);
+	void _on_status_actor_cycle(int p_delta);
 	void _on_save_slot_pressed(int p_slot);
 	void _on_confirm_title_yes();
 
@@ -143,6 +173,12 @@ protected:
 
 public:
 	void setup_game_menu(ClockGearsEventInterpreter *p_interpreter, ClockGearsMap *p_map, ClockGearsPlayer *p_player);
+
+	void set_preview_mode(bool p_enabled);
+	bool is_preview_mode() const { return preview_mode; }
+	void set_editor_test_popup_mode(bool p_enabled);
+	bool is_editor_test_popup_mode() const { return editor_test_popup_mode; }
+	void apply_game_menu_config_preview(const Dictionary &p_cfg, const String &p_screen_id = "");
 
 	bool can_open_menu() const;
 	bool open_menu();
@@ -155,7 +191,11 @@ public:
 	PackedStringArray get_visible_entry_ids() const { return visible_entry_ids; }
 	PackedStringArray get_visible_entry_texts() const { return visible_entry_texts; }
 	String get_displayed_gold_text() const;
+	String get_displayed_playtime_text() const;
+	Dictionary get_party_cards_info() const;
+	Dictionary get_member_selectors_info() const;
 	Dictionary get_layout_bounds_info(const Vector2 &p_viewport_size = Vector2()) const;
+	Button *get_focused_nav_button() const;
 
 	// Acciones directas invocables desde UI y tests
 	bool select_item(const String &p_item_key);
