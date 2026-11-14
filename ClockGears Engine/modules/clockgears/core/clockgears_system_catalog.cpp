@@ -638,6 +638,17 @@ void ClockGearsSystemCatalog::migrate_record_elements(Dictionary &r_record) cons
 				int new_id = 0;
 				String elem_key = String(tr.get("element_key", "")).strip_edges();
 				String elem_name = String(tr.get("element_name", "")).strip_edges();
+				String elem_key_norm = elem_key.to_lower();
+				int old_id = int(tr.get("data_id", 0));
+				bool already_migrated = bool(tr.get("element_migrated", false));
+				if (elem_key_norm == "fisico" || elem_key_norm == String::utf8("físico") || elem_key_norm == "physical" || (old_id == 0 && already_migrated)) {
+					tr["data_id"] = 0;
+					tr["element_key"] = "fisico";
+					tr["element_migrated"] = true;
+					traits[i] = tr;
+					changed = true;
+					continue;
+				}
 				if (!elem_key.is_empty()) {
 					new_id = resolve_element_id(elem_key);
 				}
@@ -645,8 +656,6 @@ void ClockGearsSystemCatalog::migrate_record_elements(Dictionary &r_record) cons
 					new_id = resolve_element_id(elem_name);
 				}
 				if (new_id <= 0) {
-					int old_id = int(tr.get("data_id", 0));
-					bool already_migrated = bool(tr.get("element_migrated", false));
 					if (!already_migrated && legacy_element_id_map.has(old_id)) {
 						new_id = legacy_element_id_map[old_id];
 					} else if (old_id >= 1 && old_id <= elements.size()) {

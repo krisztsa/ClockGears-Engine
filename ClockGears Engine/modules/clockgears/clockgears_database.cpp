@@ -2159,13 +2159,28 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 	updating_ui = false;
 }
 
+static Dictionary s_finalize_new_db_record(int p_category, Dictionary p_rec) {
+	if (p_category == CAT_ARPG_ENEMIES) {
+		p_rec.erase("hp");
+		p_rec.erase("mp");
+		p_rec.erase("atk");
+		p_rec.erase("def");
+		p_rec.erase("mat");
+		p_rec.erase("mdf");
+		p_rec.erase("agi");
+		p_rec.erase("luk");
+	}
+	ClockGearsDataManager::normalize_record_defaults(p_category, p_rec);
+	return p_rec;
+}
+
 void ClockGearsDatabaseDialog::_on_add_record_pressed() {
 	if (current_category < 0 || current_category >= CAT_MAX) {
 		return;
 	}
 	Array &arr = category_data[current_category];
 	int new_id = arr.size() + 1;
-	Dictionary rec = _create_empty_record(current_category, new_id);
+	Dictionary rec = s_finalize_new_db_record(current_category, _create_empty_record(current_category, new_id));
 	if (current_category == CAT_TILESETS && String(rec.get("name", "")).is_empty()) {
 		rec["name"] = vformat("Tileset %03d", new_id);
 	}
@@ -2253,7 +2268,7 @@ void ClockGearsDatabaseDialog::_on_change_max_confirmed() {
 	Array &arr = category_data[current_category];
 	while (arr.size() < target_max) {
 		int new_id = arr.size() + 1;
-		arr.push_back(_create_empty_record(current_category, new_id));
+		arr.push_back(s_finalize_new_db_record(current_category, _create_empty_record(current_category, new_id)));
 	}
 	while (arr.size() > target_max) {
 		arr.remove_at(arr.size() - 1);
@@ -2300,11 +2315,13 @@ void ClockGearsDatabaseDialog::_on_paste_record_pressed() {
 		int keep_id = int(cur.get("id", target_idx + 1));
 		Dictionary pasted = clipboard_record.duplicate(true);
 		pasted["id"] = keep_id;
+		ClockGearsDataManager::normalize_record_defaults(current_category, pasted);
 		arr[target_idx] = pasted;
 	} else {
 		int new_id = arr.size() + 1;
 		Dictionary pasted = clipboard_record.duplicate(true);
 		pasted["id"] = new_id;
+		ClockGearsDataManager::normalize_record_defaults(current_category, pasted);
 		arr.push_back(pasted);
 		target_idx = arr.size() - 1;
 	}
@@ -2332,7 +2349,7 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 				actor_dir_idle_chk->set_pressed(false);
 				updating_ui = false;
 			}
-			arr.push_back(_create_empty_record(current_category, 1));
+			arr.push_back(s_finalize_new_db_record(current_category, _create_empty_record(current_category, 1)));
 			updating_ui = true;
 			_refresh_record_list();
 			record_list->select(0);
@@ -2520,9 +2537,24 @@ void ClockGearsDatabaseDialog::_on_param_changed() {
 		}
 	}
 
-	const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
-	for (int i = 0; i < 8; i++) {
-		d[stat_keys[i]] = (int)stat_spins[i]->get_value();
+	if (current_category == CAT_ARPG_ENEMIES) {
+		if (!auto_created_new) {
+			const int arpg_indices[6] = { 0, 2, 3, 4, 5, 7 }; // hp, atk, def, mat, mdf, luk (sin MP ni AGI)
+			const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+			for (int k = 0; k < 6; k++) {
+				int si = arpg_indices[k];
+				d[stat_keys[si]] = (int)stat_spins[si]->get_value();
+			}
+		}
+		d.erase("mp");
+		d.erase("agi");
+		ClockGearsDataManager::normalize_record_defaults(CAT_ARPG_ENEMIES, d);
+	} else {
+		const char *stat_keys[8] = { "hp", "mp", "atk", "def", "mat", "mdf", "agi", "luk" };
+		for (int i = 0; i < 8; i++) {
+			d[stat_keys[i]] = (int)stat_spins[i]->get_value();
+		}
+		ClockGearsDataManager::normalize_record_defaults(current_category, d);
 	}
 
 	arr[idx] = d;
@@ -2921,7 +2953,7 @@ void ClockGearsDatabaseDialog::_on_trait_confirmed() {
 	Vector<int> sel = record_list->get_selected_items();
 	if (sel.is_empty()) {
 		if (arr.is_empty()) {
-			arr.push_back(_create_empty_record(current_category, 1));
+			arr.push_back(s_finalize_new_db_record(current_category, _create_empty_record(current_category, 1)));
 			_refresh_record_list();
 		}
 		record_list->select(0);
@@ -3081,7 +3113,7 @@ void ClockGearsDatabaseDialog::_on_effect_confirmed() {
 	Vector<int> sel = record_list->get_selected_items();
 	if (sel.is_empty()) {
 		if (arr.is_empty()) {
-			arr.push_back(_create_empty_record(current_category, 1));
+			arr.push_back(s_finalize_new_db_record(current_category, _create_empty_record(current_category, 1)));
 			_refresh_record_list();
 		}
 		record_list->select(0);

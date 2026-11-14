@@ -39,8 +39,13 @@ private:
 
 	bool allow_diagonal = false;
 	bool through_enabled = false;
-	float walk_speed = 128.0f; // 4 tiles/s (32px * 4)
-	float dash_speed = 256.0f; // 8 tiles/s (32px * 8)
+	float base_walk_speed = 128.0f; // 4 tiles/s (32px * 4)
+	float base_dash_speed = 256.0f; // 8 tiles/s (32px * 8)
+	float walk_speed = 128.0f;
+	float dash_speed = 256.0f;
+	float walk_speed_pct = 100.0f;
+	float run_speed_pct = 100.0f;
+	float attack_speed_pct = 100.0f;
 	bool dashing = false;
 
 	bool moving_step = false;
@@ -87,6 +92,7 @@ private:
 	void _advance_slot_animation(float p_delta);
 	void _update_body_sprite_frame();
 	void _update_sprite_frame();
+	void _refresh_actor_speeds_from_dm();
 	void _on_dm_data_changed(const String &p_category, int p_id);
 	int _direction_to_row(int p_dir) const;
 	int _get_held_movement_direction() const;
@@ -117,8 +123,15 @@ public:
 	void set_through_enabled(bool p_through) { through_enabled = p_through; }
 	bool is_through_enabled() const { return through_enabled; }
 
-	void set_walk_speed(float p_speed) { walk_speed = MAX(16.0f, p_speed); }
+	void set_walk_speed(float p_speed) {
+		base_walk_speed = MAX(16.0f, p_speed);
+		walk_speed = MAX(8.0f, base_walk_speed * (walk_speed_pct / 100.0f));
+	}
 	float get_walk_speed() const { return walk_speed; }
+	float get_dash_speed() const { return dash_speed; }
+	float get_walk_speed_pct() const { return walk_speed_pct; }
+	float get_run_speed_pct() const { return run_speed_pct; }
+	float get_attack_speed_pct() const { return attack_speed_pct; }
 
 	bool is_moving_step() const { return moving_step; }
 

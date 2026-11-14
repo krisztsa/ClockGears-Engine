@@ -226,6 +226,219 @@ bool ClockGearsDataManager::_read_json_with_backup(const String &p_file_path, Va
 	return false;
 }
 
+PackedStringArray ClockGearsDataManager::get_arpg_ai_types() {
+	PackedStringArray out;
+	out.push_back("quieto");
+	out.push_back("patrulla");
+	out.push_back("persigue_y_ataca");
+	out.push_back("huye");
+	out.push_back("a_distancia");
+	return out;
+}
+
+static String s_normalize_arpg_ai_type(const Variant &p_val) {
+	String raw = String(p_val).strip_edges().to_lower();
+	raw = raw.replace(" ", "_");
+	if (raw == "quieto") return "quieto";
+	if (raw == "patrulla") return "patrulla";
+	if (raw == "persigue_y_ataca" || raw == "persigue") return "persigue_y_ataca";
+	if (raw == "huye") return "huye";
+	if (raw == "a_distancia" || raw == "distancia") return "a_distancia";
+	return "persigue_y_ataca";
+}
+
+void ClockGearsDataManager::normalize_record_defaults(int p_category, Dictionary &r_record) {
+	if (p_category == CAT_ACTORS || p_category == CAT_ARPG_NPCS || p_category == CAT_NPCS || p_category == CAT_ARPG_ENEMIES) {
+		int walk_pct = r_record.has("walk_speed_pct") ? int(r_record["walk_speed_pct"]) : 100;
+		int run_pct = r_record.has("run_speed_pct") ? int(r_record["run_speed_pct"]) : 100;
+		r_record["walk_speed_pct"] = MAX(1, walk_pct);
+		r_record["run_speed_pct"] = MAX(1, run_pct);
+		if (p_category != CAT_NPCS) {
+			int atk_pct = r_record.has("attack_speed_pct") ? int(r_record["attack_speed_pct"]) : 100;
+			r_record["attack_speed_pct"] = MAX(1, atk_pct);
+		}
+	}
+
+	if (p_category != CAT_ARPG_ENEMIES) {
+		return;
+	}
+
+	// Enemigos ARPG son independientes de los enemigos por turnos: sin MP ni AGI.
+	r_record.erase("mp");
+	r_record.erase("agi");
+
+	if (!r_record.has("level")) {
+		r_record["level"] = 1;
+	} else {
+		r_record["level"] = MAX(1, int(r_record["level"]));
+	}
+	if (!r_record.has("exp")) {
+		r_record["exp"] = 10;
+	} else {
+		r_record["exp"] = MAX(0, int(r_record["exp"]));
+	}
+	if (!r_record.has("gold")) {
+		r_record["gold"] = 5;
+	} else {
+		r_record["gold"] = MAX(0, int(r_record["gold"]));
+	}
+
+	if (!r_record.has("hp")) {
+		r_record["hp"] = 100;
+	} else {
+		r_record["hp"] = MAX(1, int(r_record["hp"]));
+	}
+	if (!r_record.has("atk")) {
+		r_record["atk"] = 15;
+	} else {
+		r_record["atk"] = MAX(0, int(r_record["atk"]));
+	}
+	if (!r_record.has("def")) {
+		r_record["def"] = 10;
+	} else {
+		r_record["def"] = MAX(0, int(r_record["def"]));
+	}
+	if (!r_record.has("mat")) {
+		r_record["mat"] = 10;
+	} else {
+		r_record["mat"] = MAX(0, int(r_record["mat"]));
+	}
+	if (!r_record.has("mdf")) {
+		r_record["mdf"] = 10;
+	} else {
+		r_record["mdf"] = MAX(0, int(r_record["mdf"]));
+	}
+	if (!r_record.has("luk")) {
+		r_record["luk"] = 5;
+	} else {
+		r_record["luk"] = MAX(0, int(r_record["luk"]));
+	}
+
+	// 3 drops (mismo formato que enemigos por turnos)
+	Array raw_drops = (r_record.has("drops") && r_record["drops"].get_type() == Variant::ARRAY) ? Array(r_record["drops"]) : Array();
+	Array norm_drops;
+	for (int s = 0; s < 3; s++) {
+		Dictionary dr;
+		if (s < raw_drops.size() && raw_drops[s].get_type() == Variant::DICTIONARY) {
+			Dictionary src = raw_drops[s];
+			dr["kind"] = MAX(0, int(src.get("kind", 0)));
+			dr["item_id"] = MAX(0, int(src.get("item_id", 0)));
+			dr["prob"] = CLAMP(int(src.get("prob", 100)), 0, 100);
+		} else {
+			dr["kind"] = 0;
+			dr["item_id"] = 0;
+			dr["prob"] = 100;
+		}
+		norm_drops.push_back(dr);
+	}
+	r_record["drops"] = norm_drops;
+
+	// Debilidades y resistencias: fisico + 10 elementos (mismo formato CG_TRAIT_ELEMENT_RATE)
+	Array raw_traits = (r_record.has("traits") && r_record["traits"].get_type() == Variant::ARRAY) ? Array(r_record["traits"]).duplicate(true) : Array();
+	Array other_traits;
+	HashMap<String, double> rate_by_key;
+	HashMap<int, double> rate_by_id;
+
+	for (int i = 0; i < raw_traits.size(); i++) {
+		if (raw_traits[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary tr = raw_traits[i];
+		if (int(tr.get("code", 0)) == CG_TRAIT_ELEMENT_RATE) {
+			String ek = String(tr.get("element_key", "")).strip_edges().to_lower();
+			int did = int(tr.get("data_id", -1));
+			double val = MAX(0.0, double(tr.get("value", 100.0)));
+			if (!ek.is_empty()) {
+				if (ek == String::utf8("físico") || ek == "physical") {
+					ek = "fisico";
+				}
+				rate_by_key[ek] = val;
+			}
+			if (did >= 0) {
+				rate_by_id[did] = val;
+			}
+		} else {
+			other_traits.push_back(tr.duplicate(true));
+		}
+	}
+
+	Array norm_traits;
+	// 1. Fisico (data_id = 0, element_key = "fisico")
+	{
+		Dictionary tr;
+		tr["code"] = int(CG_TRAIT_ELEMENT_RATE);
+		tr["data_id"] = 0;
+		tr["element_key"] = "fisico";
+		tr["element_migrated"] = true;
+		double val = 100.0;
+		if (rate_by_key.has("fisico")) {
+			val = rate_by_key["fisico"];
+		} else if (rate_by_id.has(0)) {
+			val = rate_by_id[0];
+		}
+		tr["value"] = val;
+		norm_traits.push_back(tr);
+	}
+
+	// 2. Los elementos del catalogo (por defecto los 10 elementos)
+	static const char *fallback_elem_keys[10] = {
+		"agua", "fuego", "hielo", "electricidad", "viento",
+		"luz", "oscuridad", "astral", "tierra", "naturaleza"
+	};
+	ClockGearsSystemCatalog *cat_sys = ClockGearsSystemCatalog::get_singleton();
+	int elem_count = cat_sys ? cat_sys->get_elements().size() : 10;
+	if (elem_count <= 0) {
+		elem_count = 10;
+	}
+	for (int e_id = 1; e_id <= elem_count; e_id++) {
+		String ek = cat_sys ? cat_sys->get_element_key(e_id).strip_edges().to_lower() : String(fallback_elem_keys[(e_id - 1) % 10]);
+		if (ek.is_empty() && e_id <= 10) {
+			ek = fallback_elem_keys[e_id - 1];
+		}
+		double val = 100.0;
+		if (!ek.is_empty() && rate_by_key.has(ek)) {
+			val = rate_by_key[ek];
+		} else if (rate_by_id.has(e_id)) {
+			val = rate_by_id[e_id];
+		}
+		Dictionary tr;
+		tr["code"] = int(CG_TRAIT_ELEMENT_RATE);
+		tr["data_id"] = e_id;
+		tr["element_key"] = ek;
+		tr["element_migrated"] = true;
+		tr["value"] = val;
+		norm_traits.push_back(tr);
+	}
+	for (int i = 0; i < other_traits.size(); i++) {
+		norm_traits.push_back(other_traits[i]);
+	}
+	r_record["traits"] = norm_traits;
+
+	// IA de enemigo ARPG
+	r_record["ai_type"] = r_record.has("ai_type") ? s_normalize_arpg_ai_type(r_record["ai_type"]) : String("persigue_y_ataca");
+	r_record["vision_radius"] = r_record.has("vision_radius") ? MAX(0.0, double(r_record["vision_radius"])) : 6.0;
+	r_record["attack_range"] = r_record.has("attack_range") ? MAX(0.0, double(r_record["attack_range"])) : 1.0;
+	r_record["attack_interval"] = r_record.has("attack_interval") ? MAX(0.0, double(r_record["attack_interval"])) : 1.5;
+	r_record["knockback_resist"] = r_record.has("knockback_resist") ? CLAMP(int(r_record["knockback_resist"]), 0, 100) : 0;
+
+	// Aislar contenedores anidados existentes
+	if (r_record.has("sprite_data") && r_record["sprite_data"].get_type() == Variant::DICTIONARY) {
+		r_record["sprite_data"] = Dictionary(r_record["sprite_data"]).duplicate(true);
+	}
+	if (r_record.has("animations") && r_record["animations"].get_type() == Variant::DICTIONARY) {
+		r_record["animations"] = Dictionary(r_record["animations"]).duplicate(true);
+	}
+	if (r_record.has("event_pages") && r_record["event_pages"].get_type() == Variant::ARRAY) {
+		r_record["event_pages"] = Array(r_record["event_pages"]).duplicate(true);
+	}
+}
+
+Dictionary ClockGearsDataManager::get_normalized_record(int p_category, const Dictionary &p_record) {
+	Dictionary out = p_record.duplicate(true);
+	normalize_record_defaults(p_category, out);
+	return out;
+}
+
 void ClockGearsDataManager::_migrate_schema_if_needed(int p_from_version) {
 	ClockGearsSystemCatalog *cat_sys = ClockGearsSystemCatalog::get_singleton();
 	// Garantiza que registros de versiones previas tengan todos los campos esperados y migra ranuras/elementos
@@ -419,6 +632,7 @@ void ClockGearsDataManager::set_category_array(int p_category, const Array &p_ar
 				if (cat_sys) {
 					cat_sys->migrate_record_elements(rec);
 				}
+				normalize_record_defaults(p_category, rec);
 				arr[i] = rec;
 			}
 		}
@@ -471,6 +685,7 @@ int ClockGearsDataManager::create_record(int p_category, const Dictionary &p_ini
 	if (ClockGearsSystemCatalog::get_singleton()) {
 		ClockGearsSystemCatalog::get_singleton()->migrate_record_elements(rec);
 	}
+	normalize_record_defaults(p_category, rec);
 	category_data[p_category].push_back(rec);
 	dirty = true;
 	emit_signal("data_changed", key, new_id);
@@ -493,6 +708,7 @@ bool ClockGearsDataManager::update_record(int p_category, int p_id, const Dictio
 				if (ClockGearsSystemCatalog::get_singleton()) {
 					ClockGearsSystemCatalog::get_singleton()->migrate_record_elements(updated);
 				}
+				normalize_record_defaults(p_category, updated);
 				arr[i] = updated;
 				dirty = true;
 				emit_signal("data_changed", get_category_key(p_category), p_id);
@@ -727,6 +943,16 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 
 	_migrate_schema_if_needed(loaded_schema);
+	for (int cat = 0; cat < CAT_MAX; cat++) {
+		Array &arr = category_data[cat];
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() == Variant::DICTIONARY) {
+				Dictionary rec = arr[i];
+				normalize_record_defaults(cat, rec);
+				arr[i] = rec;
+			}
+		}
+	}
 	dirty = false;
 	return true;
 }
@@ -1087,6 +1313,8 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("create_record", "category", "initial_data"), &ClockGearsDataManager::create_record, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("update_record", "category", "id", "record"), &ClockGearsDataManager::update_record);
 	ClassDB::bind_method(D_METHOD("delete_record_by_id", "category", "id"), &ClockGearsDataManager::delete_record_by_id);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_normalized_record", "category", "record"), &ClockGearsDataManager::get_normalized_record);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_arpg_ai_types"), &ClockGearsDataManager::get_arpg_ai_types);
 	ClassDB::bind_method(D_METHOD("get_system_config"), &ClockGearsDataManager::get_system_config);
 	ClassDB::bind_method(D_METHOD("set_system_config", "config"), &ClockGearsDataManager::set_system_config);
 	ClassDB::bind_method(D_METHOD("get_vocabulary_config"), &ClockGearsDataManager::get_vocabulary_config);

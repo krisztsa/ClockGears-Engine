@@ -144,6 +144,10 @@ void ClockGearsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_through_enabled"), &ClockGearsPlayer::is_through_enabled);
 	ClassDB::bind_method(D_METHOD("set_walk_speed", "speed"), &ClockGearsPlayer::set_walk_speed);
 	ClassDB::bind_method(D_METHOD("get_walk_speed"), &ClockGearsPlayer::get_walk_speed);
+	ClassDB::bind_method(D_METHOD("get_dash_speed"), &ClockGearsPlayer::get_dash_speed);
+	ClassDB::bind_method(D_METHOD("get_walk_speed_pct"), &ClockGearsPlayer::get_walk_speed_pct);
+	ClassDB::bind_method(D_METHOD("get_run_speed_pct"), &ClockGearsPlayer::get_run_speed_pct);
+	ClassDB::bind_method(D_METHOD("get_attack_speed_pct"), &ClockGearsPlayer::get_attack_speed_pct);
 	ClassDB::bind_method(D_METHOD("is_moving_step"), &ClockGearsPlayer::is_moving_step);
 	ClassDB::bind_method(D_METHOD("try_step", "dir", "is_dash"), &ClockGearsPlayer::try_step, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_front_cell", "candidate_idx"), &ClockGearsPlayer::get_front_cell, DEFVAL(0));
@@ -288,7 +292,11 @@ void ClockGearsPlayer::_advance_slot_animation(float p_delta) {
 	}
 	int cur_idx = CLAMP(slot_anim_frame_idx, 0, total - 1);
 	float target_dur = anim.get_frame_duration(cur_idx);
-	slot_anim_timer += p_delta;
+	float effective_delta = p_delta;
+	if (is_attack && is_arpg_combat_mode()) {
+		effective_delta *= (MAX(1.0f, attack_speed_pct) / 100.0f);
+	}
+	slot_anim_timer += effective_delta;
 	bool changed = false;
 	const bool allow_loop = is_attack ? false : anim.loop;
 	while (slot_anim_timer >= target_dur && target_dur > 0.0f) {
@@ -473,6 +481,7 @@ void ClockGearsPlayer::load_actor_data(int p_actor_id) {
 		sprite->set_texture(fallback_std_texture);
 	}
 	_sync_locomotion_state();
+	_refresh_actor_speeds_from_dm();
 	_update_sprite_frame();
 }
 
@@ -491,7 +500,27 @@ void ClockGearsPlayer::debug_advance_animation(float p_delta) {
 	refresh_arpg_equip_layers();
 }
 
+void ClockGearsPlayer::_refresh_actor_speeds_from_dm() {
+	walk_speed_pct = 100.0f;
+	run_speed_pct = 100.0f;
+	attack_speed_pct = 100.0f;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm && actor_id > 0) {
+		Dictionary rec = dm->get_record_by_id(CAT_ACTORS, actor_id);
+		if (!rec.is_empty()) {
+			walk_speed_pct = MAX(1.0f, float(rec.get("walk_speed_pct", 100)));
+			run_speed_pct = MAX(1.0f, float(rec.get("run_speed_pct", 100)));
+			attack_speed_pct = MAX(1.0f, float(rec.get("attack_speed_pct", 100)));
+		}
+	}
+	walk_speed = MAX(8.0f, base_walk_speed * (walk_speed_pct / 100.0f));
+	dash_speed = MAX(8.0f, base_dash_speed * (run_speed_pct / 100.0f));
+}
+
 void ClockGearsPlayer::_on_dm_data_changed(const String &p_category, int p_id) {
+	if (p_category == "actors" && (p_id < 0 || p_id == actor_id)) {
+		_refresh_actor_speeds_from_dm();
+	}
 	if (p_category == "arpg_equip" || p_category == "system" || p_category.begins_with("arpg_")) {
 		cached_slot_textures.clear();
 		refresh_arpg_equip_layers();
@@ -1144,7 +1173,7 @@ void ClockGearsPlayer::_notification(int p_what) {
 					float eff_speed = current_step_speed * act_spd_mult;
 					float move_dist = eff_speed * dt;
 
-					anim_timer += dt * (eff_speed / walk_speed);
+					anim_timer += dt * (eff_speed / MAX(1.0f, base_walk_speed));
 					if (anim_timer >= 0.14f) {
 						anim_timer = 0.0f;
 						anim_pattern_idx = (anim_pattern_idx + 1) % 4;

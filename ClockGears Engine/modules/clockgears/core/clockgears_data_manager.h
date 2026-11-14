@@ -40,7 +40,11 @@ class ClockGearsDataManager : public Object {
 	GDCLASS(ClockGearsDataManager, Object);
 
 public:
-	static constexpr int CURRENT_SCHEMA_VERSION = 2;
+	static constexpr int CURRENT_SCHEMA_VERSION = 3;
+
+	static void normalize_record_defaults(int p_category, Dictionary &r_record);
+	static Dictionary get_normalized_record(int p_category, const Dictionary &p_record);
+	static PackedStringArray get_arpg_ai_types();
 
 private:
 	static ClockGearsDataManager *singleton;

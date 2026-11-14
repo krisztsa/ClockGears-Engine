@@ -545,6 +545,10 @@ void ClockGearsEvent::update_active_page() {
 		set_move_type(int(ap.get("move_type", 0)));
 		set_move_speed(int(ap.get("speed", 3)) * 40.0f);
 		set_move_frequency(int(ap.get("freq", 3)));
+	} else {
+		float base_ev_speed = float(int(ap.get("speed", 3)) * 40.0f);
+		float walk_pct = MAX(1.0f, float(db_rec.get("walk_speed_pct", 100)));
+		set_move_speed(base_ev_speed * (walk_pct / 100.0f));
 	}
 	set_commands(ap.get("commands", Array()));
 	queue_redraw();
