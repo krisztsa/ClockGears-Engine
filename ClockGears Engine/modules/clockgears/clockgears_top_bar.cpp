@@ -27,12 +27,7 @@ ClockGearsTopBar *ClockGearsTopBar::singleton = nullptr;
 
 namespace {
 
-// Iconos conservados temporalmente (sin PNG nuevo todavía): estrella (eventos), luna (sombra), selección punteada.
-const char *CLOCKGEARS_EVENT_SVG =
-		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">"
-		"<path fill=\"#E8B84B\" d=\"M12 2.2l2.8 6.1 6.7.7-5 4.5 1.4 6.6-5.9-3.4-5.9 3.4 1.4-6.6-5-4.5 6.7-.7z\"/>"
-		"</svg>";
-
+// Iconos conservados temporalmente (sin PNG nuevo todavía): luna (sombra), selección punteada.
 const char *CLOCKGEARS_SHADOW_SVG =
 		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">"
 		"<path fill=\"#A7AFC0\" d=\"M16.2 2.6a10 10 0 1 0 5.2 17.2A8.5 8.5 0 0 1 16.2 2.6z\"/>"
@@ -601,7 +596,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	map_mode_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_map_mode_pressed));
 	map_mode_btn->set_pressed(true);
 
-	event_mode_btn = _make_icon_toggle_button(grp_db_modes, _make_svg_icon(CLOCKGEARS_EVENT_SVG, int_scale), CG_TR("Modo Eventos (F6)"), mode_group, editor_theme, int_scale);
+	event_mode_btn = _make_icon_toggle_button(grp_db_modes, _get_png_icon("modo_evento", int_scale), CG_TR("Modo Eventos (F6)"), mode_group, editor_theme, int_scale);
 	event_mode_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_event_mode_pressed));
 
 	// ------------------------------------------------------------------

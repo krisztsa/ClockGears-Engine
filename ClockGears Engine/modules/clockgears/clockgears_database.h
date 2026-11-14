@@ -13,15 +13,18 @@
 #include "scene/gui/control.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/margin_container.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
+#include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
@@ -64,9 +67,24 @@ class ClockGearsDatabaseDialog : public AcceptDialog {
 private:
 	static inline ClockGearsDatabaseDialog *singleton = nullptr;
 
-	// Left sidebar category buttons
+	struct ChapterDef {
+		String name;
+		Vector<int> categories;
+	};
+	Vector<ChapterDef> chapters;
+	Vector<Button *> chapter_buttons;
 	Vector<Button *> category_buttons;
-	int current_category = CAT_ITEMS;
+	int current_chapter = 0;
+	int current_category = CAT_ACTORS;
+
+	// Editor Tabs (Enemigos: General | Combate | Animaciones; Actores: General | Animaciones; Resto: General sin pestañas)
+	TabContainer *main_editor_tabs = nullptr;
+	VBoxContainer *combat_tab_vbox = nullptr;
+	VBoxContainer *general_section_box = nullptr;
+	VBoxContainer *stats_section_box = nullptr;
+	VBoxContainer *exp_section_box = nullptr;
+	VBoxContainer *invocation_section_box = nullptr;
+	HBoxContainer *tileset_main_hbox = nullptr;
 
 	// Column 1: Record List ("+", "-", "Max", "Copiar", "Pegar")
 	VBoxContainer *col1_box = nullptr;
@@ -144,7 +162,7 @@ private:
 
 	// Debilidades y Resistencias (como Pokémon) -> persiste en traits CG_TRAIT_ELEMENT_RATE
 	VBoxContainer *enemy_element_rates_box = nullptr;
-	VBoxContainer *enemy_element_rates_rows_vbox = nullptr;
+	GridContainer *enemy_element_rates_rows_vbox = nullptr;
 	Vector<OptionButton *> enemy_elem_preset_opts;
 	Vector<SpinBox *> enemy_elem_rate_spins;
 	Vector<int> enemy_elem_ids;
@@ -244,7 +262,7 @@ private:
 
 	// 2. Línea de tiempo de Frames (miniaturas con reordenar y quitar)
 	ScrollContainer *frames_strip_scroll = nullptr;
-	HBoxContainer *frames_strip_hbox = nullptr;
+	HFlowContainer *frames_strip_hbox = nullptr;
 	Button *btn_open_sheet_importer = nullptr;
 
 	// 3. Ventana "Añadir frames desde spritesheet"
@@ -368,6 +386,11 @@ private:
 	void _select_option_by_id_or_index(OptionButton *p_opt, int p_id_or_idx);
 	void _update_exp_preview();
 
+	void _init_chapters();
+	int _find_chapter_for_category(int p_category) const;
+	void _on_chapter_selected(int p_chapter_idx);
+	void _save_editor_ui_state();
+	Dictionary _load_editor_ui_state() const;
 	void _on_category_selected(int p_category);
 	void _refresh_category_view();
 	void _refresh_record_list();

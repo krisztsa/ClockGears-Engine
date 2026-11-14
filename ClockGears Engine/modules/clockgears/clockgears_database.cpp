@@ -15,8 +15,10 @@
 #include "core/io/image_loader.h"
 #include "core/io/json.h"
 #include "core/io/resource_loader.h"
+#include "core/os/os.h"
 #include "editor/clockgears_theme.h"
 #include "editor/editor_node.h"
+#include "editor/file_system/editor_paths.h"
 #include "editor/themes/editor_scale.h"
 #include "icons/clockgears_icons.h"
 #include "scene/gui/center_container.h"
@@ -24,6 +26,7 @@
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
+#include "servers/display/display_server.h"
 
 #define CG_DB_TR(m_str) String::utf8(m_str)
 
@@ -195,6 +198,12 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 				_update_anim_playback(get_process_delta_time());
 			}
 		} break;
+		case NOTIFICATION_WM_CLOSE_REQUEST:
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			if (!is_visible()) {
+				_save_editor_ui_state();
+			}
+		} break;
 	}
 }
 
@@ -291,7 +300,7 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 		case CAT_VOCABULARY:
 			return CG_DB_TR("Vocabulario");
 		case CAT_SWITCHES_VARS:
-			return CG_DB_TR("Interruptores y Variables");
+			return CG_DB_TR("Interruptores");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -573,6 +582,127 @@ Ref<Texture2D> ClockGearsDatabaseDialog::_load_texture_from_path(const String &p
 	return Ref<Texture2D>();
 }
 
+static String s_get_editor_db_ui_config_path() {
+	if (EditorPaths::get_singleton() && !EditorPaths::get_singleton()->get_config_dir().is_empty()) {
+		return EditorPaths::get_singleton()->get_config_dir().path_join("clockgears_database_ui.json");
+	}
+	return "user://clockgears_database_ui.json";
+}
+
+static void s_reparent_control(Control *p_ctrl, Control *p_new_parent) {
+	if (!p_ctrl || !p_new_parent || p_ctrl->get_parent() == p_new_parent) {
+		return;
+	}
+	if (p_ctrl->get_parent()) {
+		p_ctrl->get_parent()->remove_child(p_ctrl);
+	}
+	p_new_parent->add_child(p_ctrl);
+}
+
+void ClockGearsDatabaseDialog::_init_chapters() {
+	chapters.clear();
+	auto add_chap = [&](const char *p_name, std::initializer_list<int> p_cats) {
+		ChapterDef ch;
+		ch.name = CG_DB_TR(p_name);
+		for (int c : p_cats) {
+			ch.categories.push_back(c);
+		}
+		chapters.push_back(ch);
+	};
+
+	add_chap("Personajes", { CAT_ACTORS, CAT_CLASSES });
+	add_chap("Equipo", { CAT_WEAPONS, CAT_ARMORS, CAT_ACCESSORIES });
+	add_chap("Objetos", { CAT_ITEMS });
+	add_chap("Combate", { CAT_SKILLS, CAT_ENEMIES, CAT_TROOPS, CAT_STATES });
+	add_chap("Animaciones", { CAT_ANIMATIONS });
+	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
+	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
+
+	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
+	for (int c = 0; c < CAT_MAX; c++) {
+		bool found = false;
+		for (int i = 0; i < chapters.size(); i++) {
+			if (chapters[i].categories.has(c)) {
+				found = true;
+				break;
+			}
+		}
+		if (!found && !chapters.is_empty()) {
+			chapters.write[chapters.size() - 1].categories.push_back(c);
+		}
+	}
+}
+
+int ClockGearsDatabaseDialog::_find_chapter_for_category(int p_category) const {
+	for (int i = 0; i < chapters.size(); i++) {
+		if (chapters[i].categories.has(p_category)) {
+			return i;
+		}
+	}
+	return 0;
+}
+
+void ClockGearsDatabaseDialog::_on_chapter_selected(int p_chapter_idx) {
+	if (p_chapter_idx < 0 || p_chapter_idx >= chapters.size()) {
+		return;
+	}
+	current_chapter = p_chapter_idx;
+	for (int i = 0; i < chapter_buttons.size(); i++) {
+		if (chapter_buttons[i]) {
+			chapter_buttons[i]->set_pressed_no_signal(i == current_chapter);
+		}
+	}
+	const Vector<int> &cats = chapters[current_chapter].categories;
+	for (int c = 0; c < category_buttons.size(); c++) {
+		if (category_buttons[c]) {
+			category_buttons[c]->set_visible(cats.has(c));
+		}
+	}
+	if (!cats.has(current_category) && !cats.is_empty()) {
+		_on_category_selected(cats[0]);
+	} else {
+		_save_editor_ui_state();
+	}
+}
+
+Dictionary ClockGearsDatabaseDialog::_load_editor_ui_state() const {
+	String path = s_get_editor_db_ui_config_path();
+	if (FileAccess::exists(path)) {
+		Ref<FileAccess> f = FileAccess::open(path, FileAccess::READ);
+		if (f.is_valid()) {
+			Variant v = JSON::parse_string(f->get_as_text());
+			if (v.get_type() == Variant::DICTIONARY) {
+				return Dictionary(v);
+			}
+		}
+	}
+	return Dictionary();
+}
+
+void ClockGearsDatabaseDialog::_save_editor_ui_state() {
+	Dictionary d = _load_editor_ui_state();
+	Size2i cur_sz = get_size();
+	Size2i min_sz = get_min_size();
+	if (is_inside_tree() && cur_sz.x >= min_sz.x && cur_sz.y >= min_sz.y) {
+		d["window_w"] = cur_sz.x;
+		d["window_h"] = cur_sz.y;
+	}
+	if (is_inside_tree() && is_visible()) {
+		Point2i pos = get_position();
+		d["window_x"] = pos.x;
+		d["window_y"] = pos.y;
+		d["has_pos"] = true;
+	}
+	d["last_chapter"] = current_chapter;
+	d["last_category"] = current_category;
+
+	String path = s_get_editor_db_ui_config_path();
+	Ref<FileAccess> f = FileAccess::open(path, FileAccess::WRITE);
+	if (f.is_valid()) {
+		f->store_string(JSON::stringify(d, "\t"));
+	}
+}
+
 void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 	if (p_category < 0 || p_category >= CAT_MAX) {
 		return;
@@ -587,9 +717,23 @@ void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
 		}
 	}
 	current_category = p_category;
-	for (int i = 0; i < category_buttons.size(); i++) {
-		category_buttons[i]->set_pressed_no_signal(i == current_category);
+	current_chapter = _find_chapter_for_category(current_category);
+
+	for (int i = 0; i < chapter_buttons.size(); i++) {
+		if (chapter_buttons[i]) {
+			chapter_buttons[i]->set_pressed_no_signal(i == current_chapter);
+		}
 	}
+	const Vector<int> &chap_cats = (current_chapter >= 0 && current_chapter < chapters.size())
+			? chapters[current_chapter].categories
+			: Vector<int>();
+	for (int i = 0; i < category_buttons.size(); i++) {
+		if (category_buttons[i]) {
+			category_buttons[i]->set_visible(chap_cats.is_empty() || chap_cats.has(i));
+			category_buttons[i]->set_pressed_no_signal(i == current_category);
+		}
+	}
+	_save_editor_ui_state();
 	_refresh_category_view();
 }
 
@@ -598,42 +742,48 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 
 	String cat_name = _get_category_name(current_category);
 	if (col1_title) {
-		col1_title->set_text(vformat(CG_DB_TR("Lista de %s"), cat_name));
+		col1_title->set_text(cat_name);
 	}
 	if (col2_title) {
-		col2_title->set_text(vformat(CG_DB_TR("Parámetros de %s"), cat_name));
+		col2_title->set_text(CG_DB_TR("Datos generales"));
 	}
 
 	bool is_system = (current_category == CAT_SYSTEM);
 	bool is_tileset = (current_category == CAT_TILESETS);
 	bool is_troops = (current_category == CAT_TROOPS);
-	bool is_actor_or_enemy = (current_category == CAT_ACTORS || current_category == CAT_ENEMIES);
+	bool is_enemy = (current_category == CAT_ENEMIES);
+	bool is_actor = (current_category == CAT_ACTORS);
+	bool is_classes = (current_category == CAT_CLASSES);
+	bool is_actor_or_enemy = (is_actor || is_enemy);
+	bool has_single_graphic = (current_category == CAT_ITEMS || current_category == CAT_WEAPONS ||
+			current_category == CAT_ARMORS || current_category == CAT_ACCESSORIES ||
+			current_category == CAT_SKILLS || current_category == CAT_STATES ||
+			current_category == CAT_CLASSES || current_category == CAT_FLORA ||
+			current_category == CAT_FAUNA || current_category == CAT_ANIMATIONS);
 
 	if (col1_box) {
 		col1_box->set_visible(!is_system);
 	}
+	if (general_section_box) {
+		general_section_box->set_visible(!is_system);
+	}
 	if (params_grid) {
-		params_grid->set_visible(!is_system);
+		params_grid->set_visible(!is_system && !is_troops && !is_classes && current_category != CAT_VOCABULARY && current_category != CAT_SWITCHES_VARS);
 	}
 	if (system_panel) {
 		system_panel->set_visible(is_system);
 	}
-	if (col3_title) {
-		if (is_actor_or_enemy) {
-			col3_title->set_text(current_category == CAT_ENEMIES ? CG_DB_TR("Animaciones por Ranuras con Nombre (Idle, Ataque, Daño, Muerte, Buff y Lanzamientos)") : CG_DB_TR("Sprite & Animaciones (SpriteFrames)"));
-		} else if (is_troops) {
-			col3_title->set_text(CG_DB_TR("Vista Previa de Colocación de Tropa (Resolución de Batalla)"));
-		} else if (is_tileset) {
-			col3_title->set_text(CG_DB_TR("Visor de Tilesets & Colisiones"));
-		} else {
-			col3_title->set_text(CG_DB_TR("Gráfico / Sprite / Icono"));
+	if (main_editor_tabs) {
+		main_editor_tabs->set_tabs_visible(is_actor_or_enemy);
+		main_editor_tabs->set_tab_hidden(0, false);
+		main_editor_tabs->set_tab_hidden(1, !is_enemy);
+		main_editor_tabs->set_tab_hidden(2, !is_actor_or_enemy);
+		if (!is_actor_or_enemy || (is_actor && main_editor_tabs->get_current_tab() == 1)) {
+			main_editor_tabs->set_current_tab(0);
 		}
 	}
-	if (col3_box) {
-		col3_box->set_visible(!is_system);
-	}
-	if (col3_scroll_container) {
-		col3_scroll_container->set_visible(!is_system);
+	if (traits_box && combat_tab_vbox && col2_box) {
+		s_reparent_control(traits_box, is_enemy ? combat_tab_vbox : col2_box);
 	}
 	if (sprite_anim_editor_box) {
 		sprite_anim_editor_box->set_visible(is_actor_or_enemy);
@@ -648,48 +798,50 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		troop_placement_col3_box->set_visible(is_troops);
 	}
 	if (standard_graphic_box) {
-		standard_graphic_box->set_visible(!is_actor_or_enemy && !is_tileset && !is_troops);
+		standard_graphic_box->set_visible(has_single_graphic);
+	}
+	if (tileset_main_hbox) {
+		tileset_main_hbox->set_visible(is_tileset);
+	}
+	if (tileset_slots_box) {
+		tileset_slots_box->set_visible(is_tileset);
 	}
 	if (tileset_collision_box) {
 		tileset_collision_box->set_visible(is_tileset);
 	}
 	if (col2_scroll_container) {
-		col2_scroll_container->set_stretch_ratio(is_system ? 1.0f : 0.36f);
-		col2_scroll_container->set_horizontal_scroll_mode(is_system ? ScrollContainer::SCROLL_MODE_DISABLED : ScrollContainer::SCROLL_MODE_AUTO);
+		col2_scroll_container->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 		col2_scroll_container->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	}
-	if (col2_box) {
-		col2_box->set_custom_minimum_size(is_system ? Size2(0, 0) : Size2(250 * EDSCALE, 0));
-	}
-	if (tileset_slots_box) {
-		tileset_slots_box->set_visible(is_tileset);
-	}
 	if (enemy_element_rates_box) {
-		enemy_element_rates_box->set_visible(current_category == CAT_ENEMIES);
+		enemy_element_rates_box->set_visible(is_enemy);
 	}
 	if (enemy_drops_box) {
-		enemy_drops_box->set_visible(current_category == CAT_ENEMIES);
+		enemy_drops_box->set_visible(is_enemy);
 	}
 	if (enemy_actions_box) {
-		enemy_actions_box->set_visible(current_category == CAT_ENEMIES);
+		enemy_actions_box->set_visible(is_enemy);
 	}
 	if (enemy_casts_box) {
-		enemy_casts_box->set_visible(current_category == CAT_ENEMIES);
+		enemy_casts_box->set_visible(is_enemy);
 	}
 	if (enemy_others_box) {
-		enemy_others_box->set_visible(current_category == CAT_ENEMIES);
+		enemy_others_box->set_visible(is_enemy);
 	}
 	if (combat_anims_box) {
-		combat_anims_box->set_visible(current_category == CAT_ACTORS);
+		combat_anims_box->set_visible(is_actor);
 	}
-	if (traits_box) {
-		traits_box->set_visible(!is_system);
-	}
-	if (effects_box) {
-		effects_box->set_visible(!is_system);
+	if (btn_add_anim) {
+		btn_add_anim->set_text(is_enemy ? CG_DB_TR("Nueva") : CG_DB_TR("Nueva"));
+		btn_add_anim->set_tooltip_text(is_enemy ? CG_DB_TR("Añadir una nueva ranura de Lanzamiento") : CG_DB_TR("Añadir una nueva animación vacía"));
 	}
 
 	if (is_system) {
+		if (stats_section_box) stats_section_box->set_visible(false);
+		if (exp_section_box) exp_section_box->set_visible(false);
+		if (invocation_section_box) invocation_section_box->set_visible(false);
+		if (traits_box) traits_box->set_visible(false);
+		if (effects_box) effects_box->set_visible(false);
 		if (ClockGearsDataManager::get_singleton()) {
 			system_config = ClockGearsDataManager::get_singleton()->get_system_config();
 		}
@@ -722,24 +874,6 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		_refresh_system_maps_and_party();
 		updating_ui = false;
 		return;
-	}
-
-	if (standard_graphic_box) {
-		standard_graphic_box->set_visible(!is_actor_or_enemy && !is_tileset && !is_troops);
-	}
-	if (tileset_collision_box) {
-		tileset_collision_box->set_visible(is_tileset);
-	}
-	if (col3_title) {
-		if (is_actor_or_enemy) {
-			col3_title->set_text(current_category == CAT_ENEMIES ? CG_DB_TR("Animaciones por Ranuras con Nombre (Idle, Ataque, Daño, Muerte, Buff y Lanzamientos)") : CG_DB_TR("Sprite & Animaciones (SpriteFrames)"));
-		} else if (is_troops) {
-			col3_title->set_text(CG_DB_TR("Vista Previa de Colocación de Tropa (Resolución de Batalla)"));
-		} else if (is_tileset) {
-			col3_title->set_text(CG_DB_TR("Hoja y Máscara de Colisión (O / X / ★)"));
-		} else {
-			col3_title->set_text(CG_DB_TR("Gráfico / Sprite / Icono"));
-		}
 	}
 
 	// Configurar desplegables por categoría usando EXCLUSIVAMENTE catálogos del sistema
@@ -946,7 +1080,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	tertiary_option->set_visible(show_tertiary_type);
 
 	// Mostrar los 4 SpinBox numéricos de la fórmula de EXP (Sección 9.3) solo en CAT_CLASSES
-	bool is_classes = (current_category == CAT_CLASSES);
+	if (exp_section_box) {
+		exp_section_box->set_visible(is_classes);
+	}
 	for (int i = 0; i < 4; i++) {
 		if (exp_labels[i]) {
 			exp_labels[i]->set_visible(is_classes);
@@ -965,7 +1101,6 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_equip = (current_category == CAT_WEAPONS || current_category == CAT_ARMORS || current_category == CAT_ACCESSORIES);
 	bool is_item = (current_category == CAT_ITEMS);
 	bool is_skill = (current_category == CAT_SKILLS);
-	bool is_enemy = (current_category == CAT_ENEMIES);
 
 	// Sección 5.1 y 5.2: Precio y Precio de Venta
 	bool show_price = (is_equip || is_item);
@@ -1098,6 +1233,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 
 	bool show_stats = (current_category == CAT_ACTORS || current_category == CAT_CLASSES ||
 			is_equip || is_enemy);
+	if (stats_section_box) {
+		stats_section_box->set_visible(show_stats);
+	}
 	for (int i = 0; i < 8; i++) {
 		stat_labels[i]->set_visible(show_stats);
 		stat_spins[i]->set_visible(show_stats);
@@ -1107,6 +1245,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	}
 
 	bool show_formula = (is_skill || is_item || current_category == CAT_COMMON_EVENTS);
+	if (invocation_section_box) {
+		invocation_section_box->set_visible(show_invocation || show_formula);
+	}
 	formula_label->set_visible(show_formula);
 	formula_edit->set_visible(show_formula);
 	if (current_category == CAT_COMMON_EVENTS) {
@@ -3002,9 +3143,8 @@ void ClockGearsDatabaseDialog::_on_tileset_collision_changed() {
 void ClockGearsDatabaseDialog::_on_window_size_changed() {
 	Size2i cur_sz = get_size();
 	Size2i min_sz = get_min_size();
-	if (cur_sz.x >= min_sz.x && cur_sz.y >= min_sz.y && ProjectSettings::get_singleton()) {
-		ProjectSettings::get_singleton()->set_setting("clockgears/editor/database_window_size", cur_sz);
-		ProjectSettings::get_singleton()->save();
+	if (cur_sz.x >= min_sz.x && cur_sz.y >= min_sz.y) {
+		_save_editor_ui_state();
 	}
 }
 
@@ -3203,17 +3343,16 @@ void ClockGearsDatabaseDialog::load_from_disk() {
 void ClockGearsDatabaseDialog::set_remembered_window_size(const Vector2i &p_size) {
 	Size2i clamped = p_size.max(get_min_size());
 	set_size(clamped);
-	if (ProjectSettings::get_singleton()) {
-		ProjectSettings::get_singleton()->set_setting("clockgears/editor/database_window_size", clamped);
-		ProjectSettings::get_singleton()->save();
-	}
+	_save_editor_ui_state();
 }
 
 Vector2i ClockGearsDatabaseDialog::get_remembered_window_size() const {
-	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("clockgears/editor/database_window_size")) {
-		Variant v = ProjectSettings::get_singleton()->get_setting("clockgears/editor/database_window_size");
-		if (v.get_type() == Variant::VECTOR2I || v.get_type() == Variant::VECTOR2) {
-			return Vector2i(v).max(get_min_size());
+	Dictionary st = _load_editor_ui_state();
+	if (st.has("window_w") && st.has("window_h")) {
+		int sw = int(st.get("window_w", 0));
+		int sh = int(st.get("window_h", 0));
+		if (sw >= get_min_size().x && sh >= get_min_size().y) {
+			return Vector2i(sw, sh);
 		}
 	}
 	return get_size().max(get_min_size());
@@ -3223,31 +3362,27 @@ Dictionary ClockGearsDatabaseDialog::check_layout_fits_window(const Vector2i &p_
 	Dictionary res;
 	int win_w = MAX(p_window_size.x, get_min_size().x);
 	int win_h = MAX(p_window_size.y, get_min_size().y);
-	int left_min_w = left_sidebar_panel ? int(left_sidebar_panel->get_custom_minimum_size().x) : 140;
-	int col1_min_w = col1_box ? int(col1_box->get_custom_minimum_size().x) : 140;
-	int col2_min_w = col2_scroll_container ? int(col2_scroll_container->get_custom_minimum_size().x) : 200;
-	int col3_min_w = col3_scroll_container ? int(col3_scroll_container->get_custom_minimum_size().x) : 220;
-	int picker_min_w = db_tile_picker ? int(db_tile_picker->get_combined_minimum_size().x) : 180;
-	int total_min_w = left_min_w + 10 + col1_min_w + 8 + col2_min_w + 8 + MAX(col3_min_w, picker_min_w) + 16;
+	int col1_min_w = col1_box ? int(col1_box->get_custom_minimum_size().x) : 200;
+	int col2_min_w = col2_scroll_container ? int(col2_scroll_container->get_custom_minimum_size().x) : 320;
+	int picker_min_w = db_tile_picker ? int(db_tile_picker->get_combined_minimum_size().x) : 240;
+	int total_min_w = col1_min_w + 16 + MAX(col2_min_w, picker_min_w) + 24;
 
-	int right_avail = MAX(100, win_w - left_min_w - 26);
-	int alloc_col1 = MAX(col1_min_w, int(right_avail * 0.20f));
-	int alloc_col2 = MAX(col2_min_w, int(right_avail * 0.36f));
-	int alloc_col3 = MAX(col3_min_w, right_avail - alloc_col1 - alloc_col2 - 16);
+	int alloc_col1 = col1_min_w;
+	int alloc_col2 = MAX(col2_min_w, win_w - alloc_col1 - 40);
 
 	res["window_size"] = Vector2i(win_w, win_h);
-	res["left_min_w"] = left_min_w;
+	res["left_min_w"] = 0;
 	res["col1_min_w"] = col1_min_w;
 	res["col2_min_w"] = col2_min_w;
-	res["col3_min_w"] = col3_min_w;
+	res["col3_min_w"] = 0;
 	res["picker_min_w"] = picker_min_w;
 	res["total_min_w"] = total_min_w;
 	res["alloc_col1_w"] = alloc_col1;
 	res["alloc_col2_w"] = alloc_col2;
-	res["alloc_col3_w"] = alloc_col3;
+	res["alloc_col3_w"] = alloc_col2;
 	res["help_wraps"] = true;
 	res["picker_has_scrollbars"] = (db_tile_picker != nullptr);
-	res["fits_horizontally"] = (total_min_w <= win_w) && (picker_min_w <= alloc_col3);
+	res["fits_horizontally"] = (total_min_w <= win_w);
 	return res;
 }
 
@@ -3378,73 +3513,95 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	set_process(true);
 	set_process_internal(true);
 	set_title(CG_DB_TR("Base de Datos - ClockGears Engine"));
-	// Bug 4c / PROBLEMA A: Redimensionable, recuerda su tamaño y ajusta los 3 paneles sin desbordar
 	set_wrap_controls(false);
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
-	set_min_size(Size2(720, 440) * EDSCALE);
+	set_min_size(Size2i(1000, 640));
 	connect("size_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_window_size_changed));
 
+	_init_chapters();
 	_init_empty_database();
 	if (EditorNode::get_singleton()) {
 		_load_database_from_disk();
 	}
 
-	HSplitContainer *main_hsplit = memnew(HSplitContainer);
-	main_hsplit->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	main_hsplit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	main_hsplit->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	main_hsplit->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	main_hsplit->add_theme_constant_override("separation", 8);
-	add_child(main_hsplit);
-
-	// ========================================================================
-	// LEFT SIDEBAR (~150px): 19 Categorías dentro de ScrollContainer
-	// ========================================================================
-	PanelContainer *left_panel = memnew(PanelContainer);
-	left_sidebar_panel = left_panel;
-	left_panel->set_custom_minimum_size(Size2(150 * EDSCALE, 0));
-	left_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	left_panel->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	Ref<StyleBoxFlat> left_style = memnew(StyleBoxFlat);
-	left_style->set_anti_aliased(false);
-	left_style->set_bg_color(Color(0.12f, 0.13f, 0.15f, 1.0f));
-	left_style->set_content_margin_all(5);
-	left_panel->add_theme_style_override("panel", left_style);
-	main_hsplit->add_child(left_panel);
-
-	VBoxContainer *left_outer_vb = memnew(VBoxContainer);
-	left_outer_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	left_outer_vb->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	left_outer_vb->add_theme_constant_override("separation", 4);
-	left_panel->add_child(left_outer_vb);
-
-	Label *cat_header = memnew(Label(CG_DB_TR("Categorías")));
-	cat_header->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	left_outer_vb->add_child(cat_header);
-	left_outer_vb->add_child(memnew(HSeparator));
-
-	ScrollContainer *cat_scroll = memnew(ScrollContainer);
-	cat_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	cat_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	cat_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	cat_scroll->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	left_outer_vb->add_child(cat_scroll);
-
-	VBoxContainer *cat_vbox = memnew(VBoxContainer);
-	cat_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	cat_vbox->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	cat_vbox->add_theme_constant_override("separation", 4);
-	cat_scroll->add_child(cat_vbox);
+	left_sidebar_panel = nullptr;
+	col3_scroll_container = nullptr;
+	col3_box = nullptr;
+	col3_title = nullptr;
+	anim_item_list = nullptr;
 
 	const int int_scale = MAX(1, (int)Math::floor(EDSCALE + 0.001f));
+	const float row_h = 32.0f * EDSCALE;
+
+	MarginContainer *root_margin = memnew(MarginContainer);
+	root_margin->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	root_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	root_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	root_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
+	add_child(root_margin);
+
+	VBoxContainer *main_vbox = memnew(VBoxContainer);
+	main_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	main_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	main_vbox->add_theme_constant_override("separation", int(8 * EDSCALE));
+	root_margin->add_child(main_vbox);
+
+	// ========================================================================
+	// TOP BAR 1: CAPÍTULOS (Personajes, Equipo, Objetos, Combate, Animaciones, Mundo, Sistema)
+	// ========================================================================
+	PanelContainer *chapters_panel = memnew(PanelContainer);
+	chapters_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	Ref<StyleBoxFlat> chap_bar_style = memnew(StyleBoxFlat);
+	chap_bar_style->set_anti_aliased(false);
+	chap_bar_style->set_bg_color(Color(0.11f, 0.12f, 0.15f, 1.0f));
+	chap_bar_style->set_content_margin_all(int(4 * EDSCALE));
+	chap_bar_style->set_corner_radius_all(4);
+	chapters_panel->add_theme_style_override("panel", chap_bar_style);
+	main_vbox->add_child(chapters_panel);
+
+	HBoxContainer *chapters_bar = memnew(HBoxContainer);
+	chapters_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	chapters_bar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	chapters_panel->add_child(chapters_bar);
+
+	for (int c = 0; c < chapters.size(); c++) {
+		Button *cbtn = memnew(Button(chapters[c].name));
+		cbtn->set_toggle_mode(true);
+		cbtn->set_pressed(c == 0);
+		cbtn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		cbtn->set_custom_minimum_size(Size2(0, row_h));
+		cbtn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_chapter_selected).bind(c));
+		chapters_bar->add_child(cbtn);
+		chapter_buttons.push_back(cbtn);
+	}
+
+	// ========================================================================
+	// TOP BAR 2: CATEGORÍAS DEL CAPÍTULO ACTIVO (Icono pequeño + Nombre)
+	// ========================================================================
+	PanelContainer *cats_panel = memnew(PanelContainer);
+	cats_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	Ref<StyleBoxFlat> cat_bar_style = memnew(StyleBoxFlat);
+	cat_bar_style->set_anti_aliased(false);
+	cat_bar_style->set_bg_color(Color(0.14f, 0.15f, 0.19f, 1.0f));
+	cat_bar_style->set_content_margin_all(int(4 * EDSCALE));
+	cat_bar_style->set_corner_radius_all(4);
+	cats_panel->add_theme_style_override("panel", cat_bar_style);
+	main_vbox->add_child(cats_panel);
+
+	HBoxContainer *cats_bar = memnew(HBoxContainer);
+	cats_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cats_bar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	cats_panel->add_child(cats_bar);
+
 	for (int i = 0; i < CAT_MAX; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_toggle_mode(true);
-		btn->set_clip_text(true);
-		btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
-		btn->set_custom_minimum_size(Size2(0, MAX(26 * EDSCALE, 36 * int_scale)));
+		btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
 		btn->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-		btn->add_theme_constant_override("icon_max_width", 32 * int_scale);
+		btn->add_theme_constant_override("icon_max_width", 20 * int_scale);
 		btn->add_theme_color_override("icon_normal_color", Color(1, 1, 1, 1));
 		btn->add_theme_color_override("icon_hover_color", Color(1, 1, 1, 1));
 		btn->add_theme_color_override("icon_pressed_color", Color(1, 1, 1, 1));
@@ -3455,119 +3612,245 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 			btn->set_button_icon(ClockGearsIcons::get_singleton()->get_db_category_icon(i, float(int_scale)));
 		}
 		btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_category_selected).bind(i));
-		cat_vbox->add_child(btn);
+		cats_bar->add_child(btn);
 		category_buttons.push_back(btn);
 	}
 
 	// ========================================================================
-	// RIGHT EDITOR AREA: 3-Column HBoxContainer (List | Parameters | Sheet/Graphics)
+	// MAIN AREA: SOLO DOS COLUMNAS (Columna 1: Lista ~208px | Columna 2: Editor)
 	// ========================================================================
-	HBoxContainer *right_hbox = memnew(HBoxContainer);
-	right_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	right_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	right_hbox->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	right_hbox->add_theme_constant_override("separation", 8);
-	main_hsplit->add_child(right_hbox);
+	HBoxContainer *two_col_hbox = memnew(HBoxContainer);
+	two_col_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	two_col_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	two_col_hbox->add_theme_constant_override("separation", int(12 * EDSCALE));
+	main_vbox->add_child(two_col_hbox);
 
-	// --- COLUMN 1: Record List + "+", "-", "Max", "Copiar", "Pegar" (stretch 0.22) ---
+	// --- COLUMNA 1: Lista de registros (~208px fijo) + "+", "-", "Max", "Copiar", "Pegar" ---
 	col1_box = memnew(VBoxContainer);
-	col1_box->set_custom_minimum_size(Size2(140 * EDSCALE, 0));
-	col1_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	col1_box->set_custom_minimum_size(Size2(208 * EDSCALE, 0));
+	col1_box->set_h_size_flags(Control::SIZE_FILL);
 	col1_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	col1_box->set_stretch_ratio(0.20f);
-	col1_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	col1_box->add_theme_constant_override("separation", 6);
-	right_hbox->add_child(col1_box);
+	col1_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	two_col_hbox->add_child(col1_box);
 
 	col1_title = memnew(Label(CG_DB_TR("Lista de Actores")));
 	col1_title->set_clip_text(true);
+	col1_title->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	col1_box->add_child(col1_title);
 
 	record_list = memnew(ItemList);
 	record_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	record_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	record_list->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
+	record_list->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
 	record_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_record_selected));
 	col1_box->add_child(record_list);
 
-	// Los 5 botones (+, -, Max, Copiar, Pegar) siempre visibles y compactos debajo de la lista
 	HBoxContainer *list_btn_row = memnew(HBoxContainer);
 	list_btn_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	list_btn_row->set_v_size_flags(Control::SIZE_SHRINK_END);
-	list_btn_row->add_theme_constant_override("separation", 3);
+	list_btn_row->add_theme_constant_override("separation", int(3 * EDSCALE));
 	col1_box->add_child(list_btn_row);
 
 	btn_add_record = memnew(Button("+"));
-	btn_add_record->set_custom_minimum_size(Size2(26 * EDSCALE, 26 * EDSCALE));
+	btn_add_record->set_custom_minimum_size(Size2(24 * EDSCALE, row_h));
 	btn_add_record->set_tooltip_text(CG_DB_TR("Añadir nuevo registro"));
 	btn_add_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_record_pressed));
 	list_btn_row->add_child(btn_add_record);
 
 	btn_remove_record = memnew(Button("-"));
-	btn_remove_record->set_custom_minimum_size(Size2(26 * EDSCALE, 26 * EDSCALE));
+	btn_remove_record->set_custom_minimum_size(Size2(24 * EDSCALE, row_h));
 	btn_remove_record->set_tooltip_text(CG_DB_TR("Eliminar registro seleccionado"));
 	btn_remove_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_record_pressed));
 	list_btn_row->add_child(btn_remove_record);
 
 	btn_change_max = memnew(Button(CG_DB_TR("Max")));
-	btn_change_max->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_change_max->set_clip_text(true);
+	btn_change_max->set_custom_minimum_size(Size2(38 * EDSCALE, row_h));
 	btn_change_max->set_tooltip_text(CG_DB_TR("Cambiar cantidad máxima de registros"));
 	btn_change_max->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_change_max_pressed));
 	list_btn_row->add_child(btn_change_max);
 
 	btn_copy_record = memnew(Button(CG_DB_TR("Copiar")));
 	btn_copy_record->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_copy_record->set_clip_text(true);
+	btn_copy_record->set_custom_minimum_size(Size2(52 * EDSCALE, row_h));
 	btn_copy_record->set_tooltip_text(CG_DB_TR("Copiar el registro seleccionado"));
 	btn_copy_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_copy_record_pressed));
 	list_btn_row->add_child(btn_copy_record);
 
 	btn_paste_record = memnew(Button(CG_DB_TR("Pegar")));
 	btn_paste_record->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_paste_record->set_clip_text(true);
+	btn_paste_record->set_custom_minimum_size(Size2(50 * EDSCALE, row_h));
 	btn_paste_record->set_tooltip_text(CG_DB_TR("Pegar el registro copiado"));
 	btn_paste_record->set_disabled(true);
 	btn_paste_record->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_paste_record_pressed));
 	list_btn_row->add_child(btn_paste_record);
 
-	// --- COLUMN 2: Parameters inside ScrollContainer (stretch 0.40) ---
+	// --- COLUMNA 2: Editor (todo el ancho restante) ---
+	main_editor_tabs = memnew(TabContainer);
+	main_editor_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	main_editor_tabs->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	main_editor_tabs->set_tabs_visible(true);
+	two_col_hbox->add_child(main_editor_tabs);
+
+	// Pestaña 0: "General"
 	ScrollContainer *col2_scroll = memnew(ScrollContainer);
 	col2_scroll_container = col2_scroll;
-	col2_scroll->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
+	col2_scroll->set_name(CG_DB_TR("General"));
+	col2_scroll->set_custom_minimum_size(Size2(320 * EDSCALE, 0));
 	col2_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	col2_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	col2_scroll->set_stretch_ratio(0.40f);
-	col2_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
-	col2_scroll->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	right_hbox->add_child(col2_scroll);
+	col2_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	col2_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	main_editor_tabs->add_child(col2_scroll);
+
+	MarginContainer *tab0_margin = memnew(MarginContainer);
+	tab0_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab0_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tab0_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	col2_scroll->add_child(tab0_margin);
 
 	col2_box = memnew(VBoxContainer);
-	col2_box->set_custom_minimum_size(Size2(0, 0));
 	col2_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	col2_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	col2_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	col2_box->add_theme_constant_override("separation", 8);
-	col2_scroll->add_child(col2_box);
+	col2_box->add_theme_constant_override("separation", int(16 * EDSCALE));
+	tab0_margin->add_child(col2_box);
 
-	col2_title = memnew(Label(CG_DB_TR("Parámetros Generales")));
-	col2_title->set_clip_text(true);
-	col2_box->add_child(col2_title);
-	col2_box->add_child(memnew(HSeparator));
+	// Pestaña 1: "Combate" (Enemigos: Debilidades, Patrones IA y Rasgos)
+	ScrollContainer *combat_tab_scroll = memnew(ScrollContainer);
+	combat_tab_scroll->set_name(CG_DB_TR("Combate"));
+	combat_tab_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	combat_tab_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	combat_tab_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	combat_tab_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	main_editor_tabs->add_child(combat_tab_scroll);
+
+	MarginContainer *tab1_margin = memnew(MarginContainer);
+	tab1_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab1_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tab1_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	combat_tab_scroll->add_child(tab1_margin);
+
+	combat_tab_vbox = memnew(VBoxContainer);
+	combat_tab_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	combat_tab_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	combat_tab_vbox->add_theme_constant_override("separation", int(16 * EDSCALE));
+	tab1_margin->add_child(combat_tab_vbox);
+
+	// Pestaña 2: "Animaciones" (Actores y Enemigos)
+	anim_editor_scroll = memnew(ScrollContainer);
+	anim_editor_scroll->set_name(CG_DB_TR("Animaciones"));
+	anim_editor_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_editor_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_editor_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	anim_editor_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	main_editor_tabs->add_child(anim_editor_scroll);
+
+	MarginContainer *tab2_margin = memnew(MarginContainer);
+	tab2_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab2_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tab2_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	anim_editor_scroll->add_child(tab2_margin);
+
+	sprite_anim_editor_box = memnew(VBoxContainer);
+	sprite_anim_editor_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sprite_anim_editor_box->add_theme_constant_override("separation", int(16 * EDSCALE));
+	tab2_margin->add_child(sprite_anim_editor_box);
+
+	// ========================================================================
+	// SECCIÓN 1 EN TAB GENERAL: DATOS GENERALES + RECUADRO FIJO 96x96 A LA DERECHA
+	// ========================================================================
+	general_section_box = memnew(VBoxContainer);
+	general_section_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	general_section_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	col2_box->add_child(general_section_box);
+
+	col2_title = memnew(Label(CG_DB_TR("General")));
+	col2_title->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	general_section_box->add_child(col2_title);
+	general_section_box->add_child(memnew(HSeparator));
+
+	HBoxContainer *gen_top_hbox = memnew(HBoxContainer);
+	gen_top_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gen_top_hbox->add_theme_constant_override("separation", int(16 * EDSCALE));
+	general_section_box->add_child(gen_top_hbox);
 
 	params_grid = memnew(GridContainer);
-	params_grid->set_columns(2);
+	params_grid->set_columns(4); // 2 pares de (Etiqueta + Campo) por fila
 	params_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	params_grid->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	params_grid->add_theme_constant_override("h_separation", 8);
-	params_grid->add_theme_constant_override("v_separation", 6);
-	col2_box->add_child(params_grid);
+	params_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	params_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	gen_top_hbox->add_child(params_grid);
+
+	// Recuadro fijo de 96x96 a la derecha cuando la categoría usa un gráfico/icono
+	standard_graphic_box = memnew(VBoxContainer);
+	standard_graphic_box->set_h_size_flags(Control::SIZE_FILL);
+	standard_graphic_box->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
+	standard_graphic_box->set_custom_minimum_size(Size2(140 * EDSCALE, 0));
+	standard_graphic_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	gen_top_hbox->add_child(standard_graphic_box);
+
+	CenterContainer *graphic_center = memnew(CenterContainer);
+	graphic_center->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	standard_graphic_box->add_child(graphic_center);
+
+	graphic_frame = memnew(PanelContainer);
+	graphic_frame->set_custom_minimum_size(Size2(96 * EDSCALE, 96 * EDSCALE));
+	Ref<StyleBoxFlat> dark_frame = memnew(StyleBoxFlat);
+	dark_frame->set_anti_aliased(false);
+	dark_frame->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
+	dark_frame->set_border_width_all(1);
+	dark_frame->set_border_color(Color(0.28f, 0.31f, 0.37f, 1.0f));
+	dark_frame->set_content_margin_all(4);
+	graphic_frame->add_theme_style_override("panel", dark_frame);
+	graphic_center->add_child(graphic_frame);
+
+	graphic_preview = memnew(TextureRect);
+	graphic_preview->set_custom_minimum_size(Size2(88 * EDSCALE, 88 * EDSCALE));
+	graphic_preview->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	graphic_preview->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	graphic_preview->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	graphic_preview->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	graphic_preview->set_tooltip_text(CG_DB_TR("Doble clic para abrir el explorador y asignar Sprite o Icono (96x96)"));
+	graphic_preview->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_graphic_gui_input));
+	graphic_frame->add_child(graphic_preview);
+
+	graphic_path_label = memnew(Label(CG_DB_TR("(Sin gráfico)")));
+	graphic_path_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	graphic_path_label->set_clip_text(true);
+	graphic_path_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	graphic_path_label->set_tooltip_text(CG_DB_TR("Ruta del gráfico asignado. Doble clic para asignar."));
+	standard_graphic_box->add_child(graphic_path_label);
+
+	btn_select_graphic = memnew(Button(CG_DB_TR("Cambiar gráfico...")));
+	btn_select_graphic->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_select_graphic->set_custom_minimum_size(Size2(0, row_h));
+	btn_select_graphic->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_select_graphic_pressed));
+	standard_graphic_box->add_child(btn_select_graphic);
+
+	btn_pick_tile_graphic = memnew(Button(CG_DB_TR("TilePicker...")));
+	btn_pick_tile_graphic->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_pick_tile_graphic->set_custom_minimum_size(Size2(0, row_h));
+	btn_pick_tile_graphic->set_tooltip_text(CG_DB_TR("Seleccionar celda 32x32 desde una hoja de tiles"));
+	btn_pick_tile_graphic->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_pick_tile_graphic_pressed));
+	standard_graphic_box->add_child(btn_pick_tile_graphic);
+
+	tile_picker_dialog = memnew(ClockGearsTilePickerDialog);
+	add_child(tile_picker_dialog);
 
 	Label *lbl_nom = memnew(Label(CG_DB_TR("Nombre:")));
 	lbl_nom->set_tooltip_text(CG_DB_TR("Nombre identificador"));
 	params_grid->add_child(lbl_nom);
 	name_edit = memnew(LineEdit);
 	name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	name_edit->set_custom_minimum_size(Size2(150 * EDSCALE, row_h));
 	name_edit->set_focus_mode(Control::FOCUS_ALL);
 	name_edit->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	name_edit->set_editable(true);
@@ -3580,6 +3863,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	params_grid->add_child(lbl_desc);
 	desc_edit = memnew(LineEdit);
 	desc_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	desc_edit->set_custom_minimum_size(Size2(150 * EDSCALE, row_h));
 	desc_edit->set_focus_mode(Control::FOCUS_ALL);
 	desc_edit->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	desc_edit->set_editable(true);
@@ -3592,6 +3876,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	params_grid->add_child(type_label);
 	type_option = memnew(OptionButton);
 	type_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	type_option->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
 	type_option->set_clip_text(true);
 	type_option->set_focus_mode(Control::FOCUS_ALL);
 	type_option->set_mouse_filter(Control::MOUSE_FILTER_STOP);
@@ -3603,6 +3888,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	params_grid->add_child(secondary_label);
 	secondary_option = memnew(OptionButton);
 	secondary_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	secondary_option->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
 	secondary_option->set_clip_text(true);
 	secondary_option->set_focus_mode(Control::FOCUS_ALL);
 	secondary_option->set_mouse_filter(Control::MOUSE_FILTER_STOP);
@@ -3614,13 +3900,108 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	params_grid->add_child(tertiary_label);
 	tertiary_option = memnew(OptionButton);
 	tertiary_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tertiary_option->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
 	tertiary_option->set_clip_text(true);
 	tertiary_option->set_focus_mode(Control::FOCUS_ALL);
 	tertiary_option->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	tertiary_option->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_option_changed));
 	params_grid->add_child(tertiary_option);
 
-	// Retoque 2 (Sección 9.3): Campos numéricos de la fórmula de EXP para Clases (base=30, extra=20, acc_a=30, acc_b=30)
+	// Nivel, EXP y Oro de Enemigos en General (2 columnas)
+	enemy_level_label = memnew(Label(CG_DB_TR("Nivel:")));
+	enemy_level_label->set_tooltip_text(CG_DB_TR("Nivel informativo del enemigo (mínimo 1, no escala estadísticas)"));
+	params_grid->add_child(enemy_level_label);
+	enemy_level_spin = memnew(SpinBox);
+	enemy_level_spin->set_min(1);
+	enemy_level_spin->set_max(999);
+	enemy_level_spin->set_step(1);
+	enemy_level_spin->set_value(1);
+	enemy_level_spin->set_editable(true);
+	enemy_level_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	enemy_level_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(enemy_level_spin);
+	enemy_level_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	params_grid->add_child(enemy_level_spin);
+
+	enemy_exp_label = memnew(Label(CG_DB_TR("EXP:")));
+	enemy_exp_label->set_tooltip_text(CG_DB_TR("EXP Otorgada"));
+	params_grid->add_child(enemy_exp_label);
+	enemy_exp_spin = memnew(SpinBox);
+	enemy_exp_spin->set_min(0);
+	enemy_exp_spin->set_max(9999999);
+	enemy_exp_spin->set_step(1);
+	enemy_exp_spin->set_editable(true);
+	enemy_exp_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	enemy_exp_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(enemy_exp_spin);
+	enemy_exp_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	params_grid->add_child(enemy_exp_spin);
+
+	enemy_gold_label = memnew(Label(CG_DB_TR("Oro:")));
+	enemy_gold_label->set_tooltip_text(CG_DB_TR("Oro Otorgado"));
+	params_grid->add_child(enemy_gold_label);
+	enemy_gold_spin = memnew(SpinBox);
+	enemy_gold_spin->set_min(0);
+	enemy_gold_spin->set_max(9999999);
+	enemy_gold_spin->set_step(1);
+	enemy_gold_spin->set_editable(true);
+	enemy_gold_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	enemy_gold_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(enemy_gold_spin);
+	enemy_gold_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	params_grid->add_child(enemy_gold_spin);
+
+	battler_frames_label = memnew(Label(CG_DB_TR("Frames:")));
+	battler_frames_label->set_tooltip_text(CG_DB_TR("Frames en la hoja de animación"));
+	params_grid->add_child(battler_frames_label);
+	battler_frames_spin = memnew(SpinBox);
+	battler_frames_spin->set_min(1);
+	battler_frames_spin->set_max(64);
+	battler_frames_spin->set_step(1);
+	battler_frames_spin->set_value(1);
+	battler_frames_spin->set_editable(true);
+	battler_frames_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	battler_frames_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(battler_frames_spin);
+	battler_frames_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	params_grid->add_child(battler_frames_spin);
+
+	battler_fps_label = memnew(Label(CG_DB_TR("FPS:")));
+	battler_fps_label->set_tooltip_text(CG_DB_TR("Velocidad de reproducción (FPS)"));
+	params_grid->add_child(battler_fps_label);
+	battler_fps_spin = memnew(SpinBox);
+	battler_fps_spin->set_min(1);
+	battler_fps_spin->set_max(60);
+	battler_fps_spin->set_step(1);
+	battler_fps_spin->set_value(8);
+	battler_fps_spin->set_editable(true);
+	battler_fps_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	battler_fps_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(battler_fps_spin);
+	battler_fps_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
+	params_grid->add_child(battler_fps_spin);
+
+	// ========================================================================
+	// SECCIÓN CURVA EXP (Clases - 2 columnas)
+	// ========================================================================
+	exp_section_box = memnew(VBoxContainer);
+	exp_section_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	exp_section_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	exp_section_box->hide();
+	col2_box->add_child(exp_section_box);
+
+	Label *lbl_exp_sec = memnew(Label(CG_DB_TR("Curva de experiencia")));
+	lbl_exp_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	exp_section_box->add_child(lbl_exp_sec);
+	exp_section_box->add_child(memnew(HSeparator));
+
+	GridContainer *exp_grid = memnew(GridContainer);
+	exp_grid->set_columns(4);
+	exp_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	exp_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	exp_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	exp_section_box->add_child(exp_grid);
+
 	const char *exp_titles[4] = {
 		"EXP Base:",
 		"EXP Extra:",
@@ -3639,7 +4020,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	for (int i = 0; i < 4; i++) {
 		exp_labels[i] = memnew(Label(CG_DB_TR(exp_titles[i])));
 		exp_labels[i]->set_tooltip_text(CG_DB_TR(exp_tips[i]));
-		params_grid->add_child(exp_labels[i]);
+		exp_grid->add_child(exp_labels[i]);
 
 		exp_spins[i] = memnew(SpinBox);
 		exp_spins[i]->set_min(exp_mins[i]);
@@ -3648,63 +4029,93 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		exp_spins[i]->set_value(exp_defaults[i]);
 		exp_spins[i]->set_editable(true);
 		exp_spins[i]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		exp_spins[i]->set_custom_minimum_size(Size2(0, row_h));
 		_bind_numeric_spinbox(exp_spins[i]);
 		exp_spins[i]->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-		params_grid->add_child(exp_spins[i]);
+		exp_grid->add_child(exp_spins[i]);
 	}
+
+	HBoxContainer *exp_prev_hb = memnew(HBoxContainer);
+	exp_prev_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	exp_prev_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	exp_section_box->add_child(exp_prev_hb);
 
 	exp_preview_title = memnew(Label(CG_DB_TR("Curva EXP:")));
 	exp_preview_title->set_tooltip_text(CG_DB_TR("Muestra Curva EXP (9.3)"));
-	params_grid->add_child(exp_preview_title);
+	exp_prev_hb->add_child(exp_preview_title);
 	exp_preview_label = memnew(Label);
 	exp_preview_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	exp_preview_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	exp_preview_label->add_theme_color_override("font_color", Color(0.55f, 0.85f, 0.98f));
-	params_grid->add_child(exp_preview_label);
+	exp_prev_hb->add_child(exp_preview_label);
 
-	// Sección 5.1 y 5.2: Precio de Compra, Precio de Venta (floor(precio/2)), Animación de Ataque y Consumible
+	// ========================================================================
+	// SECCIÓN USO Y DAÑO / PRECIO (Objetos, Armas, Armaduras, Habilidades - 2 columnas)
+	// ========================================================================
+	invocation_section_box = memnew(VBoxContainer);
+	invocation_section_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	invocation_section_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	invocation_section_box->hide();
+	col2_box->add_child(invocation_section_box);
+
+	Label *lbl_inv_sec = memnew(Label(CG_DB_TR("Propiedades e invocación")));
+	lbl_inv_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	invocation_section_box->add_child(lbl_inv_sec);
+	invocation_section_box->add_child(memnew(HSeparator));
+
+	GridContainer *inv_grid = memnew(GridContainer);
+	inv_grid->set_columns(4);
+	inv_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	inv_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	inv_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	invocation_section_box->add_child(inv_grid);
+
 	price_label = memnew(Label(CG_DB_TR("Precio:")));
 	price_label->set_tooltip_text(CG_DB_TR("Precio de Compra"));
-	params_grid->add_child(price_label);
+	inv_grid->add_child(price_label);
 	price_spin = memnew(SpinBox);
 	price_spin->set_min(0);
 	price_spin->set_max(999999);
 	price_spin->set_step(1);
 	price_spin->set_editable(true);
 	price_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	price_spin->set_custom_minimum_size(Size2(0, row_h));
 	_bind_numeric_spinbox(price_spin);
 	price_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(price_spin);
+	inv_grid->add_child(price_spin);
 
 	sell_price_title = memnew(Label(CG_DB_TR("Venta:")));
 	sell_price_title->set_tooltip_text(CG_DB_TR("Precio de Venta (50%)"));
-	params_grid->add_child(sell_price_title);
+	inv_grid->add_child(sell_price_title);
 	sell_price_label = memnew(Label("0 G (50%)"));
+	sell_price_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sell_price_label->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
-	params_grid->add_child(sell_price_label);
+	inv_grid->add_child(sell_price_label);
 
 	attack_anim_label = memnew(Label(CG_DB_TR("Animación:")));
-	attack_anim_label->set_tooltip_text(CG_DB_TR("Animación de Ataque"));
-	params_grid->add_child(attack_anim_label);
+	attack_anim_label->set_tooltip_text(CG_DB_TR("Animación de Ataque o Habilidad"));
+	inv_grid->add_child(attack_anim_label);
 	attack_anim_option = memnew(OptionButton);
 	attack_anim_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	attack_anim_option->set_custom_minimum_size(Size2(0, row_h));
 	attack_anim_option->set_clip_text(true);
 	attack_anim_option->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_option_changed));
-	params_grid->add_child(attack_anim_option);
+	inv_grid->add_child(attack_anim_option);
 
 	consumable_label = memnew(Label(CG_DB_TR("Consumible:")));
 	consumable_label->set_tooltip_text(CG_DB_TR("Determina si se consume al usar"));
-	params_grid->add_child(consumable_label);
+	inv_grid->add_child(consumable_label);
 	consumable_check = memnew(CheckBox(CG_DB_TR("Consumible")));
 	consumable_check->set_tooltip_text(CG_DB_TR("Se consume al usar"));
 	consumable_check->set_pressed(true);
+	consumable_check->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	consumable_check->set_custom_minimum_size(Size2(0, row_h));
 	consumable_check->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_check_toggled));
-	params_grid->add_child(consumable_check);
+	inv_grid->add_child(consumable_check);
 
-	// Sección 5.2: Invocación (Velocidad, Éxito %, Repeticiones, Ganancia TP, Tipo de Golpe)
 	item_speed_label = memnew(Label(CG_DB_TR("Velocidad:")));
 	item_speed_label->set_tooltip_text(CG_DB_TR("Velocidad de Acción"));
-	params_grid->add_child(item_speed_label);
+	inv_grid->add_child(item_speed_label);
 	item_speed_spin = memnew(SpinBox);
 	item_speed_spin->set_min(-2000);
 	item_speed_spin->set_max(2000);
@@ -3712,13 +4123,14 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	item_speed_spin->set_value(0);
 	item_speed_spin->set_editable(true);
 	item_speed_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	item_speed_spin->set_custom_minimum_size(Size2(0, row_h));
 	_bind_numeric_spinbox(item_speed_spin);
 	item_speed_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(item_speed_spin);
+	inv_grid->add_child(item_speed_spin);
 
 	item_success_label = memnew(Label(CG_DB_TR("Éxito (%):")));
 	item_success_label->set_tooltip_text(CG_DB_TR("Tasa de Éxito (%)"));
-	params_grid->add_child(item_success_label);
+	inv_grid->add_child(item_success_label);
 	item_success_spin = memnew(SpinBox);
 	item_success_spin->set_min(0);
 	item_success_spin->set_max(100);
@@ -3726,13 +4138,14 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	item_success_spin->set_value(100);
 	item_success_spin->set_editable(true);
 	item_success_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	item_success_spin->set_custom_minimum_size(Size2(0, row_h));
 	_bind_numeric_spinbox(item_success_spin);
 	item_success_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(item_success_spin);
+	inv_grid->add_child(item_success_spin);
 
 	item_repeats_label = memnew(Label(CG_DB_TR("Repeticiones:")));
 	item_repeats_label->set_tooltip_text(CG_DB_TR("Número de Repeticiones"));
-	params_grid->add_child(item_repeats_label);
+	inv_grid->add_child(item_repeats_label);
 	item_repeats_spin = memnew(SpinBox);
 	item_repeats_spin->set_min(1);
 	item_repeats_spin->set_max(9);
@@ -3740,13 +4153,14 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	item_repeats_spin->set_value(1);
 	item_repeats_spin->set_editable(true);
 	item_repeats_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	item_repeats_spin->set_custom_minimum_size(Size2(0, row_h));
 	_bind_numeric_spinbox(item_repeats_spin);
 	item_repeats_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(item_repeats_spin);
+	inv_grid->add_child(item_repeats_spin);
 
 	item_tp_gain_label = memnew(Label(CG_DB_TR("TP:")));
 	item_tp_gain_label->set_tooltip_text(CG_DB_TR("Ganancia de PT (TP)"));
-	params_grid->add_child(item_tp_gain_label);
+	inv_grid->add_child(item_tp_gain_label);
 	item_tp_gain_spin = memnew(SpinBox);
 	item_tp_gain_spin->set_min(0);
 	item_tp_gain_spin->set_max(100);
@@ -3754,46 +4168,50 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	item_tp_gain_spin->set_value(0);
 	item_tp_gain_spin->set_editable(true);
 	item_tp_gain_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	item_tp_gain_spin->set_custom_minimum_size(Size2(0, row_h));
 	_bind_numeric_spinbox(item_tp_gain_spin);
 	item_tp_gain_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(item_tp_gain_spin);
+	inv_grid->add_child(item_tp_gain_spin);
 
 	hit_type_label = memnew(Label(CG_DB_TR("Tipo Golpe:")));
 	hit_type_label->set_tooltip_text(CG_DB_TR("Tipo de Golpe"));
-	params_grid->add_child(hit_type_label);
+	inv_grid->add_child(hit_type_label);
 	hit_type_option = memnew(OptionButton);
 	hit_type_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hit_type_option->set_custom_minimum_size(Size2(0, row_h));
 	hit_type_option->set_clip_text(true);
 	hit_type_option->add_item(CG_DB_TR("Golpe Seguro"), 0);
 	hit_type_option->add_item(CG_DB_TR("Ataque Físico"), 1);
 	hit_type_option->add_item(CG_DB_TR("Ataque Mágico"), 2);
 	hit_type_option->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_option_changed));
-	params_grid->add_child(hit_type_option);
+	inv_grid->add_child(hit_type_option);
 
 	item_element_label = memnew(Label(CG_DB_TR("Elemento:")));
 	item_element_label->set_tooltip_text(CG_DB_TR("Elemento de Daño"));
-	params_grid->add_child(item_element_label);
+	inv_grid->add_child(item_element_label);
 	item_element_option = memnew(OptionButton);
 	item_element_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	item_element_option->set_custom_minimum_size(Size2(0, row_h));
 	item_element_option->set_clip_text(true);
 	item_element_option->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_option_changed));
-	params_grid->add_child(item_element_option);
+	inv_grid->add_child(item_element_option);
 
 	formula_label = memnew(Label(CG_DB_TR("Fórmula Daño:")));
 	formula_label->set_tooltip_text(CG_DB_TR("Fórmula de Daño"));
-	params_grid->add_child(formula_label);
+	inv_grid->add_child(formula_label);
 	formula_edit = memnew(ClockGearsFormulaLineEdit);
 	formula_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	formula_edit->set_custom_minimum_size(Size2(0, row_h));
 	formula_edit->set_focus_mode(Control::FOCUS_ALL);
 	formula_edit->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	formula_edit->set_editable(true);
 	formula_edit->set_placeholder("max(a.atk * 4 - b.def * 2, 0)");
 	formula_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_text_changed));
-	params_grid->add_child(formula_edit);
+	inv_grid->add_child(formula_edit);
 
 	variance_label = memnew(Label(CG_DB_TR("Varianza (%):")));
 	variance_label->set_tooltip_text(CG_DB_TR("Varianza de Daño (%)"));
-	params_grid->add_child(variance_label);
+	inv_grid->add_child(variance_label);
 	variance_spin = memnew(SpinBox);
 	variance_spin->set_min(0);
 	variance_spin->set_max(100);
@@ -3801,87 +4219,41 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	variance_spin->set_value(20);
 	variance_spin->set_editable(true);
 	variance_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	variance_spin->set_custom_minimum_size(Size2(0, row_h));
 	_bind_numeric_spinbox(variance_spin);
 	variance_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(variance_spin);
+	inv_grid->add_child(variance_spin);
 
 	critical_label = memnew(Label(CG_DB_TR("Crítico:")));
 	critical_label->set_tooltip_text(CG_DB_TR("Golpe Crítico"));
-	params_grid->add_child(critical_label);
+	inv_grid->add_child(critical_label);
 	critical_check = memnew(CheckBox(CG_DB_TR("Crítico")));
 	critical_check->set_tooltip_text(CG_DB_TR("Permite golpe crítico"));
 	critical_check->set_pressed(false);
+	critical_check->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	critical_check->set_custom_minimum_size(Size2(0, row_h));
 	critical_check->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_check_toggled));
-	params_grid->add_child(critical_check);
+	inv_grid->add_child(critical_check);
 
-	// Sección 5.3: Enemigos (Nivel, EXP, Oro, Battler animado)
-	enemy_level_label = memnew(Label(CG_DB_TR("Nivel:")));
-	enemy_level_label->set_tooltip_text(CG_DB_TR("Nivel informativo del enemigo (mínimo 1, no escala estadísticas)"));
-	params_grid->add_child(enemy_level_label);
-	enemy_level_spin = memnew(SpinBox);
-	enemy_level_spin->set_min(1);
-	enemy_level_spin->set_max(999);
-	enemy_level_spin->set_step(1);
-	enemy_level_spin->set_value(1);
-	enemy_level_spin->set_editable(true);
-	enemy_level_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_bind_numeric_spinbox(enemy_level_spin);
-	enemy_level_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(enemy_level_spin);
+	// ========================================================================
+	// SECCIÓN PARÁMETROS (8 Estadísticas en cuadrícula de 2 columnas = 4 cols GridContainer)
+	// ========================================================================
+	stats_section_box = memnew(VBoxContainer);
+	stats_section_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	stats_section_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	col2_box->add_child(stats_section_box);
 
-	enemy_exp_label = memnew(Label(CG_DB_TR("EXP:")));
-	enemy_exp_label->set_tooltip_text(CG_DB_TR("EXP Otorgada"));
-	params_grid->add_child(enemy_exp_label);
-	enemy_exp_spin = memnew(SpinBox);
-	enemy_exp_spin->set_min(0);
-	enemy_exp_spin->set_max(9999999);
-	enemy_exp_spin->set_step(1);
-	enemy_exp_spin->set_editable(true);
-	enemy_exp_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_bind_numeric_spinbox(enemy_exp_spin);
-	enemy_exp_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(enemy_exp_spin);
+	Label *lbl_stats_sec = memnew(Label(CG_DB_TR("Parámetros")));
+	lbl_stats_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	stats_section_box->add_child(lbl_stats_sec);
+	stats_section_box->add_child(memnew(HSeparator));
 
-	enemy_gold_label = memnew(Label(CG_DB_TR("Oro:")));
-	enemy_gold_label->set_tooltip_text(CG_DB_TR("Oro Otorgado"));
-	params_grid->add_child(enemy_gold_label);
-	enemy_gold_spin = memnew(SpinBox);
-	enemy_gold_spin->set_min(0);
-	enemy_gold_spin->set_max(9999999);
-	enemy_gold_spin->set_step(1);
-	enemy_gold_spin->set_editable(true);
-	enemy_gold_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_bind_numeric_spinbox(enemy_gold_spin);
-	enemy_gold_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(enemy_gold_spin);
-
-	battler_frames_label = memnew(Label(CG_DB_TR("Frames Battler:")));
-	battler_frames_label->set_tooltip_text(CG_DB_TR("Frames Battler (Hoja)"));
-	params_grid->add_child(battler_frames_label);
-	battler_frames_spin = memnew(SpinBox);
-	battler_frames_spin->set_min(1);
-	battler_frames_spin->set_max(64);
-	battler_frames_spin->set_step(1);
-	battler_frames_spin->set_value(1);
-	battler_frames_spin->set_editable(true);
-	battler_frames_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_bind_numeric_spinbox(battler_frames_spin);
-	battler_frames_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(battler_frames_spin);
-
-	battler_fps_label = memnew(Label(CG_DB_TR("FPS Battler:")));
-	battler_fps_label->set_tooltip_text(CG_DB_TR("FPS Battler Animado"));
-	params_grid->add_child(battler_fps_label);
-	battler_fps_spin = memnew(SpinBox);
-	battler_fps_spin->set_min(1);
-	battler_fps_spin->set_max(60);
-	battler_fps_spin->set_step(1);
-	battler_fps_spin->set_value(8);
-	battler_fps_spin->set_editable(true);
-	battler_fps_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	_bind_numeric_spinbox(battler_fps_spin);
-	battler_fps_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-	params_grid->add_child(battler_fps_spin);
+	GridContainer *stats_grid = memnew(GridContainer);
+	stats_grid->set_columns(4);
+	stats_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	stats_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	stats_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	stats_section_box->add_child(stats_grid);
 
 	const char *stat_titles[8] = {
 		"HP:",
@@ -3907,7 +4279,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	for (int i = 0; i < 8; i++) {
 		stat_labels[i] = memnew(Label(CG_DB_TR(stat_titles[i])));
 		stat_labels[i]->set_tooltip_text(CG_DB_TR(stat_tips[i]));
-		params_grid->add_child(stat_labels[i]);
+		stats_grid->add_child(stat_labels[i]);
 
 		stat_spins[i] = memnew(SpinBox);
 		stat_spins[i]->set_min(-999);
@@ -3915,140 +4287,151 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		stat_spins[i]->set_step(1);
 		stat_spins[i]->set_editable(true);
 		stat_spins[i]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		stat_spins[i]->set_custom_minimum_size(Size2(0, row_h));
 		_bind_numeric_spinbox(stat_spins[i]);
 		stat_spins[i]->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_param_spin_changed));
-		params_grid->add_child(stat_spins[i]);
+		stats_grid->add_child(stat_spins[i]);
 	}
 
-	// Sección Tropas (Fase 8 Cierre): Lista de Miembros (hasta 8) y botones de colocación
+	// ========================================================================
+	// SECCIÓN TROPAS (Apilado en vertical: Botones HFlowContainer + Tabla Miembros + Vista Previa 16:9)
+	// ========================================================================
 	troop_members_box = memnew(VBoxContainer);
 	troop_members_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	troop_members_box->add_theme_constant_override("separation", 6);
+	troop_members_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	troop_members_box->hide();
 	col2_box->add_child(troop_members_box);
 
-	troop_members_box->add_child(memnew(HSeparator));
 	HBoxContainer *t_hdr = memnew(HBoxContainer);
 	t_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	Label *lbl_t_hdr = memnew(Label(CG_DB_TR("Miembros de la Tropa (máx. 8):")));
+	Label *lbl_t_hdr = memnew(Label(CG_DB_TR("Miembros de tropa")));
 	lbl_t_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_t_hdr->set_tooltip_text(CG_DB_TR("Hasta 8 enemigos por tropa"));
 	lbl_t_hdr->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	t_hdr->add_child(lbl_t_hdr);
 
 	btn_add_troop_member = memnew(Button(CG_DB_TR("+ Añadir")));
+	btn_add_troop_member->set_custom_minimum_size(Size2(0, row_h));
 	btn_add_troop_member->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_troop_member_pressed));
 	t_hdr->add_child(btn_add_troop_member);
 	troop_members_box->add_child(t_hdr);
+	troop_members_box->add_child(memnew(HSeparator));
 
-	HBoxContainer *t_actions_row1 = memnew(HBoxContainer);
-	t_actions_row1->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	t_actions_row1->add_theme_constant_override("separation", 4);
-	troop_members_box->add_child(t_actions_row1);
+	HFlowContainer *t_actions_flow = memnew(HFlowContainer);
+	t_actions_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	t_actions_flow->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	t_actions_flow->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	troop_members_box->add_child(t_actions_flow);
 
 	btn_remove_troop_member_sel = memnew(Button(CG_DB_TR("Eliminar")));
-	btn_remove_troop_member_sel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_remove_troop_member_sel->set_clip_text(true);
+	btn_remove_troop_member_sel->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
 	btn_remove_troop_member_sel->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_selected_troop_member_pressed));
-	t_actions_row1->add_child(btn_remove_troop_member_sel);
+	t_actions_flow->add_child(btn_remove_troop_member_sel);
 
 	btn_clear_troop_members = memnew(Button(CG_DB_TR("Vaciar")));
-	btn_clear_troop_members->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_clear_troop_members->set_clip_text(true);
+	btn_clear_troop_members->set_custom_minimum_size(Size2(76 * EDSCALE, row_h));
 	btn_clear_troop_members->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_clear_troop_members_pressed));
-	t_actions_row1->add_child(btn_clear_troop_members);
+	t_actions_flow->add_child(btn_clear_troop_members);
 
 	btn_align_troop_members = memnew(Button(CG_DB_TR("Alinear")));
-	btn_align_troop_members->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_align_troop_members->set_clip_text(true);
+	btn_align_troop_members->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
 	btn_align_troop_members->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_align_troop_members_pressed));
-	t_actions_row1->add_child(btn_align_troop_members);
+	t_actions_flow->add_child(btn_align_troop_members);
 
 	btn_autoname_troop = memnew(Button(CG_DB_TR("Autonombre")));
-	btn_autoname_troop->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_autoname_troop->set_clip_text(true);
+	btn_autoname_troop->set_custom_minimum_size(Size2(104 * EDSCALE, row_h));
 	btn_autoname_troop->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_autoname_troop_pressed));
-	t_actions_row1->add_child(btn_autoname_troop);
+	t_actions_flow->add_child(btn_autoname_troop);
 
-	HBoxContainer *t_actions_row2 = memnew(HBoxContainer);
-	t_actions_row2->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	t_actions_row2->add_theme_constant_override("separation", 4);
-	troop_members_box->add_child(t_actions_row2);
-
-	btn_change_troop_bg = memnew(Button(CG_DB_TR("Cambiar fondo...")));
-	btn_change_troop_bg->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_change_troop_bg->set_clip_text(true);
+	btn_change_troop_bg = memnew(Button(CG_DB_TR("Cambiar fondo")));
+	btn_change_troop_bg->set_custom_minimum_size(Size2(118 * EDSCALE, row_h));
 	btn_change_troop_bg->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_change_troop_bg_pressed));
-	t_actions_row2->add_child(btn_change_troop_bg);
+	t_actions_flow->add_child(btn_change_troop_bg);
 
 	btn_battle_test_troop = memnew(Button(CG_DB_TR("Prueba de batalla")));
-	btn_battle_test_troop->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_battle_test_troop->set_clip_text(true);
+	btn_battle_test_troop->set_custom_minimum_size(Size2(130 * EDSCALE, row_h));
 	btn_battle_test_troop->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_battle_test_troop_pressed));
-	t_actions_row2->add_child(btn_battle_test_troop);
+	t_actions_flow->add_child(btn_battle_test_troop);
 
 	chk_troop_snap_grid = memnew(CheckBox(CG_DB_TR("Ajustar a rejilla (32)")));
+	chk_troop_snap_grid->set_custom_minimum_size(Size2(0, row_h));
 	chk_troop_snap_grid->set_pressed(false);
-	troop_members_box->add_child(chk_troop_snap_grid);
+	t_actions_flow->add_child(chk_troop_snap_grid);
 
 	troop_members_list_vbox = memnew(VBoxContainer);
 	troop_members_list_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	troop_members_list_vbox->add_theme_constant_override("separation", 4);
+	troop_members_list_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
 	troop_members_box->add_child(troop_members_list_vbox);
 
-	// Sección 5.3: Debilidades y Resistencias (como en Pokémon) en Tasa Elemental (%) de traits
+	// ========================================================================
+	// SECCIÓN COMBATE DE ENEMIGOS (En Pestaña Combate: Debilidades 2 cols + Patrones IA)
+	// ========================================================================
 	enemy_element_rates_box = memnew(VBoxContainer);
 	enemy_element_rates_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_element_rates_box->add_theme_constant_override("separation", 4);
+	enemy_element_rates_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	enemy_element_rates_box->hide();
-	col2_box->add_child(enemy_element_rates_box);
+	combat_tab_vbox->add_child(enemy_element_rates_box);
 
-	enemy_element_rates_box->add_child(memnew(HSeparator));
-	Label *lbl_elem_rates = memnew(Label(CG_DB_TR("Debilidades y Resistencias (Tasa Elemental %):")));
+	Label *lbl_elem_rates = memnew(Label(CG_DB_TR("Debilidades y resistencias")));
+	lbl_elem_rates->set_tooltip_text(CG_DB_TR("Multiplicador de daño elemental recibido por el enemigo (%)"));
 	lbl_elem_rates->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	enemy_element_rates_box->add_child(lbl_elem_rates);
+	enemy_element_rates_box->add_child(memnew(HSeparator));
 
-	enemy_element_rates_rows_vbox = memnew(VBoxContainer);
+	enemy_element_rates_rows_vbox = memnew(GridContainer);
+	enemy_element_rates_rows_vbox->set_columns(2); // Cuadrícula de 2 columnas
 	enemy_element_rates_rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_element_rates_rows_vbox->add_theme_constant_override("separation", 3);
+	enemy_element_rates_rows_vbox->add_theme_constant_override("h_separation", int(16 * EDSCALE));
+	enemy_element_rates_rows_vbox->add_theme_constant_override("v_separation", int(8 * EDSCALE));
 	enemy_element_rates_box->add_child(enemy_element_rates_rows_vbox);
 
-	// PROBLEMA C: 9 Ranuras de Imagen de Tileset al estilo RPG Maker MZ (A1..A5, B, C, D, E - Rejilla 32x32 Anexo A4)
-	tileset_slots_box = memnew(VBoxContainer);
-	tileset_slots_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	tileset_slots_box->add_theme_constant_override("separation", 5);
-	tileset_slots_box->hide();
-	col2_box->add_child(tileset_slots_box);
+	// ========================================================================
+	// SECCIÓN TILESETS (En General: Ranuras a la izquierda + Editor de Pasabilidad a la derecha)
+	// ========================================================================
+	tileset_main_hbox = memnew(HBoxContainer);
+	tileset_main_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_main_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_main_hbox->add_theme_constant_override("separation", int(16 * EDSCALE));
+	tileset_main_hbox->hide();
+	col2_box->add_child(tileset_main_hbox);
 
-	tileset_slots_box->add_child(memnew(HSeparator));
+	tileset_slots_box = memnew(VBoxContainer);
+	tileset_slots_box->set_custom_minimum_size(Size2(280 * EDSCALE, 0));
+	tileset_slots_box->set_h_size_flags(Control::SIZE_FILL);
+	tileset_slots_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	tileset_slots_box->hide();
+	tileset_main_hbox->add_child(tileset_slots_box);
+
 	HBoxContainer *slots_hdr_hb = memnew(HBoxContainer);
 	slots_hdr_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	slots_hdr_hb->add_theme_constant_override("separation", 4);
-	Label *slots_header = memnew(Label(CG_DB_TR("Ranuras (A1-A5, B-E):")));
+	Label *slots_header = memnew(Label(CG_DB_TR("Ranuras de tiles")));
 	slots_header->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	slots_header->set_clip_text(true);
 	slots_header->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	slots_hdr_hb->add_child(slots_header);
 	Button *btn_slots_help = memnew(Button("?"));
-	btn_slots_help->set_custom_minimum_size(Size2(18 * EDSCALE, 18 * EDSCALE));
+	btn_slots_help->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
 	btn_slots_help->set_tooltip_text(CG_DB_TR("Ranuras de hojas de tiles (32x32 Anexo A4):\nA1: Agua / Animados\nA2: Suelo / Autotiles\nA3: Edificios / Fachadas\nA4: Muros / Techos\nA5: Suelo y muros normales\nB-E: Objetos, vegetación y decoración"));
 	slots_hdr_hb->add_child(btn_slots_help);
 	tileset_slots_box->add_child(slots_hdr_hb);
+	tileset_slots_box->add_child(memnew(HSeparator));
 
 	for (int s = 0; s < TILESET_SLOT_COUNT; s++) {
 		HBoxContainer *sl_row = memnew(HBoxContainer);
 		sl_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		sl_row->add_theme_constant_override("separation", 2);
+		sl_row->add_theme_constant_override("separation", 4);
 		tileset_slots_box->add_child(sl_row);
 
 		Label *sl_lbl = memnew(Label(_get_slot_key(s)));
-		sl_lbl->set_custom_minimum_size(Size2(24 * EDSCALE, 0));
+		sl_lbl->set_custom_minimum_size(Size2(28 * EDSCALE, 0));
 		sl_lbl->set_tooltip_text(_get_slot_label(s));
 		sl_row->add_child(sl_lbl);
 
 		tileset_slot_edits[s] = memnew(LineEdit);
 		tileset_slot_edits[s]->set_editable(false);
 		tileset_slot_edits[s]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		tileset_slot_edits[s]->set_custom_minimum_size(Size2(36 * EDSCALE, 20 * EDSCALE));
+		tileset_slot_edits[s]->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
 		tileset_slot_edits[s]->set_text(CG_DB_TR("(Vacío)"));
 		sl_row->add_child(tileset_slot_edits[s]);
 
@@ -4059,7 +4442,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 			btn_load_slot[s]->set_text("+");
 		}
 		btn_load_slot[s]->set_tooltip_text(vformat(CG_DB_TR("Cargar hoja PNG 32x32 en la ranura %s (%s)"), _get_slot_key(s), _get_slot_label(s)));
-		btn_load_slot[s]->set_custom_minimum_size(Size2(22 * EDSCALE, 20 * EDSCALE));
+		btn_load_slot[s]->set_custom_minimum_size(Size2(28 * EDSCALE, row_h));
 		btn_load_slot[s]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_load_slot_button_pressed).bind(s));
 		sl_row->add_child(btn_load_slot[s]);
 
@@ -4070,49 +4453,61 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 			btn_clear_slot[s]->set_text("-");
 		}
 		btn_clear_slot[s]->set_tooltip_text(vformat(CG_DB_TR("Quitar la hoja asignada a la ranura %s"), _get_slot_key(s)));
-		btn_clear_slot[s]->set_custom_minimum_size(Size2(22 * EDSCALE, 20 * EDSCALE));
+		btn_clear_slot[s]->set_custom_minimum_size(Size2(28 * EDSCALE, row_h));
 		btn_clear_slot[s]->set_disabled(true);
 		btn_clear_slot[s]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_clear_slot_button_pressed).bind(s));
 		sl_row->add_child(btn_clear_slot[s]);
 	}
 
-	// Sección 5.3: 3 Ranuras de Botín (Drops) para Enemigos
+	// ========================================================================
+	// SECCIÓN BOTÍN (Drops de Enemigos en General)
+	// ========================================================================
 	enemy_drops_box = memnew(VBoxContainer);
 	enemy_drops_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_drops_box->add_theme_constant_override("separation", 6);
+	enemy_drops_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	enemy_drops_box->hide();
 	col2_box->add_child(enemy_drops_box);
 
+	Label *lbl_drops_sec = memnew(Label(CG_DB_TR("Botín del enemigo")));
+	lbl_drops_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	enemy_drops_box->add_child(lbl_drops_sec);
 	enemy_drops_box->add_child(memnew(HSeparator));
-	enemy_drops_box->add_child(memnew(Label(CG_DB_TR("Botín del Enemigo (3 Ranuras de Drop):"))));
 
 	for (int s = 0; s < 3; s++) {
-		VBoxContainer *dr_card = memnew(VBoxContainer);
-		dr_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		dr_card->add_theme_constant_override("separation", 2);
-		enemy_drops_box->add_child(dr_card);
-
-		HBoxContainer *dr_row1 = memnew(HBoxContainer);
-		dr_row1->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		dr_row1->add_theme_constant_override("separation", 3);
-		dr_card->add_child(dr_row1);
+		HBoxContainer *dr_row = memnew(HBoxContainer);
+		dr_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		dr_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+		enemy_drops_box->add_child(dr_row);
 
 		Label *dr_lbl = memnew(Label(vformat(CG_DB_TR("Drop %d:"), s + 1)));
-		dr_lbl->set_custom_minimum_size(Size2(50 * EDSCALE, 0));
-		dr_row1->add_child(dr_lbl);
+		dr_lbl->set_custom_minimum_size(Size2(60 * EDSCALE, 0));
+		dr_row->add_child(dr_lbl);
 
 		drop_kind_opt[s] = memnew(OptionButton);
-		drop_kind_opt[s]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		drop_kind_opt[s]->set_custom_minimum_size(Size2(130 * EDSCALE, row_h));
 		drop_kind_opt[s]->set_clip_text(true);
 		drop_kind_opt[s]->add_item(CG_DB_TR("Ninguno"), 0);
 		drop_kind_opt[s]->add_item(CG_DB_TR("Objeto"), CAT_ITEMS);
 		drop_kind_opt[s]->add_item(CG_DB_TR("Arma"), CAT_WEAPONS);
 		drop_kind_opt[s]->add_item(CG_DB_TR("Armadura"), CAT_ARMORS);
 		drop_kind_opt[s]->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_drop_kind_changed).bind(s));
-		dr_row1->add_child(drop_kind_opt[s]);
+		dr_row->add_child(drop_kind_opt[s]);
+
+		drop_item_opt[s] = memnew(OptionButton);
+		drop_item_opt[s]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		drop_item_opt[s]->set_custom_minimum_size(Size2(160 * EDSCALE, row_h));
+		drop_item_opt[s]->set_clip_text(true);
+		drop_item_opt[s]->add_item(CG_DB_TR("(ninguno)"), 0);
+		drop_item_opt[s]->set_disabled(true);
+		drop_item_opt[s]->connect("item_selected", callable_mp_static(+[](int p_i, ClockGearsDatabaseDialog *p_self, int p_sl) {
+			if (p_self) {
+				p_self->_on_drop_field_changed(p_sl);
+			}
+		}).bind(this, s));
+		dr_row->add_child(drop_item_opt[s]);
 
 		drop_prob_spin[s] = memnew(SpinBox);
-		drop_prob_spin[s]->set_custom_minimum_size(Size2(58 * EDSCALE, 0));
+		drop_prob_spin[s]->set_custom_minimum_size(Size2(85 * EDSCALE, row_h));
 		drop_prob_spin[s]->set_min(1);
 		drop_prob_spin[s]->set_max(100);
 		drop_prob_spin[s]->set_step(1);
@@ -4124,34 +4519,23 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 				p_self->_on_drop_field_changed(p_sl);
 			}
 		}).bind(this, s));
-		dr_row1->add_child(drop_prob_spin[s]);
-
-		HBoxContainer *dr_row2 = memnew(HBoxContainer);
-		dr_row2->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		dr_card->add_child(dr_row2);
-
-		drop_item_opt[s] = memnew(OptionButton);
-		drop_item_opt[s]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		drop_item_opt[s]->set_clip_text(true);
-		drop_item_opt[s]->add_item(CG_DB_TR("(ninguno)"), 0);
-		drop_item_opt[s]->set_disabled(true);
-		drop_item_opt[s]->connect("item_selected", callable_mp_static(+[](int p_i, ClockGearsDatabaseDialog *p_self, int p_sl) {
-			if (p_self) {
-				p_self->_on_drop_field_changed(p_sl);
-			}
-		}).bind(this, s));
-		dr_row2->add_child(drop_item_opt[s]);
+		dr_row->add_child(drop_prob_spin[s]);
 	}
 
-	// Sección 5.3: Patrones de Acción de IA (Tree + Diálogo)
+	// ========================================================================
+	// PATRONES DE ACCIÓN IA (En Pestaña Combate de Enemigos)
+	// ========================================================================
 	enemy_actions_box = memnew(VBoxContainer);
 	enemy_actions_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_actions_box->add_theme_constant_override("separation", 6);
+	enemy_actions_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	enemy_actions_box->hide();
-	col2_box->add_child(enemy_actions_box);
+	combat_tab_vbox->add_child(enemy_actions_box);
 
+	Label *lbl_act_sec = memnew(Label(CG_DB_TR("Patrones de acción")));
+	lbl_act_sec->set_tooltip_text(CG_DB_TR("Habilidades y condiciones de inteligencia artificial del enemigo"));
+	lbl_act_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	enemy_actions_box->add_child(lbl_act_sec);
 	enemy_actions_box->add_child(memnew(HSeparator));
-	enemy_actions_box->add_child(memnew(Label(CG_DB_TR("Patrones de Acción (IA del Enemigo):"))));
 
 	enemy_actions_tree = memnew(Tree);
 	enemy_actions_tree->set_columns(4);
@@ -4160,23 +4544,31 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	enemy_actions_tree->set_column_title(1, CG_DB_TR("Condición"));
 	enemy_actions_tree->set_column_title(2, CG_DB_TR("Parám."));
 	enemy_actions_tree->set_column_title(3, CG_DB_TR("Prioridad"));
+	enemy_actions_tree->set_column_expand(0, true);
+	enemy_actions_tree->set_column_expand_ratio(0, 3);
+	enemy_actions_tree->set_column_expand(1, true);
+	enemy_actions_tree->set_column_expand_ratio(1, 3);
+	enemy_actions_tree->set_column_expand(2, true);
+	enemy_actions_tree->set_column_expand_ratio(2, 2);
+	enemy_actions_tree->set_column_expand(3, true);
+	enemy_actions_tree->set_column_expand_ratio(3, 1);
 	enemy_actions_tree->set_hide_root(true);
-	enemy_actions_tree->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
+	enemy_actions_tree->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
 	enemy_actions_box->add_child(enemy_actions_tree);
 
 	HBoxContainer *ap_btn_row = memnew(HBoxContainer);
-	ap_btn_row->add_theme_constant_override("separation", 6);
+	ap_btn_row->add_theme_constant_override("separation", int(8 * EDSCALE));
 	enemy_actions_box->add_child(ap_btn_row);
 
-	btn_add_action_pattern = memnew(Button(CG_DB_TR("+ Añadir Patrón de Acción")));
+	btn_add_action_pattern = memnew(Button(CG_DB_TR("+ Añadir patrón")));
 	btn_add_action_pattern->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_add_action_pattern->set_clip_text(true);
+	btn_add_action_pattern->set_custom_minimum_size(Size2(0, row_h));
 	btn_add_action_pattern->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_action_pattern_pressed));
 	ap_btn_row->add_child(btn_add_action_pattern);
 
-	btn_remove_action_pattern = memnew(Button(CG_DB_TR("- Eliminar Patrón")));
+	btn_remove_action_pattern = memnew(Button(CG_DB_TR("- Eliminar patrón")));
 	btn_remove_action_pattern->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_remove_action_pattern->set_clip_text(true);
+	btn_remove_action_pattern->set_custom_minimum_size(Size2(0, row_h));
 	btn_remove_action_pattern->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_action_pattern_pressed));
 	ap_btn_row->add_child(btn_remove_action_pattern);
 
@@ -4218,30 +4610,30 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	action_pattern_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_action_pattern_confirmed));
 	add_child(action_pattern_dialog);
 
-	// System Config Panel (only shown when CAT_SYSTEM is selected)
+	// ========================================================================
+	// SYSTEM CONFIG PANEL (CAT_SYSTEM)
+	// ========================================================================
 	system_panel = memnew(VBoxContainer);
 	system_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	system_panel->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	system_panel->add_theme_constant_override("separation", 12);
+	system_panel->add_theme_constant_override("separation", int(16 * EDSCALE));
 	system_panel->hide();
 	col2_box->add_child(system_panel);
 
 	GridContainer *sys_grid = memnew(GridContainer);
 	sys_grid->set_columns(2);
-	sys_grid->set_h_size_flags(Control::SIZE_FILL);
+	sys_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_grid->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	sys_grid->add_theme_constant_override("h_separation", 16);
-	sys_grid->add_theme_constant_override("v_separation", 10);
+	sys_grid->add_theme_constant_override("h_separation", int(16 * EDSCALE));
+	sys_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
 	system_panel->add_child(sys_grid);
 
 	Label *lbl_sys_title = memnew(Label(CG_DB_TR("Título del Proyecto RPG:")));
 	lbl_sys_title->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_title->set_clip_text(false);
-	lbl_sys_title->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_title);
 	sys_game_title_edit = memnew(LineEdit);
-	sys_game_title_edit->set_custom_minimum_size(Size2(360 * EDSCALE, 0));
-	sys_game_title_edit->set_h_size_flags(Control::SIZE_FILL);
+	sys_game_title_edit->set_custom_minimum_size(Size2(280 * EDSCALE, row_h));
+	sys_game_title_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_game_title_edit->set_editable(true);
 	sys_game_title_edit->set_focus_mode(Control::FOCUS_ALL);
 	sys_game_title_edit->set_mouse_filter(Control::MOUSE_FILTER_STOP);
@@ -4250,12 +4642,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Label *lbl_sys_curr = memnew(Label(CG_DB_TR("Unidad Monetaria:")));
 	lbl_sys_curr->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_curr->set_clip_text(false);
-	lbl_sys_curr->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_curr);
 	sys_currency_edit = memnew(LineEdit);
-	sys_currency_edit->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
-	sys_currency_edit->set_h_size_flags(Control::SIZE_FILL);
+	sys_currency_edit->set_custom_minimum_size(Size2(180 * EDSCALE, row_h));
+	sys_currency_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_currency_edit->set_text("G");
 	sys_currency_edit->set_editable(true);
 	sys_currency_edit->set_focus_mode(Control::FOCUS_ALL);
@@ -4265,13 +4655,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Label *lbl_sys_combat = memnew(Label(CG_DB_TR("Sistema de Combate:")));
 	lbl_sys_combat->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_combat->set_clip_text(false);
-	lbl_sys_combat->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_combat);
 	combat_mode_selector = memnew(OptionButton);
-	combat_mode_selector->set_custom_minimum_size(Size2(360 * EDSCALE, 0));
-	combat_mode_selector->set_h_size_flags(Control::SIZE_FILL);
-	combat_mode_selector->set_clip_text(false);
+	combat_mode_selector->set_custom_minimum_size(Size2(280 * EDSCALE, row_h));
+	combat_mode_selector->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	combat_mode_selector->add_item(CG_DB_TR("Combate por Turnos Clásico (Turn-Based)"), 0);
 	combat_mode_selector->add_item(CG_DB_TR("Combate en Tiempo Real (Action RPG)"), 1);
 	combat_mode_selector->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_combat_mode_selected));
@@ -4279,24 +4666,19 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Label *lbl_sys_map = memnew(Label(CG_DB_TR("Mapa Inicial:")));
 	lbl_sys_map->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_map->set_clip_text(false);
-	lbl_sys_map->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_map);
 	sys_start_map_option = memnew(OptionButton);
-	sys_start_map_option->set_custom_minimum_size(Size2(360 * EDSCALE, 0));
-	sys_start_map_option->set_h_size_flags(Control::SIZE_FILL);
-	sys_start_map_option->set_clip_text(false);
+	sys_start_map_option->set_custom_minimum_size(Size2(280 * EDSCALE, row_h));
+	sys_start_map_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_start_map_option->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_start_map_selected));
 	sys_grid->add_child(sys_start_map_option);
 
 	Label *lbl_sys_x = memnew(Label(CG_DB_TR("Posición Inicial X (Celda):")));
 	lbl_sys_x->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_x->set_clip_text(false);
-	lbl_sys_x->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_x);
 	sys_start_x_spin = memnew(SpinBox);
-	sys_start_x_spin->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
-	sys_start_x_spin->set_h_size_flags(Control::SIZE_FILL);
+	sys_start_x_spin->set_custom_minimum_size(Size2(180 * EDSCALE, row_h));
+	sys_start_x_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_start_x_spin->set_max(999);
 	sys_start_x_spin->set_editable(true);
 	_bind_numeric_spinbox(sys_start_x_spin);
@@ -4305,12 +4687,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Label *lbl_sys_y = memnew(Label(CG_DB_TR("Posición Inicial Y (Celda):")));
 	lbl_sys_y->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_y->set_clip_text(false);
-	lbl_sys_y->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_y);
 	sys_start_y_spin = memnew(SpinBox);
-	sys_start_y_spin->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
-	sys_start_y_spin->set_h_size_flags(Control::SIZE_FILL);
+	sys_start_y_spin->set_custom_minimum_size(Size2(180 * EDSCALE, row_h));
+	sys_start_y_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_start_y_spin->set_max(999);
 	sys_start_y_spin->set_editable(true);
 	_bind_numeric_spinbox(sys_start_y_spin);
@@ -4319,12 +4699,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Label *lbl_sys_zoom = memnew(Label(CG_DB_TR("Zoom de Cámara (Pixel Art):")));
 	lbl_sys_zoom->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_zoom->set_clip_text(false);
-	lbl_sys_zoom->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_zoom);
 	sys_camera_zoom_opt = memnew(OptionButton);
-	sys_camera_zoom_opt->set_custom_minimum_size(Size2(360 * EDSCALE, 0));
-	sys_camera_zoom_opt->set_h_size_flags(Control::SIZE_FILL);
+	sys_camera_zoom_opt->set_custom_minimum_size(Size2(280 * EDSCALE, row_h));
+	sys_camera_zoom_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_camera_zoom_opt->add_item(CG_DB_TR("1x (Resolución Nativa 1:1)"), 1);
 	sys_camera_zoom_opt->add_item(CG_DB_TR("2x (Pixel Art Estándar)"), 2);
 	sys_camera_zoom_opt->add_item(CG_DB_TR("3x (Pixel Art Aumentado)"), 3);
@@ -4335,12 +4713,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Label *lbl_sys_cam_opts = memnew(Label(CG_DB_TR("Comportamiento de Cámara:")));
 	lbl_sys_cam_opts->set_custom_minimum_size(Size2(170 * EDSCALE, 0));
-	lbl_sys_cam_opts->set_clip_text(false);
-	lbl_sys_cam_opts->set_h_size_flags(Control::SIZE_FILL);
 	sys_grid->add_child(lbl_sys_cam_opts);
 
 	VBoxContainer *cam_flags_vb = memnew(VBoxContainer);
-	cam_flags_vb->set_h_size_flags(Control::SIZE_FILL);
+	cam_flags_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_camera_smooth_check = memnew(CheckBox(CG_DB_TR("Seguimiento Suave (Interpolación fluida al jugador)")));
 	sys_camera_smooth_check->set_pressed(true);
 	sys_camera_smooth_check->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_field_changed).unbind(1));
@@ -4352,128 +4728,52 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cam_flags_vb->add_child(sys_camera_clamp_check);
 	sys_grid->add_child(cam_flags_vb);
 
+	Label *lbl_party_sec = memnew(Label(CG_DB_TR("Grupo inicial")));
+	lbl_party_sec->set_tooltip_text(CG_DB_TR("Grupo inicial (Party - Máx. 1 Líder + 8 Seguidores)"));
+	lbl_party_sec->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	system_panel->add_child(lbl_party_sec);
 	system_panel->add_child(memnew(HSeparator));
-	system_panel->add_child(memnew(Label(CG_DB_TR("Grupo Inicial (Party - Máx. 1 Líder + 8 Seguidores):"))));
 
 	sys_party_list = memnew(ItemList);
-	sys_party_list->set_custom_minimum_size(Size2(540 * EDSCALE, 120 * EDSCALE));
+	sys_party_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_party_list->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
 	system_panel->add_child(sys_party_list);
 
 	HBoxContainer *party_ctrl_row = memnew(HBoxContainer);
-	party_ctrl_row->add_theme_constant_override("separation", 6);
+	party_ctrl_row->add_theme_constant_override("separation", int(8 * EDSCALE));
 	system_panel->add_child(party_ctrl_row);
 
 	sys_party_actor_opt = memnew(OptionButton);
-	sys_party_actor_opt->set_custom_minimum_size(Size2(260 * EDSCALE, 0));
-	sys_party_actor_opt->set_clip_text(false);
+	sys_party_actor_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sys_party_actor_opt->set_custom_minimum_size(Size2(220 * EDSCALE, row_h));
 	party_ctrl_row->add_child(sys_party_actor_opt);
 
 	btn_add_party_member = memnew(Button(CG_DB_TR("+ Añadir al Grupo")));
-	btn_add_party_member->set_clip_text(false);
+	btn_add_party_member->set_custom_minimum_size(Size2(0, row_h));
 	btn_add_party_member->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_party_member_pressed));
 	party_ctrl_row->add_child(btn_add_party_member);
 
 	btn_remove_party_member = memnew(Button(CG_DB_TR("- Quitar")));
-	btn_remove_party_member->set_clip_text(false);
+	btn_remove_party_member->set_custom_minimum_size(Size2(0, row_h));
 	btn_remove_party_member->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_party_member_pressed));
 	party_ctrl_row->add_child(btn_remove_party_member);
 
-	// --- COLUMN 3: Graphics OR Tileset Sheet & Collision Editor inside ScrollContainer (stretch 0.40) ---
-	ScrollContainer *col3_scroll = memnew(ScrollContainer);
-	col3_scroll_container = col3_scroll;
-	col3_scroll->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
-	col3_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	col3_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	col3_scroll->set_stretch_ratio(0.40f);
-	col3_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
-	col3_scroll->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	right_hbox->add_child(col3_scroll);
-
-	col3_box = memnew(VBoxContainer);
-	col3_box->set_custom_minimum_size(Size2(0, 0));
-	col3_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	col3_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	col3_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	col3_box->add_theme_constant_override("separation", 6);
-	col3_scroll->add_child(col3_box);
-
-	col3_title = memnew(Label(CG_DB_TR("Gráfico / Sprite / Icono")));
-	col3_title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	col3_title->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	col3_box->add_child(col3_title);
-	col3_box->add_child(memnew(HSeparator));
-
-	// Standard Sprite / Icon Box
-	standard_graphic_box = memnew(VBoxContainer);
-	standard_graphic_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	standard_graphic_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	standard_graphic_box->add_theme_constant_override("separation", 6);
-	col3_box->add_child(standard_graphic_box);
-
-	CenterContainer *graphic_center = memnew(CenterContainer);
-	graphic_center->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	standard_graphic_box->add_child(graphic_center);
-
-	graphic_frame = memnew(PanelContainer);
-	graphic_frame->set_custom_minimum_size(Size2(96 * EDSCALE, 96 * EDSCALE));
-	Ref<StyleBoxFlat> dark_frame = memnew(StyleBoxFlat);
-	dark_frame->set_anti_aliased(false);
-	dark_frame->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
-	dark_frame->set_border_width_all(1);
-	dark_frame->set_border_color(Color(0.28f, 0.31f, 0.37f, 1.0f));
-	dark_frame->set_content_margin_all(4);
-	graphic_frame->add_theme_style_override("panel", dark_frame);
-	graphic_center->add_child(graphic_frame);
-
-	graphic_preview = memnew(TextureRect);
-	graphic_preview->set_custom_minimum_size(Size2(88 * EDSCALE, 88 * EDSCALE));
-	graphic_preview->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	graphic_preview->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
-	graphic_preview->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST); // A4.5: Vista previa en NEAREST
-	graphic_preview->set_mouse_filter(Control::MOUSE_FILTER_STOP);
-	graphic_preview->set_tooltip_text(CG_DB_TR("Doble clic para abrir el explorador y asignar Sprite o Icono (96x96)"));
-	graphic_preview->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_graphic_gui_input));
-	graphic_frame->add_child(graphic_preview);
-
-	graphic_path_label = memnew(Label(CG_DB_TR("(Sin gráfico)")));
-	graphic_path_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	graphic_path_label->set_clip_text(true);
-	graphic_path_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	graphic_path_label->set_tooltip_text(CG_DB_TR("Ruta del gráfico asignado. Doble clic para asignar."));
-	standard_graphic_box->add_child(graphic_path_label);
-
-	btn_select_graphic = memnew(Button(CG_DB_TR("Seleccionar Gráfico...")));
-	btn_select_graphic->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_select_graphic->set_clip_text(true);
-	btn_select_graphic->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_select_graphic_pressed));
-	standard_graphic_box->add_child(btn_select_graphic);
-
-	btn_pick_tile_graphic = memnew(Button(CG_DB_TR("TilePicker (32x32)...")));
-	btn_pick_tile_graphic->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_pick_tile_graphic->set_clip_text(true);
-	btn_pick_tile_graphic->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_pick_tile_graphic_pressed));
-	standard_graphic_box->add_child(btn_pick_tile_graphic);
-
-	tile_picker_dialog = memnew(ClockGearsTilePickerDialog);
-	add_child(tile_picker_dialog);
-
-	// Sección Tropas en Columna 3: Vista previa de colocación a la resolución de batalla (960x540 escalada)
+	// Vista previa de colocación de tropas debajo de los miembros (todo el ancho disponible hasta 960px, proporción 16:9, sin hueco arriba)
 	troop_placement_col3_box = memnew(VBoxContainer);
 	troop_placement_col3_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	troop_placement_col3_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	troop_placement_col3_box->add_theme_constant_override("separation", 6);
+	troop_placement_col3_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	troop_placement_col3_box->hide();
-	col3_box->add_child(troop_placement_col3_box);
+	col2_box->add_child(troop_placement_col3_box);
 
-	Label *lbl_tp_help = memnew(Label(CG_DB_TR("Arrastra con el ratón cada enemigo para colocarlo en la pantalla de batalla (960x540):")));
-	lbl_tp_help->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	lbl_tp_help->add_theme_color_override("font_color", Color(0.75f, 0.8f, 0.9f));
-	troop_placement_col3_box->add_child(lbl_tp_help);
+	Label *lbl_tp_hdr = memnew(Label(CG_DB_TR("Vista previa (16:9)")));
+	lbl_tp_hdr->set_tooltip_text(CG_DB_TR("Arrastra con el ratón cada enemigo para colocarlo en la pantalla de batalla (960x540)"));
+	lbl_tp_hdr->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	troop_placement_col3_box->add_child(lbl_tp_hdr);
+	troop_placement_col3_box->add_child(memnew(HSeparator));
 
 	troop_placement_canvas = memnew(Control);
-	troop_placement_canvas->set_custom_minimum_size(Size2(380 * EDSCALE, 240 * EDSCALE));
+	troop_placement_canvas->set_custom_minimum_size(Size2(540 * EDSCALE, 304 * EDSCALE));
 	troop_placement_canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	troop_placement_canvas->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	troop_placement_canvas->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	troop_placement_canvas->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	troop_placement_canvas->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw));
@@ -4533,60 +4833,47 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_bg_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_bg_file_selected));
 	add_child(troop_bg_file_dialog);
 
-	// Sección B: Editor de Sprites y Animaciones (Actores y Enemigos - 4 Bloques con Scroll)
-	anim_editor_scroll = memnew(ScrollContainer);
-	anim_editor_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	anim_editor_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	anim_editor_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	anim_editor_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
-	anim_editor_scroll->hide();
-	col3_box->add_child(anim_editor_scroll);
+	// ========================================================================
+	// PESTAÑA ANIMACIONES (Enemigos y Actores: UN SOLO selector desplegable + Tira de frames HFlow + Vista previa 128px)
+	// ========================================================================
+	VBoxContainer *anim_sel_sec = memnew(VBoxContainer);
+	anim_sel_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_sel_sec->add_theme_constant_override("separation", int(8 * EDSCALE));
+	sprite_anim_editor_box->add_child(anim_sel_sec);
 
-	sprite_anim_editor_box = memnew(VBoxContainer);
-	sprite_anim_editor_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	sprite_anim_editor_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	sprite_anim_editor_box->add_theme_constant_override("separation", 8);
-	anim_editor_scroll->add_child(sprite_anim_editor_box);
-
-	// ==========================================
-	// BLOQUE 1: GESTIÓN DE ANIMACIONES (Lista estilo Godot + desplegable sincronizado)
-	// ==========================================
-	Label *lbl_b1 = memnew(Label(CG_DB_TR("1. Animaciones:")));
+	Label *lbl_b1 = memnew(Label(CG_DB_TR("Animación activa")));
 	lbl_b1->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
-	sprite_anim_editor_box->add_child(lbl_b1);
+	anim_sel_sec->add_child(lbl_b1);
+	anim_sel_sec->add_child(memnew(HSeparator));
 
 	HBoxContainer *track_ctrl_hb = memnew(HBoxContainer);
 	track_ctrl_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	track_ctrl_hb->add_theme_constant_override("separation", 4);
-	sprite_anim_editor_box->add_child(track_ctrl_hb);
+	track_ctrl_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	anim_sel_sec->add_child(track_ctrl_hb);
 
 	anim_track_opt = memnew(OptionButton);
 	anim_track_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anim_track_opt->set_custom_minimum_size(Size2(180 * EDSCALE, row_h));
 	anim_track_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_track_selected));
 	track_ctrl_hb->add_child(anim_track_opt);
 
-	btn_add_anim = memnew(Button(CG_DB_TR("+ Nueva")));
+	btn_add_anim = memnew(Button(CG_DB_TR("Nueva")));
+	btn_add_anim->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
 	btn_add_anim->set_tooltip_text(CG_DB_TR("Añadir una nueva animación vacía"));
 	btn_add_anim->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_anim_pressed));
 	track_ctrl_hb->add_child(btn_add_anim);
 
-	btn_rename_anim = memnew(Button(CG_DB_TR("✏")));
-	btn_rename_anim->set_tooltip_text(CG_DB_TR("Renombrar animación (o doble clic en la lista)"));
+	btn_rename_anim = memnew(Button(CG_DB_TR("Renombrar")));
+	btn_rename_anim->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
+	btn_rename_anim->set_tooltip_text(CG_DB_TR("Renombrar animación seleccionada"));
 	btn_rename_anim->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_rename_anim_pressed));
 	track_ctrl_hb->add_child(btn_rename_anim);
 
-	btn_remove_anim = memnew(Button("-"));
+	btn_remove_anim = memnew(Button(CG_DB_TR("Quitar")));
+	btn_remove_anim->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
 	btn_remove_anim->set_tooltip_text(CG_DB_TR("Eliminar animación seleccionada"));
 	btn_remove_anim->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_anim_pressed));
 	track_ctrl_hb->add_child(btn_remove_anim);
-
-	// Lista de animaciones (estilo Godot AnimatedSprite2D SpriteFrames panel)
-	anim_item_list = memnew(ItemList);
-	anim_item_list->set_custom_minimum_size(Size2(0, 80 * EDSCALE));
-	anim_item_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	anim_item_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_item_selected));
-	anim_item_list->connect("item_activated", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_item_activated)); // Doble clic para renombrar
-	sprite_anim_editor_box->add_child(anim_item_list);
 
 	// Diálogo: Nueva Animación
 	new_anim_dialog = memnew(ConfirmationDialog);
@@ -4612,102 +4899,109 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	rename_anim_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_rename_anim_dialog_confirmed));
 	add_child(rename_anim_dialog);
 
-	// ==========================================
-	// BLOQUE 2: AJUSTES DE REPRODUCCIÓN (FPS y Loop propios por animación)
-	// ==========================================
-	sprite_anim_editor_box->add_child(memnew(HSeparator));
-	HBoxContainer *settings_row = memnew(HBoxContainer);
+	// Debajo, sin cortarse: FPS, Bucle, Orden aleatorio y Probar/Detener
+	HFlowContainer *settings_row = memnew(HFlowContainer);
 	settings_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	settings_row->add_theme_constant_override("separation", 6);
-	sprite_anim_editor_box->add_child(settings_row);
+	settings_row->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	settings_row->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	anim_sel_sec->add_child(settings_row);
+
+	HBoxContainer *fps_pair = memnew(HBoxContainer);
+	fps_pair->add_theme_constant_override("separation", int(6 * EDSCALE));
+	settings_row->add_child(fps_pair);
 
 	Label *lbl_fps = memnew(Label(CG_DB_TR("FPS:")));
-	settings_row->add_child(lbl_fps);
+	fps_pair->add_child(lbl_fps);
 
 	anim_fps_spin = memnew(SpinBox);
+	anim_fps_spin->set_custom_minimum_size(Size2(76 * EDSCALE, row_h));
 	anim_fps_spin->set_min(1);
 	anim_fps_spin->set_max(60);
 	anim_fps_spin->set_value(6);
 	_bind_numeric_spinbox(anim_fps_spin);
 	anim_fps_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
-	settings_row->add_child(anim_fps_spin);
+	fps_pair->add_child(anim_fps_spin);
 
-	anim_loop_chk = memnew(CheckBox(CG_DB_TR("Bucle (Loop)")));
+	anim_loop_chk = memnew(CheckBox(CG_DB_TR("Bucle")));
+	anim_loop_chk->set_custom_minimum_size(Size2(0, row_h));
 	anim_loop_chk->set_pressed(true);
 	anim_loop_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
 	settings_row->add_child(anim_loop_chk);
 
 	anim_random_order_chk = memnew(CheckBox(CG_DB_TR("Orden aleatorio")));
+	anim_random_order_chk->set_custom_minimum_size(Size2(0, row_h));
 	anim_random_order_chk->set_pressed(false);
 	anim_random_order_chk->set_tooltip_text(CG_DB_TR("Elige el siguiente frame al azar en vez de seguir la tira"));
 	anim_random_order_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_playback_settings_changed).unbind(1));
 	settings_row->add_child(anim_random_order_chk);
 
 	btn_anim_play = memnew(Button(CG_DB_TR("▶ Probar")));
-	btn_anim_play->set_custom_minimum_size(Size2(75 * EDSCALE, 0));
+	btn_anim_play->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
 	btn_anim_play->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_anim_play_pressed));
 	settings_row->add_child(btn_anim_play);
 
-	// ==========================================
-	// BLOQUE 3: FRAMES (LÍNEA DE TIEMPO)
-	// ==========================================
-	sprite_anim_editor_box->add_child(memnew(HSeparator));
+	// Tira de frames (con salto de línea HFlowContainer, NUNCA scroll horizontal) + Vista previa 128px a un lado
+	VBoxContainer *frames_sec = memnew(VBoxContainer);
+	frames_sec->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	frames_sec->add_theme_constant_override("separation", int(8 * EDSCALE));
+	sprite_anim_editor_box->add_child(frames_sec);
+
 	HBoxContainer *frames_bar = memnew(HBoxContainer);
 	frames_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	frames_bar->add_theme_constant_override("separation", 6);
-	sprite_anim_editor_box->add_child(frames_bar);
+	frames_bar->add_theme_constant_override("separation", int(12 * EDSCALE));
+	frames_sec->add_child(frames_bar);
 
-	Label *lbl_b3 = memnew(Label(CG_DB_TR("Frames:")));
+	Label *lbl_b3 = memnew(Label(CG_DB_TR("Frames y vista previa")));
+	lbl_b3->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	lbl_b3->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	frames_bar->add_child(lbl_b3);
 
 	btn_open_sheet_importer = memnew(Button(CG_DB_TR("🎞 Añadir frames desde spritesheet...")));
-	btn_open_sheet_importer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	btn_open_sheet_importer->set_custom_minimum_size(Size2(240 * EDSCALE, row_h));
 	btn_open_sheet_importer->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_open_sheet_importer_pressed));
 	frames_bar->add_child(btn_open_sheet_importer);
 
-	frames_strip_scroll = memnew(ScrollContainer);
-	frames_strip_scroll->set_custom_minimum_size(Size2(0, 165 * EDSCALE));
-	frames_strip_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	frames_strip_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
-	frames_strip_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	sprite_anim_editor_box->add_child(frames_strip_scroll);
+	frames_sec->add_child(memnew(HSeparator));
 
-	frames_strip_hbox = memnew(HBoxContainer);
+	HBoxContainer *frames_and_preview_hb = memnew(HBoxContainer);
+	frames_and_preview_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	frames_and_preview_hb->add_theme_constant_override("separation", int(16 * EDSCALE));
+	frames_sec->add_child(frames_and_preview_hb);
+
+	frames_strip_scroll = nullptr;
+	frames_strip_hbox = memnew(HFlowContainer);
 	frames_strip_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	frames_strip_hbox->add_theme_constant_override("separation", 6);
-	frames_strip_scroll->add_child(frames_strip_hbox);
+	frames_strip_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	frames_strip_hbox->set_custom_minimum_size(Size2(0, 170 * EDSCALE));
+	frames_strip_hbox->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	frames_strip_hbox->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	frames_and_preview_hb->add_child(frames_strip_hbox);
 
-	// ==========================================
-	// BLOQUE 4: VISTA PREVIA
-	// ==========================================
-	sprite_anim_editor_box->add_child(memnew(HSeparator));
-	HBoxContainer *prev_row = memnew(HBoxContainer);
-	prev_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_row->add_theme_constant_override("separation", 8);
-	sprite_anim_editor_box->add_child(prev_row);
+	VBoxContainer *prev_col = memnew(VBoxContainer);
+	prev_col->set_h_size_flags(Control::SIZE_FILL);
+	prev_col->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
+	prev_col->add_theme_constant_override("separation", int(6 * EDSCALE));
+	frames_and_preview_hb->add_child(prev_col);
 
-	Label *lbl_prev = memnew(Label(CG_DB_TR("Vista previa:")));
+	Label *lbl_prev = memnew(Label(CG_DB_TR("Vista previa")));
+	lbl_prev->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	lbl_prev->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
-	prev_row->add_child(lbl_prev);
-
-	CenterContainer *prev_center = memnew(CenterContainer);
-	prev_center->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_row->add_child(prev_center);
+	prev_col->add_child(lbl_prev);
 
 	PanelContainer *prev_panel = memnew(PanelContainer);
-	prev_panel->set_custom_minimum_size(Size2(80 * EDSCALE, 80 * EDSCALE));
+	prev_panel->set_custom_minimum_size(Size2(136 * EDSCALE, 136 * EDSCALE));
 	Ref<StyleBoxFlat> prev_sb;
 	prev_sb.instantiate();
 	prev_sb->set_bg_color(Color(0.12f, 0.14f, 0.18f, 0.95f));
 	prev_sb->set_border_width_all(1);
 	prev_sb->set_border_color(Color(0.3f, 0.35f, 0.45f, 0.8f));
 	prev_sb->set_corner_radius_all(4);
+	prev_sb->set_content_margin_all(int(4 * EDSCALE));
 	prev_panel->add_theme_style_override("panel", prev_sb);
-	prev_center->add_child(prev_panel);
+	prev_col->add_child(prev_panel);
 
 	anim_preview_rect = memnew(TextureRect);
-	anim_preview_rect->set_custom_minimum_size(Size2(72 * EDSCALE, 72 * EDSCALE));
+	anim_preview_rect->set_custom_minimum_size(Size2(128 * EDSCALE, 128 * EDSCALE));
 	anim_preview_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 	anim_preview_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
 	anim_preview_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
@@ -4722,43 +5016,46 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	enemy_casts_box = memnew(VBoxContainer);
 	enemy_casts_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_casts_box->add_theme_constant_override("separation", 6);
+	enemy_casts_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	enemy_casts_box->hide();
 	sprite_anim_editor_box->add_child(enemy_casts_box);
 
-	enemy_casts_box->add_child(memnew(HSeparator));
 	HBoxContainer *ec_hdr = memnew(HBoxContainer);
 	ec_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	Label *lbl_ec_hdr = memnew(Label(CG_DB_TR("Lanzamientos (Ranuras de habilidad elemental):")));
+	Label *lbl_ec_hdr = memnew(Label(CG_DB_TR("Lanzamientos elementales")));
 	lbl_ec_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_ec_hdr->set_tooltip_text(CG_DB_TR("Ranuras de animación para habilidades elementales del enemigo"));
 	lbl_ec_hdr->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	ec_hdr->add_child(lbl_ec_hdr);
 
 	btn_add_enemy_cast = memnew(Button(CG_DB_TR("+ Añadir Lanzamiento")));
+	btn_add_enemy_cast->set_custom_minimum_size(Size2(0, row_h));
 	btn_add_enemy_cast->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_enemy_cast_pressed));
 	ec_hdr->add_child(btn_add_enemy_cast);
 	enemy_casts_box->add_child(ec_hdr);
+	enemy_casts_box->add_child(memnew(HSeparator));
 
 	enemy_casts_rows_vbox = memnew(VBoxContainer);
 	enemy_casts_rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_casts_rows_vbox->add_theme_constant_override("separation", 4);
+	enemy_casts_rows_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
 	enemy_casts_box->add_child(enemy_casts_rows_vbox);
 
 	enemy_others_box = memnew(VBoxContainer);
 	enemy_others_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_others_box->add_theme_constant_override("separation", 6);
+	enemy_others_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	enemy_others_box->hide();
 	sprite_anim_editor_box->add_child(enemy_others_box);
 
-	enemy_others_box->add_child(memnew(HSeparator));
-	Label *lbl_eo_hdr = memnew(Label(CG_DB_TR("Otras (Animaciones migradas para reasignar o borrar):")));
+	Label *lbl_eo_hdr = memnew(Label(CG_DB_TR("Otras animaciones")));
 	lbl_eo_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lbl_eo_hdr->set_tooltip_text(CG_DB_TR("Animaciones migradas para reasignar a una ranura fija o borrar"));
 	lbl_eo_hdr->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	enemy_others_box->add_child(lbl_eo_hdr);
+	enemy_others_box->add_child(memnew(HSeparator));
 
 	enemy_others_rows_vbox = memnew(VBoxContainer);
 	enemy_others_rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	enemy_others_rows_vbox->add_theme_constant_override("separation", 4);
+	enemy_others_rows_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
 	enemy_others_box->add_child(enemy_others_rows_vbox);
 
 	// ==========================================
@@ -4872,14 +5169,14 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	sheet_importer_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_sheet_importer_file_selected));
 	add_child(sheet_importer_file_dialog);
 
-	// Sección 4.2 / 5.1 / 5.3: Editor de Rasgos (Traits) en Columna 3 inferior
+	// Sección: Editor de Rasgos (Traits) en el panel Editor
 	traits_box = memnew(VBoxContainer);
 	traits_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	traits_box->add_theme_constant_override("separation", 6);
-	col3_box->add_child(traits_box);
+	traits_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	col2_box->add_child(traits_box);
 
 	traits_box->add_child(memnew(HSeparator));
-	traits_box->add_child(memnew(Label(CG_DB_TR("Rasgos (Traits):"))));
+	traits_box->add_child(memnew(Label(CG_DB_TR("Rasgos"))));
 
 	traits_tree = memnew(Tree);
 	traits_tree->set_columns(3);
@@ -4887,28 +5184,34 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	traits_tree->set_column_title(0, CG_DB_TR("Tipo"));
 	traits_tree->set_column_title(1, CG_DB_TR("Dato"));
 	traits_tree->set_column_title(2, CG_DB_TR("Valor"));
+	traits_tree->set_column_expand(0, true);
+	traits_tree->set_column_expand_ratio(0, 2);
+	traits_tree->set_column_expand(1, true);
+	traits_tree->set_column_expand_ratio(1, 3);
+	traits_tree->set_column_expand(2, true);
+	traits_tree->set_column_expand_ratio(2, 2);
 	traits_tree->set_hide_root(true);
-	traits_tree->set_custom_minimum_size(Size2(0, 125 * EDSCALE));
+	traits_tree->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
 	traits_box->add_child(traits_tree);
 
 	HBoxContainer *tr_btn_row = memnew(HBoxContainer);
-	tr_btn_row->add_theme_constant_override("separation", 6);
+	tr_btn_row->add_theme_constant_override("separation", int(8 * EDSCALE));
 	traits_box->add_child(tr_btn_row);
 
 	btn_add_trait = memnew(Button(CG_DB_TR("+ Rasgo")));
 	btn_add_trait->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_add_trait->set_clip_text(true);
+	btn_add_trait->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 	btn_add_trait->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_trait_pressed));
 	tr_btn_row->add_child(btn_add_trait);
 
 	btn_remove_trait = memnew(Button(CG_DB_TR("- Quitar")));
 	btn_remove_trait->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_remove_trait->set_clip_text(true);
+	btn_remove_trait->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 	btn_remove_trait->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_trait_pressed));
 	tr_btn_row->add_child(btn_remove_trait);
 
 	trait_dialog = memnew(AcceptDialog);
-	trait_dialog->set_title(CG_DB_TR("Añadir Rasgo (Trait)"));
+	trait_dialog->set_title(CG_DB_TR("Añadir Rasgo"));
 	GridContainer *tr_grid = memnew(GridContainer);
 	tr_grid->set_columns(2);
 	tr_grid->add_theme_constant_override("h_separation", 10);
@@ -4934,15 +5237,15 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	trait_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_trait_confirmed));
 	add_child(trait_dialog);
 
-	// Sección 4.3 / 5.2: Editor de Efectos (Effects) en Columna 3 inferior
+	// Sección: Editor de Efectos de uso (Effects) en el panel Editor
 	effects_box = memnew(VBoxContainer);
 	effects_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	effects_box->add_theme_constant_override("separation", 6);
+	effects_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	effects_box->hide();
-	col3_box->add_child(effects_box);
+	col2_box->add_child(effects_box);
 
 	effects_box->add_child(memnew(HSeparator));
-	effects_box->add_child(memnew(Label(CG_DB_TR("Efectos de Uso (Effects):"))));
+	effects_box->add_child(memnew(Label(CG_DB_TR("Efectos de uso"))));
 
 	effects_tree = memnew(Tree);
 	effects_tree->set_columns(3);
@@ -4950,23 +5253,29 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	effects_tree->set_column_title(0, CG_DB_TR("Efecto"));
 	effects_tree->set_column_title(1, CG_DB_TR("Dato"));
 	effects_tree->set_column_title(2, CG_DB_TR("Val 1 / Val 2"));
+	effects_tree->set_column_expand(0, true);
+	effects_tree->set_column_expand_ratio(0, 2);
+	effects_tree->set_column_expand(1, true);
+	effects_tree->set_column_expand_ratio(1, 3);
+	effects_tree->set_column_expand(2, true);
+	effects_tree->set_column_expand_ratio(2, 2);
 	effects_tree->set_hide_root(true);
-	effects_tree->set_custom_minimum_size(Size2(0, 125 * EDSCALE));
+	effects_tree->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
 	effects_box->add_child(effects_tree);
 
 	HBoxContainer *ef_btn_row = memnew(HBoxContainer);
-	ef_btn_row->add_theme_constant_override("separation", 6);
+	ef_btn_row->add_theme_constant_override("separation", int(8 * EDSCALE));
 	effects_box->add_child(ef_btn_row);
 
 	btn_add_effect = memnew(Button(CG_DB_TR("+ Efecto")));
 	btn_add_effect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_add_effect->set_clip_text(true);
+	btn_add_effect->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 	btn_add_effect->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_add_effect_pressed));
 	ef_btn_row->add_child(btn_add_effect);
 
 	btn_remove_effect = memnew(Button(CG_DB_TR("- Quitar")));
 	btn_remove_effect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	btn_remove_effect->set_clip_text(true);
+	btn_remove_effect->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 	btn_remove_effect->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_effect_pressed));
 	ef_btn_row->add_child(btn_remove_effect);
 
@@ -5005,14 +5314,14 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	effect_dialog->connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_effect_confirmed));
 	add_child(effect_dialog);
 
-	// Tileset Collision Box (shown when CAT_TILESETS is active)
+	// Tileset Collision Box (shown when CAT_TILESETS is active, inside tileset_main_hbox)
 	tileset_collision_box = memnew(VBoxContainer);
 	tileset_collision_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_collision_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_collision_box->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	tileset_collision_box->add_theme_constant_override("separation", 5);
+	tileset_collision_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	tileset_collision_box->hide();
-	col3_box->add_child(tileset_collision_box);
+	tileset_main_hbox->add_child(tileset_collision_box);
 
 	// Pestañas principales de hojas: A | B | C | D | E
 	tileset_group_tabs_box = memnew(HBoxContainer);
@@ -5033,7 +5342,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn_ts_group_tab[g]->set_toggle_mode(true);
 		btn_ts_group_tab[g]->set_pressed(g == 0);
 		btn_ts_group_tab[g]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		btn_ts_group_tab[g]->set_clip_text(true);
+		btn_ts_group_tab[g]->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 		btn_ts_group_tab[g]->set_tooltip_text(CG_DB_TR(group_tips[g]));
 		btn_ts_group_tab[g]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_group_tab_pressed).bind(g));
 		tileset_group_tabs_box->add_child(btn_ts_group_tab[g]);
@@ -5058,7 +5367,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn_ts_a_subtab[a]->set_toggle_mode(true);
 		btn_ts_a_subtab[a]->set_pressed(a == 4);
 		btn_ts_a_subtab[a]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		btn_ts_a_subtab[a]->set_clip_text(true);
+		btn_ts_a_subtab[a]->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 		btn_ts_a_subtab[a]->set_tooltip_text(CG_DB_TR(sub_tips[a]));
 		btn_ts_a_subtab[a]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_a_subtab_pressed).bind(a));
 		tileset_a_subtabs_box->add_child(btn_ts_a_subtab[a]);
@@ -5066,31 +5375,29 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	HBoxContainer *slot_status_row = memnew(HBoxContainer);
 	slot_status_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	slot_status_row->add_theme_constant_override("separation", 4);
+	slot_status_row->add_theme_constant_override("separation", int(8 * EDSCALE));
 	tileset_collision_box->add_child(slot_status_row);
 
 	active_slot_info_label = memnew(Label(CG_DB_TR("Ranura: A5 (32x32)")));
 	active_slot_info_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	active_slot_info_label->set_clip_text(false);
 	active_slot_info_label->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	slot_status_row->add_child(active_slot_info_label);
 
 	btn_load_tileset_sheet = memnew(Button(CG_DB_TR("Cargar Hoja...")));
 	btn_load_tileset_sheet->set_tooltip_text(CG_DB_TR("Cargar archivo PNG 32x32 para la ranura activa"));
-	btn_load_tileset_sheet->set_custom_minimum_size(Size2(80 * EDSCALE, 20 * EDSCALE));
-	btn_load_tileset_sheet->set_clip_text(false);
+	btn_load_tileset_sheet->set_custom_minimum_size(Size2(110 * EDSCALE, 32 * EDSCALE));
 	btn_load_tileset_sheet->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_load_tileset_sheet_pressed));
 	slot_status_row->add_child(btn_load_tileset_sheet);
 
 	Button *btn_picker_help = memnew(Button("?"));
-	btn_picker_help->set_custom_minimum_size(Size2(20 * EDSCALE, 20 * EDSCALE));
+	btn_picker_help->set_custom_minimum_size(Size2(32 * EDSCALE, 32 * EDSCALE));
 	btn_picker_help->set_tooltip_text(CG_DB_TR("Clic en cada tile para alternar pasabilidad:\n○ (Círculo) = Pasable (Suelo)\n× (Cruz) = Bloqueado (Colisión)\n★ (Estrella) = Sobre personaje (Techo/Pasa detrás)\n4-Dir = Pasabilidad por flechas (↓ ← → ↑)\nTerr = Etiqueta de Terreno (0 a 7)\nArb = Arbusto (~)\nMost = Mostrador (♦)\nEsc = Escalera (H)\nDaño = Daño de suelo (▲)"));
 	slot_status_row->add_child(btn_picker_help);
 
 	db_tile_picker = memnew(ClockGearsTilePicker);
 	db_tile_picker->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	db_tile_picker->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	db_tile_picker->set_custom_minimum_size(Size2(240 * EDSCALE, 220 * EDSCALE));
+	db_tile_picker->set_custom_minimum_size(Size2(260 * EDSCALE, 320 * EDSCALE));
 	db_tile_picker->set_metadata_editing_enabled(true);
 	db_tile_picker->set_edit_mode(ClockGearsTilePicker::MODE_PASSAGE_BASIC);
 	db_tile_picker->set_on_metadata_changed(callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_collision_changed));
@@ -5100,6 +5407,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	tileset_scroll = memnew(ScrollContainer);
 	tileset_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tileset_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	tileset_scroll->hide();
 	tileset_collision_box->add_child(tileset_scroll);
 
@@ -5132,7 +5440,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	asset_warning_dialog->set_title(CG_DB_TR("Aviso Pixel Art (32x32)"));
 	add_child(asset_warning_dialog);
 
-	_on_category_selected(CAT_ACTORS);
+	Dictionary init_ui_state = _load_editor_ui_state();
+	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
+	if (init_cat < 0 || init_cat >= CAT_MAX) {
+		init_cat = CAT_ACTORS;
+	}
+	_on_category_selected(init_cat);
 }
 
 void ClockGearsDatabaseDialog::open_database() {
@@ -5140,25 +5453,65 @@ void ClockGearsDatabaseDialog::open_database() {
 		ClockGearsTheme::get_singleton()->apply_to_window(this);
 	}
 	_load_database_from_disk();
-	_refresh_category_view();
-
-	// PROBLEMA A: Restaurar el tamaño recordado por la ventana si existe; de lo contrario, 90% de la ventana padre
-	Size2i target_size(1160, 680);
-	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("clockgears/editor/database_window_size")) {
-		Variant saved_sz = ProjectSettings::get_singleton()->get_setting("clockgears/editor/database_window_size");
-		if (saved_sz.get_type() == Variant::VECTOR2I || saved_sz.get_type() == Variant::VECTOR2) {
-			target_size = Size2i(saved_sz);
-		}
-	} else {
-		Size2i avail_size(1280, 720);
-		Window *parent_win = get_parent_visible_window();
-		if (parent_win) {
-			avail_size = parent_win->get_size();
-		}
-		target_size = Size2i(int(avail_size.x * 0.90f), int(avail_size.y * 0.90f));
+	Dictionary ui_state = _load_editor_ui_state();
+	int last_cat = int(ui_state.get("last_category", current_category));
+	if (last_cat >= 0 && last_cat < CAT_MAX) {
+		current_category = last_cat;
 	}
-	target_size = target_size.max(get_min_size());
+	_on_category_selected(current_category);
+
+	Size2i screen_sz(1920, 1080);
+	if (DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		Size2i ds_sz = DisplayServer::get_singleton()->screen_get_usable_rect(scr).size;
+		if (ds_sz.x <= 0 || ds_sz.y <= 0) {
+			ds_sz = DisplayServer::get_singleton()->screen_get_size(scr);
+		}
+		if (ds_sz.x > 0 && ds_sz.y > 0) {
+			screen_sz = ds_sz;
+		}
+	} else if (Window *parent_win = get_parent_visible_window()) {
+		Size2i pw = parent_win->get_size();
+		if (pw.x > 0 && pw.y > 0) {
+			screen_sz = pw;
+		}
+	}
+
+	Size2i min_sz(int(1000 * EDSCALE), int(640 * EDSCALE));
+	if (screen_sz.x < min_sz.x) {
+		min_sz.x = screen_sz.x;
+	}
+	if (screen_sz.y < min_sz.y) {
+		min_sz.y = screen_sz.y;
+	}
+	set_min_size(min_sz);
+
+	Size2i max_def(int(1600 * EDSCALE), int(900 * EDSCALE));
+	Size2i default_sz(
+			MIN(int(screen_sz.x * 0.90f), max_def.x),
+			MIN(int(screen_sz.y * 0.90f), max_def.y));
+	default_sz = default_sz.max(min_sz).min(screen_sz);
+
+	Size2i remembered_window_size(int(ui_state.get("window_w", 0)), int(ui_state.get("window_h", 0)));
+	bool has_remembered_window_pos = bool(ui_state.get("has_pos", false));
+	Point2i remembered_window_pos(int(ui_state.get("window_x", 0)), int(ui_state.get("window_y", 0)));
+
+	Size2i target_size = default_sz;
+	if (remembered_window_size.x > 0 && remembered_window_size.y > 0) {
+		target_size = remembered_window_size.max(min_sz).min(screen_sz);
+	}
+
 	popup_centered(target_size);
+	if (has_remembered_window_pos && DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		Rect2i usable = DisplayServer::get_singleton()->screen_get_usable_rect(scr);
+		if (usable.size.x > 0 && usable.size.y > 0) {
+			Point2i clamped_pos(
+					CLAMP(remembered_window_pos.x, usable.position.x, MAX(usable.position.x, usable.position.x + usable.size.x - target_size.x)),
+					CLAMP(remembered_window_pos.y, usable.position.y, MAX(usable.position.y, usable.position.y + usable.size.y - target_size.y)));
+			set_position(clamped_pos);
+		}
+	}
 
 	if (name_edit && name_edit->is_visible_in_tree()) {
 		name_edit->grab_focus();
@@ -5239,12 +5592,13 @@ void ClockGearsDatabaseDialog::_refresh_troop_members_ui() {
 
 		HBoxContainer *row = memnew(HBoxContainer);
 		row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		row->add_theme_constant_override("separation", 4);
+		row->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
+		row->add_theme_constant_override("separation", int(8 * EDSCALE));
 
 		Button *btn_sel = memnew(Button(vformat("#%d", i + 1)));
 		btn_sel->set_toggle_mode(true);
 		btn_sel->set_pressed(i == selected_troop_member_idx);
-		btn_sel->set_custom_minimum_size(Size2(30 * EDSCALE, 0));
+		btn_sel->set_custom_minimum_size(Size2(36 * EDSCALE, 32 * EDSCALE));
 		btn_sel->connect("pressed", callable_mp_static(+[](ClockGearsDatabaseDialog *p_self, int p_m_idx) {
 			if (p_self) {
 				p_self->selected_troop_member_idx = p_m_idx;
@@ -5255,6 +5609,7 @@ void ClockGearsDatabaseDialog::_refresh_troop_members_ui() {
 
 		OptionButton *opt = memnew(OptionButton);
 		opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		opt->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
 		_populate_db_records_option(opt, CAT_ENEMIES, CG_DB_TR("(ninguno)"), false);
 		_select_option_by_id_or_index(opt, enemy_id);
 		opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_member_enemy_changed).bind(i));
@@ -5267,6 +5622,7 @@ void ClockGearsDatabaseDialog::_refresh_troop_members_ui() {
 		sp_x->set_min(0);
 		sp_x->set_max(960);
 		sp_x->set_value(mx);
+		sp_x->set_custom_minimum_size(Size2(80 * EDSCALE, 32 * EDSCALE));
 		_bind_numeric_spinbox(sp_x);
 		sp_x->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_member_x_changed).bind(i));
 		row->add_child(sp_x);
@@ -5278,11 +5634,13 @@ void ClockGearsDatabaseDialog::_refresh_troop_members_ui() {
 		sp_y->set_min(0);
 		sp_y->set_max(540);
 		sp_y->set_value(my);
+		sp_y->set_custom_minimum_size(Size2(80 * EDSCALE, 32 * EDSCALE));
 		_bind_numeric_spinbox(sp_y);
 		sp_y->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_member_y_changed).bind(i));
 		row->add_child(sp_y);
 
 		Button *btn_del = memnew(Button("-"));
+		btn_del->set_custom_minimum_size(Size2(56 * EDSCALE, 32 * EDSCALE));
 		btn_del->set_tooltip_text(CG_DB_TR("Eliminar este enemigo de la tropa"));
 		btn_del->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_troop_member_pressed).bind(i));
 		row->add_child(btn_del);
@@ -5578,12 +5936,17 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw() {
 	Size2 avail = troop_placement_canvas->get_size();
 	if (avail.x <= 10 || avail.y <= 10) return;
 
-	// Resolución lógica de batalla: 960 x 540, escalada para caber en el panel sin distorsión
+	// Resolución lógica de batalla: 960 x 540 (16:9), a todo el ancho disponible (hasta 960 px), sin hueco encima
 	const float logical_w = 960.0f;
 	const float logical_h = 540.0f;
-	float scale = MIN(avail.x / logical_w, avail.y / logical_h);
+	float max_w = MIN(avail.x, logical_w * EDSCALE);
+	float desired_h = max_w * (logical_h / logical_w);
+	if (Math::abs(troop_placement_canvas->get_custom_minimum_size().y - desired_h) > 2.0f) {
+		troop_placement_canvas->set_custom_minimum_size(Size2(0, desired_h));
+	}
+	float scale = MIN(max_w / logical_w, avail.y / logical_h);
 	Size2 vp_size(logical_w * scale, logical_h * scale);
-	Point2 vp_pos((avail.x - vp_size.x) * 0.5f, (avail.y - vp_size.y) * 0.5f);
+	Point2 vp_pos((avail.x - vp_size.x) * 0.5f, 0.0f);
 	Rect2 vp_rect(vp_pos, vp_size);
 
 	// Fondo oscuro liso por defecto
@@ -5711,10 +6074,11 @@ void ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input(const Ref<In
 	Size2 avail = troop_placement_canvas->get_size();
 	const float logical_w = 960.0f;
 	const float logical_h = 540.0f;
-	float scale = MIN(avail.x / logical_w, avail.y / logical_h);
+	float max_w = MIN(avail.x, logical_w * EDSCALE);
+	float scale = MIN(max_w / logical_w, avail.y / logical_h);
 	if (scale <= 0.001f) return;
 	Size2 vp_size(logical_w * scale, logical_h * scale);
-	Point2 vp_pos((avail.x - vp_size.x) * 0.5f, (avail.y - vp_size.y) * 0.5f);
+	Point2 vp_pos((avail.x - vp_size.x) * 0.5f, 0.0f);
 
 	Dictionary d = category_data[CAT_TROOPS][rec_idx];
 	Array mems = d.get("members", Array());
@@ -6330,12 +6694,11 @@ String ClockGearsDatabaseDialog::_get_active_anim_name() const {
 }
 
 void ClockGearsDatabaseDialog::_update_current_anim_slot_labels() {
-	if (current_category != CAT_ENEMIES) return;
 	if (anim_track_opt) {
 		for (int i = 0; i < anim_track_opt->get_item_count(); i++) {
 			String key = String(anim_track_opt->get_item_metadata(i));
 			if (key.is_empty()) continue;
-			String base_lbl = s_is_enemy_fixed_slot_name(key)
+			String base_lbl = (current_category == CAT_ENEMIES && s_is_enemy_fixed_slot_name(key))
 					? ClockGearsSpriteSheetData::get_enemy_fixed_slot_label(key)
 					: key;
 			String disp = s_format_enemy_slot_display_label(key, base_lbl, current_sprite_data);
@@ -6345,8 +6708,10 @@ void ClockGearsDatabaseDialog::_update_current_anim_slot_labels() {
 			}
 		}
 	}
-	_refresh_enemy_casts_ui();
-	_refresh_enemy_others_ui();
+	if (current_category == CAT_ENEMIES) {
+		_refresh_enemy_casts_ui();
+		_refresh_enemy_others_ui();
+	}
 }
 
 void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
@@ -6414,10 +6779,11 @@ void ClockGearsDatabaseDialog::_refresh_anim_track_options() {
 		}
 	} else {
 		for (const KeyValue<String, ClockGearsSpriteAnimation> &E : current_sprite_data.animations) {
-			anim_track_opt->add_item(E.key, idx);
+			String disp = s_format_enemy_slot_display_label(E.key, E.key, current_sprite_data);
+			anim_track_opt->add_item(disp, idx);
 			anim_track_opt->set_item_metadata(idx, E.key);
 			if (anim_item_list) {
-				anim_item_list->add_item(E.key);
+				anim_item_list->add_item(disp);
 				anim_item_list->set_item_metadata(idx, E.key);
 			}
 			if (E.key == prev_sel || (prev_sel.is_empty() && E.key.to_lower() == "idle")) {
@@ -7030,7 +7396,7 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 			frame.sheet_path = spath;
 		}
 		PanelContainer *pnl = memnew(PanelContainer);
-		pnl->set_custom_minimum_size(Size2(64 * EDSCALE, 145 * EDSCALE));
+		pnl->set_custom_minimum_size(Size2(76 * EDSCALE, 168 * EDSCALE));
 
 		Ref<StyleBoxFlat> sb;
 		sb.instantiate();
@@ -7041,16 +7407,16 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 		pnl->add_theme_style_override("panel", sb);
 
 		VBoxContainer *vb = memnew(VBoxContainer);
-		vb->add_theme_constant_override("separation", 2);
+		vb->add_theme_constant_override("separation", 4);
 		pnl->add_child(vb);
 
 		Label *lbl = memnew(Label(vformat("#%d", s + 1)));
 		lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		lbl->add_theme_font_size_override("font_size", 9);
+		lbl->add_theme_font_size_override("font_size", 10);
 		vb->add_child(lbl);
 
 		TextureRect *tr = memnew(TextureRect);
-		tr->set_custom_minimum_size(Size2(36 * EDSCALE, 36 * EDSCALE));
+		tr->set_custom_minimum_size(Size2(64 * EDSCALE, 64 * EDSCALE));
 		tr->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 		tr->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
 		tr->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
@@ -7556,18 +7922,19 @@ void ClockGearsDatabaseDialog::remove_anim_frame_at(int p_step_idx) {
 void ClockGearsDatabaseDialog::_setup_combat_anims_ui() {
 	combat_anims_box = memnew(VBoxContainer);
 	combat_anims_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	combat_anims_box->add_theme_constant_override("separation", 6);
+	combat_anims_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	sprite_anim_editor_box->add_child(combat_anims_box);
 
 	combat_anims_box->add_child(memnew(HSeparator));
-	Label *lbl_title = memnew(Label(CG_DB_TR("5. Animaciones de combate:")));
+	Label *lbl_title = memnew(Label(CG_DB_TR("Animaciones de combate")));
 	lbl_title->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	combat_anims_box->add_child(lbl_title);
 
 	GridContainer *ca_grid = memnew(GridContainer);
-	ca_grid->set_columns(2);
-	ca_grid->add_theme_constant_override("h_separation", 8);
-	ca_grid->add_theme_constant_override("v_separation", 6);
+	ca_grid->set_columns(4);
+	ca_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ca_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	ca_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
 	combat_anims_box->add_child(ca_grid);
 
 	// 1. Reposo (Idle)
