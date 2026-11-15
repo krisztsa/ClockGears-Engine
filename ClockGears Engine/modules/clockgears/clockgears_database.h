@@ -27,6 +27,7 @@
 
 class ClockGearsBattleScene;
 class ClockGearsCreditsPlayer;
+class ClockGearsUiDesignEditor;
 class ClockGearsEventEditorDialog;
 class ClockGearsGameMenu;
 class ClockGearsHudOverlay;
@@ -925,6 +926,10 @@ private:
 	FileDialog *hud_asset_file_dialog = nullptr;
 	String hud_asset_target_key;
 
+	// Editor Visual de Interfaz (9B Tanda 6B-1)
+	ClockGearsUiDesignEditor *ui_design_editor_panel = nullptr;
+	bool ui_designer_hud_synced = false;
+
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
 	bool updating_ui = false;
 
@@ -1365,6 +1370,9 @@ private:
 	void _on_hud_preview_res_selected(int p_idx);
 	void _on_hud_sample_value_changed(double p_unused = 0.0);
 
+	void _setup_ui_design_editor_ui();
+	void _on_ui_designer_modified();
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -1372,7 +1380,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3, DB_CAT_HUD = CAT_MAX + 4 };
+	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3, DB_CAT_HUD = CAT_MAX + 4, DB_CAT_UI_DESIGNER = CAT_MAX + 5 };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -1479,6 +1487,10 @@ public:
 	void set_hud_preview_sample_values(int p_hp, int p_gold, int p_item_qty);
 	ClockGearsHudOverlay *get_hud_live_preview() const { return hud_live_preview; }
 	Dictionary get_hud_editor_ui_handles() const;
+
+	String import_menu_asset_for_ui_designer(const String &p_src_path, bool p_pixel_preset = true);
+	ClockGearsUiDesignEditor *get_ui_designer_editor() const { return ui_design_editor_panel; }
+	Dictionary get_ui_designer_ui_handles() const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

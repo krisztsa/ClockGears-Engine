@@ -255,7 +255,9 @@ func _run_tests() -> void:
 			menus_chap = ch
 			break
 	check(not menus_chap.is_empty(), "Base de Datos contiene el nuevo capítulo 'Menús'")
-	check(menus_chap.get("category_names", []) == ["Menú principal"], "Capítulo 'Menús' contiene únicamente la categoría 'Menú principal'")
+	var cat_names: Array = menus_chap.get("category_names", [])
+	check(cat_names.has("Menú principal") and cat_names.has("Estilos de ventana") and cat_names.has("Menú del juego") and cat_names.has("Créditos") and cat_names.has("HUD") and cat_names.has("Diseño de interfaz"),
+		"Capítulo 'Menús' incluye todas las categorías de menús e interfaz")
 
 	db.select_category_by_key("main_menu")
 	await _step_frames(3)

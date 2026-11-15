@@ -58,6 +58,7 @@
 #include "clockgears_ui_editor.h"
 #include "clockgears_workspace.h"
 #include "editor/clockgears_picture_picker.h"
+#include "editor/clockgears_ui_design_editor.h"
 #include "clockgears_camera_dialog.h"
 #endif
 
@@ -112,6 +113,9 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsCameraPreviewCanvas);
 		GDREGISTER_CLASS(ClockGearsCameraDialog);
 		GDREGISTER_CLASS(ClockGearsGenerateEntityDialog);
+		GDREGISTER_CLASS(ClockGearsUiPaletteButton);
+		GDREGISTER_CLASS(ClockGearsUiCanvasOverlay);
+		GDREGISTER_CLASS(ClockGearsUiDesignEditor);
 #endif
 
 		cg_system_catalog_singleton = memnew(ClockGearsSystemCatalog);
