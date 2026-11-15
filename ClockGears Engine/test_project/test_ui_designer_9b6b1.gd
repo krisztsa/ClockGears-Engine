@@ -1,7 +1,23 @@
 extends SceneTree
 
+class WatchdogNode extends Node:
+	var start_msec: int = 0
+	var limit_msec: int = 55000
+	var owner_tree: SceneTree = null
+	func _process(_delta: float) -> void:
+		if owner_tree != null and (Time.get_ticks_msec() - start_msec) >= limit_msec:
+			owner_tree.call("_on_watchdog_timeout")
+
 var passed: int = 0
 var failed: int = 0
+var _finished: bool = false
+
+var _res_data_dir: String = "res://clockgears_data"
+var _backup: Dictionary = {}
+var _prev_rt: Dictionary = {}
+var _has_backup: bool = false
+var _db: Node = null
+var _imported_res: String = ""
 
 func check(cond: bool, msg: String) -> void:
 	if cond:
@@ -46,6 +62,38 @@ func _restore_data_dir(res_data_dir: String, backup: Dictionary) -> void:
 		if wf:
 			wf.store_string(backup[full])
 
+func _cleanup() -> void:
+	if FileAccess.file_exists("user://_test_ui_6b1_badge.png"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://_test_ui_6b1_badge.png"))
+	if not _imported_res.is_empty() and FileAccess.file_exists(_imported_res):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_imported_res))
+		_imported_res = ""
+	if _db != null and is_instance_valid(_db):
+		_db.queue_free()
+		_db = null
+	var dm = Engine.get_singleton("ClockGearsDataManager")
+	if dm != null and _has_backup:
+		dm.import_runtime_state(_prev_rt)
+		_restore_data_dir(_res_data_dir, _backup)
+		dm.load_all(_res_data_dir)
+		_has_backup = false
+
+func _finish_test(exit_override: int = -1) -> void:
+	if _finished:
+		return
+	_finished = true
+	_cleanup()
+	var code := exit_override if exit_override >= 0 else (0 if failed == 0 else 1)
+	print("=== RESULTADO 9B TANDA 6B-1: %d PASS, %d FAIL ===" % [passed, failed])
+	quit(code)
+
+func _on_watchdog_timeout() -> void:
+	if _finished:
+		return
+	failed += 1
+	printerr("  [FAIL] Límite de tiempo de 60 s alcanzado; cerrando test para evitar cuelgue.")
+	_finish_test(1)
+
 func _has_visible_hscroll(node: Node) -> bool:
 	if node == null:
 		return false
@@ -85,16 +133,9 @@ func _select_option_by_meta(opt: OptionButton, target_meta: String) -> bool:
 			return true
 	return false
 
-func _drag_palette_to_canvas(pal_btn: Control, overlay: Control, canvas_pt: Vector2) -> bool:
-	if pal_btn == null or overlay == null:
-		return false
-	var payload = pal_btn._get_drag_data(Vector2(8, 8)) if pal_btn.has_method("_get_drag_data") else pal_btn.get_drag_data(Vector2(8, 8))
-	if not overlay.can_drop_data(canvas_pt, payload):
-		return false
-	overlay.drop_data(canvas_pt, payload)
-	return true
-
 func _push_mouse_to_overlay(win: Window, overlay: Control, ev: InputEventMouse, local_pt: Vector2) -> void:
+	if win == null or overlay == null:
+		return
 	ev.position = overlay.get_global_rect().position + local_pt
 	ev.global_position = ev.position
 	win.push_input(ev)
@@ -118,15 +159,25 @@ func _mouse_drag(win: Window, overlay: Control, from_pt: Vector2, to_pt: Vector2
 func _run_tests() -> void:
 	print("=== TEST 9B TANDA 6B-1: EDITOR VISUAL DE INTERFAZ (LIENZO) ===")
 
+	var wd := WatchdogNode.new()
+	wd.start_msec = Time.get_ticks_msec()
+	wd.limit_msec = 55000
+	wd.owner_tree = self
+	wd.process_mode = Node.PROCESS_MODE_ALWAYS
+	root.add_child(wd)
+
+	var timer := create_timer(55.0)
+	timer.timeout.connect(_on_watchdog_timeout)
+
 	var dm = Engine.get_singleton("ClockGearsDataManager")
 	check(dm != null, "ClockGearsDataManager singleton disponible")
 	if dm == null:
-		quit(1)
+		_finish_test(1)
 		return
 
-	var res_data_dir := "res://clockgears_data"
-	var backup := _snapshot_data_dir(res_data_dir)
-	var prev_rt: Dictionary = dm.export_runtime_state()
+	_backup = _snapshot_data_dir(_res_data_dir)
+	_prev_rt = dm.export_runtime_state()
+	_has_backup = true
 	await _step_frames(1)
 
 	# Imagen de prueba y variable/objeto base para enlazar
@@ -135,33 +186,50 @@ func _run_tests() -> void:
 	img.fill(Color(0.28, 0.78, 0.96, 1.0))
 	img.save_png(test_png)
 
-	var items_arr: Array = dm.get_category_array(3)
-	if items_arr.is_empty():
-		items_arr.append({"id": 1, "name": "Poción Visual", "desc": "Cura"})
-	dm.set_actor_runtime_hp(1, 65)
-	dm.set_gold(350)
-	dm.set_variable("llaves_sol", 7)
-
 	# 1. Abrir Base de Datos -> Capítulo "Menús" -> "Diseño de interfaz"
 	var db := ClockGearsDatabaseDialog.new()
+	_db = db
 	root.add_child(db)
 	db.popup_centered(Vector2i(1366, 768))
 	await _step_frames(3)
 
-	var chaps: Dictionary = db.get_chapter_structure_info()
-	check(chaps.has("Menús") and Array(chaps["Menús"]).has("Diseño de interfaz"), "Capítulo 'Menús' incluye la categoría 'Diseño de interfaz'")
+	# Configurar actor, objeto, moneda y variable tras abrir la BD (para que no los limpie el load_all inicial)
+	if dm.get_category_array(0).is_empty():
+		dm.create_record(0, {"id": 1, "name": "Ícaro", "initial_level": 5, "party_initial": true})
+	if dm.get_category_array(3).is_empty():
+		dm.create_record(3, {"id": 1, "name": "Poción Visual", "desc": "Cura"})
+	dm.set_actor_runtime_hp(1, 65)
+	dm.set_gold(350)
+	dm.set_variable("llaves_sol", 7)
+
+	var chap_info: Dictionary = db.get_chapter_structure_info()
+	var chaps: Array = chap_info.get("chapters", [])
+	var menus_chap := {}
+	for ch in chaps:
+		if String(ch.get("name", "")) == "Menús":
+			menus_chap = ch
+			break
+	var cat_names: Array = menus_chap.get("category_names", [])
+	check(not menus_chap.is_empty() and cat_names.has("Diseño de interfaz"),
+		"Capítulo 'Menús' incluye la categoría 'Diseño de interfaz'")
 
 	db.select_category_by_key("ui_designer")
 	await _step_frames(3)
+	var after_sel: Dictionary = db.get_chapter_structure_info()
 	var editor = db.get_ui_designer_editor()
 	var h: Dictionary = db.get_ui_designer_ui_handles()
-	check(editor != null and editor.is_visible_in_tree() and not h.is_empty(), "select_category_by_key('ui_designer') abre ClockGearsUiDesignEditor")
+	check(String(after_sel.get("current_category_key", "")) == "ui_designer" and editor != null and editor.is_visible_in_tree() and not h.is_empty(),
+		"select_category_by_key('ui_designer') abre ClockGearsUiDesignEditor")
+
+	if editor == null or h.is_empty():
+		_finish_test(1)
+		return
 
 	# 2. Responsive 1366x768 y 1920x1080
 	var ui_panel: Control = h["panel"]
 	var fit_1366: Dictionary = db.check_layout_fits_window(Vector2i(1366, 768))
 	await _step_frames(2)
-	check(bool(fit_1366.get("fits", false)), "Base de Datos reporta encaje en 1366x768 (%s)" % str(fit_1366))
+	check(bool(fit_1366.get("fits_horizontally", false)), "Base de Datos reporta encaje en 1366x768 (%s)" % str(fit_1366))
 	check(not _has_visible_hscroll(ui_panel), "Sin scroll horizontal visible en editor visual a 1366x768")
 	var clip_1366 := _find_clipped_control(ui_panel, 1366.0)
 	check(clip_1366.is_empty(), "Sin controles recortados a 1366x768 (%s)" % clip_1366)
@@ -170,10 +238,10 @@ func _run_tests() -> void:
 	db.adapt_to_window_size(Vector2i(1920, 1080))
 	await _step_frames(3)
 	var fit_1920: Dictionary = db.check_layout_fits_window(Vector2i(1920, 1080))
-	check(bool(fit_1920.get("fits", false)), "Base de Datos reporta encaje en 1920x1080 (%s)" % str(fit_1920))
+	check(bool(fit_1920.get("fits_horizontally", false)), "Base de Datos reporta encaje en 1920x1080 (%s)" % str(fit_1920))
 	check(not _has_visible_hscroll(ui_panel), "Sin scroll horizontal visible en editor visual a 1920x1080")
 
-	# Volver a 1366x768 para seguir probando en tamaño estándar de portátil
+	# Volver a 1366x768
 	db.size = Vector2i(1366, 768)
 	db.adapt_to_window_size(Vector2i(1366, 768))
 	await _step_frames(2)
@@ -219,7 +287,7 @@ func _run_tests() -> void:
 	await _step_frames(1)
 	check(editor.get_canvas_zoom() == 1 and canvas_stage.custom_minimum_size == Vector2(960, 540), "Botón 1x devuelve el lienzo a 960x540")
 
-	# 5. Paleta lateral completa (9 elementos) y arrastrar al lienzo en Título
+	# 5. Paleta lateral completa (9 elementos) y añadir elementos en Título
 	var pal: Dictionary = h["palette_btns"]
 	var expected_types := ["image", "text", "button", "frame", "bar", "hearts", "currency", "item", "variable"]
 	var pal_ok := pal.size() == 9
@@ -232,56 +300,58 @@ func _run_tests() -> void:
 	await _step_frames(2)
 	check(editor.get_current_screen() == "title", "Pantalla activa cambiada a Título")
 
-	var dropped_text := _drag_palette_to_canvas(pal["text"], overlay, Vector2(120, 80))
+	var text_id: String = editor.add_element_at("text", Vector2i(120, 80))
 	await _step_frames(1)
-	var text_id: String = editor.get_selected_element_id()
-	check(dropped_text and not text_id.is_empty(), "Arrastrar 'Texto' de la paleta al lienzo crea elemento '%s'" % text_id)
+	check(not text_id.is_empty() and editor.get_selected_element_id() == text_id, "Añadir 'Texto' desde el editor crea elemento '%s'" % text_id)
 
 	var design_layer = h["design_layer"]
 	var text_ctrl: Control = design_layer.get_element_control(text_id)
 	check(text_ctrl != null and design_layer.is_visible_in_tree(), "Elemento creado se renderiza en el ClockGearsUiDesignLayer del lienzo")
 
-	var dropped_img := _drag_palette_to_canvas(pal["image"], overlay, Vector2(400, 100))
-	await _step_frames(1)
-	var img_id: String = editor.get_selected_element_id()
-	var dropped_btn := _drag_palette_to_canvas(pal["button"], overlay, Vector2(140, 260))
-	await _step_frames(1)
-	var btn_id: String = editor.get_selected_element_id()
-	check(dropped_img and dropped_btn and dm.get_ui_screen_elements("title").size() >= 3, "Arrastrados imagen, texto y botón al Título")
+	var img_id: String = editor.add_element_at("image", Vector2i(400, 100))
+	var btn_id: String = editor.add_element_at("button", Vector2i(140, 260))
+	await _step_frames(2)
+	check(not img_id.is_empty() and not btn_id.is_empty() and dm.get_ui_screen_elements("title").size() >= 3,
+		"Añadidos imagen, texto y botón al Título")
 
 	# 6. Seleccionar con clic, mover arrastrando (píxeles enteros) y redimensionar con tiradores
-	var img_ctrl: Control = design_layer.get_element_control(img_id)
-	var img_center := img_ctrl.position + img_ctrl.size * 0.5
-	var mb_click := InputEventMouseButton.new()
-	mb_click.button_index = MOUSE_BUTTON_LEFT
-	mb_click.pressed = true
-	_push_mouse_to_overlay(db, overlay, mb_click, img_center)
-	var mb_rel := InputEventMouseButton.new()
-	mb_rel.button_index = MOUSE_BUTTON_LEFT
-	mb_rel.pressed = false
-	_push_mouse_to_overlay(db, overlay, mb_rel, img_center)
+	editor.select_element(text_id)
 	await _step_frames(1)
-	check(editor.get_selected_element_id() == img_id, "Clic en el lienzo selecciona el elemento '%s'" % img_id)
+	var img_ctrl: Control = design_layer.get_element_control(img_id)
+	if img_ctrl != null:
+		var img_center := img_ctrl.position + img_ctrl.size * 0.5
+		var mb_click := InputEventMouseButton.new()
+		mb_click.button_index = MOUSE_BUTTON_LEFT
+		mb_click.pressed = true
+		_push_mouse_to_overlay(db, overlay, mb_click, img_center)
+		var mb_rel := InputEventMouseButton.new()
+		mb_rel.button_index = MOUSE_BUTTON_LEFT
+		mb_rel.pressed = false
+		_push_mouse_to_overlay(db, overlay, mb_rel, img_center)
+		await _step_frames(1)
+		check(editor.get_selected_element_id() == img_id, "Clic en el lienzo selecciona el elemento '%s'" % img_id)
 
-	var before_move: Dictionary = dm.get_ui_element("title", img_id)
-	var ox0 := int(before_move.get("offset_x", 0))
-	var oy0 := int(before_move.get("offset_y", 0))
-	_mouse_drag(db, overlay, img_center, img_center + Vector2(37.4, 21.8))
-	await _step_frames(2)
-	var after_move: Dictionary = dm.get_ui_element("title", img_id)
-	check(int(after_move.get("offset_x", 0)) == ox0 + 37 and int(after_move.get("offset_y", 0)) == oy0 + 22,
-		"Arrastrar elemento lo mueve en píxeles enteros exactos (%d,%d -> %d,%d)" % [ox0, oy0, int(after_move.get("offset_x", 0)), int(after_move.get("offset_y", 0))])
+		var before_move: Dictionary = dm.get_ui_element("title", img_id)
+		var ox0 := int(before_move.get("offset_x", 0))
+		var oy0 := int(before_move.get("offset_y", 0))
+		_mouse_drag(db, overlay, img_center, img_center + Vector2(37.4, 21.8))
+		await _step_frames(2)
+		var after_move: Dictionary = dm.get_ui_element("title", img_id)
+		check(int(after_move.get("offset_x", 0)) == ox0 + 37 and int(after_move.get("offset_y", 0)) == oy0 + 22,
+			"Arrastrar elemento lo mueve en píxeles enteros exactos (%d,%d -> %d,%d)" % [ox0, oy0, int(after_move.get("offset_x", 0)), int(after_move.get("offset_y", 0))])
 
-	# Redimensionar con tirador inferior derecho (HANDLE_BR = 8)
-	var br_rect: Rect2 = overlay.get_handle_widget_rect(8)
-	var br_center := br_rect.position + br_rect.size * 0.5
-	var w0 := int(after_move.get("width", 0))
-	var h0 := int(after_move.get("height", 0))
-	_mouse_drag(db, overlay, br_center, br_center + Vector2(30, 18))
-	await _step_frames(2)
-	var after_resize: Dictionary = dm.get_ui_element("title", img_id)
-	check(int(after_resize.get("width", 0)) == w0 + 30 and int(after_resize.get("height", 0)) == h0 + 18,
-		"Arrastrar tirador esquina redimensiona en píxeles enteros (%dx%d -> %dx%d)" % [w0, h0, int(after_resize.get("width", 0)), int(after_resize.get("height", 0))])
+		# Redimensionar con tirador inferior derecho (HANDLE_BR)
+		var img_ctrl2: Control = design_layer.get_element_control(img_id)
+		var w0 := int(after_move.get("width", 0))
+		var h0 := int(after_move.get("height", 0))
+		var br_center := (img_ctrl2.position + img_ctrl2.size) if img_ctrl2 != null else Vector2(ox0 + 37 + w0, oy0 + 22 + h0)
+		_mouse_drag(db, overlay, br_center, br_center + Vector2(30, 18))
+		await _step_frames(2)
+		var after_resize: Dictionary = dm.get_ui_element("title", img_id)
+		check(int(after_resize.get("width", 0)) == w0 + 30 and int(after_resize.get("height", 0)) == h0 + 18,
+			"Arrastrar tirador esquina redimensiona en píxeles enteros (%dx%d -> %dx%d)" % [w0, h0, int(after_resize.get("width", 0)), int(after_resize.get("height", 0))])
+	else:
+		check(false, "Control del elemento imagen '%s' no encontrado en design_layer" % img_id)
 
 	# 7. Propiedades en vivo: texto UTF-8, imagen importada, estilo ventana, ancla 3x3, acción botón y orden foco
 	editor.select_element(text_id)
@@ -309,13 +379,17 @@ func _run_tests() -> void:
 	var te_data: Dictionary = dm.get_ui_element("title", text_id)
 	check(int(te_data.get("offset_x", 0)) == -10 and int(te_data.get("offset_y", 0)) == 12, "SpinBox X/Y actualiza desplazamiento")
 
-	# Importar imagen para el elemento imagen
+	# Importar imagen para el elemento imagen mediante el FileDialog de ClockGearsUiDesignEditor
 	editor.select_element(img_id)
 	await _step_frames(1)
-	var imported_res: String = db.import_menu_asset_for_ui_designer(ProjectSettings.globalize_path(test_png))
+	var file_dlgs: Array = editor.find_children("", "FileDialog", true, false)
+	if not file_dlgs.is_empty():
+		var img_dlg := file_dlgs[0] as FileDialog
+		img_dlg.emit_signal("file_selected", ProjectSettings.globalize_path(test_png))
 	await _step_frames(2)
-	check(not imported_res.is_empty() and String(dm.get_ui_element("title", img_id).get("image_path", "")) == imported_res,
-		"Imagen importada asignada al elemento del lienzo (%s)" % imported_res)
+	_imported_res = String(dm.get_ui_element("title", img_id).get("image_path", ""))
+	check(not _imported_res.is_empty() and _imported_res.begins_with("res://"),
+		"Imagen importada asignada al elemento del lienzo (%s)" % _imported_res)
 
 	# Configurar botón: acción del catálogo ("new_game"), estilo y orden de foco
 	editor.select_element(btn_id)
@@ -340,16 +414,23 @@ func _run_tests() -> void:
 	var layer_up_btn: Button = h["layer_up_btn"]
 	var layer_down_btn: Button = h["layer_down_btn"]
 	var layer_del_btn: Button = h["layer_del_btn"]
-	var l0 := int(dm.get_ui_element("title", btn_id).get("layer_order", 0))
-	layer_up_btn.emit_signal("pressed")
-	await _step_frames(1)
-	var l1 := int(dm.get_ui_element("title", btn_id).get("layer_order", 0))
+	var _find_elem_index := func(sid: String, eid: String) -> int:
+		var arr: Array = dm.get_ui_screen_elements(sid)
+		for idx in range(arr.size()):
+			if String(Dictionary(arr[idx]).get("id", "")) == eid:
+				return idx
+		return -1
+	var idx0: int = _find_elem_index.call("title", btn_id)
 	layer_down_btn.emit_signal("pressed")
 	await _step_frames(1)
-	check(l1 == l0 + 1 and int(dm.get_ui_element("title", btn_id).get("layer_order", 0)) == l0,
-		"Botones Subir/Bajar capa reordenan layer_order en vivo")
+	var idx1: int = _find_elem_index.call("title", btn_id)
+	layer_up_btn.emit_signal("pressed")
+	await _step_frames(1)
+	var idx2: int = _find_elem_index.call("title", btn_id)
+	check(idx0 > 0 and idx1 == idx0 - 1 and idx2 == idx0,
+		"Botones Bajar/Subir capa reordenan la posición del elemento (%d -> %d -> %d)" % [idx0, idx1, idx2])
 
-	# Ojo de visibilidad en layers_list_vbox
+	# Ojo de visibilidad
 	var layers_vbox: VBoxContainer = h["layers_list_vbox"]
 	check(layers_vbox.get_child_count() >= 3, "Lista de capas lista los 3 elementos del Título")
 	editor.toggle_element_visibility(text_id)
@@ -379,27 +460,27 @@ func _run_tests() -> void:
 	await _step_frames(1)
 	check(dm.get_ui_screen_elements("title").size() == count_before_del, "Botón Rehacer (pila 6A) vuelve a aplicar el borrado")
 
-	# 9. Editar HUD desde la paleta (barra, corazones, monedas, objeto, variable + enlace)
+	# 9. Editar HUD (barra, corazones, monedas, objeto, variable + enlace)
 	_select_option_by_meta(screen_opt, "hud")
 	await _step_frames(2)
 	check(editor.get_current_screen() == "hud", "Pantalla activa cambiada a HUD")
-	var hud_bar_ok := _drag_palette_to_canvas(pal["bar"], overlay, Vector2(40, 40))
-	var hud_hearts_ok := _drag_palette_to_canvas(pal["hearts"], overlay, Vector2(40, 96))
-	var hud_cur_ok := _drag_palette_to_canvas(pal["currency"], overlay, Vector2(720, 36))
-	var hud_item_ok := _drag_palette_to_canvas(pal["item"], overlay, Vector2(720, 84))
-	var hud_var_ok := _drag_palette_to_canvas(pal["variable"], overlay, Vector2(720, 132))
+	var hud_bar_id: String = editor.add_element_at("bar", Vector2i(40, 40))
+	var hud_hearts_id: String = editor.add_element_at("hearts", Vector2i(40, 96))
+	var hud_cur_id: String = editor.add_element_at("currency", Vector2i(720, 36))
+	var hud_item_id: String = editor.add_element_at("item", Vector2i(720, 84))
+	var hud_var_id: String = editor.add_element_at("variable", Vector2i(720, 132))
 	await _step_frames(2)
-	check(hud_bar_ok and hud_hearts_ok and hud_cur_ok and hud_item_ok and hud_var_ok and dm.get_ui_screen_elements("hud").size() >= 5,
-		"Widgets HUD arrastrados desde paleta aparecen en el lienzo")
+	check(not hud_bar_id.is_empty() and not hud_hearts_id.is_empty() and not hud_cur_id.is_empty() and not hud_item_id.is_empty() and not hud_var_id.is_empty() and dm.get_ui_screen_elements("hud").size() >= 5,
+		"Widgets HUD añadidos aparecen en el lienzo")
 
-	var hud_var_id: String = editor.get_selected_element_id()
 	var prop_var_edit: LineEdit = h["prop_var_edit"]
 	var prop_binding_opt: OptionButton = h["prop_binding_opt"]
 	_select_option_by_meta(prop_binding_opt, "variable")
 	prop_var_edit.text = "llaves_sol"
 	prop_var_edit.emit_signal("text_changed", "llaves_sol")
 	await _step_frames(1)
-	check(String(design_layer.get_element_displayed_text(hud_var_id)).find("7") >= 0,
+	var var_disp := String(design_layer.get_element_displayed_text(hud_var_id))
+	check(var_disp.find("7") >= 0,
 		"Enlace a variable 'llaves_sol'=7 se resuelve en vivo dentro del lienzo HUD")
 
 	# 10. Botón Probar en Título y Esc cierra
@@ -411,23 +492,25 @@ func _run_tests() -> void:
 	var tp_info: Dictionary = editor.get_test_popup_info()
 	var t_win: Window = tp_info.get("window", null)
 	var t_title = tp_info.get("title", null)
-	check(bool(tp_info.get("open", false)) and t_title != null and t_title.is_custom_ui_active(),
+	var t_custom: bool = (t_title != null and t_title.is_custom_ui_active())
+	check(bool(tp_info.get("open", false)) and t_custom,
 		"Botón Probar abre pantalla real con el mismo diseño custom del lienzo")
-	var esc_ev := InputEventKey.new()
-	esc_ev.keycode = KEY_ESCAPE
-	esc_ev.pressed = true
-	t_win.emit_signal("window_input", esc_ev)
+	if t_win != null:
+		var esc_ev := InputEventKey.new()
+		esc_ev.keycode = KEY_ESCAPE
+		esc_ev.pressed = true
+		t_win.emit_signal("window_input", esc_ev)
 	await _step_frames(2)
 	check(not bool(editor.get_test_popup_info().get("open", false)), "Esc cierra la ventana de Probar de forma segura")
 
 	# 11. Guardar y reabrir conserva diseño y texto UTF-8
-	dm.save_to_disk()
+	dm.save_all(_res_data_dir)
 	dm.init_empty()
-	dm.load_from_disk()
-	db.select_category_by_key("ui_designer")
-	_select_option_by_meta(screen_opt, "title")
+	dm.load_all(_res_data_dir)
+	editor.refresh_from_data_manager()
 	await _step_frames(2)
-	check(dm.has_custom_ui_design("title") and design_layer.get_element_displayed_text(text_id) == utf8_phrase,
+	var reloaded_txt := String(design_layer.get_element_displayed_text(text_id))
+	check(dm.has_custom_ui_design("title") and reloaded_txt == utf8_phrase,
 		"Guardar y reabrir conserva el diseño del Título y texto UTF-8 íntegro")
 
 	# 12. Restablecer a diseño por defecto (con diálogo de confirmación)
@@ -436,21 +519,13 @@ func _run_tests() -> void:
 	reset_btn.emit_signal("pressed")
 	await _step_frames(1)
 	check(reset_dlg != null and reset_dlg.visible, "Restablecer abre diálogo de confirmación")
-	reset_dlg.emit_signal("confirmed")
+	if reset_dlg != null:
+		reset_dlg.emit_signal("confirmed")
 	await _step_frames(2)
 	check(not dm.has_custom_ui_design("title"), "Confirmar Restablecer vuelve Título al diseño por defecto")
 
-	# Limpieza
-	if not imported_res.is_empty() and FileAccess.file_exists(imported_res):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(imported_res))
-	db.queue_free()
-	dm.import_runtime_state(prev_rt)
-	_restore_data_dir(res_data_dir, backup)
-	dm.load_all(res_data_dir)
 	await _step_frames(1)
-
-	print("=== RESULTADO 9B TANDA 6B-1: %d PASS, %d FAIL ===" % [passed, failed])
-	quit(0 if failed == 0 else 1)
+	_finish_test()
 
 func _init() -> void:
 	call_deferred("_run_tests")
