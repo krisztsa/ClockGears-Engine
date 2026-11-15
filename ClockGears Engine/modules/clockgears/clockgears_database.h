@@ -29,6 +29,7 @@ class ClockGearsBattleScene;
 class ClockGearsCreditsPlayer;
 class ClockGearsEventEditorDialog;
 class ClockGearsGameMenu;
+class ClockGearsHudOverlay;
 class ClockGearsNineSlicePreview;
 class ClockGearsShapeEditor;
 class ClockGearsTitleScreen;
@@ -798,6 +799,132 @@ private:
 	FileDialog *cred_asset_file_dialog = nullptr;
 	int cred_asset_pick_target = 0; // 0 = bg image, 1 = item image, 2 = bgm audio
 
+	// Menús -> HUD (9B Tanda 5 UI)
+	Dictionary hud_config_draft;
+	int hud_selected_widget_idx = -1;
+	Dictionary hud_preview_saved_rt;
+	bool hud_preview_has_saved_rt = false;
+	VBoxContainer *hud_editor_panel = nullptr;
+	BoxContainer *hud_main_split = nullptr;
+	OptionButton *hud_add_type_opt = nullptr;
+	Button *hud_add_btn = nullptr;
+	Button *hud_del_btn = nullptr;
+	Button *hud_dup_btn = nullptr;
+	Button *hud_layer_up_btn = nullptr;
+	Button *hud_layer_down_btn = nullptr;
+	ItemList *hud_widgets_list = nullptr;
+	Label *hud_empty_props_lbl = nullptr;
+	VBoxContainer *hud_common_box = nullptr;
+	LineEdit *hud_name_edit = nullptr;
+	Button *hud_anchor_btns[9] = { nullptr };
+	SpinBox *hud_offset_x_spin = nullptr;
+	SpinBox *hud_offset_y_spin = nullptr;
+	HSlider *hud_width_slider = nullptr;
+	SpinBox *hud_width_spin = nullptr;
+	HSlider *hud_height_slider = nullptr;
+	SpinBox *hud_height_spin = nullptr;
+	SpinBox *hud_layer_spin = nullptr;
+	OptionButton *hud_window_style_opt = nullptr;
+	OptionButton *hud_vis_mode_opt = nullptr;
+	HBoxContainer *hud_vis_switch_row = nullptr;
+	OptionButton *hud_vis_switch_opt = nullptr;
+	LineEdit *hud_vis_switch_edit = nullptr;
+	CheckBox *hud_hide_ctx_chk = nullptr;
+	CheckBox *hud_pixel_art_chk = nullptr;
+
+	// HUD Propiedades específicas por tipo
+	PanelContainer *hud_type_card = nullptr;
+	VBoxContainer *hud_bar_box = nullptr;
+	OptionButton *hud_bar_source_opt = nullptr;
+	VBoxContainer *hud_bar_var_box = nullptr;
+	OptionButton *hud_bar_var_opt = nullptr;
+	LineEdit *hud_bar_var_edit = nullptr;
+	SpinBox *hud_bar_var_max_spin = nullptr;
+	ColorPickerButton *hud_bar_bg_col_btn = nullptr;
+	ColorPickerButton *hud_bar_fill_col_btn = nullptr;
+	ColorPickerButton *hud_bar_border_col_btn = nullptr;
+	ColorPickerButton *hud_bar_font_col_btn = nullptr;
+	LineEdit *hud_bar_bg_img_edit = nullptr;
+	Button *hud_bar_bg_img_import_btn = nullptr;
+	Button *hud_bar_bg_img_clear_btn = nullptr;
+	LineEdit *hud_bar_fill_img_edit = nullptr;
+	Button *hud_bar_fill_img_import_btn = nullptr;
+	Button *hud_bar_fill_img_clear_btn = nullptr;
+	LineEdit *hud_bar_label_edit = nullptr;
+	CheckBox *hud_bar_show_nums_chk = nullptr;
+	HSlider *hud_bar_font_size_slider = nullptr;
+	SpinBox *hud_bar_font_size_spin = nullptr;
+
+	VBoxContainer *hud_hearts_box = nullptr;
+	SpinBox *hud_hearts_hp_spin = nullptr;
+	HSlider *hud_hearts_size_slider = nullptr;
+	SpinBox *hud_hearts_size_spin = nullptr;
+	HSlider *hud_hearts_spacing_slider = nullptr;
+	SpinBox *hud_hearts_spacing_spin = nullptr;
+	SpinBox *hud_hearts_per_row_spin = nullptr;
+	SpinBox *hud_hearts_max_rows_spin = nullptr;
+	LineEdit *hud_heart_full_edit = nullptr;
+	Button *hud_heart_full_import_btn = nullptr;
+	Button *hud_heart_full_clear_btn = nullptr;
+	LineEdit *hud_heart_half_edit = nullptr;
+	Button *hud_heart_half_import_btn = nullptr;
+	Button *hud_heart_half_clear_btn = nullptr;
+	LineEdit *hud_heart_empty_edit = nullptr;
+	Button *hud_heart_empty_import_btn = nullptr;
+	Button *hud_heart_empty_clear_btn = nullptr;
+
+	VBoxContainer *hud_currency_box = nullptr;
+	CheckBox *hud_cur_show_icon_chk = nullptr;
+	CheckBox *hud_cur_show_name_chk = nullptr;
+	LineEdit *hud_cur_icon_edit = nullptr;
+	Button *hud_cur_icon_import_btn = nullptr;
+	Button *hud_cur_icon_clear_btn = nullptr;
+	HSlider *hud_cur_font_size_slider = nullptr;
+	SpinBox *hud_cur_font_size_spin = nullptr;
+	ColorPickerButton *hud_cur_font_col_btn = nullptr;
+
+	VBoxContainer *hud_item_box = nullptr;
+	OptionButton *hud_item_db_opt = nullptr;
+	LineEdit *hud_item_icon_edit = nullptr;
+	Button *hud_item_icon_import_btn = nullptr;
+	Button *hud_item_icon_clear_btn = nullptr;
+	CheckBox *hud_item_hide_zero_chk = nullptr;
+	CheckBox *hud_item_show_name_chk = nullptr;
+	HSlider *hud_item_font_size_slider = nullptr;
+	SpinBox *hud_item_font_size_spin = nullptr;
+	ColorPickerButton *hud_item_font_col_btn = nullptr;
+
+	VBoxContainer *hud_text_box = nullptr;
+	OptionButton *hud_text_mode_opt = nullptr;
+	HBoxContainer *hud_text_fixed_row = nullptr;
+	LineEdit *hud_text_edit = nullptr;
+	HBoxContainer *hud_text_var_row = nullptr;
+	OptionButton *hud_text_var_opt = nullptr;
+	LineEdit *hud_text_var_edit = nullptr;
+	OptionButton *hud_text_align_opt = nullptr;
+	HSlider *hud_text_font_size_slider = nullptr;
+	SpinBox *hud_text_font_size_spin = nullptr;
+	ColorPickerButton *hud_text_font_col_btn = nullptr;
+
+	VBoxContainer *hud_image_box = nullptr;
+	LineEdit *hud_img_path_edit = nullptr;
+	Button *hud_img_import_btn = nullptr;
+	Button *hud_img_clear_btn = nullptr;
+	OptionButton *hud_img_scale_opt = nullptr;
+	HSlider *hud_img_opacity_slider = nullptr;
+	SpinBox *hud_img_opacity_spin = nullptr;
+
+	// HUD Vista previa 16:9 + datos de ejemplo
+	OptionButton *hud_preview_res_opt = nullptr;
+	SubViewport *hud_preview_viewport = nullptr;
+	TextureRect *hud_preview_map_bg = nullptr;
+	ClockGearsHudOverlay *hud_live_preview = nullptr;
+	SpinBox *hud_sample_hp_spin = nullptr;
+	SpinBox *hud_sample_gold_spin = nullptr;
+	SpinBox *hud_sample_item_qty_spin = nullptr;
+	FileDialog *hud_asset_file_dialog = nullptr;
+	String hud_asset_target_key;
+
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
 	bool updating_ui = false;
 
@@ -1210,6 +1337,34 @@ private:
 	void _on_cred_test_popup_close_requested();
 	void _on_cred_test_player_finished(bool p_cancelled);
 
+	// Helpers HUD Editor (9B Tanda 5 UI)
+	void _setup_hud_editor_ui();
+	void _refresh_hud_editor_ui();
+	void _rebuild_hud_widgets_list();
+	void _refresh_hud_selected_widget_props();
+	void _refresh_hud_dynamic_options();
+	void _update_hud_live_preview();
+	void _restore_hud_preview_runtime_state();
+	String _hud_format_widget_list_label(const Dictionary &p_widget, int p_index) const;
+	void _hud_set_selected_field(const String &p_key, const Variant &p_val, bool p_rebuild_list = false);
+	void _on_hud_add_pressed();
+	void _on_hud_remove_pressed();
+	void _on_hud_duplicate_pressed();
+	void _on_hud_layer_move_pressed(int p_delta);
+	void _on_hud_widget_selected(int p_idx);
+	void _on_hud_anchor_pressed(const String &p_anchor_id);
+	void _on_hud_common_changed();
+	void _on_hud_slider_spin_sync(double p_val, const String &p_key, Slider *p_slider, SpinBox *p_spin, bool p_is_pct_opacity = false);
+	void _on_hud_type_field_changed();
+	void _on_hud_type_color_changed(const Color &p_col, const String &p_key);
+	void _on_hud_switch_opt_selected(int p_idx);
+	void _on_hud_var_opt_selected(int p_idx, OptionButton *p_opt, LineEdit *p_edit);
+	void _on_hud_pick_asset_pressed(const String &p_key);
+	void _on_hud_clear_asset_pressed(const String &p_key);
+	void _on_hud_asset_file_selected(const String &p_path);
+	void _on_hud_preview_res_selected(int p_idx);
+	void _on_hud_sample_value_changed(double p_unused = 0.0);
+
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
@@ -1217,7 +1372,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3 };
+	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3, DB_CAT_HUD = CAT_MAX + 4 };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -1312,6 +1467,18 @@ public:
 	Window *get_credits_test_popup() const { return cred_test_window; }
 	ClockGearsCreditsPlayer *get_credits_test_player() const { return cred_test_player; }
 	Dictionary get_credits_editor_ui_handles() const;
+
+	Dictionary get_hud_draft_copy() const;
+	int add_hud_widget(const String &p_type = "bar", const Dictionary &p_fields = Dictionary());
+	bool remove_hud_widget(int p_index);
+	int duplicate_hud_widget(int p_index);
+	bool move_hud_widget_layer(int p_index, int p_delta);
+	void select_hud_widget(int p_index);
+	bool set_hud_widget_field(int p_index, const String &p_key, const Variant &p_val);
+	void set_hud_preview_resolution(int p_width, int p_height);
+	void set_hud_preview_sample_values(int p_hp, int p_gold, int p_item_qty);
+	ClockGearsHudOverlay *get_hud_live_preview() const { return hud_live_preview; }
+	Dictionary get_hud_editor_ui_handles() const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

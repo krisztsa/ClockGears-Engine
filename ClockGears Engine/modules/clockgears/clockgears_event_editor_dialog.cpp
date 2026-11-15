@@ -21,6 +21,25 @@
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
 
+static void s_parse_hud_visibility_cmd(const Dictionary &p_cmd, String &r_scope, String &r_target, bool &r_vis) {
+	r_target = String(p_cmd.get("widget_name", p_cmd.get("widget_id", p_cmd.get("widget", p_cmd.get("target", ""))))).strip_edges();
+	r_scope = String(p_cmd.get("scope", "")).strip_edges().to_lower();
+	if (r_scope.is_empty()) {
+		r_scope = r_target.is_empty() ? String("all") : String("widget");
+	}
+	r_vis = true;
+	if (p_cmd.has("visible")) {
+		r_vis = bool(p_cmd["visible"]);
+	} else if (p_cmd.has("show")) {
+		r_vis = bool(p_cmd["show"]);
+	} else if (p_cmd.has("hidden")) {
+		r_vis = !bool(p_cmd["hidden"]);
+	} else if (p_cmd.has("action")) {
+		String act = String(p_cmd["action"]).strip_edges().to_lower();
+		r_vis = !(act == "hide" || act == "ocultar" || act == "off" || act == "false");
+	}
+}
+
 static Ref<StyleBoxFlat> _event_card_style() {
 	Ref<StyleBoxFlat> style;
 	style.instantiate();
@@ -878,6 +897,13 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 		String sid = String(d.get("style_id", d.get("style", "")));
 		_populate_change_window_style_options(wtype, sid);
 		dlg_change_window_style->popup_centered(Size2(440, 190) * EDSCALE);
+	} else if ((type == "change_hud_visibility" || type == "hud_visibility" || type == "show_hide_hud") && dlg_change_hud_visibility) {
+		String wtarget;
+		String scope;
+		bool vis = true;
+		s_parse_hud_visibility_cmd(d, scope, wtarget, vis);
+		_populate_change_hud_visibility_options(scope, wtarget, vis);
+		dlg_change_hud_visibility->popup_centered(Size2(460, 210) * EDSCALE);
 	} else {
 		_on_add_command_pressed();
 	}
@@ -1149,6 +1175,12 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 			if (dlg_change_window_style) {
 				_populate_change_window_style_options();
 				dlg_change_window_style->popup_centered(Size2(440, 190) * EDSCALE);
+			}
+			break;
+		case CMD_CHANGE_HUD_VISIBILITY:
+			if (dlg_change_hud_visibility) {
+				_populate_change_hud_visibility_options("all", "", true);
+				dlg_change_hud_visibility->popup_centered(Size2(460, 210) * EDSCALE);
 			}
 			break;
 	}
@@ -2170,6 +2202,105 @@ void ClockGearsEventEditorDialog::_on_confirm_change_window_style() {
 	_append_command_to_active_page(cmd);
 }
 
+void ClockGearsEventEditorDialog::_populate_change_hud_visibility_options(const String &p_sel_scope, const String &p_sel_widget, bool p_sel_visible) {
+	String norm_scope = (p_sel_scope.strip_edges().to_lower() == "widget") ? String("widget") : String("all");
+	if (chv_scope_opt) {
+		chv_scope_opt->select(norm_scope == "widget" ? 1 : 0);
+	}
+	if (chv_widget_opt) {
+		chv_widget_opt->clear();
+		chv_widget_opt->add_item(CG_TR("(Escribir nombre manualmente)"), 0);
+		chv_widget_opt->set_item_metadata(0, String(""));
+		int matched_idx = 0;
+		String want_lower = p_sel_widget.strip_edges().to_lower();
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			Array widgets = dm->get_hud_widgets();
+			for (int i = 0; i < widgets.size(); i++) {
+				if (widgets[i].get_type() != Variant::DICTIONARY) {
+					continue;
+				}
+				Dictionary w = widgets[i];
+				String wid = String(w.get("id", ""));
+				String wname = String(w.get("name", wid));
+				String wtype = String(w.get("type", ""));
+				int idx = chv_widget_opt->get_item_count();
+				chv_widget_opt->add_item(vformat("%s (%s)", wname, wtype), idx);
+				chv_widget_opt->set_item_metadata(idx, wname);
+				if (!want_lower.is_empty() && (wname.to_lower() == want_lower || wid.to_lower() == want_lower)) {
+					matched_idx = idx;
+				}
+			}
+		}
+		if (matched_idx == 0 && norm_scope == "widget" && p_sel_widget.is_empty() && chv_widget_opt->get_item_count() > 1) {
+			matched_idx = 1;
+		}
+		chv_widget_opt->select(matched_idx);
+		if (chv_widget_edit) {
+			if (!p_sel_widget.is_empty()) {
+				chv_widget_edit->set_text(p_sel_widget);
+			} else if (matched_idx > 0) {
+				chv_widget_edit->set_text(String(chv_widget_opt->get_item_metadata(matched_idx)));
+			} else {
+				chv_widget_edit->set_text("");
+			}
+		}
+	} else if (chv_widget_edit) {
+		chv_widget_edit->set_text(p_sel_widget);
+	}
+	if (chv_action_opt) {
+		chv_action_opt->select(p_sel_visible ? 0 : 1);
+	}
+	_on_chv_scope_changed(chv_scope_opt ? chv_scope_opt->get_selected() : 0);
+}
+
+void ClockGearsEventEditorDialog::_on_chv_scope_changed(int p_idx) {
+	bool is_widget = (p_idx == 1);
+	if (chv_widget_row) {
+		chv_widget_row->set_visible(is_widget);
+	}
+	if (chv_widget_opt) {
+		chv_widget_opt->set_disabled(!is_widget);
+	}
+	if (chv_widget_edit) {
+		chv_widget_edit->set_editable(is_widget);
+		if (is_widget && chv_widget_edit->get_text().strip_edges().is_empty() && chv_widget_opt && chv_widget_opt->get_selected() > 0) {
+			chv_widget_edit->set_text(String(chv_widget_opt->get_selected_metadata()));
+		}
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_chv_widget_picked(int p_idx) {
+	if (!chv_widget_opt || !chv_widget_edit || p_idx < 0) {
+		return;
+	}
+	String picked = String(chv_widget_opt->get_item_metadata(p_idx));
+	if (!picked.is_empty()) {
+		chv_widget_edit->set_text(picked);
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_confirm_change_hud_visibility() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) {
+		return;
+	}
+	bool is_widget = chv_scope_opt && chv_scope_opt->get_selected() == 1;
+	String wtarget = chv_widget_edit ? chv_widget_edit->get_text().strip_edges() : String();
+	if (wtarget.is_empty() && chv_widget_opt && chv_widget_opt->get_selected() > 0) {
+		wtarget = String(chv_widget_opt->get_selected_metadata()).strip_edges();
+	}
+	if (is_widget && wtarget.is_empty()) {
+		is_widget = false;
+	}
+	bool vis = chv_action_opt ? (chv_action_opt->get_selected() == 0) : true;
+	Dictionary cmd;
+	cmd["type"] = "change_hud_visibility";
+	cmd["code"] = CMD_CHANGE_HUD_VISIBILITY;
+	cmd["scope"] = is_widget ? String("widget") : String("all");
+	cmd["widget_name"] = is_widget ? wtarget : String("");
+	cmd["visible"] = vis;
+	_append_command_to_active_page(cmd);
+}
+
 Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() const {
 	Dictionary out;
 	out["command_selector"] = cmd_catalog_dialog;
@@ -2184,6 +2315,11 @@ Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() const {
 	out["dlg_change_window_style"] = dlg_change_window_style;
 	out["cws_window_type_opt"] = cws_window_type_opt;
 	out["cws_style_opt"] = cws_style_opt;
+	out["dlg_change_hud_visibility"] = dlg_change_hud_visibility;
+	out["chv_scope_opt"] = chv_scope_opt;
+	out["chv_widget_opt"] = chv_widget_opt;
+	out["chv_widget_edit"] = chv_widget_edit;
+	out["chv_action_opt"] = chv_action_opt;
 	return out;
 }
 
@@ -4005,6 +4141,64 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	}
 	dlg_change_window_style->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_change_window_style));
 	add_child(dlg_change_window_style);
+
+	// Mostrar / Ocultar HUD (CMD_CHANGE_HUD_VISIBILITY - 9B Tanda 5)
+	dlg_change_hud_visibility = memnew(ConfirmationDialog);
+	dlg_change_hud_visibility->set_title(CG_TR("Mostrar / Ocultar HUD"));
+	dlg_change_hud_visibility->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_change_hud_visibility->set_cancel_button_text(CG_TR("Cancelar"));
+	{
+		PanelContainer *card = memnew(PanelContainer);
+		card->add_theme_style_override("panel", _event_card_style());
+		dlg_change_hud_visibility->add_child(card);
+		VBoxContainer *vb = memnew(VBoxContainer);
+		vb->add_theme_constant_override("separation", 8);
+		card->add_child(vb);
+
+		GridContainer *gr = memnew(GridContainer);
+		gr->set_columns(2);
+		gr->add_theme_constant_override("h_separation", 10);
+		gr->add_theme_constant_override("v_separation", 8);
+		vb->add_child(gr);
+
+		gr->add_child(memnew(Label(CG_TR("Ámbito:"))));
+		chv_scope_opt = memnew(OptionButton);
+		chv_scope_opt->add_item(CG_TR("Todo el HUD"), 0);
+		chv_scope_opt->add_item(CG_TR("Widget específico"), 1);
+		chv_scope_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		chv_scope_opt->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+		chv_scope_opt->connect("item_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_chv_scope_changed));
+		gr->add_child(chv_scope_opt);
+
+		gr->add_child(memnew(Label(CG_TR("Acción:"))));
+		chv_action_opt = memnew(OptionButton);
+		chv_action_opt->add_item(CG_TR("Mostrar"), 0);
+		chv_action_opt->add_item(CG_TR("Ocultar"), 1);
+		chv_action_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		chv_action_opt->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+		gr->add_child(chv_action_opt);
+
+		chv_widget_row = memnew(HBoxContainer);
+		chv_widget_row->add_theme_constant_override("separation", 8);
+		chv_widget_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		chv_widget_row->hide();
+		vb->add_child(chv_widget_row);
+
+		chv_widget_row->add_child(memnew(Label(CG_TR("Widget:"))));
+		chv_widget_opt = memnew(OptionButton);
+		chv_widget_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		chv_widget_opt->set_custom_minimum_size(Size2(150, 0) * EDSCALE);
+		chv_widget_opt->connect("item_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_chv_widget_picked));
+		chv_widget_row->add_child(chv_widget_opt);
+
+		chv_widget_edit = memnew(LineEdit);
+		chv_widget_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		chv_widget_edit->set_custom_minimum_size(Size2(130, 0) * EDSCALE);
+		chv_widget_edit->set_placeholder(CG_TR("Nombre o ID del widget"));
+		chv_widget_row->add_child(chv_widget_edit);
+	}
+	dlg_change_hud_visibility->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_change_hud_visibility));
+	add_child(dlg_change_hud_visibility);
 }
 
 void ClockGearsEventEditorDialog::_setup_database_picker_dialogs() {
@@ -5064,6 +5258,16 @@ String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) co
 			}
 		}
 		return vformat(CG_TR("◆ Cambiar Estilo de Ventana: %s → %s"), wlabel, slabel);
+	} else if (type == "change_hud_visibility" || type == "hud_visibility" || type == "show_hide_hud") {
+		String wtarget;
+		String scope;
+		bool vis = true;
+		s_parse_hud_visibility_cmd(d, scope, wtarget, vis);
+		String act_lbl = vis ? CG_TR("Mostrar") : CG_TR("Ocultar");
+		if (scope == "widget" && !wtarget.is_empty()) {
+			return vformat(CG_TR("◆ %s HUD [%s]"), act_lbl, wtarget);
+		}
+		return vformat(CG_TR("◆ %s Todo el HUD"), act_lbl);
 	}
 	return vformat(CG_TR("◆ Comando: %s"), type);
 }

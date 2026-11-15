@@ -29,6 +29,7 @@
 #include "icons/clockgears_icons.h"
 #include "runtime/clockgears_credits.h"
 #include "runtime/clockgears_game_menu.h"
+#include "runtime/clockgears_hud.h"
 #include "runtime/clockgears_title_screen.h"
 #include "runtime/clockgears_window_style.h"
 #include "scene/gui/aspect_ratio_container.h"
@@ -214,7 +215,8 @@ static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
 	if (p_category == ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU ||
 			p_category == ClockGearsDatabaseDialog::DB_CAT_WINDOW_STYLES ||
 			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_CREDITS) {
+			p_category == ClockGearsDatabaseDialog::DB_CAT_CREDITS ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_HUD) {
 		return true;
 	}
 	if (p_combat_mode == COMBAT_MODE_ACTION_RPG) {
@@ -512,6 +514,17 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_credits_test_popup"), &ClockGearsDatabaseDialog::get_credits_test_popup);
 	ClassDB::bind_method(D_METHOD("get_credits_test_player"), &ClockGearsDatabaseDialog::get_credits_test_player);
 	ClassDB::bind_method(D_METHOD("get_credits_editor_ui_handles"), &ClockGearsDatabaseDialog::get_credits_editor_ui_handles);
+	ClassDB::bind_method(D_METHOD("get_hud_draft_copy"), &ClockGearsDatabaseDialog::get_hud_draft_copy);
+	ClassDB::bind_method(D_METHOD("add_hud_widget", "type", "fields"), &ClockGearsDatabaseDialog::add_hud_widget, DEFVAL("bar"), DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("remove_hud_widget", "index"), &ClockGearsDatabaseDialog::remove_hud_widget);
+	ClassDB::bind_method(D_METHOD("duplicate_hud_widget", "index"), &ClockGearsDatabaseDialog::duplicate_hud_widget);
+	ClassDB::bind_method(D_METHOD("move_hud_widget_layer", "index", "delta"), &ClockGearsDatabaseDialog::move_hud_widget_layer);
+	ClassDB::bind_method(D_METHOD("select_hud_widget", "index"), &ClockGearsDatabaseDialog::select_hud_widget);
+	ClassDB::bind_method(D_METHOD("set_hud_widget_field", "index", "key", "val"), &ClockGearsDatabaseDialog::set_hud_widget_field);
+	ClassDB::bind_method(D_METHOD("set_hud_preview_resolution", "width", "height"), &ClockGearsDatabaseDialog::set_hud_preview_resolution);
+	ClassDB::bind_method(D_METHOD("set_hud_preview_sample_values", "hp", "gold", "item_qty"), &ClockGearsDatabaseDialog::set_hud_preview_sample_values);
+	ClassDB::bind_method(D_METHOD("get_hud_live_preview"), &ClockGearsDatabaseDialog::get_hud_live_preview);
+	ClassDB::bind_method(D_METHOD("get_hud_editor_ui_handles"), &ClockGearsDatabaseDialog::get_hud_editor_ui_handles);
 	ClassDB::bind_method(D_METHOD("_on_file_selected", "path"), &ClockGearsDatabaseDialog::_on_file_selected);
 }
 
@@ -569,6 +582,7 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 		case NOTIFICATION_WM_CLOSE_REQUEST:
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			if (!is_visible()) {
+				_restore_hud_preview_runtime_state();
 				_clear_troop_texture_cache();
 				_save_editor_ui_state();
 			}
@@ -700,6 +714,8 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 			return CG_DB_TR("Menú del juego");
 		case DB_CAT_CREDITS:
 			return CG_DB_TR("Créditos");
+		case DB_CAT_HUD:
+			return CG_DB_TR("HUD");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -1040,7 +1056,7 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 	add_chap("Animaciones", { CAT_ANIMATIONS });
 	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
 	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
-	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES, DB_CAT_GAME_MENU, DB_CAT_CREDITS });
+	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES, DB_CAT_GAME_MENU, DB_CAT_CREDITS, DB_CAT_HUD });
 
 	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
 	for (int c = 0; c < CAT_MAX; c++) {
@@ -1166,7 +1182,7 @@ void ClockGearsDatabaseDialog::_save_editor_ui_state() {
 }
 
 void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
-	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES && p_category != DB_CAT_GAME_MENU && p_category != DB_CAT_CREDITS)) {
+	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES && p_category != DB_CAT_GAME_MENU && p_category != DB_CAT_CREDITS && p_category != DB_CAT_HUD)) {
 		return;
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -1211,7 +1227,8 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	bool is_window_styles = (current_category == DB_CAT_WINDOW_STYLES);
 	bool is_game_menu = (current_category == DB_CAT_GAME_MENU);
 	bool is_credits = (current_category == DB_CAT_CREDITS);
-	bool hide_record_col = (is_system || is_main_menu || is_game_menu || is_credits);
+	bool is_hud = (current_category == DB_CAT_HUD);
+	bool hide_record_col = (is_system || is_main_menu || is_game_menu || is_credits || is_hud);
 	bool is_tileset = (current_category == CAT_TILESETS);
 	bool is_troops = (current_category == CAT_TROOPS);
 	bool is_enemy = (current_category == CAT_ENEMIES);
@@ -1287,6 +1304,14 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		credits_editor_panel->set_visible(is_credits);
 		if (is_credits) {
 			_refresh_credits_editor_ui();
+		}
+	}
+	if (hud_editor_panel) {
+		hud_editor_panel->set_visible(is_hud);
+		if (is_hud) {
+			_refresh_hud_editor_ui();
+		} else {
+			_restore_hud_preview_runtime_state();
 		}
 	}
 	if (main_editor_tabs) {
@@ -5518,7 +5543,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cats_panel->add_child(cats_bar);
 
 	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
-	for (int i = 0; i <= DB_CAT_CREDITS; i++) {
+	for (int i = 0; i <= DB_CAT_HUD; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_theme_type_variation("ClockGearsTabButton");
 		btn->set_toggle_mode(true);
@@ -7157,6 +7182,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	_setup_window_styles_editor_ui();
 	_setup_game_menu_editor_ui();
 	_setup_credits_editor_ui();
+	_setup_hud_editor_ui();
 
 	// Vista previa de colocación de tropas debajo de los miembros (todo el ancho disponible hasta 960px, proporción 16:9, sin hueco arriba)
 	troop_placement_col3_box = memnew(VBoxContainer);
@@ -8017,7 +8043,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Dictionary init_ui_state = _load_editor_ui_state();
 	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
-	if (init_cat < 0 || init_cat > DB_CAT_CREDITS) {
+	if (init_cat < 0 || init_cat > DB_CAT_HUD) {
 		init_cat = CAT_ACTORS;
 	}
 	_on_category_selected(init_cat);
@@ -8079,7 +8105,7 @@ void ClockGearsDatabaseDialog::open_database() {
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
 	int last_cat = int(ui_state.get("last_category", current_category));
-	if (last_cat >= 0 && last_cat <= DB_CAT_CREDITS) {
+	if (last_cat >= 0 && last_cat <= DB_CAT_HUD) {
 		current_category = last_cat;
 	}
 	_on_category_selected(current_category);
@@ -8147,6 +8173,8 @@ void ClockGearsDatabaseDialog::_save_database_to_disk() {
 	if (!dm) {
 		return;
 	}
+	bool had_hud_rt = hud_preview_has_saved_rt;
+	_restore_hud_preview_runtime_state();
 	for (int i = 0; i < CAT_MAX; i++) {
 		dm->set_category_array(i, category_data[i]);
 	}
@@ -8155,7 +8183,11 @@ void ClockGearsDatabaseDialog::_save_database_to_disk() {
 	dm->set_window_styles_config(ClockGearsDataManager::normalize_window_styles_config(window_styles_config_draft));
 	dm->set_game_menu_config(ClockGearsDataManager::normalize_game_menu_config(game_menu_config_draft));
 	dm->set_credits_config(ClockGearsDataManager::normalize_credits_config(credits_config_draft));
+	dm->set_hud_config(ClockGearsDataManager::normalize_hud_config(hud_config_draft));
 	dm->save_all("res://clockgears_data");
+	if (had_hud_rt && current_category == DB_CAT_HUD && is_visible()) {
+		_update_hud_live_preview();
+	}
 }
 
 void ClockGearsDatabaseDialog::_load_database_from_disk() {
@@ -8163,6 +8195,7 @@ void ClockGearsDatabaseDialog::_load_database_from_disk() {
 	if (!dm) {
 		return;
 	}
+	_restore_hud_preview_runtime_state();
 	dm->load_all("res://clockgears_data");
 	for (int i = 0; i < CAT_MAX; i++) {
 		category_data[i] = dm->get_category_array(i);
@@ -8172,6 +8205,7 @@ void ClockGearsDatabaseDialog::_load_database_from_disk() {
 	window_styles_config_draft = ClockGearsDataManager::normalize_window_styles_config(dm->get_window_styles_config());
 	game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(dm->get_game_menu_config());
 	credits_config_draft = ClockGearsDataManager::normalize_credits_config(dm->get_credits_config());
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(dm->get_hud_config());
 	current_combat_mode = (int)system_config.get("combat_mode", COMBAT_MODE_TURN_BASED);
 	_clear_troop_texture_cache();
 	_clear_record_list_icon_cache();
@@ -12368,6 +12402,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 				ckey = "game_menu";
 			} else if (cid == DB_CAT_CREDITS) {
 				ckey = "credits";
+			} else if (cid == DB_CAT_HUD) {
+				ckey = "hud";
 			} else {
 				ckey = ClockGearsDataManager::get_category_key(cid);
 			}
@@ -12396,6 +12432,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 		out["current_category_key"] = String("game_menu");
 	} else if (current_category == DB_CAT_CREDITS) {
 		out["current_category_key"] = String("credits");
+	} else if (current_category == DB_CAT_HUD) {
+		out["current_category_key"] = String("hud");
 	} else {
 		out["current_category_key"] = ClockGearsDataManager::get_category_key(current_category);
 	}
@@ -12418,6 +12456,10 @@ void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
 	}
 	if (p_key == "credits") {
 		_on_category_selected(DB_CAT_CREDITS);
+		return;
+	}
+	if (p_key == "hud") {
+		_on_category_selected(DB_CAT_HUD);
 		return;
 	}
 	for (int i = 0; i < CAT_MAX; i++) {
@@ -15276,6 +15318,9 @@ void ClockGearsDatabaseDialog::adapt_to_window_size(const Vector2i &p_window_siz
 	}
 	if (cred_main_split) {
 		cred_main_split->set_vertical(p_window_size.x < 1100);
+	}
+	if (hud_main_split) {
+		hud_main_split->set_vertical(p_window_size.x < 1100);
 	}
 }
 
@@ -19266,5 +19311,1691 @@ Dictionary ClockGearsDatabaseDialog::get_credits_editor_ui_handles() const {
 	out["selected_item_idx"] = cred_selected_item_idx;
 	return out;
 }
+
+// ============================================================================
+// Menús -> HUD Editor (9B Tanda 5 UI)
+// ============================================================================
+
+static Ref<ImageTexture> s_make_hud_sample_map_texture() {
+	const int W = 240;
+	const int H = 135;
+	Ref<Image> img = Image::create_empty(W, H, false, Image::FORMAT_RGBA8);
+	for (int y = 0; y < H; y++) {
+		for (int x = 0; x < W; x++) {
+			bool grid_dark = (((x / 16) + (y / 16)) % 2) == 0;
+			Color col = grid_dark ? Color(0.18f, 0.34f, 0.22f, 1.0f) : Color(0.20f, 0.37f, 0.24f, 1.0f);
+
+			// Camino horizontal y vertical en cruz
+			if (y >= 62 && y <= 76) {
+				bool stone = ((x + y * 3) % 11) == 0;
+				col = stone ? Color(0.55f, 0.46f, 0.34f, 1.0f) : Color(0.49f, 0.40f, 0.29f, 1.0f);
+			} else if (x >= 112 && x <= 128 && y >= 28) {
+				bool stone = ((x * 2 + y) % 9) == 0;
+				col = stone ? Color(0.54f, 0.45f, 0.33f, 1.0f) : Color(0.47f, 0.38f, 0.28f, 1.0f);
+			}
+
+			// Arroyo en la esquina inferior derecha
+			if (x >= 166 && y >= 92 && (x - 166) * (x - 166) / 6 + (y - 134) * (y - 134) / 3 < 720) {
+				col = ((x + y) % 13 == 0) ? Color(0.32f, 0.62f, 0.84f, 1.0f) : Color(0.16f, 0.42f, 0.68f, 1.0f);
+			}
+
+			// Copas de árboles decorativos en los bordes
+			auto draw_tree = [&](int cx, int cy, int r) {
+				int dx = x - cx;
+				int dy = y - cy;
+				if (dx * dx + dy * dy <= r * r) {
+					col = (dy < -r / 3) ? Color(0.16f, 0.44f, 0.21f, 1.0f) : Color(0.10f, 0.28f, 0.14f, 1.0f);
+				}
+			};
+			draw_tree(32, 32, 13);
+			draw_tree(62, 26, 11);
+			draw_tree(206, 36, 14);
+			draw_tree(28, 106, 12);
+
+			img->set_pixel(x, y, col);
+		}
+	}
+	return ImageTexture::create_from_image(img);
+}
+
+static String s_hud_type_label(const String &p_type) {
+	if (p_type == "bar") return CG_DB_TR("Barra");
+	if (p_type == "hearts") return CG_DB_TR("Corazones");
+	if (p_type == "currency") return CG_DB_TR("Monedas");
+	if (p_type == "item") return CG_DB_TR("Objeto");
+	if (p_type == "text") return CG_DB_TR("Texto");
+	return CG_DB_TR("Imagen");
+}
+
+static Color s_hud_parse_color(const String &p_hex, const Color &p_fallback) {
+	return Color::html_is_valid(p_hex) ? Color::html(p_hex) : p_fallback;
+}
+
+String ClockGearsDatabaseDialog::_hud_format_widget_list_label(const Dictionary &p_widget, int p_index) const {
+	String wname = String(p_widget.get("name", "Widget")).strip_edges();
+	String wtype = s_hud_type_label(String(p_widget.get("type", "bar")));
+	int layer = int(p_widget.get("layer_order", 0));
+	return vformat("%d. %s [%s | Capa %d]", p_index + 1, wname.is_empty() ? CG_DB_TR("(sin nombre)") : wname, wtype, layer);
+}
+
+void ClockGearsDatabaseDialog::_restore_hud_preview_runtime_state() {
+	if (!hud_preview_has_saved_rt) {
+		return;
+	}
+	hud_preview_has_saved_rt = false;
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		if (!hud_preview_saved_rt.is_empty()) {
+			dm->import_runtime_state(hud_preview_saved_rt);
+		}
+	}
+	hud_preview_saved_rt.clear();
+}
+
+void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
+	if (hud_editor_panel || !col2_box) {
+		return;
+	}
+	const float row_h = 30.0f * EDSCALE;
+	hud_config_draft = ClockGearsDataManager::get_default_hud_config();
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		hud_config_draft = ClockGearsDataManager::normalize_hud_config(dm->get_hud_config());
+	}
+
+	hud_editor_panel = memnew(VBoxContainer);
+	hud_editor_panel->set_name("HudEditorPanel");
+	hud_editor_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_editor_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_editor_panel->add_theme_constant_override("separation", int(12 * EDSCALE));
+	hud_editor_panel->hide();
+	col2_box->add_child(hud_editor_panel);
+
+	hud_main_split = memnew(BoxContainer);
+	hud_main_split->set_vertical(false);
+	hud_main_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_main_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
+	hud_editor_panel->add_child(hud_main_split);
+
+	VBoxContainer *left_col = memnew(VBoxContainer);
+	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	left_col->set_stretch_ratio(1.1f);
+	left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	hud_main_split->add_child(left_col);
+
+	auto make_card = [&](VBoxContainer *p_parent, const String &p_hdr_txt, VBoxContainer *&r_body) {
+		PanelContainer *card = memnew(PanelContainer);
+		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+		p_parent->add_child(card);
+
+		r_body = memnew(VBoxContainer);
+		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		r_body->add_theme_constant_override("separation", int(7 * EDSCALE));
+		card->add_child(r_body);
+
+		Label *hdr = memnew(Label(p_hdr_txt));
+		hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+		r_body->add_child(hdr);
+		return card;
+	};
+
+	auto add_grid_label = [&](GridContainer *p_grid, const String &p_txt) {
+		Label *lbl = memnew(Label(p_txt));
+		lbl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+		p_grid->add_child(lbl);
+	};
+
+	auto add_slider_spin = [&](GridContainer *p_grid, const String &p_lbl, double p_min, double p_max, double p_step, const String &p_suffix, const String &p_key, HSlider *&r_slider, SpinBox *&r_spin, bool p_is_pct_opacity = false) {
+		add_grid_label(p_grid, p_lbl);
+		HBoxContainer *hb = memnew(HBoxContainer);
+		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		p_grid->add_child(hb);
+
+		r_slider = memnew(HSlider);
+		r_slider->set_min(p_min);
+		r_slider->set_max(p_max);
+		r_slider->set_step(p_step);
+		r_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		r_slider->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+		hb->add_child(r_slider);
+
+		r_spin = memnew(SpinBox);
+		r_spin->set_min(p_min);
+		r_spin->set_max(p_max);
+		r_spin->set_step(p_step);
+		if (!p_suffix.is_empty()) {
+			r_spin->set_suffix(p_suffix);
+		}
+		r_spin->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+		hb->add_child(r_spin);
+
+		r_slider->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_slider_spin_sync).bind(p_key, r_slider, r_spin, p_is_pct_opacity));
+		r_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_slider_spin_sync).bind(p_key, r_slider, r_spin, p_is_pct_opacity));
+	};
+
+	auto add_image_row = [&](VBoxContainer *p_box, const String &p_lbl, const String &p_key, LineEdit *&r_edit, Button *&r_import, Button *&r_clear) {
+		HBoxContainer *hb = memnew(HBoxContainer);
+		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		p_box->add_child(hb);
+
+		Label *lbl = memnew(Label(p_lbl));
+		lbl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+		hb->add_child(lbl);
+
+		r_edit = memnew(LineEdit);
+		r_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		r_edit->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+		r_edit->set_placeholder("res://img/hud/...");
+		r_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+		hb->add_child(r_edit);
+
+		r_import = memnew(Button(CG_DB_TR("Importar")));
+		r_import->set_custom_minimum_size(Size2(0, row_h));
+		r_import->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_pick_asset_pressed).bind(p_key));
+		hb->add_child(r_import);
+
+		r_clear = memnew(Button(CG_DB_TR("Limpiar")));
+		r_clear->set_custom_minimum_size(Size2(0, row_h));
+		r_clear->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_clear_asset_pressed).bind(p_key));
+		hb->add_child(r_clear);
+	};
+
+	auto add_color_row = [&](GridContainer *p_grid, const String &p_lbl, const String &p_key, bool p_alpha, ColorPickerButton *&r_btn) {
+		add_grid_label(p_grid, p_lbl);
+		r_btn = memnew(ColorPickerButton);
+		r_btn->set_edit_alpha(p_alpha);
+		r_btn->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+		r_btn->connect("color_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_color_changed).bind(p_key));
+		p_grid->add_child(r_btn);
+	};
+
+	// 1. Lista de widgets
+	VBoxContainer *list_body = nullptr;
+	make_card(left_col, CG_DB_TR("Widgets del HUD"), list_body);
+
+	HBoxContainer *toolbar = memnew(HBoxContainer);
+	toolbar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	toolbar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	list_body->add_child(toolbar);
+
+	hud_add_type_opt = memnew(OptionButton);
+	hud_add_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_add_type_opt->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	struct HudTypeItem {
+		const char *label;
+		const char *id;
+	};
+	static const HudTypeItem k_hud_types[6] = {
+		{ "Barra de valor", "bar" },
+		{ "Corazones", "hearts" },
+		{ "Contador de monedas", "currency" },
+		{ "Contador de objetos", "item" },
+		{ "Texto", "text" },
+		{ "Imagen", "image" }
+	};
+	for (int i = 0; i < 6; i++) {
+		hud_add_type_opt->add_item(CG_DB_TR(k_hud_types[i].label), i);
+		hud_add_type_opt->set_item_metadata(i, String(k_hud_types[i].id));
+	}
+	toolbar->add_child(hud_add_type_opt);
+
+	hud_add_btn = memnew(Button("+"));
+	hud_add_btn->set_tooltip_text(CG_DB_TR("Añadir widget"));
+	hud_add_btn->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	hud_add_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_add_pressed));
+	toolbar->add_child(hud_add_btn);
+
+	hud_del_btn = memnew(Button("-"));
+	hud_del_btn->set_tooltip_text(CG_DB_TR("Eliminar widget"));
+	hud_del_btn->set_custom_minimum_size(Size2(34 * EDSCALE, row_h));
+	hud_del_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_remove_pressed));
+	toolbar->add_child(hud_del_btn);
+
+	hud_dup_btn = memnew(Button(CG_DB_TR("Duplicar")));
+	hud_dup_btn->set_custom_minimum_size(Size2(0, row_h));
+	hud_dup_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_duplicate_pressed));
+	toolbar->add_child(hud_dup_btn);
+
+	hud_layer_down_btn = memnew(Button(CG_DB_TR("Bajar capa")));
+	hud_layer_down_btn->set_custom_minimum_size(Size2(0, row_h));
+	hud_layer_down_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_layer_move_pressed).bind(-1));
+	toolbar->add_child(hud_layer_down_btn);
+
+	hud_layer_up_btn = memnew(Button(CG_DB_TR("Subir capa")));
+	hud_layer_up_btn->set_custom_minimum_size(Size2(0, row_h));
+	hud_layer_up_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_layer_move_pressed).bind(1));
+	toolbar->add_child(hud_layer_up_btn);
+
+	hud_widgets_list = memnew(ItemList);
+	hud_widgets_list->set_custom_minimum_size(Size2(0, 128 * EDSCALE));
+	hud_widgets_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_widgets_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_widget_selected));
+	list_body->add_child(hud_widgets_list);
+
+	// 2. Propiedades comunes + anclaje 3x3
+	VBoxContainer *common_body = nullptr;
+	make_card(left_col, CG_DB_TR("Posición y propiedades comunes"), common_body);
+
+	hud_empty_props_lbl = memnew(Label(CG_DB_TR("Añade o selecciona un widget del HUD para editar sus propiedades.")));
+	hud_empty_props_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	common_body->add_child(hud_empty_props_lbl);
+
+	hud_common_box = memnew(VBoxContainer);
+	hud_common_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_common_box->add_theme_constant_override("separation", int(7 * EDSCALE));
+	common_body->add_child(hud_common_box);
+
+	GridContainer *cgrid = memnew(GridContainer);
+	cgrid->set_columns(2);
+	cgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	cgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_common_box->add_child(cgrid);
+
+	add_grid_label(cgrid, CG_DB_TR("Nombre:"));
+	hud_name_edit = memnew(LineEdit);
+	hud_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_name_edit->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_name_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	cgrid->add_child(hud_name_edit);
+
+	add_grid_label(cgrid, CG_DB_TR("Anclaje (3x3):"));
+	HBoxContainer *anchor_row = memnew(HBoxContainer);
+	anchor_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anchor_row->add_theme_constant_override("separation", int(12 * EDSCALE));
+	cgrid->add_child(anchor_row);
+
+	GridContainer *anchor_grid = memnew(GridContainer);
+	anchor_grid->set_columns(3);
+	anchor_grid->add_theme_constant_override("h_separation", int(4 * EDSCALE));
+	anchor_grid->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	anchor_row->add_child(anchor_grid);
+
+	Array anchor_ids = ClockGearsDataManager::get_hud_anchor_ids();
+	static const char *k_anchor_glyphs[9] = { "↖", "↑", "↗", "←", "•", "→", "↙", "↓", "↘" };
+	static const char *k_anchor_tips[9] = {
+		"Arriba izquierda", "Arriba centro", "Arriba derecha",
+		"Centro izquierda", "Centro", "Centro derecha",
+		"Abajo izquierda", "Abajo centro", "Abajo derecha"
+	};
+	for (int i = 0; i < 9; i++) {
+		String aid = (i < anchor_ids.size()) ? String(anchor_ids[i]) : String("top_left");
+		Button *ab = memnew(Button(String::utf8(k_anchor_glyphs[i])));
+		ab->set_theme_type_variation("ClockGearsTabButton");
+		ab->set_toggle_mode(true);
+		ab->set_tooltip_text(CG_DB_TR(k_anchor_tips[i]));
+		ab->set_custom_minimum_size(Size2(34 * EDSCALE, 28 * EDSCALE));
+		ab->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_anchor_pressed).bind(aid));
+		anchor_grid->add_child(ab);
+		hud_anchor_btns[i] = ab;
+	}
+
+	VBoxContainer *xy_box = memnew(VBoxContainer);
+	xy_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	xy_box->add_theme_constant_override("separation", int(5 * EDSCALE));
+	anchor_row->add_child(xy_box);
+
+	HBoxContainer *x_hb = memnew(HBoxContainer);
+	x_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	xy_box->add_child(x_hb);
+	x_hb->add_child(memnew(Label("X:")));
+	hud_offset_x_spin = memnew(SpinBox);
+	hud_offset_x_spin->set_min(-960);
+	hud_offset_x_spin->set_max(960);
+	hud_offset_x_spin->set_suffix(" px");
+	hud_offset_x_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_offset_x_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	x_hb->add_child(hud_offset_x_spin);
+
+	HBoxContainer *y_hb = memnew(HBoxContainer);
+	y_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	xy_box->add_child(y_hb);
+	y_hb->add_child(memnew(Label("Y:")));
+	hud_offset_y_spin = memnew(SpinBox);
+	hud_offset_y_spin->set_min(-540);
+	hud_offset_y_spin->set_max(540);
+	hud_offset_y_spin->set_suffix(" px");
+	hud_offset_y_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_offset_y_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	y_hb->add_child(hud_offset_y_spin);
+
+	add_slider_spin(cgrid, CG_DB_TR("Ancho:"), 16, 960, 1, " px", "width", hud_width_slider, hud_width_spin);
+	add_slider_spin(cgrid, CG_DB_TR("Alto:"), 16, 540, 1, " px", "height", hud_height_slider, hud_height_spin);
+
+	add_grid_label(cgrid, CG_DB_TR("Orden de capa:"));
+	hud_layer_spin = memnew(SpinBox);
+	hud_layer_spin->set_min(-100);
+	hud_layer_spin->set_max(1000);
+	hud_layer_spin->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	hud_layer_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	cgrid->add_child(hud_layer_spin);
+
+	add_grid_label(cgrid, CG_DB_TR("Estilo ventana:"));
+	hud_window_style_opt = memnew(OptionButton);
+	hud_window_style_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_window_style_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_window_style_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	cgrid->add_child(hud_window_style_opt);
+
+	add_grid_label(cgrid, CG_DB_TR("Visibilidad:"));
+	hud_vis_mode_opt = memnew(OptionButton);
+	hud_vis_mode_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_vis_mode_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_vis_mode_opt->add_item(CG_DB_TR("Siempre"), 0);
+	hud_vis_mode_opt->set_item_metadata(0, String("always"));
+	hud_vis_mode_opt->add_item(CG_DB_TR("Con interruptor"), 1);
+	hud_vis_mode_opt->set_item_metadata(1, String("switch"));
+	hud_vis_mode_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	cgrid->add_child(hud_vis_mode_opt);
+
+	hud_vis_switch_row = memnew(HBoxContainer);
+	hud_vis_switch_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_vis_switch_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	hud_common_box->add_child(hud_vis_switch_row);
+
+	Label *sw_lbl = memnew(Label(CG_DB_TR("Interruptor:")));
+	sw_lbl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+	hud_vis_switch_row->add_child(sw_lbl);
+
+	hud_vis_switch_opt = memnew(OptionButton);
+	hud_vis_switch_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_vis_switch_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	hud_vis_switch_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_switch_opt_selected));
+	hud_vis_switch_row->add_child(hud_vis_switch_opt);
+
+	hud_vis_switch_edit = memnew(LineEdit);
+	hud_vis_switch_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_vis_switch_edit->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	hud_vis_switch_edit->set_placeholder(CG_DB_TR("Nombre o ID"));
+	hud_vis_switch_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	hud_vis_switch_row->add_child(hud_vis_switch_edit);
+
+	HBoxContainer *chk_row = memnew(HBoxContainer);
+	chk_row->add_theme_constant_override("separation", int(14 * EDSCALE));
+	hud_common_box->add_child(chk_row);
+
+	hud_hide_ctx_chk = memnew(CheckBox(CG_DB_TR("Ocultar en mensajes y menús")));
+	hud_hide_ctx_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	chk_row->add_child(hud_hide_ctx_chk);
+
+	hud_pixel_art_chk = memnew(CheckBox(CG_DB_TR("Pixel Art (Nearest)")));
+	hud_pixel_art_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_common_changed).unbind(1));
+	chk_row->add_child(hud_pixel_art_chk);
+
+	// 3. Propiedades específicas según tipo
+	VBoxContainer *type_body = nullptr;
+	hud_type_card = make_card(left_col, CG_DB_TR("Propiedades del widget"), type_body);
+
+	// --- 3A. Barra ---
+	hud_bar_box = memnew(VBoxContainer);
+	hud_bar_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_bar_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	type_body->add_child(hud_bar_box);
+
+	GridContainer *bgrid = memnew(GridContainer);
+	bgrid->set_columns(2);
+	bgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	bgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_bar_box->add_child(bgrid);
+
+	add_grid_label(bgrid, CG_DB_TR("Fuente:"));
+	hud_bar_source_opt = memnew(OptionButton);
+	hud_bar_source_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_bar_source_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_bar_source_opt->add_item(CG_DB_TR("HP del jugador"), 0);
+	hud_bar_source_opt->set_item_metadata(0, String("hp"));
+	hud_bar_source_opt->add_item(CG_DB_TR("MP del jugador"), 1);
+	hud_bar_source_opt->set_item_metadata(1, String("mp"));
+	hud_bar_source_opt->add_item(CG_DB_TR("EXP del jugador"), 2);
+	hud_bar_source_opt->set_item_metadata(2, String("exp"));
+	hud_bar_source_opt->add_item(CG_DB_TR("Variable"), 3);
+	hud_bar_source_opt->set_item_metadata(3, String("variable"));
+	hud_bar_source_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	bgrid->add_child(hud_bar_source_opt);
+
+	hud_bar_var_box = memnew(VBoxContainer);
+	hud_bar_var_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_bar_var_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	hud_bar_box->add_child(hud_bar_var_box);
+
+	HBoxContainer *bvar_row = memnew(HBoxContainer);
+	bvar_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	hud_bar_var_box->add_child(bvar_row);
+	Label *bvl = memnew(Label(CG_DB_TR("Variable:")));
+	bvl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+	bvar_row->add_child(bvl);
+
+	hud_bar_var_opt = memnew(OptionButton);
+	hud_bar_var_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_bar_var_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	bvar_row->add_child(hud_bar_var_opt);
+
+	hud_bar_var_edit = memnew(LineEdit);
+	hud_bar_var_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_bar_var_edit->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	hud_bar_var_edit->set_placeholder(CG_DB_TR("Nombre variable"));
+	hud_bar_var_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	bvar_row->add_child(hud_bar_var_edit);
+	hud_bar_var_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_var_opt_selected).bind(hud_bar_var_opt, hud_bar_var_edit));
+
+	HBoxContainer *bmax_row = memnew(HBoxContainer);
+	bmax_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	hud_bar_var_box->add_child(bmax_row);
+	Label *bvml = memnew(Label(CG_DB_TR("Valor máximo:")));
+	bvml->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+	bmax_row->add_child(bvml);
+	hud_bar_var_max_spin = memnew(SpinBox);
+	hud_bar_var_max_spin->set_min(1);
+	hud_bar_var_max_spin->set_max(99999999);
+	hud_bar_var_max_spin->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	hud_bar_var_max_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	bmax_row->add_child(hud_bar_var_max_spin);
+
+	GridContainer *bcgrid = memnew(GridContainer);
+	bcgrid->set_columns(2);
+	bcgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bcgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	bcgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_bar_box->add_child(bcgrid);
+
+	add_color_row(bcgrid, CG_DB_TR("Color fondo:"), "bg_color", true, hud_bar_bg_col_btn);
+	add_color_row(bcgrid, CG_DB_TR("Color relleno:"), "fill_color", true, hud_bar_fill_col_btn);
+	add_color_row(bcgrid, CG_DB_TR("Color borde:"), "border_color", true, hud_bar_border_col_btn);
+	add_color_row(bcgrid, CG_DB_TR("Color texto:"), "font_color", false, hud_bar_font_col_btn);
+
+	add_grid_label(bcgrid, CG_DB_TR("Etiqueta:"));
+	hud_bar_label_edit = memnew(LineEdit);
+	hud_bar_label_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_bar_label_edit->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	hud_bar_label_edit->set_placeholder("HP / MP...");
+	hud_bar_label_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	bcgrid->add_child(hud_bar_label_edit);
+
+	add_slider_spin(bcgrid, CG_DB_TR("Tamaño fuente:"), 8, 48, 1, " px", "font_size", hud_bar_font_size_slider, hud_bar_font_size_spin);
+
+	hud_bar_show_nums_chk = memnew(CheckBox(CG_DB_TR("Mostrar números")));
+	hud_bar_show_nums_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hud_bar_box->add_child(hud_bar_show_nums_chk);
+
+	add_image_row(hud_bar_box, CG_DB_TR("Img. fondo:"), "bg_image_path", hud_bar_bg_img_edit, hud_bar_bg_img_import_btn, hud_bar_bg_img_clear_btn);
+	add_image_row(hud_bar_box, CG_DB_TR("Img. relleno:"), "fill_image_path", hud_bar_fill_img_edit, hud_bar_fill_img_import_btn, hud_bar_fill_img_clear_btn);
+
+	// --- 3B. Corazones ---
+	hud_hearts_box = memnew(VBoxContainer);
+	hud_hearts_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_hearts_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	type_body->add_child(hud_hearts_box);
+
+	GridContainer *hgrid = memnew(GridContainer);
+	hgrid->set_columns(2);
+	hgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	hgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_hearts_box->add_child(hgrid);
+
+	add_grid_label(hgrid, CG_DB_TR("HP / corazón:"));
+	hud_hearts_hp_spin = memnew(SpinBox);
+	hud_hearts_hp_spin->set_min(1);
+	hud_hearts_hp_spin->set_max(99999);
+	hud_hearts_hp_spin->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	hud_hearts_hp_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hgrid->add_child(hud_hearts_hp_spin);
+
+	add_slider_spin(hgrid, CG_DB_TR("Tam. corazón:"), 8, 128, 1, " px", "heart_size", hud_hearts_size_slider, hud_hearts_size_spin);
+	add_slider_spin(hgrid, CG_DB_TR("Separación:"), 0, 64, 1, " px", "spacing", hud_hearts_spacing_slider, hud_hearts_spacing_spin);
+
+	add_grid_label(hgrid, CG_DB_TR("Por fila:"));
+	hud_hearts_per_row_spin = memnew(SpinBox);
+	hud_hearts_per_row_spin->set_min(1);
+	hud_hearts_per_row_spin->set_max(50);
+	hud_hearts_per_row_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hgrid->add_child(hud_hearts_per_row_spin);
+
+	add_grid_label(hgrid, CG_DB_TR("Máx. filas:"));
+	hud_hearts_max_rows_spin = memnew(SpinBox);
+	hud_hearts_max_rows_spin->set_min(1);
+	hud_hearts_max_rows_spin->set_max(20);
+	hud_hearts_max_rows_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hgrid->add_child(hud_hearts_max_rows_spin);
+
+	add_image_row(hud_hearts_box, CG_DB_TR("Corazón lleno:"), "full_image_path", hud_heart_full_edit, hud_heart_full_import_btn, hud_heart_full_clear_btn);
+	add_image_row(hud_hearts_box, CG_DB_TR("Medio corazón:"), "half_image_path", hud_heart_half_edit, hud_heart_half_import_btn, hud_heart_half_clear_btn);
+	add_image_row(hud_hearts_box, CG_DB_TR("Corazón vacío:"), "empty_image_path", hud_heart_empty_edit, hud_heart_empty_import_btn, hud_heart_empty_clear_btn);
+
+	// --- 3C. Monedas ---
+	hud_currency_box = memnew(VBoxContainer);
+	hud_currency_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_currency_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	type_body->add_child(hud_currency_box);
+
+	HBoxContainer *cur_chk_hb = memnew(HBoxContainer);
+	cur_chk_hb->add_theme_constant_override("separation", int(12 * EDSCALE));
+	hud_currency_box->add_child(cur_chk_hb);
+	hud_cur_show_icon_chk = memnew(CheckBox(CG_DB_TR("Mostrar icono")));
+	hud_cur_show_icon_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	cur_chk_hb->add_child(hud_cur_show_icon_chk);
+	hud_cur_show_name_chk = memnew(CheckBox(CG_DB_TR("Mostrar nombre moneda")));
+	hud_cur_show_name_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	cur_chk_hb->add_child(hud_cur_show_name_chk);
+
+	add_image_row(hud_currency_box, CG_DB_TR("Icono moneda:"), "icon_path", hud_cur_icon_edit, hud_cur_icon_import_btn, hud_cur_icon_clear_btn);
+
+	GridContainer *curgrid = memnew(GridContainer);
+	curgrid->set_columns(2);
+	curgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	curgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	curgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_currency_box->add_child(curgrid);
+	add_slider_spin(curgrid, CG_DB_TR("Tamaño fuente:"), 8, 48, 1, " px", "font_size", hud_cur_font_size_slider, hud_cur_font_size_spin);
+	add_color_row(curgrid, CG_DB_TR("Color fuente:"), "font_color", false, hud_cur_font_col_btn);
+
+	// --- 3D. Contador de objetos ---
+	hud_item_box = memnew(VBoxContainer);
+	hud_item_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_item_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	type_body->add_child(hud_item_box);
+
+	GridContainer *igrid = memnew(GridContainer);
+	igrid->set_columns(2);
+	igrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	igrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	igrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_item_box->add_child(igrid);
+
+	add_grid_label(igrid, CG_DB_TR("Objeto (BD):"));
+	hud_item_db_opt = memnew(OptionButton);
+	hud_item_db_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_item_db_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_item_db_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	igrid->add_child(hud_item_db_opt);
+
+	add_slider_spin(igrid, CG_DB_TR("Tamaño fuente:"), 8, 48, 1, " px", "font_size", hud_item_font_size_slider, hud_item_font_size_spin);
+	add_color_row(igrid, CG_DB_TR("Color fuente:"), "font_color", false, hud_item_font_col_btn);
+
+	HBoxContainer *item_chk_hb = memnew(HBoxContainer);
+	item_chk_hb->add_theme_constant_override("separation", int(12 * EDSCALE));
+	hud_item_box->add_child(item_chk_hb);
+	hud_item_hide_zero_chk = memnew(CheckBox(CG_DB_TR("Ocultar si es 0")));
+	hud_item_hide_zero_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	item_chk_hb->add_child(hud_item_hide_zero_chk);
+	hud_item_show_name_chk = memnew(CheckBox(CG_DB_TR("Mostrar nombre")));
+	hud_item_show_name_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	item_chk_hb->add_child(hud_item_show_name_chk);
+
+	add_image_row(hud_item_box, CG_DB_TR("Icono propio:"), "icon_path", hud_item_icon_edit, hud_item_icon_import_btn, hud_item_icon_clear_btn);
+
+	// --- 3E. Texto ---
+	hud_text_box = memnew(VBoxContainer);
+	hud_text_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_text_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	type_body->add_child(hud_text_box);
+
+	GridContainer *tgrid = memnew(GridContainer);
+	tgrid->set_columns(2);
+	tgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	tgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_text_box->add_child(tgrid);
+
+	add_grid_label(tgrid, CG_DB_TR("Contenido:"));
+	hud_text_mode_opt = memnew(OptionButton);
+	hud_text_mode_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_text_mode_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_text_mode_opt->add_item(CG_DB_TR("Texto fijo"), 0);
+	hud_text_mode_opt->set_item_metadata(0, String("fixed"));
+	hud_text_mode_opt->add_item(CG_DB_TR("Variable"), 1);
+	hud_text_mode_opt->set_item_metadata(1, String("variable"));
+	hud_text_mode_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	tgrid->add_child(hud_text_mode_opt);
+
+	hud_text_fixed_row = memnew(HBoxContainer);
+	hud_text_fixed_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	hud_text_box->add_child(hud_text_fixed_row);
+	Label *tfl = memnew(Label(CG_DB_TR("Texto:")));
+	tfl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+	hud_text_fixed_row->add_child(tfl);
+	hud_text_edit = memnew(LineEdit);
+	hud_text_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_text_edit->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_text_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hud_text_fixed_row->add_child(hud_text_edit);
+
+	hud_text_var_row = memnew(HBoxContainer);
+	hud_text_var_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	hud_text_box->add_child(hud_text_var_row);
+	Label *tvl = memnew(Label(CG_DB_TR("Variable:")));
+	tvl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+	hud_text_var_row->add_child(tvl);
+	hud_text_var_opt = memnew(OptionButton);
+	hud_text_var_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_text_var_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	hud_text_var_row->add_child(hud_text_var_opt);
+	hud_text_var_edit = memnew(LineEdit);
+	hud_text_var_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_text_var_edit->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+	hud_text_var_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hud_text_var_row->add_child(hud_text_var_edit);
+	hud_text_var_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_var_opt_selected).bind(hud_text_var_opt, hud_text_var_edit));
+
+	GridContainer *tgrid2 = memnew(GridContainer);
+	tgrid2->set_columns(2);
+	tgrid2->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tgrid2->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	tgrid2->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_text_box->add_child(tgrid2);
+
+	add_grid_label(tgrid2, CG_DB_TR("Alineación:"));
+	hud_text_align_opt = memnew(OptionButton);
+	hud_text_align_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_text_align_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_text_align_opt->add_item(CG_DB_TR("Izquierda"), 0);
+	hud_text_align_opt->set_item_metadata(0, String("left"));
+	hud_text_align_opt->add_item(CG_DB_TR("Centro"), 1);
+	hud_text_align_opt->set_item_metadata(1, String("center"));
+	hud_text_align_opt->add_item(CG_DB_TR("Derecha"), 2);
+	hud_text_align_opt->set_item_metadata(2, String("right"));
+	hud_text_align_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	tgrid2->add_child(hud_text_align_opt);
+
+	add_slider_spin(tgrid2, CG_DB_TR("Tamaño fuente:"), 8, 64, 1, " px", "font_size", hud_text_font_size_slider, hud_text_font_size_spin);
+	add_color_row(tgrid2, CG_DB_TR("Color texto:"), "font_color", false, hud_text_font_col_btn);
+
+	// --- 3F. Imagen ---
+	hud_image_box = memnew(VBoxContainer);
+	hud_image_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_image_box->add_theme_constant_override("separation", int(6 * EDSCALE));
+	type_body->add_child(hud_image_box);
+
+	add_image_row(hud_image_box, CG_DB_TR("Imagen:"), "image_path", hud_img_path_edit, hud_img_import_btn, hud_img_clear_btn);
+
+	GridContainer *imgrid = memnew(GridContainer);
+	imgrid->set_columns(2);
+	imgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	imgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	imgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	hud_image_box->add_child(imgrid);
+
+	add_grid_label(imgrid, CG_DB_TR("Escala:"));
+	hud_img_scale_opt = memnew(OptionButton);
+	hud_img_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_img_scale_opt->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+	hud_img_scale_opt->add_item(CG_DB_TR("Ajustar"), 0);
+	hud_img_scale_opt->set_item_metadata(0, String("fit"));
+	hud_img_scale_opt->add_item(CG_DB_TR("Estirar"), 1);
+	hud_img_scale_opt->set_item_metadata(1, String("stretch"));
+	hud_img_scale_opt->add_item(CG_DB_TR("Repetir"), 2);
+	hud_img_scale_opt->set_item_metadata(2, String("tile"));
+	hud_img_scale_opt->add_item(CG_DB_TR("Tamaño real"), 3);
+	hud_img_scale_opt->set_item_metadata(3, String("native"));
+	hud_img_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	imgrid->add_child(hud_img_scale_opt);
+
+	add_slider_spin(imgrid, CG_DB_TR("Opacidad:"), 0, 100, 1, " %", "opacity", hud_img_opacity_slider, hud_img_opacity_spin, true);
+
+	// Columna derecha: Vista previa 16:9 sobre mapa de ejemplo + Datos de ejemplo
+	VBoxContainer *right_col = memnew(VBoxContainer);
+	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	right_col->set_stretch_ratio(1.05f);
+	right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	hud_main_split->add_child(right_col);
+
+	VBoxContainer *prev_vb = nullptr;
+	make_card(right_col, CG_DB_TR("Vista previa en vivo (16:9)"), prev_vb);
+
+	HBoxContainer *res_hb = memnew(HBoxContainer);
+	res_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	prev_vb->add_child(res_hb);
+
+	res_hb->add_child(memnew(Label(CG_DB_TR("Tamaño:"))));
+	hud_preview_res_opt = memnew(OptionButton);
+	hud_preview_res_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_preview_res_opt->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
+	hud_preview_res_opt->add_item("960 x 540 (Base)", 0);
+	hud_preview_res_opt->set_item_metadata(0, Vector2i(960, 540));
+	hud_preview_res_opt->add_item("1366 x 768 (HD)", 1);
+	hud_preview_res_opt->set_item_metadata(1, Vector2i(1366, 768));
+	hud_preview_res_opt->add_item("1920 x 1080 (Full HD)", 2);
+	hud_preview_res_opt->set_item_metadata(2, Vector2i(1920, 1080));
+	hud_preview_res_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_preview_res_selected));
+	res_hb->add_child(hud_preview_res_opt);
+
+	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
+	aspect->set_ratio(16.0f / 9.0f);
+	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
+	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	aspect->set_custom_minimum_size(Size2(300 * EDSCALE, 170 * EDSCALE));
+	prev_vb->add_child(aspect);
+
+	hud_preview_viewport = memnew(SubViewport);
+	hud_preview_viewport->set_size(Size2i(960, 540));
+	hud_preview_viewport->set_disable_3d(true);
+	hud_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
+	aspect->add_child(hud_preview_viewport);
+
+	TextureRect *preview_disp = memnew(TextureRect);
+	preview_disp->set_name("HudPreviewDisplay");
+	preview_disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	preview_disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	preview_disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
+	preview_disp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	preview_disp->set_texture(hud_preview_viewport->get_texture());
+	aspect->add_child(preview_disp);
+
+	hud_preview_map_bg = memnew(TextureRect);
+	hud_preview_map_bg->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	hud_preview_map_bg->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	hud_preview_map_bg->set_stretch_mode(TextureRect::STRETCH_SCALE);
+	hud_preview_map_bg->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	hud_preview_map_bg->set_texture(s_make_hud_sample_map_texture());
+	hud_preview_viewport->add_child(hud_preview_map_bg);
+
+	hud_live_preview = memnew(ClockGearsHudOverlay);
+	hud_live_preview->set_preview_mode(true);
+	hud_live_preview->set_viewport_size_override(Size2(960, 540));
+	hud_preview_viewport->add_child(hud_live_preview);
+
+	// Card: Datos de ejemplo
+	VBoxContainer *samp_vb = nullptr;
+	make_card(right_col, CG_DB_TR("Datos de ejemplo (vista previa)"), samp_vb);
+
+	GridContainer *sgrid = memnew(GridContainer);
+	sgrid->set_columns(2);
+	sgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sgrid->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	sgrid->add_theme_constant_override("v_separation", int(6 * EDSCALE));
+	samp_vb->add_child(sgrid);
+
+	add_grid_label(sgrid, CG_DB_TR("HP actual:"));
+	hud_sample_hp_spin = memnew(SpinBox);
+	hud_sample_hp_spin->set_min(0);
+	hud_sample_hp_spin->set_max(99999);
+	hud_sample_hp_spin->set_value(75);
+	hud_sample_hp_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_sample_hp_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_sample_value_changed));
+	sgrid->add_child(hud_sample_hp_spin);
+
+	add_grid_label(sgrid, CG_DB_TR("Monedas:"));
+	hud_sample_gold_spin = memnew(SpinBox);
+	hud_sample_gold_spin->set_min(0);
+	hud_sample_gold_spin->set_max(99999999);
+	hud_sample_gold_spin->set_value(250);
+	hud_sample_gold_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_sample_gold_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_sample_value_changed));
+	sgrid->add_child(hud_sample_gold_spin);
+
+	add_grid_label(sgrid, CG_DB_TR("Cant. objeto:"));
+	hud_sample_item_qty_spin = memnew(SpinBox);
+	hud_sample_item_qty_spin->set_min(0);
+	hud_sample_item_qty_spin->set_max(9999);
+	hud_sample_item_qty_spin->set_value(3);
+	hud_sample_item_qty_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_sample_item_qty_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_sample_value_changed));
+	sgrid->add_child(hud_sample_item_qty_spin);
+
+	hud_asset_file_dialog = memnew(FileDialog);
+	hud_asset_file_dialog->set_access(FileDialog::ACCESS_FILESYSTEM);
+	hud_asset_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
+	hud_asset_file_dialog->set_title(CG_DB_TR("Importar imagen para el HUD"));
+	hud_asset_file_dialog->add_filter("*.png, *.webp, *.jpg, *.jpeg ; " + CG_DB_TR("Imágenes"));
+	hud_asset_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_asset_file_selected));
+	add_child(hud_asset_file_dialog);
+}
+
+void ClockGearsDatabaseDialog::_refresh_hud_dynamic_options() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (hud_window_style_opt) {
+		hud_window_style_opt->clear();
+		hud_window_style_opt->add_item(CG_DB_TR("Sin estilo (transparente)"), 0);
+		hud_window_style_opt->set_item_metadata(0, String(""));
+		hud_window_style_opt->add_item(CG_DB_TR("(Por defecto del proyecto)"), 1);
+		hud_window_style_opt->set_item_metadata(1, String("default"));
+		if (dm) {
+			Array styles = dm->get_window_styles();
+			for (int i = 0; i < styles.size(); i++) {
+				if (styles[i].get_type() != Variant::DICTIONARY) continue;
+				Dictionary st = styles[i];
+				String sid = String(st.get("id", ""));
+				String sname = String(st.get("name", sid));
+				int idx = hud_window_style_opt->get_item_count();
+				hud_window_style_opt->add_item(sname, idx);
+				hud_window_style_opt->set_item_metadata(idx, sid);
+			}
+		}
+	}
+
+	if (hud_vis_switch_opt) {
+		hud_vis_switch_opt->clear();
+		hud_vis_switch_opt->add_item(CG_DB_TR("(Escribir interruptor...)"), 0);
+		hud_vis_switch_opt->set_item_metadata(0, String(""));
+		if (dm) {
+			Dictionary sw = dm->get_switches_names();
+			Array keys = sw.keys();
+			keys.sort();
+			for (int i = 0; i < keys.size(); i++) {
+				String k = String(keys[i]);
+				String label = String(sw[k]).strip_edges();
+				if (label.is_empty()) continue;
+				int idx = hud_vis_switch_opt->get_item_count();
+				hud_vis_switch_opt->add_item(vformat("#%s: %s", k, label), idx);
+				hud_vis_switch_opt->set_item_metadata(idx, label);
+			}
+		}
+	}
+
+	auto fill_vars = [&](OptionButton *p_opt) {
+		if (!p_opt) return;
+		p_opt->clear();
+		p_opt->add_item(CG_DB_TR("(Escribir variable...)"), 0);
+		p_opt->set_item_metadata(0, String(""));
+		if (dm) {
+			Dictionary vs = dm->get_variables_names();
+			Array keys = vs.keys();
+			keys.sort();
+			for (int i = 0; i < keys.size(); i++) {
+				String k = String(keys[i]);
+				String label = String(vs[k]).strip_edges();
+				if (label.is_empty()) continue;
+				int idx = p_opt->get_item_count();
+				p_opt->add_item(vformat("#%s: %s", k, label), idx);
+				p_opt->set_item_metadata(idx, label);
+			}
+		}
+	};
+	fill_vars(hud_bar_var_opt);
+	fill_vars(hud_text_var_opt);
+
+	if (hud_item_db_opt) {
+		hud_item_db_opt->clear();
+		hud_item_db_opt->add_item(CG_DB_TR("(Ningún objeto)"), 0);
+		hud_item_db_opt->set_item_metadata(0, String(""));
+		if (dm) {
+			static const int k_cats[4] = { CAT_ITEMS, CAT_WEAPONS, CAT_ARMORS, CAT_ACCESSORIES };
+			for (int ci = 0; ci < 4; ci++) {
+				int cat = k_cats[ci];
+				Array arr = dm->get_category_array(cat);
+				for (int i = 0; i < arr.size(); i++) {
+					if (arr[i].get_type() != Variant::DICTIONARY) continue;
+					Dictionary rec = arr[i];
+					int rid = int(rec.get("id", 0));
+					String rname = String(rec.get("name", "")).strip_edges();
+					if (rid <= 0 || rname.is_empty()) continue;
+					String inv_key = dm->get_record_inventory_key(cat, rid);
+					if (inv_key.is_empty()) {
+						inv_key = rname;
+					}
+					int idx = hud_item_db_opt->get_item_count();
+					hud_item_db_opt->add_item(vformat("[%s #%d] %s", _get_category_name(cat), rid, rname), idx);
+					hud_item_db_opt->set_item_metadata(idx, inv_key);
+				}
+			}
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_rebuild_hud_widgets_list() {
+	if (!hud_widgets_list) {
+		return;
+	}
+	hud_widgets_list->clear();
+	Array widgets = hud_config_draft.get("widgets", Array());
+	for (int i = 0; i < widgets.size(); i++) {
+		if (widgets[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		hud_widgets_list->add_item(_hud_format_widget_list_label(Dictionary(widgets[i]), i));
+	}
+	if (widgets.is_empty()) {
+		hud_selected_widget_idx = -1;
+	} else if (hud_selected_widget_idx < 0 || hud_selected_widget_idx >= widgets.size()) {
+		hud_selected_widget_idx = 0;
+	}
+	if (hud_selected_widget_idx >= 0 && hud_selected_widget_idx < hud_widgets_list->get_item_count()) {
+		hud_widgets_list->select(hud_selected_widget_idx);
+	}
+	if (hud_del_btn) hud_del_btn->set_disabled(hud_selected_widget_idx < 0);
+	if (hud_dup_btn) hud_dup_btn->set_disabled(hud_selected_widget_idx < 0);
+	if (hud_layer_down_btn) hud_layer_down_btn->set_disabled(hud_selected_widget_idx < 0);
+	if (hud_layer_up_btn) hud_layer_up_btn->set_disabled(hud_selected_widget_idx < 0);
+}
+
+void ClockGearsDatabaseDialog::_refresh_hud_selected_widget_props() {
+	Array widgets = hud_config_draft.get("widgets", Array());
+	bool valid = (hud_selected_widget_idx >= 0 && hud_selected_widget_idx < widgets.size() && widgets[hud_selected_widget_idx].get_type() == Variant::DICTIONARY);
+	if (hud_empty_props_lbl) hud_empty_props_lbl->set_visible(!valid);
+	if (hud_common_box) hud_common_box->set_visible(valid);
+	if (hud_type_card) hud_type_card->set_visible(valid);
+	if (!valid) {
+		return;
+	}
+
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	Dictionary w = ClockGearsDataManager::normalize_hud_widget(Dictionary(widgets[hud_selected_widget_idx]), hud_selected_widget_idx + 1);
+	String wtype = String(w.get("type", "bar"));
+
+	if (hud_name_edit) hud_name_edit->set_text(String(w.get("name", "")));
+	String anchor = String(w.get("anchor", "top_left"));
+	Array anchor_ids = ClockGearsDataManager::get_hud_anchor_ids();
+	for (int i = 0; i < 9; i++) {
+		if (!hud_anchor_btns[i]) continue;
+		String aid = (i < anchor_ids.size()) ? String(anchor_ids[i]) : String();
+		hud_anchor_btns[i]->set_pressed_no_signal(aid == anchor);
+	}
+	if (hud_offset_x_spin) hud_offset_x_spin->set_value(int(w.get("offset_x", 0)));
+	if (hud_offset_y_spin) hud_offset_y_spin->set_value(int(w.get("offset_y", 0)));
+	if (hud_width_slider) hud_width_slider->set_value(int(w.get("width", 160)));
+	if (hud_width_spin) hud_width_spin->set_value(int(w.get("width", 160)));
+	if (hud_height_slider) hud_height_slider->set_value(int(w.get("height", 36)));
+	if (hud_height_spin) hud_height_spin->set_value(int(w.get("height", 36)));
+	if (hud_layer_spin) hud_layer_spin->set_value(int(w.get("layer_order", 0)));
+
+	if (hud_window_style_opt) {
+		String wsid = String(w.get("window_style_id", "")).strip_edges().to_lower();
+		int sel = 0;
+		for (int i = 0; i < hud_window_style_opt->get_item_count(); i++) {
+			if (String(hud_window_style_opt->get_item_metadata(i)).to_lower() == wsid) {
+				sel = i;
+				break;
+			}
+		}
+		hud_window_style_opt->select(sel);
+	}
+
+	String vmode = String(w.get("visibility_mode", "always"));
+	if (hud_vis_mode_opt) hud_vis_mode_opt->select(vmode == "switch" ? 1 : 0);
+	if (hud_vis_switch_row) hud_vis_switch_row->set_visible(vmode == "switch");
+	String vsw = String(w.get("visibility_switch", ""));
+	if (hud_vis_switch_edit) hud_vis_switch_edit->set_text(vsw);
+	if (hud_vis_switch_opt) {
+		int sel = 0;
+		for (int i = 1; i < hud_vis_switch_opt->get_item_count(); i++) {
+			if (String(hud_vis_switch_opt->get_item_metadata(i)) == vsw) {
+				sel = i;
+				break;
+			}
+		}
+		hud_vis_switch_opt->select(sel);
+	}
+	if (hud_hide_ctx_chk) hud_hide_ctx_chk->set_pressed(bool(w.get("hide_during_messages_and_menus", true)));
+	if (hud_pixel_art_chk) hud_pixel_art_chk->set_pressed(bool(w.get("pixel_art", true)));
+
+	if (hud_bar_box) hud_bar_box->set_visible(wtype == "bar");
+	if (hud_hearts_box) hud_hearts_box->set_visible(wtype == "hearts");
+	if (hud_currency_box) hud_currency_box->set_visible(wtype == "currency");
+	if (hud_item_box) hud_item_box->set_visible(wtype == "item");
+	if (hud_text_box) hud_text_box->set_visible(wtype == "text");
+	if (hud_image_box) hud_image_box->set_visible(wtype == "image");
+
+	auto select_meta = [](OptionButton *p_opt, const String &p_meta) {
+		if (!p_opt) return;
+		int sel = 0;
+		for (int i = 0; i < p_opt->get_item_count(); i++) {
+			if (String(p_opt->get_item_metadata(i)) == p_meta) {
+				sel = i;
+				break;
+			}
+		}
+		p_opt->select(sel);
+	};
+
+	if (wtype == "bar") {
+		String vs = String(w.get("value_source", "hp"));
+		select_meta(hud_bar_source_opt, vs);
+		if (hud_bar_var_box) hud_bar_var_box->set_visible(vs == "variable");
+		String vname = String(w.get("variable_name", ""));
+		if (hud_bar_var_edit) hud_bar_var_edit->set_text(vname);
+		select_meta(hud_bar_var_opt, vname);
+		if (hud_bar_var_max_spin) hud_bar_var_max_spin->set_value(int(w.get("variable_max", 100)));
+		if (hud_bar_bg_col_btn) hud_bar_bg_col_btn->set_pick_color(s_hud_parse_color(String(w.get("bg_color", "#1A1E2ECC")), Color::html("#1A1E2ECC")));
+		if (hud_bar_fill_col_btn) hud_bar_fill_col_btn->set_pick_color(s_hud_parse_color(String(w.get("fill_color", "#D93B3BFF")), Color::html("#D93B3BFF")));
+		if (hud_bar_border_col_btn) hud_bar_border_col_btn->set_pick_color(s_hud_parse_color(String(w.get("border_color", "#E2E8F0FF")), Color::html("#E2E8F0FF")));
+		if (hud_bar_font_col_btn) hud_bar_font_col_btn->set_pick_color(s_hud_parse_color(String(w.get("font_color", "#FFFFFFFF")), Color::html("#FFFFFFFF")));
+		if (hud_bar_label_edit) hud_bar_label_edit->set_text(String(w.get("label_text", "")));
+		if (hud_bar_show_nums_chk) hud_bar_show_nums_chk->set_pressed(bool(w.get("show_numbers", true)));
+		int fsz = int(w.get("font_size", 13));
+		if (hud_bar_font_size_slider) hud_bar_font_size_slider->set_value(fsz);
+		if (hud_bar_font_size_spin) hud_bar_font_size_spin->set_value(fsz);
+		if (hud_bar_bg_img_edit) hud_bar_bg_img_edit->set_text(String(w.get("bg_image_path", "")));
+		if (hud_bar_fill_img_edit) hud_bar_fill_img_edit->set_text(String(w.get("fill_image_path", "")));
+	} else if (wtype == "hearts") {
+		if (hud_hearts_hp_spin) hud_hearts_hp_spin->set_value(int(w.get("hp_per_heart", 20)));
+		int hsz = int(w.get("heart_size", 20));
+		int hsp = int(w.get("spacing", 4));
+		if (hud_hearts_size_slider) hud_hearts_size_slider->set_value(hsz);
+		if (hud_hearts_size_spin) hud_hearts_size_spin->set_value(hsz);
+		if (hud_hearts_spacing_slider) hud_hearts_spacing_slider->set_value(hsp);
+		if (hud_hearts_spacing_spin) hud_hearts_spacing_spin->set_value(hsp);
+		if (hud_hearts_per_row_spin) hud_hearts_per_row_spin->set_value(int(w.get("max_hearts_per_row", 10)));
+		if (hud_hearts_max_rows_spin) hud_hearts_max_rows_spin->set_value(int(w.get("max_rows", 2)));
+		if (hud_heart_full_edit) hud_heart_full_edit->set_text(String(w.get("full_image_path", "")));
+		if (hud_heart_half_edit) hud_heart_half_edit->set_text(String(w.get("half_image_path", "")));
+		if (hud_heart_empty_edit) hud_heart_empty_edit->set_text(String(w.get("empty_image_path", "")));
+	} else if (wtype == "currency") {
+		if (hud_cur_show_icon_chk) hud_cur_show_icon_chk->set_pressed(bool(w.get("show_icon", true)));
+		if (hud_cur_show_name_chk) hud_cur_show_name_chk->set_pressed(bool(w.get("show_currency_name", true)));
+		if (hud_cur_icon_edit) hud_cur_icon_edit->set_text(String(w.get("icon_path", "")));
+		int fsz = int(w.get("font_size", 15));
+		if (hud_cur_font_size_slider) hud_cur_font_size_slider->set_value(fsz);
+		if (hud_cur_font_size_spin) hud_cur_font_size_spin->set_value(fsz);
+		if (hud_cur_font_col_btn) hud_cur_font_col_btn->set_pick_color(s_hud_parse_color(String(w.get("font_color", "#FDE047FF")), Color::html("#FDE047FF")));
+	} else if (wtype == "item") {
+		select_meta(hud_item_db_opt, String(w.get("item_key", "")));
+		if (hud_item_icon_edit) hud_item_icon_edit->set_text(String(w.get("icon_path", "")));
+		if (hud_item_hide_zero_chk) hud_item_hide_zero_chk->set_pressed(bool(w.get("hide_when_zero", false)));
+		if (hud_item_show_name_chk) hud_item_show_name_chk->set_pressed(bool(w.get("show_name", false)));
+		int fsz = int(w.get("font_size", 15));
+		if (hud_item_font_size_slider) hud_item_font_size_slider->set_value(fsz);
+		if (hud_item_font_size_spin) hud_item_font_size_spin->set_value(fsz);
+		if (hud_item_font_col_btn) hud_item_font_col_btn->set_pick_color(s_hud_parse_color(String(w.get("font_color", "#FFFFFFFF")), Color::html("#FFFFFFFF")));
+	} else if (wtype == "text") {
+		String tm = String(w.get("text_mode", "fixed"));
+		select_meta(hud_text_mode_opt, tm);
+		if (hud_text_fixed_row) hud_text_fixed_row->set_visible(tm != "variable");
+		if (hud_text_var_row) hud_text_var_row->set_visible(tm == "variable");
+		if (hud_text_edit) hud_text_edit->set_text(String(w.get("text", "")));
+		String tv = String(w.get("variable_name", ""));
+		if (hud_text_var_edit) hud_text_var_edit->set_text(tv);
+		select_meta(hud_text_var_opt, tv);
+		select_meta(hud_text_align_opt, String(w.get("align", "left")));
+		int fsz = int(w.get("font_size", 16));
+		if (hud_text_font_size_slider) hud_text_font_size_slider->set_value(fsz);
+		if (hud_text_font_size_spin) hud_text_font_size_spin->set_value(fsz);
+		if (hud_text_font_col_btn) hud_text_font_col_btn->set_pick_color(s_hud_parse_color(String(w.get("font_color", "#FFFFFFFF")), Color::html("#FFFFFFFF")));
+	} else {
+		if (hud_img_path_edit) hud_img_path_edit->set_text(String(w.get("image_path", "")));
+		select_meta(hud_img_scale_opt, String(w.get("scale_mode", "fit")));
+		int pct = CLAMP(int(Math::round(double(w.get("opacity", 1.0)) * 100.0)), 0, 100);
+		if (hud_img_opacity_slider) hud_img_opacity_slider->set_value(pct);
+		if (hud_img_opacity_spin) hud_img_opacity_spin->set_value(pct);
+	}
+
+	updating_ui = prev_upd;
+}
+
+void ClockGearsDatabaseDialog::_update_hud_live_preview() {
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		if (!hud_preview_has_saved_rt) {
+			hud_preview_saved_rt = dm->export_runtime_state();
+			hud_preview_has_saved_rt = true;
+		}
+		int sample_hp = hud_sample_hp_spin ? int(hud_sample_hp_spin->get_value()) : 75;
+		int sample_gold = hud_sample_gold_spin ? int(hud_sample_gold_spin->get_value()) : 250;
+		int sample_qty = hud_sample_item_qty_spin ? int(hud_sample_item_qty_spin->get_value()) : 3;
+
+		int leader_id = 1;
+		Array party = dm->get_party_actor_ids();
+		if (!party.is_empty() && int(party[0]) > 0) {
+			leader_id = int(party[0]);
+		} else {
+			Array actors = dm->get_category_array(CAT_ACTORS);
+			if (!actors.is_empty() && actors[0].get_type() == Variant::DICTIONARY && int(Dictionary(actors[0]).get("id", 0)) > 0) {
+				leader_id = int(Dictionary(actors[0]).get("id", 1));
+			}
+		}
+		dm->get_actor_runtime_state(leader_id);
+		dm->set_actor_runtime_hp(leader_id, sample_hp);
+		dm->set_gold(sample_gold);
+
+		Array widgets = hud_config_draft.get("widgets", Array());
+		for (int i = 0; i < widgets.size(); i++) {
+			if (widgets[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary w = widgets[i];
+			if (String(w.get("type", "")) != "item") continue;
+			String ikey = String(w.get("item_key", "")).strip_edges();
+			if (ikey.is_empty()) continue;
+			Dictionary info = dm->find_inventory_record(ikey);
+			int cur_q = dm->get_item_qty(ikey);
+			if (cur_q != sample_qty) {
+				dm->change_item(ikey, sample_qty - cur_q);
+			}
+			if (bool(info.get("found", false))) {
+				int cat = int(info.get("category", -1));
+				int rid = int(info.get("id", 0));
+				if (cat >= 0 && rid > 0) {
+					String canon = dm->get_record_inventory_key(cat, rid);
+					if (!canon.is_empty() && canon != ikey) {
+						int cq2 = dm->get_item_qty(canon);
+						if (cq2 != sample_qty) {
+							dm->change_item(canon, sample_qty - cq2);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (hud_live_preview) {
+		hud_live_preview->apply_hud_config(hud_config_draft);
+		hud_live_preview->refresh_all_widgets("editor_preview");
+		Array pw = hud_config_draft.get("widgets", Array());
+		for (int i = 0; i < pw.size(); i++) {
+			if (pw[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary w = pw[i];
+			if (String(w.get("type", "")) == "item" && bool(w.get("hide_when_zero", false))) {
+				String wid = String(w.get("id", ""));
+				Control *wnode = hud_live_preview->get_widget_node(wid);
+				Dictionary wst = hud_live_preview->get_widget_state(wid);
+				if (wnode && int(wst.get("qty", 0)) <= 0) {
+					wnode->set_visible(false);
+				}
+			}
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_refresh_hud_editor_ui() {
+	if (!hud_editor_panel) {
+		return;
+	}
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	_refresh_hud_dynamic_options();
+	_rebuild_hud_widgets_list();
+	_refresh_hud_selected_widget_props();
+	updating_ui = prev_upd;
+	_update_hud_live_preview();
+}
+
+void ClockGearsDatabaseDialog::_hud_set_selected_field(const String &p_key, const Variant &p_val, bool p_rebuild_list) {
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (hud_selected_widget_idx < 0 || hud_selected_widget_idx >= widgets.size() || widgets[hud_selected_widget_idx].get_type() != Variant::DICTIONARY) {
+		return;
+	}
+	Dictionary w = Dictionary(widgets[hud_selected_widget_idx]).duplicate(true);
+	w[p_key] = p_val;
+	widgets[hud_selected_widget_idx] = ClockGearsDataManager::normalize_hud_widget(w, hud_selected_widget_idx + 1);
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	if (p_rebuild_list) {
+		_rebuild_hud_widgets_list();
+	}
+	_set_pending_changes(true);
+	_update_hud_live_preview();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_add_pressed() {
+	String wtype = "bar";
+	if (hud_add_type_opt && hud_add_type_opt->get_selected() >= 0) {
+		wtype = String(hud_add_type_opt->get_selected_metadata());
+	}
+	add_hud_widget(wtype);
+}
+
+void ClockGearsDatabaseDialog::_on_hud_remove_pressed() {
+	if (hud_selected_widget_idx >= 0) {
+		remove_hud_widget(hud_selected_widget_idx);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_hud_duplicate_pressed() {
+	if (hud_selected_widget_idx >= 0) {
+		duplicate_hud_widget(hud_selected_widget_idx);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_hud_layer_move_pressed(int p_delta) {
+	if (hud_selected_widget_idx >= 0) {
+		move_hud_widget_layer(hud_selected_widget_idx, p_delta);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_hud_widget_selected(int p_idx) {
+	if (updating_ui) {
+		return;
+	}
+	select_hud_widget(p_idx);
+}
+
+void ClockGearsDatabaseDialog::_on_hud_anchor_pressed(const String &p_anchor_id) {
+	if (updating_ui) {
+		return;
+	}
+	_hud_set_selected_field("anchor", p_anchor_id);
+	_refresh_hud_selected_widget_props();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_common_changed() {
+	if (updating_ui) {
+		return;
+	}
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (hud_selected_widget_idx < 0 || hud_selected_widget_idx >= widgets.size()) {
+		return;
+	}
+	Dictionary w = Dictionary(widgets[hud_selected_widget_idx]).duplicate(true);
+	if (hud_name_edit) w["name"] = hud_name_edit->get_text();
+	if (hud_offset_x_spin) w["offset_x"] = int(hud_offset_x_spin->get_value());
+	if (hud_offset_y_spin) w["offset_y"] = int(hud_offset_y_spin->get_value());
+	if (hud_width_spin) w["width"] = int(hud_width_spin->get_value());
+	if (hud_height_spin) w["height"] = int(hud_height_spin->get_value());
+	if (hud_layer_spin) w["layer_order"] = int(hud_layer_spin->get_value());
+	if (hud_window_style_opt && hud_window_style_opt->get_selected() >= 0) {
+		w["window_style_id"] = String(hud_window_style_opt->get_selected_metadata());
+	}
+	String vmode = (hud_vis_mode_opt && hud_vis_mode_opt->get_selected() == 1) ? String("switch") : String("always");
+	w["visibility_mode"] = vmode;
+	if (hud_vis_switch_row) hud_vis_switch_row->set_visible(vmode == "switch");
+	if (hud_vis_switch_edit) w["visibility_switch"] = hud_vis_switch_edit->get_text();
+	if (hud_hide_ctx_chk) w["hide_during_messages_and_menus"] = hud_hide_ctx_chk->is_pressed();
+	if (hud_pixel_art_chk) w["pixel_art"] = hud_pixel_art_chk->is_pressed();
+
+	widgets[hud_selected_widget_idx] = ClockGearsDataManager::normalize_hud_widget(w, hud_selected_widget_idx + 1);
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	if (hud_widgets_list && hud_selected_widget_idx < hud_widgets_list->get_item_count()) {
+		hud_widgets_list->set_item_text(hud_selected_widget_idx, _hud_format_widget_list_label(Dictionary(Array(hud_config_draft["widgets"])[hud_selected_widget_idx]), hud_selected_widget_idx));
+	}
+	_set_pending_changes(true);
+	_update_hud_live_preview();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_slider_spin_sync(double p_val, const String &p_key, Slider *p_slider, SpinBox *p_spin, bool p_is_pct_opacity) {
+	if (updating_ui) {
+		return;
+	}
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	if (p_slider && Math::abs(p_slider->get_value() - p_val) > 0.001) {
+		p_slider->set_value(p_val);
+	}
+	if (p_spin && Math::abs(p_spin->get_value() - p_val) > 0.001) {
+		p_spin->set_value(p_val);
+	}
+	updating_ui = prev_upd;
+	Variant stored = p_is_pct_opacity ? Variant(CLAMP(p_val / 100.0, 0.0, 1.0)) : Variant(int(Math::round(p_val)));
+	_hud_set_selected_field(p_key, stored, false);
+}
+
+void ClockGearsDatabaseDialog::_on_hud_type_field_changed() {
+	if (updating_ui) {
+		return;
+	}
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (hud_selected_widget_idx < 0 || hud_selected_widget_idx >= widgets.size()) {
+		return;
+	}
+	Dictionary w = Dictionary(widgets[hud_selected_widget_idx]).duplicate(true);
+	String wtype = String(w.get("type", "bar"));
+
+	if (wtype == "bar") {
+		String vs = (hud_bar_source_opt && hud_bar_source_opt->get_selected() >= 0) ? String(hud_bar_source_opt->get_selected_metadata()) : String("hp");
+		w["value_source"] = vs;
+		if (hud_bar_var_box) hud_bar_var_box->set_visible(vs == "variable");
+		if (hud_bar_var_edit) w["variable_name"] = hud_bar_var_edit->get_text();
+		if (hud_bar_var_max_spin) w["variable_max"] = int(hud_bar_var_max_spin->get_value());
+		if (hud_bar_label_edit) w["label_text"] = hud_bar_label_edit->get_text();
+		if (hud_bar_show_nums_chk) w["show_numbers"] = hud_bar_show_nums_chk->is_pressed();
+		if (hud_bar_bg_img_edit) w["bg_image_path"] = hud_bar_bg_img_edit->get_text();
+		if (hud_bar_fill_img_edit) w["fill_image_path"] = hud_bar_fill_img_edit->get_text();
+	} else if (wtype == "hearts") {
+		if (hud_hearts_hp_spin) w["hp_per_heart"] = int(hud_hearts_hp_spin->get_value());
+		if (hud_hearts_per_row_spin) w["max_hearts_per_row"] = int(hud_hearts_per_row_spin->get_value());
+		if (hud_hearts_max_rows_spin) w["max_rows"] = int(hud_hearts_max_rows_spin->get_value());
+		if (hud_heart_full_edit) w["full_image_path"] = hud_heart_full_edit->get_text();
+		if (hud_heart_half_edit) w["half_image_path"] = hud_heart_half_edit->get_text();
+		if (hud_heart_empty_edit) w["empty_image_path"] = hud_heart_empty_edit->get_text();
+	} else if (wtype == "currency") {
+		if (hud_cur_show_icon_chk) w["show_icon"] = hud_cur_show_icon_chk->is_pressed();
+		if (hud_cur_show_name_chk) w["show_currency_name"] = hud_cur_show_name_chk->is_pressed();
+		if (hud_cur_icon_edit) w["icon_path"] = hud_cur_icon_edit->get_text();
+	} else if (wtype == "item") {
+		if (hud_item_db_opt && hud_item_db_opt->get_selected() >= 0) {
+			w["item_key"] = String(hud_item_db_opt->get_selected_metadata());
+		}
+		if (hud_item_icon_edit) w["icon_path"] = hud_item_icon_edit->get_text();
+		if (hud_item_hide_zero_chk) w["hide_when_zero"] = hud_item_hide_zero_chk->is_pressed();
+		if (hud_item_show_name_chk) w["show_name"] = hud_item_show_name_chk->is_pressed();
+	} else if (wtype == "text") {
+		String tm = (hud_text_mode_opt && hud_text_mode_opt->get_selected() >= 0) ? String(hud_text_mode_opt->get_selected_metadata()) : String("fixed");
+		w["text_mode"] = tm;
+		if (hud_text_fixed_row) hud_text_fixed_row->set_visible(tm != "variable");
+		if (hud_text_var_row) hud_text_var_row->set_visible(tm == "variable");
+		if (hud_text_edit) w["text"] = hud_text_edit->get_text();
+		if (hud_text_var_edit) w["variable_name"] = hud_text_var_edit->get_text();
+		if (hud_text_align_opt && hud_text_align_opt->get_selected() >= 0) {
+			w["align"] = String(hud_text_align_opt->get_selected_metadata());
+		}
+	} else {
+		if (hud_img_path_edit) w["image_path"] = hud_img_path_edit->get_text();
+		if (hud_img_scale_opt && hud_img_scale_opt->get_selected() >= 0) {
+			w["scale_mode"] = String(hud_img_scale_opt->get_selected_metadata());
+		}
+	}
+
+	widgets[hud_selected_widget_idx] = ClockGearsDataManager::normalize_hud_widget(w, hud_selected_widget_idx + 1);
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	_set_pending_changes(true);
+	_update_hud_live_preview();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_type_color_changed(const Color &p_col, const String &p_key) {
+	if (updating_ui) {
+		return;
+	}
+	_hud_set_selected_field(p_key, "#" + p_col.to_html(true));
+}
+
+void ClockGearsDatabaseDialog::_on_hud_switch_opt_selected(int p_idx) {
+	if (updating_ui || !hud_vis_switch_opt || !hud_vis_switch_edit || p_idx < 0) {
+		return;
+	}
+	String sw = String(hud_vis_switch_opt->get_item_metadata(p_idx));
+	if (!sw.is_empty()) {
+		hud_vis_switch_edit->set_text(sw);
+		_on_hud_common_changed();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_hud_var_opt_selected(int p_idx, OptionButton *p_opt, LineEdit *p_edit) {
+	if (updating_ui || !p_opt || !p_edit || p_idx < 0) {
+		return;
+	}
+	String vn = String(p_opt->get_item_metadata(p_idx));
+	if (!vn.is_empty()) {
+		p_edit->set_text(vn);
+		_on_hud_type_field_changed();
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_hud_pick_asset_pressed(const String &p_key) {
+	hud_asset_target_key = p_key;
+	if (!hud_asset_file_dialog) {
+		return;
+	}
+	String proj_dir = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->globalize_path("res://") : "";
+	if (!proj_dir.is_empty()) {
+		hud_asset_file_dialog->set_current_dir(proj_dir);
+	}
+	hud_asset_file_dialog->popup_centered_ratio(0.55f);
+}
+
+void ClockGearsDatabaseDialog::_on_hud_clear_asset_pressed(const String &p_key) {
+	_hud_set_selected_field(p_key, String(""));
+	_refresh_hud_selected_widget_props();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_asset_file_selected(const String &p_path) {
+	if (hud_asset_target_key.is_empty()) {
+		return;
+	}
+	bool pixel = hud_pixel_art_chk ? hud_pixel_art_chk->is_pressed() : true;
+	String final_path = _import_menu_asset_file(p_path, "img/hud", pixel);
+	if (final_path.is_empty()) {
+		return;
+	}
+	_hud_set_selected_field(hud_asset_target_key, final_path);
+	_refresh_hud_selected_widget_props();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_preview_res_selected(int p_idx) {
+	if (!hud_preview_res_opt || p_idx < 0) {
+		return;
+	}
+	Vector2i res = hud_preview_res_opt->get_item_metadata(p_idx);
+	if (res.x >= 320 && res.y >= 180) {
+		set_hud_preview_resolution(res.x, res.y);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_hud_sample_value_changed(double p_unused) {
+	if (updating_ui) {
+		return;
+	}
+	_update_hud_live_preview();
+}
+
+Dictionary ClockGearsDatabaseDialog::get_hud_draft_copy() const {
+	return hud_config_draft.duplicate(true);
+}
+
+int ClockGearsDatabaseDialog::add_hud_widget(const String &p_type, const Dictionary &p_fields) {
+	Dictionary nw = ClockGearsDataManager::make_default_hud_widget(p_type);
+	Array fkeys = p_fields.keys();
+	for (int i = 0; i < fkeys.size(); i++) {
+		nw[fkeys[i]] = p_fields[fkeys[i]];
+	}
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	int insert_idx = widgets.size();
+	if (!p_fields.has("layer_order")) {
+		int max_lo = -1;
+		for (int i = 0; i < widgets.size(); i++) {
+			if (widgets[i].get_type() == Variant::DICTIONARY) {
+				max_lo = MAX(max_lo, int(Dictionary(widgets[i]).get("layer_order", 0)));
+			}
+		}
+		nw["layer_order"] = max_lo >= 0 ? (max_lo + 1) : 0;
+	}
+	widgets.push_back(ClockGearsDataManager::normalize_hud_widget(nw, insert_idx + 1));
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	hud_selected_widget_idx = Array(hud_config_draft["widgets"]).size() - 1;
+	_set_pending_changes(true);
+	_refresh_hud_editor_ui();
+	return hud_selected_widget_idx;
+}
+
+bool ClockGearsDatabaseDialog::remove_hud_widget(int p_index) {
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (p_index < 0 || p_index >= widgets.size()) {
+		return false;
+	}
+	widgets.remove_at(p_index);
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	int rem = Array(hud_config_draft["widgets"]).size();
+	hud_selected_widget_idx = (rem > 0) ? MIN(p_index, rem - 1) : -1;
+	_set_pending_changes(true);
+	_refresh_hud_editor_ui();
+	return true;
+}
+
+int ClockGearsDatabaseDialog::duplicate_hud_widget(int p_index) {
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (p_index < 0 || p_index >= widgets.size() || widgets[p_index].get_type() != Variant::DICTIONARY) {
+		return -1;
+	}
+	Dictionary copy = Dictionary(widgets[p_index]).duplicate(true);
+	copy["id"] = "";
+	copy["name"] = String(copy.get("name", "Widget")) + " (Copia)";
+	copy["offset_x"] = CLAMP(int(copy.get("offset_x", 0)) + 16, -960, 960);
+	copy["offset_y"] = CLAMP(int(copy.get("offset_y", 0)) + 16, -540, 540);
+	widgets.insert(p_index + 1, ClockGearsDataManager::normalize_hud_widget(copy, widgets.size() + 1));
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	hud_selected_widget_idx = MIN(p_index + 1, Array(hud_config_draft["widgets"]).size() - 1);
+	_set_pending_changes(true);
+	_refresh_hud_editor_ui();
+	return hud_selected_widget_idx;
+}
+
+bool ClockGearsDatabaseDialog::move_hud_widget_layer(int p_index, int p_delta) {
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (p_index < 0 || p_index >= widgets.size() || p_delta == 0) {
+		return false;
+	}
+	int step = (p_delta > 0) ? 1 : -1;
+	int target = CLAMP(p_index + step, 0, widgets.size() - 1);
+	Dictionary cur = Dictionary(widgets[p_index]).duplicate(true);
+	int cur_lo = int(cur.get("layer_order", 0));
+
+	if (target != p_index) {
+		Dictionary other = Dictionary(widgets[target]).duplicate(true);
+		int other_lo = int(other.get("layer_order", 0));
+		if (step > 0) {
+			cur["layer_order"] = CLAMP(MAX(cur_lo + 1, other_lo + 1), -100, 1000);
+		} else {
+			cur["layer_order"] = CLAMP(MIN(cur_lo - 1, other_lo - 1), -100, 1000);
+		}
+		widgets[p_index] = other;
+		widgets[target] = cur;
+		hud_selected_widget_idx = target;
+	} else {
+		cur["layer_order"] = CLAMP(cur_lo + step, -100, 1000);
+		widgets[p_index] = cur;
+	}
+
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	_set_pending_changes(true);
+	_refresh_hud_editor_ui();
+	return true;
+}
+
+void ClockGearsDatabaseDialog::select_hud_widget(int p_index) {
+	Array widgets = hud_config_draft.get("widgets", Array());
+	if (p_index >= 0 && p_index < widgets.size()) {
+		hud_selected_widget_idx = p_index;
+	} else {
+		hud_selected_widget_idx = widgets.is_empty() ? -1 : 0;
+	}
+	if (hud_widgets_list && hud_selected_widget_idx >= 0 && hud_selected_widget_idx < hud_widgets_list->get_item_count()) {
+		hud_widgets_list->select(hud_selected_widget_idx);
+	}
+	if (hud_del_btn) hud_del_btn->set_disabled(hud_selected_widget_idx < 0);
+	if (hud_dup_btn) hud_dup_btn->set_disabled(hud_selected_widget_idx < 0);
+	if (hud_layer_down_btn) hud_layer_down_btn->set_disabled(hud_selected_widget_idx < 0);
+	if (hud_layer_up_btn) hud_layer_up_btn->set_disabled(hud_selected_widget_idx < 0);
+	_refresh_hud_selected_widget_props();
+}
+
+bool ClockGearsDatabaseDialog::set_hud_widget_field(int p_index, const String &p_key, const Variant &p_val) {
+	Array widgets = Array(hud_config_draft.get("widgets", Array())).duplicate(true);
+	if (p_index < 0 || p_index >= widgets.size() || widgets[p_index].get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	Dictionary w = Dictionary(widgets[p_index]).duplicate(true);
+	w[p_key] = p_val;
+	widgets[p_index] = ClockGearsDataManager::normalize_hud_widget(w, p_index + 1);
+	hud_config_draft["widgets"] = widgets;
+	hud_config_draft = ClockGearsDataManager::normalize_hud_config(hud_config_draft);
+	if (p_index == hud_selected_widget_idx) {
+		_refresh_hud_selected_widget_props();
+	}
+	_rebuild_hud_widgets_list();
+	_set_pending_changes(true);
+	_update_hud_live_preview();
+	return true;
+}
+
+void ClockGearsDatabaseDialog::set_hud_preview_resolution(int p_width, int p_height) {
+	int w = MAX(320, p_width);
+	int h = MAX(180, p_height);
+	if (hud_preview_res_opt) {
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		for (int i = 0; i < hud_preview_res_opt->get_item_count(); i++) {
+			Vector2i v = hud_preview_res_opt->get_item_metadata(i);
+			if (v.x == w && v.y == h) {
+				hud_preview_res_opt->select(i);
+				break;
+			}
+		}
+		updating_ui = prev_upd;
+	}
+	if (hud_preview_viewport) {
+		hud_preview_viewport->set_size(Size2i(w, h));
+	}
+	if (hud_live_preview) {
+		hud_live_preview->set_viewport_size_override(Size2(w, h));
+		hud_live_preview->refresh_all_widgets("preview_resolution");
+	}
+}
+
+void ClockGearsDatabaseDialog::set_hud_preview_sample_values(int p_hp, int p_gold, int p_item_qty) {
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	if (hud_sample_hp_spin) hud_sample_hp_spin->set_value(MAX(0, p_hp));
+	if (hud_sample_gold_spin) hud_sample_gold_spin->set_value(MAX(0, p_gold));
+	if (hud_sample_item_qty_spin) hud_sample_item_qty_spin->set_value(MAX(0, p_item_qty));
+	updating_ui = prev_upd;
+	_update_hud_live_preview();
+}
+
+Dictionary ClockGearsDatabaseDialog::get_hud_editor_ui_handles() const {
+	Dictionary out;
+	out["panel"] = hud_editor_panel;
+	out["main_split"] = hud_main_split;
+	out["add_type_opt"] = hud_add_type_opt;
+	out["add_btn"] = hud_add_btn;
+	out["del_btn"] = hud_del_btn;
+	out["dup_btn"] = hud_dup_btn;
+	out["layer_up_btn"] = hud_layer_up_btn;
+	out["layer_down_btn"] = hud_layer_down_btn;
+	out["widgets_list"] = hud_widgets_list;
+	out["name_edit"] = hud_name_edit;
+	Array ab;
+	for (int i = 0; i < 9; i++) {
+		ab.push_back(hud_anchor_btns[i]);
+	}
+	out["anchor_btns"] = ab;
+	out["offset_x_spin"] = hud_offset_x_spin;
+	out["offset_y_spin"] = hud_offset_y_spin;
+	out["width_slider"] = hud_width_slider;
+	out["width_spin"] = hud_width_spin;
+	out["height_slider"] = hud_height_slider;
+	out["height_spin"] = hud_height_spin;
+	out["layer_spin"] = hud_layer_spin;
+	out["window_style_opt"] = hud_window_style_opt;
+	out["vis_mode_opt"] = hud_vis_mode_opt;
+	out["vis_switch_opt"] = hud_vis_switch_opt;
+	out["vis_switch_edit"] = hud_vis_switch_edit;
+	out["hide_ctx_chk"] = hud_hide_ctx_chk;
+	out["pixel_art_chk"] = hud_pixel_art_chk;
+	out["bar_source_opt"] = hud_bar_source_opt;
+	out["bar_var_opt"] = hud_bar_var_opt;
+	out["bar_var_edit"] = hud_bar_var_edit;
+	out["bar_var_max_spin"] = hud_bar_var_max_spin;
+	out["bar_bg_col_btn"] = hud_bar_bg_col_btn;
+	out["bar_fill_col_btn"] = hud_bar_fill_col_btn;
+	out["bar_border_col_btn"] = hud_bar_border_col_btn;
+	out["bar_font_col_btn"] = hud_bar_font_col_btn;
+	out["bar_bg_img_edit"] = hud_bar_bg_img_edit;
+	out["bar_fill_img_edit"] = hud_bar_fill_img_edit;
+	out["bar_label_edit"] = hud_bar_label_edit;
+	out["bar_show_nums_chk"] = hud_bar_show_nums_chk;
+	out["hearts_hp_spin"] = hud_hearts_hp_spin;
+	out["hearts_size_slider"] = hud_hearts_size_slider;
+	out["hearts_size_spin"] = hud_hearts_size_spin;
+	out["hearts_spacing_slider"] = hud_hearts_spacing_slider;
+	out["hearts_spacing_spin"] = hud_hearts_spacing_spin;
+	out["hearts_per_row_spin"] = hud_hearts_per_row_spin;
+	out["hearts_max_rows_spin"] = hud_hearts_max_rows_spin;
+	out["heart_full_edit"] = hud_heart_full_edit;
+	out["heart_half_edit"] = hud_heart_half_edit;
+	out["heart_empty_edit"] = hud_heart_empty_edit;
+	out["cur_show_icon_chk"] = hud_cur_show_icon_chk;
+	out["cur_show_name_chk"] = hud_cur_show_name_chk;
+	out["cur_icon_edit"] = hud_cur_icon_edit;
+	out["item_db_opt"] = hud_item_db_opt;
+	out["item_icon_edit"] = hud_item_icon_edit;
+	out["item_hide_zero_chk"] = hud_item_hide_zero_chk;
+	out["item_show_name_chk"] = hud_item_show_name_chk;
+	out["text_mode_opt"] = hud_text_mode_opt;
+	out["text_edit"] = hud_text_edit;
+	out["text_var_opt"] = hud_text_var_opt;
+	out["text_var_edit"] = hud_text_var_edit;
+	out["text_align_opt"] = hud_text_align_opt;
+	out["img_path_edit"] = hud_img_path_edit;
+	out["img_scale_opt"] = hud_img_scale_opt;
+	out["img_opacity_slider"] = hud_img_opacity_slider;
+	out["img_opacity_spin"] = hud_img_opacity_spin;
+	out["preview_res_opt"] = hud_preview_res_opt;
+	out["preview_viewport"] = hud_preview_viewport;
+	out["preview_map_bg"] = hud_preview_map_bg;
+	out["live_preview"] = hud_live_preview;
+	out["sample_hp_spin"] = hud_sample_hp_spin;
+	out["sample_gold_spin"] = hud_sample_gold_spin;
+	out["sample_item_qty_spin"] = hud_sample_item_qty_spin;
+	out["selected_widget_idx"] = hud_selected_widget_idx;
+	return out;
+}
+
 
 

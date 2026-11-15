@@ -145,6 +145,9 @@ enum ClockGearsCommandID {
 	CMD_SHOW_CREDITS = 357,
 	CMD_CHANGE_MENU_ACCESS = 358,
 	CMD_CHANGE_WINDOW_STYLE = 359,
+
+	// HUD (9B Tanda 5)
+	CMD_CHANGE_HUD_VISIBILITY = 360,
 };
 
 #define CG_TR(m_str) String::utf8(m_str)

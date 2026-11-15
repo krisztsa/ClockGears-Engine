@@ -385,6 +385,14 @@ private:
 	OptionButton *cws_window_type_opt = nullptr;
 	OptionButton *cws_style_opt = nullptr;
 
+	// Sub-diálogo 9B Tanda 5: Mostrar / Ocultar HUD
+	ConfirmationDialog *dlg_change_hud_visibility = nullptr;
+	OptionButton *chv_scope_opt = nullptr;
+	HBoxContainer *chv_widget_row = nullptr;
+	OptionButton *chv_widget_opt = nullptr;
+	LineEdit *chv_widget_edit = nullptr;
+	OptionButton *chv_action_opt = nullptr;
+
 	Dictionary _create_empty_page() const;
 	void _save_current_page_from_ui();
 	void _load_page_to_ui(int p_page_idx);
@@ -522,6 +530,12 @@ private:
 	void _on_confirm_return_to_title();
 	void _on_confirm_open_save();
 	void _on_confirm_change_window_style();
+
+	// Handlers 9B Tanda 5: Mostrar / Ocultar HUD
+	void _populate_change_hud_visibility_options(const String &p_sel_scope = "all", const String &p_sel_widget = "", bool p_sel_visible = true);
+	void _on_chv_scope_changed(int p_idx);
+	void _on_chv_widget_picked(int p_idx);
+	void _on_confirm_change_hud_visibility();
 
 protected:
 	static void _bind_methods();
