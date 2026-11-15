@@ -134,6 +134,9 @@ void ClockGearsDataManager::init_empty() {
 	game_menu_config = get_default_game_menu_config();
 	credits_config = get_default_credits_config();
 	hud_config = get_default_hud_config();
+	ui_designs_config = get_default_ui_designs_config();
+	ui_design_undo_stacks.clear();
+	ui_design_redo_stacks.clear();
 	runtime_hud_visible = true;
 	runtime_hud_widget_visibility.clear();
 	ensure_default_window_types_registered();
@@ -1317,6 +1320,10 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 	if (!_write_json_atomic(p_dir_path.path_join("hud.json"), hud_config)) {
 		return false;
 	}
+	ui_designs_config = normalize_ui_designs_config(ui_designs_config);
+	if (!_write_json_atomic(p_dir_path.path_join("ui_designs.json"), ui_designs_config)) {
+		return false;
+	}
 
 	// 5c-bis. Guardar estilos de ventana (window_styles.json)
 	window_styles_config = normalize_window_styles_config(window_styles_config);
@@ -1466,6 +1473,16 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		hud_config = get_default_hud_config();
 	}
 	system_config.erase("hud");
+
+	// Diseños visuales de interfaz por pantalla (ui_designs.json; proyectos antiguos mantienen aspecto por defecto)
+	Variant uid_var;
+	if (_read_json_with_backup(p_dir_path.path_join("ui_designs.json"), uid_var) && uid_var.get_type() == Variant::DICTIONARY) {
+		ui_designs_config = normalize_ui_designs_config(Dictionary(uid_var));
+	} else {
+		ui_designs_config = get_default_ui_designs_config();
+	}
+	ui_design_undo_stacks.clear();
+	ui_design_redo_stacks.clear();
 
 	Variant sw_var;
 	if (_read_json_with_backup(p_dir_path.path_join("switches_vars.json"), sw_var) && sw_var.get_type() == Variant::DICTIONARY) {
@@ -3956,10 +3973,166 @@ static String _cg_norm_hud_anchor(const Variant &p_val) {
 
 static String _cg_norm_hud_type(const Variant &p_val) {
 	String t = String(p_val).strip_edges().to_lower();
-	if (t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "text" || t == "image") {
+	if (t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "text" || t == "image" ||
+			t == "variable" || t == "frame" || t == "button") {
 		return t;
 	}
+	if (t == "marco") {
+		return "frame";
+	}
+	if (t == "boton" || t == String::utf8("botón")) {
+		return "button";
+	}
 	return "bar";
+}
+
+static String _cg_norm_ui_elem_type(const Variant &p_val) {
+	String t = String(p_val).strip_edges().to_lower();
+	if (t == "image" || t == "text" || t == "button" || t == "frame" ||
+			t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "variable") {
+		return t;
+	}
+	if (t == "imagen") {
+		return "image";
+	}
+	if (t == "texto") {
+		return "text";
+	}
+	if (t == "boton" || t == String::utf8("botón")) {
+		return "button";
+	}
+	if (t == "marco") {
+		return "frame";
+	}
+	if (t == "barra") {
+		return "bar";
+	}
+	if (t == "corazones") {
+		return "hearts";
+	}
+	if (t == "monedas") {
+		return "currency";
+	}
+	if (t == "objeto" || t == "contador_objetos") {
+		return "item";
+	}
+	return "text";
+}
+
+static String _cg_norm_ui_screen_id(const String &p_raw) {
+	String s = p_raw.strip_edges().to_lower();
+	if (s == "title" || s == "titulo" || s == String::utf8("título")) {
+		return "title";
+	}
+	if (s == "game_menu_main" || s == "game_menu" || s == "menu" || s == "main") {
+		return "game_menu_main";
+	}
+	if (s == "game_menu_items" || s == "items" || s == "objetos") {
+		return "game_menu_items";
+	}
+	if (s == "game_menu_equip" || s == "equip" || s == "equipo") {
+		return "game_menu_equip";
+	}
+	if (s == "game_menu_status" || s == "status" || s == "estado") {
+		return "game_menu_status";
+	}
+	if (s == "credits" || s == "creditos" || s == String::utf8("créditos")) {
+		return "credits";
+	}
+	if (s == "hud") {
+		return "hud";
+	}
+	return "title";
+}
+
+static String _cg_norm_ui_data_binding(const Variant &p_val) {
+	String b = String(p_val).strip_edges().to_lower();
+	if (b == "project_title" || b == "currency_name" || b == "gold" || b == "item_qty" ||
+			b == "variable" || b == "player_hp" || b == "player_mp" ||
+			b == "actor_name" || b == "actor_level" || b == "playtime") {
+		return b;
+	}
+	return "none";
+}
+
+static void _cg_normalize_hud_core_fields(const Dictionary &p_in, const Dictionary &p_def, const String &p_wtype, Dictionary &r_out) {
+	if (p_wtype == "bar") {
+		String vs = String(p_in.get("value_source", p_def.get("value_source", "hp"))).strip_edges().to_lower();
+		if (vs != "hp" && vs != "mp" && vs != "exp" && vs != "variable") {
+			vs = "hp";
+		}
+		r_out["value_source"] = vs;
+		r_out["variable_name"] = String(p_in.get("variable_name", p_def.get("variable_name", ""))).strip_edges();
+		r_out["variable_max"] = CLAMP(int(p_in.get("variable_max", p_def.get("variable_max", 100))), 1, 99999999);
+		r_out["bg_color"] = _cg_norm_hud_color(p_in.get("bg_color", p_def.get("bg_color", "#1A1E2ECC")), String(p_def.get("bg_color", "#1A1E2ECC")));
+		String default_fill = (vs == "mp") ? String("#3B82F6FF") : ((vs == "exp") ? String("#EAB308FF") : String(p_def.get("fill_color", "#D93B3BFF")));
+		r_out["fill_color"] = _cg_norm_hud_color(p_in.get("fill_color", default_fill), default_fill);
+		r_out["border_color"] = _cg_norm_hud_color(p_in.get("border_color", p_def.get("border_color", "#E2E8F0FF")), String(p_def.get("border_color", "#E2E8F0FF")));
+		r_out["bg_image_path"] = String(p_in.get("bg_image_path", "")).strip_edges();
+		r_out["fill_image_path"] = String(p_in.get("fill_image_path", "")).strip_edges();
+		r_out["show_numbers"] = p_in.has("show_numbers") ? bool(p_in["show_numbers"]) : bool(p_def.get("show_numbers", true));
+		r_out["label_text"] = String(p_in.get("label_text", ""));
+		r_out["font_size"] = CLAMP(int(p_in.get("font_size", p_def.get("font_size", 13))), 8, 64);
+		r_out["font_color"] = _cg_norm_hud_color(p_in.get("font_color", p_def.get("font_color", "#FFFFFFFF")), String(p_def.get("font_color", "#FFFFFFFF")));
+	} else if (p_wtype == "hearts") {
+		r_out["hp_per_heart"] = CLAMP(int(p_in.get("hp_per_heart", p_def.get("hp_per_heart", 20))), 1, 99999);
+		r_out["full_image_path"] = String(p_in.get("full_image_path", "")).strip_edges();
+		r_out["half_image_path"] = String(p_in.get("half_image_path", "")).strip_edges();
+		r_out["empty_image_path"] = String(p_in.get("empty_image_path", "")).strip_edges();
+		r_out["heart_size"] = CLAMP(int(p_in.get("heart_size", p_def.get("heart_size", 20))), 8, 128);
+		r_out["spacing"] = CLAMP(int(p_in.get("spacing", p_def.get("spacing", 4))), 0, 64);
+		r_out["max_hearts_per_row"] = CLAMP(int(p_in.get("max_hearts_per_row", p_def.get("max_hearts_per_row", 10))), 1, 50);
+		r_out["max_rows"] = CLAMP(int(p_in.get("max_rows", p_def.get("max_rows", 2))), 1, 20);
+	} else if (p_wtype == "currency") {
+		r_out["icon_path"] = String(p_in.get("icon_path", "")).strip_edges();
+		r_out["show_icon"] = p_in.has("show_icon") ? bool(p_in["show_icon"]) : true;
+		r_out["show_currency_name"] = p_in.has("show_currency_name") ? bool(p_in["show_currency_name"]) : true;
+		r_out["font_size"] = CLAMP(int(p_in.get("font_size", p_def.get("font_size", 15))), 8, 64);
+		r_out["font_color"] = _cg_norm_hud_color(p_in.get("font_color", p_def.get("font_color", "#FDE047FF")), String(p_def.get("font_color", "#FDE047FF")));
+	} else if (p_wtype == "item") {
+		r_out["item_key"] = String(p_in.get("item_key", "")).strip_edges();
+		r_out["icon_path"] = String(p_in.get("icon_path", "")).strip_edges();
+		r_out["hide_when_zero"] = p_in.has("hide_when_zero") ? bool(p_in["hide_when_zero"]) : false;
+		r_out["show_name"] = p_in.has("show_name") ? bool(p_in["show_name"]) : false;
+		r_out["font_size"] = CLAMP(int(p_in.get("font_size", p_def.get("font_size", 15))), 8, 64);
+		r_out["font_color"] = _cg_norm_hud_color(p_in.get("font_color", p_def.get("font_color", "#FFFFFFFF")), String(p_def.get("font_color", "#FFFFFFFF")));
+	} else if (p_wtype == "text" || p_wtype == "variable") {
+		String tm = String(p_in.get("text_mode", p_wtype == "variable" ? "variable" : p_def.get("text_mode", "fixed"))).strip_edges().to_lower();
+		if (p_wtype == "variable") {
+			tm = "variable";
+		} else if (tm != "variable") {
+			tm = "fixed";
+		}
+		r_out["text_mode"] = tm;
+		r_out["text"] = String(p_in.get("text", p_def.get("text", p_wtype == "variable" ? "" : "Texto")));
+		r_out["prefix"] = String(p_in.get("prefix", p_def.get("prefix", "")));
+		r_out["variable_name"] = String(p_in.get("variable_name", "")).strip_edges();
+		r_out["font_size"] = CLAMP(int(p_in.get("font_size", p_def.get("font_size", 16))), 8, 96);
+		r_out["font_color"] = _cg_norm_hud_color(p_in.get("font_color", p_def.get("font_color", "#FFFFFFFF")), String(p_def.get("font_color", "#FFFFFFFF")));
+		String al = String(p_in.get("align", p_def.get("align", "left"))).strip_edges().to_lower();
+		if (al != "center" && al != "right") {
+			al = "left";
+		}
+		r_out["align"] = al;
+	} else if (p_wtype == "button") {
+		r_out["text"] = String(p_in.get("text", p_def.get("text", String::utf8("Botón"))));
+		r_out["action"] = String(p_in.get("action", p_def.get("action", ""))).strip_edges().to_lower();
+		r_out["focus_order"] = CLAMP(int(p_in.get("focus_order", p_def.get("focus_order", 0))), 0, 9999);
+		r_out["font_size"] = CLAMP(int(p_in.get("font_size", p_def.get("font_size", 16))), 8, 64);
+		r_out["font_color"] = _cg_norm_hud_color(p_in.get("font_color", p_def.get("font_color", "#FFFFFFFF")), String(p_def.get("font_color", "#FFFFFFFF")));
+		r_out["image_path"] = String(p_in.get("image_path", "")).strip_edges();
+		r_out["disabled"] = p_in.has("disabled") ? bool(p_in["disabled"]) : false;
+	} else if (p_wtype == "frame") {
+		r_out["opacity"] = CLAMP(double(p_in.get("opacity", p_def.get("opacity", 1.0))), 0.0, 1.0);
+	} else {
+		r_out["image_path"] = String(p_in.get("image_path", "")).strip_edges();
+		String sm = String(p_in.get("scale_mode", p_def.get("scale_mode", "fit"))).strip_edges().to_lower();
+		if (sm != "stretch" && sm != "tile" && sm != "native" && sm != "fill") {
+			sm = "fit";
+		}
+		r_out["scale_mode"] = sm;
+		r_out["opacity"] = CLAMP(double(p_in.get("opacity", p_def.get("opacity", 1.0))), 0.0, 1.0);
+	}
 }
 
 static String _cg_slugify_hud_id(const String &p_raw) {
@@ -4065,16 +4238,33 @@ Dictionary ClockGearsDataManager::make_default_hud_widget(const String &p_type) 
 		w["show_name"] = false;
 		w["font_size"] = 15;
 		w["font_color"] = "#FFFFFFFF";
-	} else if (wtype == "text") {
-		w["name"] = "Texto";
+	} else if (wtype == "text" || wtype == "variable") {
+		w["name"] = (wtype == "variable") ? String("Variable") : String("Texto");
 		w["width"] = 200;
 		w["height"] = 36;
-		w["text_mode"] = "fixed";
-		w["text"] = "Texto";
+		w["text_mode"] = (wtype == "variable") ? "variable" : "fixed";
+		w["text"] = (wtype == "variable") ? "" : "Texto";
+		w["prefix"] = "";
 		w["variable_name"] = "";
 		w["font_size"] = 16;
 		w["font_color"] = "#FFFFFFFF";
 		w["align"] = "left";
+	} else if (wtype == "button") {
+		w["name"] = String::utf8("Botón");
+		w["width"] = 180;
+		w["height"] = 40;
+		w["text"] = String::utf8("Botón");
+		w["action"] = "";
+		w["focus_order"] = 0;
+		w["font_size"] = 16;
+		w["font_color"] = "#FFFFFFFF";
+		w["image_path"] = "";
+		w["disabled"] = false;
+	} else if (wtype == "frame") {
+		w["name"] = "Marco";
+		w["width"] = 260;
+		w["height"] = 180;
+		w["opacity"] = 1.0;
 	} else {
 		w["name"] = "Imagen";
 		w["width"] = 96;
@@ -4127,71 +4317,11 @@ Dictionary ClockGearsDataManager::normalize_hud_widget(const Dictionary &p_widge
 	out["visibility_switch"] = String(p_widget.get("visibility_switch", def["visibility_switch"])).strip_edges();
 	out["hide_during_messages_and_menus"] = p_widget.has("hide_during_messages_and_menus") ? bool(p_widget["hide_during_messages_and_menus"]) : true;
 	out["pixel_art"] = p_widget.has("pixel_art") ? bool(p_widget["pixel_art"]) : bool(def["pixel_art"]);
+	out["visible"] = p_widget.has("visible") ? bool(p_widget["visible"]) : true;
+	out["data_binding"] = _cg_norm_ui_data_binding(p_widget.get("data_binding", (wtype == "variable") ? Variant("variable") : Variant("none")));
+	out["actor_id"] = MAX(0, int(p_widget.get("actor_id", 0)));
 
-	if (wtype == "bar") {
-		String vs = String(p_widget.get("value_source", def["value_source"])).strip_edges().to_lower();
-		if (vs != "hp" && vs != "mp" && vs != "exp" && vs != "variable") {
-			vs = "hp";
-		}
-		out["value_source"] = vs;
-		out["variable_name"] = String(p_widget.get("variable_name", def["variable_name"])).strip_edges();
-		out["variable_max"] = CLAMP(int(p_widget.get("variable_max", def["variable_max"])), 1, 99999999);
-		out["bg_color"] = _cg_norm_hud_color(p_widget.get("bg_color", def["bg_color"]), String(def["bg_color"]));
-		String default_fill = (vs == "mp") ? String("#3B82F6FF") : ((vs == "exp") ? String("#EAB308FF") : String(def["fill_color"]));
-		out["fill_color"] = _cg_norm_hud_color(p_widget.get("fill_color", default_fill), default_fill);
-		out["border_color"] = _cg_norm_hud_color(p_widget.get("border_color", def["border_color"]), String(def["border_color"]));
-		out["bg_image_path"] = String(p_widget.get("bg_image_path", "")).strip_edges();
-		out["fill_image_path"] = String(p_widget.get("fill_image_path", "")).strip_edges();
-		out["show_numbers"] = p_widget.has("show_numbers") ? bool(p_widget["show_numbers"]) : bool(def["show_numbers"]);
-		out["label_text"] = String(p_widget.get("label_text", ""));
-		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 48);
-		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
-	} else if (wtype == "hearts") {
-		out["hp_per_heart"] = CLAMP(int(p_widget.get("hp_per_heart", def["hp_per_heart"])), 1, 99999);
-		out["full_image_path"] = String(p_widget.get("full_image_path", "")).strip_edges();
-		out["half_image_path"] = String(p_widget.get("half_image_path", "")).strip_edges();
-		out["empty_image_path"] = String(p_widget.get("empty_image_path", "")).strip_edges();
-		out["heart_size"] = CLAMP(int(p_widget.get("heart_size", def["heart_size"])), 8, 128);
-		out["spacing"] = CLAMP(int(p_widget.get("spacing", def["spacing"])), 0, 64);
-		out["max_hearts_per_row"] = CLAMP(int(p_widget.get("max_hearts_per_row", def["max_hearts_per_row"])), 1, 50);
-		out["max_rows"] = CLAMP(int(p_widget.get("max_rows", def["max_rows"])), 1, 20);
-	} else if (wtype == "currency") {
-		out["icon_path"] = String(p_widget.get("icon_path", "")).strip_edges();
-		out["show_icon"] = p_widget.has("show_icon") ? bool(p_widget["show_icon"]) : true;
-		out["show_currency_name"] = p_widget.has("show_currency_name") ? bool(p_widget["show_currency_name"]) : true;
-		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 48);
-		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
-	} else if (wtype == "item") {
-		out["item_key"] = String(p_widget.get("item_key", "")).strip_edges();
-		out["icon_path"] = String(p_widget.get("icon_path", "")).strip_edges();
-		out["hide_when_zero"] = p_widget.has("hide_when_zero") ? bool(p_widget["hide_when_zero"]) : false;
-		out["show_name"] = p_widget.has("show_name") ? bool(p_widget["show_name"]) : false;
-		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 48);
-		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
-	} else if (wtype == "text") {
-		String tm = String(p_widget.get("text_mode", def["text_mode"])).strip_edges().to_lower();
-		if (tm != "variable") {
-			tm = "fixed";
-		}
-		out["text_mode"] = tm;
-		out["text"] = String(p_widget.get("text", def["text"]));
-		out["variable_name"] = String(p_widget.get("variable_name", "")).strip_edges();
-		out["font_size"] = CLAMP(int(p_widget.get("font_size", def["font_size"])), 8, 64);
-		out["font_color"] = _cg_norm_hud_color(p_widget.get("font_color", def["font_color"]), String(def["font_color"]));
-		String al = String(p_widget.get("align", def["align"])).strip_edges().to_lower();
-		if (al != "center" && al != "right") {
-			al = "left";
-		}
-		out["align"] = al;
-	} else {
-		out["image_path"] = String(p_widget.get("image_path", "")).strip_edges();
-		String sm = String(p_widget.get("scale_mode", def["scale_mode"])).strip_edges().to_lower();
-		if (sm != "stretch" && sm != "tile" && sm != "native") {
-			sm = "fit";
-		}
-		out["scale_mode"] = sm;
-		out["opacity"] = CLAMP(double(p_widget.get("opacity", def["opacity"])), 0.0, 1.0);
-	}
+	_cg_normalize_hud_core_fields(p_widget, def, wtype, out);
 	return out;
 }
 
@@ -4412,6 +4542,754 @@ Dictionary ClockGearsDataManager::get_hud_runtime_visibility_state() const {
 	out["hud_visible"] = runtime_hud_visible;
 	out["widget_visibility"] = runtime_hud_widget_visibility.duplicate(true);
 	return out;
+}
+
+// --- Editor Visual de Interfaz: Diseños por Pantalla, Enlaces, Acciones y Undo/Redo (9B Tanda 6A) ---
+
+Array ClockGearsDataManager::get_ui_design_screens() {
+	Array out;
+	auto push_screen = [&](const String &p_id, const String &p_name, const String &p_win_type, bool p_supports_focus) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["name"] = p_name;
+		d["window_type"] = p_win_type;
+		d["supports_focus"] = p_supports_focus;
+		out.push_back(d);
+	};
+	push_screen("title", String::utf8("Título"), "title_buttons", true);
+	push_screen("game_menu_main", String::utf8("Menú del juego: Principal"), "game_menu", true);
+	push_screen("game_menu_items", String::utf8("Menú del juego: Objetos"), "game_menu", true);
+	push_screen("game_menu_equip", String::utf8("Menú del juego: Equipo"), "game_menu", true);
+	push_screen("game_menu_status", String::utf8("Menú del juego: Estado"), "game_menu", true);
+	push_screen("credits", String::utf8("Créditos"), "game_menu", true);
+	push_screen("hud", "HUD", "hud", false);
+	return out;
+}
+
+PackedStringArray ClockGearsDataManager::get_ui_design_screen_ids() {
+	PackedStringArray out;
+	out.push_back("title");
+	out.push_back("game_menu_main");
+	out.push_back("game_menu_items");
+	out.push_back("game_menu_equip");
+	out.push_back("game_menu_status");
+	out.push_back("credits");
+	out.push_back("hud");
+	return out;
+}
+
+PackedStringArray ClockGearsDataManager::get_ui_element_types() {
+	PackedStringArray out;
+	out.push_back("image");
+	out.push_back("text");
+	out.push_back("button");
+	out.push_back("frame");
+	out.push_back("bar");
+	out.push_back("hearts");
+	out.push_back("currency");
+	out.push_back("item");
+	out.push_back("variable");
+	return out;
+}
+
+Array ClockGearsDataManager::get_ui_data_bindings() {
+	Array out;
+	auto push_b = [&](const String &p_id, const String &p_label) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_label;
+		out.push_back(d);
+	};
+	push_b("none", "Ninguno (texto fijo)");
+	push_b("project_title", String::utf8("Título del proyecto"));
+	push_b("currency_name", "Nombre de la moneda");
+	push_b("gold", "Dinero");
+	push_b("item_qty", "Cantidad de un objeto");
+	push_b("variable", "Variable");
+	push_b("player_hp", "HP del jugador");
+	push_b("player_mp", "MP del jugador");
+	push_b("actor_name", "Nombre del actor");
+	push_b("actor_level", "Nivel del actor");
+	push_b("playtime", "Tiempo jugado");
+	return out;
+}
+
+Array ClockGearsDataManager::get_ui_button_actions(const String &p_screen_id) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Array out;
+	auto push_a = [&](const String &p_id, const String &p_label) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_label;
+		out.push_back(d);
+	};
+	if (sid == "title") {
+		push_a("new_game", "Nueva partida");
+		push_a("continue", "Continuar");
+		push_a("options", "Opciones");
+		push_a("credits", String::utf8("Créditos"));
+		push_a("quit", "Salir");
+	} else if (sid == "game_menu_main") {
+		push_a("items", "Objetos");
+		push_a("equip", "Equipo");
+		push_a("status", "Estado");
+		push_a("save", "Guardar");
+		push_a("options", "Opciones");
+		push_a("to_title", String::utf8("Salir al título"));
+		push_a("back", "Volver");
+	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status") {
+		push_a("back", "Volver");
+		push_a("items", "Objetos");
+		push_a("equip", "Equipo");
+		push_a("status", "Estado");
+		push_a("close", String::utf8("Cerrar menú"));
+	} else if (sid == "credits") {
+		push_a("back", "Volver");
+		push_a("close", String::utf8("Cerrar créditos"));
+	} else {
+		push_a("back", "Volver");
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, const String &p_screen_id) {
+	String etype = _cg_norm_ui_elem_type(p_type);
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary el = make_default_hud_widget(etype);
+	el["type"] = etype;
+	el["visible"] = true;
+	el["data_binding"] = (etype == "variable") ? "variable" : "none";
+	el["actor_id"] = 0;
+
+	if (etype == "button") {
+		Array actions = get_ui_button_actions(sid);
+		String def_act = (!actions.is_empty() && actions[0].get_type() == Variant::DICTIONARY) ? String(Dictionary(actions[0]).get("id", "")) : String();
+		el["action"] = def_act;
+		el["focus_order"] = 0;
+		el["window_style_id"] = "";
+	} else if (etype == "frame") {
+		el["name"] = "Marco";
+		el["width"] = 300;
+		el["height"] = 200;
+	} else if (etype == "text") {
+		el["anchor"] = "top_left";
+		el["offset_x"] = 24;
+		el["offset_y"] = 24;
+	}
+	return el;
+}
+
+Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem, int p_index_hint, const String &p_screen_id) {
+	String etype = _cg_norm_ui_elem_type(p_elem.get("type", "text"));
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary def = make_default_ui_element(etype, sid);
+
+	Dictionary out;
+	String raw_name = String(p_elem.get("name", def.get("name", "Elemento"))).strip_edges();
+	if (raw_name.is_empty()) {
+		raw_name = String(def.get("name", "Elemento")) + " " + itos(MAX(1, p_index_hint));
+	}
+	String raw_id = _cg_slugify_hud_id(String(p_elem.get("id", "")));
+	if (raw_id.is_empty()) {
+		raw_id = _cg_slugify_hud_id(raw_name);
+	}
+	if (raw_id.is_empty()) {
+		raw_id = "elem_" + itos(MAX(1, p_index_hint));
+	}
+
+	out["id"] = raw_id;
+	out["name"] = raw_name;
+	out["type"] = etype;
+	out["anchor"] = _cg_norm_hud_anchor(p_elem.get("anchor", def["anchor"]));
+	out["offset_x"] = CLAMP(int(p_elem.get("offset_x", def["offset_x"])), -960, 960);
+	out["offset_y"] = CLAMP(int(p_elem.get("offset_y", def["offset_y"])), -540, 540);
+	out["width"] = CLAMP(int(p_elem.get("width", def["width"])), 16, 960);
+	out["height"] = CLAMP(int(p_elem.get("height", def["height"])), 16, 540);
+	out["layer_order"] = CLAMP(int(p_elem.get("layer_order", def["layer_order"])), -100, 1000);
+	out["visible"] = p_elem.has("visible") ? bool(p_elem["visible"]) : true;
+
+	String ws = String(p_elem.get("window_style_id", def.get("window_style_id", ""))).strip_edges().to_lower();
+	if (ws == "none") {
+		ws = "";
+	}
+	out["window_style_id"] = ws;
+	out["pixel_art"] = p_elem.has("pixel_art") ? bool(p_elem["pixel_art"]) : true;
+	out["visibility_mode"] = (String(p_elem.get("visibility_mode", "always")).strip_edges().to_lower() == "switch") ? "switch" : "always";
+	out["visibility_switch"] = String(p_elem.get("visibility_switch", "")).strip_edges();
+	out["hide_during_messages_and_menus"] = p_elem.has("hide_during_messages_and_menus") ? bool(p_elem["hide_during_messages_and_menus"]) : (sid == "hud");
+
+	String db_def = (etype == "variable") ? "variable" : "none";
+	out["data_binding"] = _cg_norm_ui_data_binding(p_elem.get("data_binding", db_def));
+	out["actor_id"] = MAX(0, int(p_elem.get("actor_id", 0)));
+
+	_cg_normalize_hud_core_fields(p_elem, def, etype, out);
+
+	// Preservar item_key también para text/button cuando usan data_binding == "item_qty"
+	if ((etype == "text" || etype == "button") && !out.has("item_key")) {
+		out["item_key"] = String(p_elem.get("item_key", "")).strip_edges();
+	}
+	if ((etype == "text" || etype == "button" || etype == "variable") && !out.has("variable_name")) {
+		out["variable_name"] = String(p_elem.get("variable_name", "")).strip_edges();
+	}
+	if (etype == "button") {
+		Array valid_actions = get_ui_button_actions(sid);
+		String raw_action = String(p_elem.get("action", def.get("action", ""))).strip_edges().to_lower();
+		bool found_action = raw_action.is_empty();
+		for (int i = 0; i < valid_actions.size(); i++) {
+			Dictionary ad = valid_actions[i];
+			if (String(ad.get("id", "")) == raw_action) {
+				found_action = true;
+				break;
+			}
+		}
+		if (!found_action && !valid_actions.is_empty()) {
+			raw_action = String(Dictionary(valid_actions[0]).get("id", ""));
+		}
+		out["action"] = raw_action;
+		out["focus_order"] = CLAMP(int(p_elem.get("focus_order", def.get("focus_order", p_index_hint))), 0, 9999);
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_default_ui_screen_design(const String &p_screen_id) {
+	Dictionary d;
+	d["screen_id"] = _cg_norm_ui_screen_id(p_screen_id);
+	d["custom_enabled"] = false;
+	d["elements"] = Array();
+	return d;
+}
+
+Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_screen_id, const Dictionary &p_design) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary out;
+	out["screen_id"] = sid;
+	Array norm_elems;
+	HashSet<String> seen_ids;
+	if (p_design.has("elements") && p_design["elements"].get_type() == Variant::ARRAY) {
+		Array raw = p_design["elements"];
+		for (int i = 0; i < raw.size(); i++) {
+			if (raw[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary ne = normalize_ui_element(Dictionary(raw[i]), i + 1, sid);
+			String base_id = String(ne["id"]);
+			String uid = base_id;
+			int suffix = 2;
+			while (seen_ids.has(uid)) {
+				uid = base_id + "_" + itos(suffix++);
+			}
+			seen_ids.insert(uid);
+			ne["id"] = uid;
+			norm_elems.push_back(ne);
+		}
+	}
+	out["elements"] = norm_elems;
+	if (p_design.has("custom_enabled")) {
+		out["custom_enabled"] = bool(p_design["custom_enabled"]);
+	} else {
+		out["custom_enabled"] = !norm_elems.is_empty();
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_default_ui_designs_config() {
+	Dictionary out;
+	out["schema_version"] = 1;
+	Dictionary screens;
+	PackedStringArray sids = get_ui_design_screen_ids();
+	for (int i = 0; i < sids.size(); i++) {
+		if (sids[i] == "hud") {
+			continue; // HUD se guarda en hud.json como fuente única de verdad
+		}
+		screens[sids[i]] = get_default_ui_screen_design(sids[i]);
+	}
+	out["screens"] = screens;
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_ui_designs_config(const Dictionary &p_cfg) {
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+	Dictionary screens;
+	Dictionary raw_screens = (p_cfg.has("screens") && p_cfg["screens"].get_type() == Variant::DICTIONARY)
+			? Dictionary(p_cfg["screens"])
+			: Dictionary();
+	PackedStringArray sids = get_ui_design_screen_ids();
+	for (int i = 0; i < sids.size(); i++) {
+		if (sids[i] == "hud") {
+			continue;
+		}
+		Dictionary sd = raw_screens.has(sids[i]) && raw_screens[sids[i]].get_type() == Variant::DICTIONARY
+				? Dictionary(raw_screens[sids[i]])
+				: Dictionary();
+		screens[sids[i]] = normalize_ui_screen_design(sids[i], sd);
+	}
+	out["screens"] = screens;
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Array elems;
+	if (sid == "title") {
+		Dictionary title_el = make_default_ui_element("text", sid);
+		title_el["id"] = "title_heading";
+		title_el["name"] = String::utf8("Título");
+		title_el["data_binding"] = "project_title";
+		title_el["anchor"] = "top_center";
+		title_el["offset_x"] = 0;
+		title_el["offset_y"] = 48;
+		title_el["width"] = 560;
+		title_el["height"] = 60;
+		title_el["font_size"] = 36;
+		title_el["align"] = "center";
+		elems.push_back(title_el);
+
+		Array vis = get_visible_title_entries();
+		int y_cursor = 180;
+		for (int i = 0; i < vis.size(); i++) {
+			Dictionary e = vis[i];
+			Dictionary b = make_default_ui_element("button", sid);
+			String act = String(e.get("id", ""));
+			b["id"] = "btn_" + act;
+			b["name"] = String(e.get("text", act));
+			b["text"] = String(e.get("text", act));
+			b["action"] = act;
+			b["anchor"] = "top_center";
+			b["offset_x"] = 0;
+			b["offset_y"] = y_cursor;
+			b["width"] = 240;
+			b["height"] = 40;
+			b["focus_order"] = i;
+			elems.push_back(b);
+			y_cursor += 48;
+		}
+	} else if (sid == "game_menu_main") {
+		Dictionary cmd_frame = make_default_ui_element("frame", sid);
+		cmd_frame["id"] = "menu_frame";
+		cmd_frame["name"] = "Panel Comandos";
+		cmd_frame["anchor"] = "top_left";
+		cmd_frame["offset_x"] = 24;
+		cmd_frame["offset_y"] = 24;
+		cmd_frame["width"] = 240;
+		cmd_frame["height"] = 340;
+		elems.push_back(cmd_frame);
+
+		Array entries = get_visible_game_menu_entries();
+		int y_cursor = 40;
+		for (int i = 0; i < entries.size(); i++) {
+			Dictionary e = entries[i];
+			Dictionary b = make_default_ui_element("button", sid);
+			String act = String(e.get("id", ""));
+			b["id"] = "menu_btn_" + act;
+			b["name"] = String(e.get("text", act));
+			b["text"] = String(e.get("text", act));
+			b["action"] = act;
+			b["anchor"] = "top_left";
+			b["offset_x"] = 40;
+			b["offset_y"] = y_cursor;
+			b["width"] = 208;
+			b["height"] = 36;
+			b["layer_order"] = 1;
+			b["focus_order"] = i;
+			elems.push_back(b);
+			y_cursor += 42;
+		}
+	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status") {
+		Dictionary back_b = make_default_ui_element("button", sid);
+		back_b["id"] = "btn_back";
+		back_b["name"] = "Volver";
+		back_b["text"] = "Volver";
+		back_b["action"] = "back";
+		back_b["anchor"] = "bottom_right";
+		back_b["offset_x"] = -24;
+		back_b["offset_y"] = -24;
+		back_b["width"] = 160;
+		back_b["height"] = 38;
+		back_b["focus_order"] = 0;
+		elems.push_back(back_b);
+	} else if (sid == "credits") {
+		Dictionary back_b = make_default_ui_element("button", sid);
+		back_b["id"] = "btn_credits_back";
+		back_b["name"] = "Volver";
+		back_b["text"] = "Volver";
+		back_b["action"] = "back";
+		back_b["anchor"] = "bottom_right";
+		back_b["offset_x"] = -20;
+		back_b["offset_y"] = -20;
+		back_b["width"] = 140;
+		back_b["height"] = 36;
+		back_b["focus_order"] = 0;
+		elems.push_back(back_b);
+	}
+	Dictionary out;
+	out["screen_id"] = sid;
+	out["custom_enabled"] = true;
+	out["elements"] = elems;
+	return normalize_ui_screen_design(sid, out);
+}
+
+bool ClockGearsDataManager::has_custom_ui_design(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (sid == "hud") {
+		Array w = hud_config.get("widgets", Array());
+		return !w.is_empty();
+	}
+	Dictionary d = get_ui_screen_design(sid);
+	return bool(d.get("custom_enabled", false));
+}
+
+Dictionary ClockGearsDataManager::get_ui_screen_design(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (sid == "hud") {
+		Dictionary d;
+		d["screen_id"] = "hud";
+		Array widgets = get_hud_widgets();
+		Array elems;
+		for (int i = 0; i < widgets.size(); i++) {
+			if (widgets[i].get_type() == Variant::DICTIONARY) {
+				elems.push_back(normalize_ui_element(Dictionary(widgets[i]), i + 1, "hud"));
+			}
+		}
+		d["elements"] = elems;
+		d["custom_enabled"] = !elems.is_empty();
+		return d;
+	}
+	Dictionary screens = ui_designs_config.get("screens", Dictionary());
+	if (screens.has(sid) && screens[sid].get_type() == Variant::DICTIONARY) {
+		return normalize_ui_screen_design(sid, Dictionary(screens[sid]));
+	}
+	return get_default_ui_screen_design(sid);
+}
+
+void ClockGearsDataManager::_push_ui_undo_snapshot_internal(const String &p_screen_id, const Dictionary &p_snapshot, bool p_clear_redo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Vector<Dictionary> &stack = ui_design_undo_stacks[sid];
+	stack.push_back(p_snapshot.duplicate(true));
+	while (stack.size() > MAX_UI_DESIGN_UNDO_STEPS) {
+		stack.remove_at(0);
+	}
+	if (p_clear_redo && ui_design_redo_stacks.has(sid)) {
+		ui_design_redo_stacks[sid].clear();
+	}
+}
+
+void ClockGearsDataManager::set_ui_screen_design(const String &p_screen_id, const Dictionary &p_design, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary prev = get_ui_screen_design(sid);
+	Dictionary norm = normalize_ui_screen_design(sid, p_design);
+	if (p_record_undo && prev != norm) {
+		_push_ui_undo_snapshot_internal(sid, prev, true);
+	}
+
+	if (sid == "hud") {
+		Dictionary hcfg;
+		hcfg["schema_version"] = 1;
+		Array elems = norm.get("elements", Array());
+		Array widgets;
+		for (int i = 0; i < elems.size(); i++) {
+			if (elems[i].get_type() == Variant::DICTIONARY) {
+				widgets.push_back(normalize_hud_widget(Dictionary(elems[i]), i + 1));
+			}
+		}
+		hcfg["widgets"] = widgets;
+		set_hud_config(hcfg);
+		emit_signal("data_changed", "ui_designs", 0);
+		emit_signal("runtime_state_changed", "ui_design", sid);
+		return;
+	}
+
+	if (!ui_designs_config.has("screens") || ui_designs_config["screens"].get_type() != Variant::DICTIONARY) {
+		ui_designs_config = normalize_ui_designs_config(ui_designs_config);
+	}
+	Dictionary screens = Dictionary(ui_designs_config["screens"]).duplicate(true);
+	screens[sid] = norm;
+	ui_designs_config["screens"] = screens;
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	emit_signal("runtime_state_changed", "ui_design", sid);
+}
+
+Array ClockGearsDataManager::get_ui_screen_elements(const String &p_screen_id) const {
+	Dictionary d = get_ui_screen_design(p_screen_id);
+	return Array(d.get("elements", Array())).duplicate(true);
+}
+
+Dictionary ClockGearsDataManager::get_ui_element(const String &p_screen_id, const String &p_elem_id) const {
+	String target = p_elem_id.strip_edges().to_lower();
+	Array elems = get_ui_screen_elements(p_screen_id);
+	for (int i = 0; i < elems.size(); i++) {
+		Dictionary el = elems[i];
+		if (String(el.get("id", "")).to_lower() == target || String(el.get("name", "")).strip_edges().to_lower() == target) {
+			return el;
+		}
+	}
+	return Dictionary();
+}
+
+String ClockGearsDataManager::add_ui_element(const String &p_screen_id, const Dictionary &p_elem, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	Dictionary ne = normalize_ui_element(p_elem, elems.size() + 1, sid);
+
+	HashSet<String> existing;
+	for (int i = 0; i < elems.size(); i++) {
+		existing.insert(String(Dictionary(elems[i]).get("id", "")));
+	}
+	String base_id = String(ne["id"]);
+	String uid = base_id;
+	int suffix = 2;
+	while (existing.has(uid)) {
+		uid = base_id + "_" + itos(suffix++);
+	}
+	ne["id"] = uid;
+	elems.push_back(ne);
+
+	d["elements"] = elems;
+	d["custom_enabled"] = true;
+	set_ui_screen_design(sid, d, p_record_undo);
+	return uid;
+}
+
+bool ClockGearsDataManager::update_ui_element(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String target = p_elem_id.strip_edges().to_lower();
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	for (int i = 0; i < elems.size(); i++) {
+		Dictionary cur = elems[i];
+		if (String(cur.get("id", "")).to_lower() == target) {
+			Dictionary merged = cur.duplicate(true);
+			Array keys = p_elem.keys();
+			for (int k = 0; k < keys.size(); k++) {
+				merged[keys[k]] = p_elem[keys[k]];
+			}
+			merged["id"] = cur["id"];
+			Dictionary ne = normalize_ui_element(merged, i + 1, sid);
+			ne["id"] = cur["id"];
+			elems[i] = ne;
+			d["elements"] = elems;
+			d["custom_enabled"] = true;
+			set_ui_screen_design(sid, d, p_record_undo);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::delete_ui_element(const String &p_screen_id, const String &p_elem_id, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String target = p_elem_id.strip_edges().to_lower();
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	for (int i = 0; i < elems.size(); i++) {
+		if (String(Dictionary(elems[i]).get("id", "")).to_lower() == target) {
+			elems.remove_at(i);
+			d["elements"] = elems;
+			if (sid == "hud") {
+				d["custom_enabled"] = !elems.is_empty();
+			}
+			set_ui_screen_design(sid, d, p_record_undo);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsDataManager::move_ui_element_layer(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo) {
+	if (p_delta == 0) {
+		return false;
+	}
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String target = p_elem_id.strip_edges().to_lower();
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	int idx = -1;
+	for (int i = 0; i < elems.size(); i++) {
+		if (String(Dictionary(elems[i]).get("id", "")).to_lower() == target) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx < 0) {
+		return false;
+	}
+	int new_idx = CLAMP(idx + p_delta, 0, elems.size() - 1);
+	if (new_idx == idx) {
+		return false;
+	}
+	Variant moved = elems[idx];
+	elems.remove_at(idx);
+	elems.insert(new_idx, moved);
+	d["elements"] = elems;
+	set_ui_screen_design(sid, d, p_record_undo);
+	return true;
+}
+
+void ClockGearsDataManager::reset_ui_screen_design_to_default(const String &p_screen_id, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	set_ui_screen_design(sid, get_default_ui_screen_design(sid), p_record_undo);
+}
+
+Dictionary ClockGearsDataManager::get_ui_designs_config() const {
+	Dictionary cfg = normalize_ui_designs_config(ui_designs_config);
+	Dictionary screens = Dictionary(cfg["screens"]).duplicate(true);
+	screens["hud"] = get_ui_screen_design("hud");
+	cfg["screens"] = screens;
+	return cfg;
+}
+
+void ClockGearsDataManager::set_ui_designs_config(const Dictionary &p_cfg) {
+	ui_designs_config = normalize_ui_designs_config(p_cfg);
+	if (p_cfg.has("screens") && p_cfg["screens"].get_type() == Variant::DICTIONARY) {
+		Dictionary raw_screens = Dictionary(p_cfg["screens"]);
+		if (raw_screens.has("hud") && raw_screens["hud"].get_type() == Variant::DICTIONARY) {
+			set_ui_screen_design("hud", Dictionary(raw_screens["hud"]), false);
+			return;
+		}
+	}
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	emit_signal("runtime_state_changed", "ui_design", String());
+}
+
+String ClockGearsDataManager::resolve_ui_data_binding(const String &p_binding, const Dictionary &p_element) const {
+	String b = _cg_norm_ui_data_binding(p_binding);
+	if (b == "none") {
+		return String();
+	}
+	if (b == "project_title") {
+		String t = get_effective_game_title().strip_edges();
+		return t.is_empty() ? String("ClockGears RPG") : t;
+	}
+	if (b == "currency_name") {
+		return get_currency_unit();
+	}
+	if (b == "gold") {
+		return String::num_int64(runtime_gold);
+	}
+	if (b == "item_qty") {
+		String ik = String(p_element.get("item_key", "")).strip_edges();
+		return ik.is_empty() ? String("0") : String::num_int64(get_item_qty(ik));
+	}
+	if (b == "variable") {
+		String vn = String(p_element.get("variable_name", "")).strip_edges();
+		return vn.is_empty() ? String("0") : String::num_int64(get_variable(vn));
+	}
+	if (b == "playtime") {
+		return format_playtime_hms(runtime_playtime_sec);
+	}
+
+	int actor_id = int(p_element.get("actor_id", 0));
+	if (actor_id <= 0) {
+		Array party = get_party_actor_ids();
+		if (!party.is_empty()) {
+			actor_id = int(party[0]);
+		} else if (!category_data[CAT_ACTORS].is_empty()) {
+			actor_id = int(Dictionary(category_data[CAT_ACTORS][0]).get("id", 1));
+		}
+	}
+	if (b == "player_hp") {
+		if (actor_id <= 0) {
+			return "0/0";
+		}
+		ClockGearsDataManager *self_mut = const_cast<ClockGearsDataManager *>(this);
+		return vformat("%d/%d", self_mut->get_actor_runtime_hp(actor_id), self_mut->get_actor_runtime_max_hp(actor_id));
+	}
+	if (b == "player_mp") {
+		if (actor_id <= 0) {
+			return "0/0";
+		}
+		ClockGearsDataManager *self_mut = const_cast<ClockGearsDataManager *>(this);
+		return vformat("%d/%d", self_mut->get_actor_runtime_mp(actor_id), self_mut->get_actor_runtime_max_mp(actor_id));
+	}
+	if (b == "actor_name") {
+		if (actor_id <= 0) {
+			return String();
+		}
+		Dictionary rec = get_record_by_id(CAT_ACTORS, actor_id);
+		return String(rec.get("name", ""));
+	}
+	if (b == "actor_level") {
+		if (actor_id <= 0) {
+			return "1";
+		}
+		ClockGearsDataManager *self_mut = const_cast<ClockGearsDataManager *>(this);
+		return String::num_int64(self_mut->get_actor_runtime_level(actor_id));
+	}
+	return String();
+}
+
+void ClockGearsDataManager::push_ui_design_undo_state(const String &p_screen_id, const Dictionary &p_snapshot) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary snap = p_snapshot.is_empty() ? get_ui_screen_design(sid) : normalize_ui_screen_design(sid, p_snapshot);
+	_push_ui_undo_snapshot_internal(sid, snap, true);
+}
+
+bool ClockGearsDataManager::can_undo_ui_design(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	return ui_design_undo_stacks.has(sid) && !ui_design_undo_stacks[sid].is_empty();
+}
+
+bool ClockGearsDataManager::can_redo_ui_design(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	return ui_design_redo_stacks.has(sid) && !ui_design_redo_stacks[sid].is_empty();
+}
+
+int ClockGearsDataManager::get_ui_design_undo_count(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	return ui_design_undo_stacks.has(sid) ? ui_design_undo_stacks[sid].size() : 0;
+}
+
+int ClockGearsDataManager::get_ui_design_redo_count(const String &p_screen_id) const {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	return ui_design_redo_stacks.has(sid) ? ui_design_redo_stacks[sid].size() : 0;
+}
+
+bool ClockGearsDataManager::undo_ui_design(const String &p_screen_id) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (!can_undo_ui_design(sid)) {
+		return false;
+	}
+	Vector<Dictionary> &undo_stack = ui_design_undo_stacks[sid];
+	Dictionary prev = undo_stack[undo_stack.size() - 1];
+	undo_stack.remove_at(undo_stack.size() - 1);
+
+	Vector<Dictionary> &redo_stack = ui_design_redo_stacks[sid];
+	redo_stack.push_back(get_ui_screen_design(sid));
+	while (redo_stack.size() > MAX_UI_DESIGN_UNDO_STEPS) {
+		redo_stack.remove_at(0);
+	}
+
+	set_ui_screen_design(sid, prev, false);
+	return true;
+}
+
+bool ClockGearsDataManager::redo_ui_design(const String &p_screen_id) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (!can_redo_ui_design(sid)) {
+		return false;
+	}
+	Vector<Dictionary> &redo_stack = ui_design_redo_stacks[sid];
+	Dictionary next = redo_stack[redo_stack.size() - 1];
+	redo_stack.remove_at(redo_stack.size() - 1);
+
+	_push_ui_undo_snapshot_internal(sid, get_ui_screen_design(sid), false);
+	set_ui_screen_design(sid, next, false);
+	return true;
+}
+
+void ClockGearsDataManager::clear_ui_design_history(const String &p_screen_id) {
+	String raw = p_screen_id.strip_edges();
+	if (raw.is_empty()) {
+		ui_design_undo_stacks.clear();
+		ui_design_redo_stacks.clear();
+		return;
+	}
+	String sid = _cg_norm_ui_screen_id(raw);
+	ui_design_undo_stacks.erase(sid);
+	ui_design_redo_stacks.erase(sid);
 }
 
 // --- Estilos de Ventana y Botones (9B Tanda 2) ---
@@ -5680,6 +6558,39 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_hud_widget_runtime_visibility", "widget_name_or_id"), &ClockGearsDataManager::clear_hud_widget_runtime_visibility, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("is_hud_widget_runtime_visible", "widget_id", "widget_name"), &ClockGearsDataManager::is_hud_widget_runtime_visible, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("get_hud_runtime_visibility_state"), &ClockGearsDataManager::get_hud_runtime_visibility_state);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_design_screens"), &ClockGearsDataManager::get_ui_design_screens);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_design_screen_ids"), &ClockGearsDataManager::get_ui_design_screen_ids);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_element_types"), &ClockGearsDataManager::get_ui_element_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_data_bindings"), &ClockGearsDataManager::get_ui_data_bindings);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_button_actions", "screen_id"), &ClockGearsDataManager::get_ui_button_actions);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("make_default_ui_element", "type", "screen_id"), &ClockGearsDataManager::make_default_ui_element, DEFVAL("text"), DEFVAL("title"));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_element", "elem", "index_hint", "screen_id"), &ClockGearsDataManager::normalize_ui_element, DEFVAL(1), DEFVAL("title"));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_ui_screen_design", "screen_id"), &ClockGearsDataManager::get_default_ui_screen_design);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_screen_design", "screen_id", "design"), &ClockGearsDataManager::normalize_ui_screen_design);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_ui_designs_config"), &ClockGearsDataManager::get_default_ui_designs_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_designs_config", "cfg"), &ClockGearsDataManager::normalize_ui_designs_config);
+	ClassDB::bind_method(D_METHOD("get_default_ui_screen_template", "screen_id"), &ClockGearsDataManager::get_default_ui_screen_template);
+	ClassDB::bind_method(D_METHOD("has_custom_ui_design", "screen_id"), &ClockGearsDataManager::has_custom_ui_design);
+	ClassDB::bind_method(D_METHOD("get_ui_screen_design", "screen_id"), &ClockGearsDataManager::get_ui_screen_design);
+	ClassDB::bind_method(D_METHOD("set_ui_screen_design", "screen_id", "design", "record_undo"), &ClockGearsDataManager::set_ui_screen_design, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_ui_screen_elements", "screen_id"), &ClockGearsDataManager::get_ui_screen_elements);
+	ClassDB::bind_method(D_METHOD("get_ui_element", "screen_id", "elem_id"), &ClockGearsDataManager::get_ui_element);
+	ClassDB::bind_method(D_METHOD("add_ui_element", "screen_id", "elem", "record_undo"), &ClockGearsDataManager::add_ui_element, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("update_ui_element", "screen_id", "elem_id", "elem", "record_undo"), &ClockGearsDataManager::update_ui_element, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("delete_ui_element", "screen_id", "elem_id", "record_undo"), &ClockGearsDataManager::delete_ui_element, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("move_ui_element_layer", "screen_id", "elem_id", "delta", "record_undo"), &ClockGearsDataManager::move_ui_element_layer, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("reset_ui_screen_design_to_default", "screen_id", "record_undo"), &ClockGearsDataManager::reset_ui_screen_design_to_default, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_ui_designs_config"), &ClockGearsDataManager::get_ui_designs_config);
+	ClassDB::bind_method(D_METHOD("set_ui_designs_config", "cfg"), &ClockGearsDataManager::set_ui_designs_config);
+	ClassDB::bind_method(D_METHOD("resolve_ui_data_binding", "binding", "element"), &ClockGearsDataManager::resolve_ui_data_binding, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("push_ui_design_undo_state", "screen_id", "snapshot"), &ClockGearsDataManager::push_ui_design_undo_state, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("can_undo_ui_design", "screen_id"), &ClockGearsDataManager::can_undo_ui_design);
+	ClassDB::bind_method(D_METHOD("can_redo_ui_design", "screen_id"), &ClockGearsDataManager::can_redo_ui_design);
+	ClassDB::bind_method(D_METHOD("get_ui_design_undo_count", "screen_id"), &ClockGearsDataManager::get_ui_design_undo_count);
+	ClassDB::bind_method(D_METHOD("get_ui_design_redo_count", "screen_id"), &ClockGearsDataManager::get_ui_design_redo_count);
+	ClassDB::bind_method(D_METHOD("undo_ui_design", "screen_id"), &ClockGearsDataManager::undo_ui_design);
+	ClassDB::bind_method(D_METHOD("redo_ui_design", "screen_id"), &ClockGearsDataManager::redo_ui_design);
+	ClassDB::bind_method(D_METHOD("clear_ui_design_history", "screen_id"), &ClockGearsDataManager::clear_ui_design_history, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("get_gold"), &ClockGearsDataManager::get_gold);
 	ClassDB::bind_method(D_METHOD("set_gold", "gold"), &ClockGearsDataManager::set_gold);
 	ClassDB::bind_method(D_METHOD("change_gold", "amount"), &ClockGearsDataManager::change_gold);

@@ -2,6 +2,8 @@
 
 #include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/templates/hash_map.h"
+#include "core/templates/vector.h"
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
 #include "scene/main/node.h"
@@ -61,6 +63,10 @@ private:
 	Dictionary credits_config;
 	Dictionary window_styles_config;
 	Dictionary hud_config;
+	Dictionary ui_designs_config;
+	HashMap<String, Vector<Dictionary>> ui_design_undo_stacks;
+	HashMap<String, Vector<Dictionary>> ui_design_redo_stacks;
+	void _push_ui_undo_snapshot_internal(const String &p_screen_id, const Dictionary &p_snapshot, bool p_clear_redo = true);
 	Dictionary player_options;
 	bool player_options_loaded = false;
 	String player_options_path_override;
@@ -184,6 +190,45 @@ public:
 	void clear_hud_widget_runtime_visibility(const String &p_widget_name_or_id = "");
 	bool is_hud_widget_runtime_visible(const String &p_widget_id, const String &p_widget_name = "") const;
 	Dictionary get_hud_runtime_visibility_state() const;
+
+	// Editor Visual de Interfaz: Diseños por pantalla, enlaces de datos, acciones y Undo/Redo (9B Tanda 6A)
+	static constexpr int MAX_UI_DESIGN_UNDO_STEPS = 100;
+	static Array get_ui_design_screens();
+	static PackedStringArray get_ui_design_screen_ids();
+	static PackedStringArray get_ui_element_types();
+	static Array get_ui_data_bindings();
+	static Array get_ui_button_actions(const String &p_screen_id);
+	static Dictionary make_default_ui_element(const String &p_type = "text", const String &p_screen_id = "title");
+	static Dictionary normalize_ui_element(const Dictionary &p_elem, int p_index_hint = 1, const String &p_screen_id = "title");
+	static Dictionary get_default_ui_screen_design(const String &p_screen_id);
+	static Dictionary normalize_ui_screen_design(const String &p_screen_id, const Dictionary &p_design);
+	static Dictionary get_default_ui_designs_config();
+	static Dictionary normalize_ui_designs_config(const Dictionary &p_cfg);
+	Dictionary get_default_ui_screen_template(const String &p_screen_id) const;
+
+	bool has_custom_ui_design(const String &p_screen_id) const;
+	Dictionary get_ui_screen_design(const String &p_screen_id) const;
+	void set_ui_screen_design(const String &p_screen_id, const Dictionary &p_design, bool p_record_undo = true);
+	Array get_ui_screen_elements(const String &p_screen_id) const;
+	Dictionary get_ui_element(const String &p_screen_id, const String &p_elem_id) const;
+	String add_ui_element(const String &p_screen_id, const Dictionary &p_elem, bool p_record_undo = true);
+	bool update_ui_element(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem, bool p_record_undo = true);
+	bool delete_ui_element(const String &p_screen_id, const String &p_elem_id, bool p_record_undo = true);
+	bool move_ui_element_layer(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo = true);
+	void reset_ui_screen_design_to_default(const String &p_screen_id, bool p_record_undo = true);
+	Dictionary get_ui_designs_config() const;
+	void set_ui_designs_config(const Dictionary &p_cfg);
+
+	String resolve_ui_data_binding(const String &p_binding, const Dictionary &p_element = Dictionary()) const;
+
+	void push_ui_design_undo_state(const String &p_screen_id, const Dictionary &p_snapshot = Dictionary());
+	bool can_undo_ui_design(const String &p_screen_id) const;
+	bool can_redo_ui_design(const String &p_screen_id) const;
+	int get_ui_design_undo_count(const String &p_screen_id) const;
+	int get_ui_design_redo_count(const String &p_screen_id) const;
+	bool undo_ui_design(const String &p_screen_id);
+	bool redo_ui_design(const String &p_screen_id);
+	void clear_ui_design_history(const String &p_screen_id = "");
 
 	// Estilos de ventana y botones (9B Tanda 2)
 	static void ensure_default_window_types_registered();

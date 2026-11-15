@@ -2,10 +2,12 @@
 #include "../core/clockgears_data_manager.h"
 #include "clockgears_audio_manager.h"
 #include "clockgears_title_screen.h"
+#include "clockgears_ui_design_layer.h"
 
 #include "core/config/engine.h"
 #include "core/input/input_event.h"
 #include "core/input/input_map.h"
+#include "core/object/callable_mp.h"
 #include "scene/gui/label.h"
 #include "scene/main/viewport.h"
 
@@ -70,6 +72,14 @@ void ClockGearsCreditsPlayer::_ensure_ui_nodes() {
 	scroll_vbox->set_size(Size2(LOGICAL_WIDTH - 100.0f, 10.0f));
 	scroll_vbox->add_theme_constant_override("separation", 10);
 	stage_clip->add_child(scroll_vbox);
+
+	custom_ui_layer = memnew(ClockGearsUiDesignLayer);
+	custom_ui_layer->set_name("CustomCreditsUiLayer");
+	custom_ui_layer->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	custom_ui_layer->set_window_type_fallback("game_menu");
+	custom_ui_layer->set_visible(false);
+	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsCreditsPlayer::_on_custom_ui_action));
+	add_child(custom_ui_layer);
 }
 
 void ClockGearsCreditsPlayer::_clear_scroll_items() {
@@ -227,6 +237,19 @@ void ClockGearsCreditsPlayer::_rebuild_from_config(const Dictionary &p_cfg) {
 	scroll_vbox->set_size(Size2(inner_width, content_height));
 	scroll_y = LOGICAL_HEIGHT;
 	scroll_vbox->set_position(Vector2(50.0f, scroll_y));
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (custom_ui_layer) {
+		if (dm && dm->has_custom_ui_design("credits")) {
+			custom_ui_layer->set_window_type_fallback("game_menu");
+			custom_ui_layer->set_preview_mode(preview_mode);
+			custom_ui_layer->apply_screen_design("credits");
+			custom_ui_layer->set_visible(true);
+		} else {
+			custom_ui_layer->set_visible(false);
+			custom_ui_layer->clear_elements();
+		}
+	}
 }
 
 void ClockGearsCreditsPlayer::set_preview_mode(bool p_preview) {
@@ -414,6 +437,17 @@ void ClockGearsCreditsPlayer::step_credits(float p_delta) {
 	}
 }
 
+void ClockGearsCreditsPlayer::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	String act = p_action.strip_edges().to_lower();
+	if (act == "back" || act == "close") {
+		_finish(true);
+	}
+}
+
+bool ClockGearsCreditsPlayer::is_custom_ui_active() const {
+	return custom_ui_layer && custom_ui_layer->is_visible();
+}
+
 bool ClockGearsCreditsPlayer::handle_credits_key(Key p_keycode, bool p_pressed) {
 	if (!playing) {
 		return false;
@@ -538,6 +572,8 @@ void ClockGearsCreditsPlayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("handle_credits_key", "keycode", "pressed"), &ClockGearsCreditsPlayer::handle_credits_key, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_scroll_state"), &ClockGearsCreditsPlayer::get_scroll_state);
 	ClassDB::bind_method(D_METHOD("get_layout_bounds_info", "viewport_size"), &ClockGearsCreditsPlayer::get_layout_bounds_info, DEFVAL(Vector2()));
+	ClassDB::bind_method(D_METHOD("is_custom_ui_active"), &ClockGearsCreditsPlayer::is_custom_ui_active);
+	ClassDB::bind_method(D_METHOD("get_custom_ui_layer"), &ClockGearsCreditsPlayer::get_custom_ui_layer);
 
 	ADD_SIGNAL(MethodInfo("credits_finished", PropertyInfo(Variant::BOOL, "cancelled")));
 }

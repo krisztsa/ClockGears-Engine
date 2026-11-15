@@ -2,6 +2,7 @@
 
 #include "../core/clockgears_data_manager.h"
 #include "../core/clockgears_formulas.h"
+#include "clockgears_ui_design_layer.h"
 #include "clockgears_window_style.h"
 #include "core/io/image.h"
 #include "core/math/math_funcs.h"
@@ -549,7 +550,7 @@ void ClockGearsHudOverlay::_build_widget_entry(WidgetEntry &r_entry, int p_index
 		lbl->add_theme_constant_override("outline_size", 2);
 		hb->add_child(lbl);
 		r_entry.value_label = lbl;
-	} else if (r_entry.type == "text") {
+	} else if (r_entry.type == "text" || r_entry.type == "variable") {
 		Label *lbl = memnew(Label);
 		lbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
 		lbl->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
@@ -562,6 +563,11 @@ void ClockGearsHudOverlay::_build_widget_entry(WidgetEntry &r_entry, int p_index
 		lbl->add_theme_constant_override("outline_size", 2);
 		content->add_child(lbl);
 		r_entry.text_label = lbl;
+	} else if (r_entry.type == "frame") {
+		float op = CLAMP(float(r_entry.config.get("opacity", 1.0)), 0.0f, 1.0f);
+		if (r_entry.bg_panel) {
+			r_entry.bg_panel->set_modulate(Color(1, 1, 1, op));
+		}
 	} else {
 		TextureRect *img_r = memnew(TextureRect);
 		img_r->set_mouse_filter(MOUSE_FILTER_IGNORE);
@@ -597,7 +603,7 @@ void ClockGearsHudOverlay::_apply_widget_window_style(WidgetEntry &r_entry, floa
 		return;
 	}
 	String sid = r_entry.window_style_id.strip_edges().to_lower();
-	if (sid.is_empty() || sid == "none") {
+	if (r_entry.type != "frame" && (sid.is_empty() || sid == "none")) {
 		r_entry.bg_panel->set_visible(false);
 		r_entry.content_root->set_position(Vector2(0, 0));
 		r_entry.content_root->set_size(r_entry.root->get_size());
@@ -717,7 +723,7 @@ void ClockGearsHudOverlay::_relayout_widgets(bool p_refresh_styles) {
 				int fsz = MAX(8, int(Math::round(float(w.config.get("font_size", 15)) * s)));
 				w.value_label->add_theme_font_size_override("font_size", fsz);
 			}
-		} else if (w.type == "text") {
+		} else if (w.type == "text" || w.type == "variable") {
 			if (w.text_label) {
 				int fsz = MAX(8, int(Math::round(float(w.config.get("font_size", 16)) * s)));
 				w.text_label->add_theme_font_size_override("font_size", fsz);
@@ -961,11 +967,14 @@ void ClockGearsHudOverlay::_update_widget_data(WidgetEntry &r_entry, const Strin
 		snap["qty"] = qty;
 		snap["hide_when_zero"] = bool(r_entry.config.get("hide_when_zero", false));
 		snap["text"] = txt;
-	} else if (r_entry.type == "text") {
-		String tmode = String(r_entry.config.get("text_mode", "fixed"));
+	} else if (r_entry.type == "text" || r_entry.type == "variable") {
+		String tmode = String(r_entry.config.get("text_mode", r_entry.type == "variable" ? "variable" : "fixed"));
+		String db = String(r_entry.config.get("data_binding", "none")).strip_edges().to_lower();
 		String raw_txt = String(r_entry.config.get("text", ""));
 		String out_txt = raw_txt;
-		if (tmode == "variable") {
+		if (!db.is_empty() && db != "none") {
+			out_txt = ClockGearsUiDesignLayer::resolve_element_text(r_entry.config, dm);
+		} else if (tmode == "variable") {
 			String vname = String(r_entry.config.get("variable_name", ""));
 			int vval = dm ? dm->get_variable(vname) : 0;
 			String vstr = String::num_int64(vval);
@@ -984,6 +993,8 @@ void ClockGearsHudOverlay::_update_widget_data(WidgetEntry &r_entry, const Strin
 		}
 		snap["text_mode"] = tmode;
 		snap["text"] = out_txt;
+	} else if (r_entry.type == "frame") {
+		snap["window_style_id"] = r_entry.window_style_id;
 	} else {
 		snap["image_path"] = String(r_entry.config.get("image_path", ""));
 	}
@@ -1003,8 +1014,8 @@ void ClockGearsHudOverlay::_update_widget_visibility(WidgetEntry &r_entry) {
 	if (!r_entry.root) {
 		return;
 	}
-	bool vis = true;
-	if (!preview_mode) {
+	bool vis = bool(r_entry.config.get("visible", true));
+	if (vis && !preview_mode) {
 		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 		if (dm) {
 			if (!dm->is_hud_widget_runtime_visible(r_entry.id, r_entry.name)) {

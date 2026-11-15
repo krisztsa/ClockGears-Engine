@@ -3,6 +3,7 @@
 #include "../editor/clockgears_theme.h"
 #include "clockgears_audio_manager.h"
 #include "clockgears_credits.h"
+#include "clockgears_ui_design_layer.h"
 #include "clockgears_window_style.h"
 
 #include "core/config/engine.h"
@@ -474,6 +475,14 @@ void ClockGearsTitleScreen::_build_base_ui() {
 	entries_box->add_theme_constant_override("separation", 8);
 	main_menu_panel->add_child(entries_box);
 
+	custom_ui_layer = memnew(ClockGearsUiDesignLayer);
+	custom_ui_layer->set_name("CustomTitleUiLayer");
+	custom_ui_layer->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	custom_ui_layer->set_window_type_fallback("title_buttons");
+	custom_ui_layer->hide();
+	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsTitleScreen::_on_custom_ui_action));
+	add_child(custom_ui_layer);
+
 	// Subpanel overlay: Continuar / Ranuras de Guardado
 	ColorRect *cont_scrim = memnew(ColorRect);
 	cont_scrim->set_name("ContinueOverlay");
@@ -675,6 +684,40 @@ void ClockGearsTitleScreen::_apply_title_config(const Dictionary &p_cfg, const D
 		created_buttons[0]->grab_focus();
 	}
 
+	custom_ui_active = (dm && dm->has_custom_ui_design("title"));
+	if (custom_ui_active && custom_ui_layer) {
+		if (title_label) title_label->hide();
+		if (title_texture_rect) title_texture_rect->hide();
+		if (main_menu_panel) main_menu_panel->hide();
+		custom_ui_layer->set_window_type_fallback("title_buttons");
+		custom_ui_layer->set_preview_mode(preview_mode);
+		custom_ui_layer->clear_disabled_actions();
+		custom_ui_layer->set_action_disabled("continue", p_check_saves && !has_saves);
+		custom_ui_layer->set_action_disabled("credits", !credits_ok);
+		custom_ui_layer->apply_screen_design("title");
+		custom_ui_layer->show();
+
+		Vector<Button *> custom_btns = custom_ui_layer->get_focus_ordered_buttons();
+		for (int i = 0; i < custom_btns.size(); i++) {
+			Button *b = custom_btns[i];
+			Button *prev = custom_btns[(i - 1 + custom_btns.size()) % custom_btns.size()];
+			Button *next = custom_btns[(i + 1) % custom_btns.size()];
+			b->set_focus_neighbor(SIDE_TOP, b->get_path_to(prev));
+			b->set_focus_neighbor(SIDE_BOTTOM, b->get_path_to(next));
+		}
+		if (!preview_mode && !custom_btns.is_empty() && is_inside_tree()) {
+			custom_btns[0]->grab_focus();
+		}
+	} else {
+		if (main_menu_panel) {
+			main_menu_panel->show();
+		}
+		if (custom_ui_layer) {
+			custom_ui_layer->hide();
+			custom_ui_layer->clear_elements();
+		}
+	}
+
 	_sync_options_controls_from_dm();
 }
 
@@ -756,15 +799,12 @@ void ClockGearsTitleScreen::_on_entry_button_pressed(const String &p_id) {
 	trigger_entry(p_id);
 }
 
-void ClockGearsTitleScreen::_on_save_slot_pressed(int p_slot) {
-	select_save_slot(p_slot);
+void ClockGearsTitleScreen::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	_execute_title_action(p_action);
 }
 
-bool ClockGearsTitleScreen::trigger_entry(const String &p_id) {
-	String id = p_id.strip_edges().to_lower();
-	if (!visible_entry_ids.has(id)) {
-		return false;
-	}
+bool ClockGearsTitleScreen::_execute_title_action(const String &p_action) {
+	String id = p_action.strip_edges().to_lower();
 	if (id == "new_game") {
 		return trigger_new_game();
 	}
@@ -785,6 +825,23 @@ bool ClockGearsTitleScreen::trigger_entry(const String &p_id) {
 		return true;
 	}
 	return false;
+}
+
+void ClockGearsTitleScreen::_on_save_slot_pressed(int p_slot) {
+	select_save_slot(p_slot);
+}
+
+bool ClockGearsTitleScreen::trigger_entry(const String &p_id) {
+	String id = p_id.strip_edges().to_lower();
+	if (custom_ui_active && custom_ui_layer) {
+		if (custom_ui_layer->trigger_action(id)) {
+			return true;
+		}
+	}
+	if (!visible_entry_ids.has(id)) {
+		return false;
+	}
+	return _execute_title_action(id);
 }
 
 bool ClockGearsTitleScreen::trigger_new_game() {
@@ -819,6 +876,9 @@ void ClockGearsTitleScreen::open_continue_menu() {
 	}
 	if (main_menu_panel) {
 		main_menu_panel->hide();
+	}
+	if (custom_ui_layer) {
+		custom_ui_layer->hide();
 	}
 	if (continue_overlay) {
 		continue_overlay->show();
@@ -878,6 +938,9 @@ void ClockGearsTitleScreen::open_options_menu() {
 	if (main_menu_panel) {
 		main_menu_panel->hide();
 	}
+	if (custom_ui_layer) {
+		custom_ui_layer->hide();
+	}
 	if (options_overlay) {
 		options_overlay->show();
 	}
@@ -906,12 +969,23 @@ void ClockGearsTitleScreen::open_credits() {
 	if (main_menu_panel) {
 		main_menu_panel->hide();
 	}
+	if (custom_ui_layer) {
+		custom_ui_layer->hide();
+	}
 	if (credits_player) {
 		credits_player->start_credits();
 	}
 }
 
 void ClockGearsTitleScreen::_on_title_credits_finished(bool p_cancelled) {
+	if (custom_ui_active && custom_ui_layer) {
+		custom_ui_layer->show();
+		Vector<Button *> cbtns = custom_ui_layer->get_focus_ordered_buttons();
+		if (!preview_mode && !cbtns.is_empty() && is_inside_tree()) {
+			cbtns[0]->grab_focus();
+		}
+		return;
+	}
 	if (main_menu_panel) {
 		main_menu_panel->show();
 	}
@@ -949,6 +1023,16 @@ void ClockGearsTitleScreen::close_submenus() {
 	}
 	if (options_panel) {
 		options_panel->hide();
+	}
+	if (custom_ui_active && custom_ui_layer) {
+		custom_ui_layer->show();
+		if (!preview_mode && is_inside_tree()) {
+			Vector<Button *> cbtns = custom_ui_layer->get_focus_ordered_buttons();
+			if (!cbtns.is_empty()) {
+				cbtns[0]->grab_focus();
+			}
+		}
+		return;
 	}
 	if (main_menu_panel) {
 		main_menu_panel->show();
@@ -1030,6 +1114,9 @@ Vector<Button *> ClockGearsTitleScreen::_get_active_nav_buttons() const {
 			out.push_back(btn_options_back);
 		}
 		return out;
+	}
+	if (custom_ui_active && custom_ui_layer && custom_ui_layer->is_visible()) {
+		return custom_ui_layer->get_focus_ordered_buttons();
 	}
 	if (entries_box) {
 		for (int i = 0; i < entries_box->get_child_count(); i++) {
@@ -1130,10 +1217,10 @@ bool ClockGearsTitleScreen::handle_navigation_key(Key p_keycode) {
 		}
 		return false;
 	}
-	if (p_keycode == Key::UP) {
+	if (p_keycode == Key::UP || (custom_ui_active && p_keycode == Key::LEFT)) {
 		return _move_focus_by(-1);
 	}
-	if (p_keycode == Key::DOWN) {
+	if (p_keycode == Key::DOWN || (custom_ui_active && p_keycode == Key::RIGHT)) {
 		return _move_focus_by(1);
 	}
 	if (p_keycode == Key::ENTER || p_keycode == Key::KP_ENTER) {
@@ -1179,6 +1266,18 @@ Dictionary ClockGearsTitleScreen::get_layout_bounds_info(const Vector2 &p_viewpo
 	}
 	Rect2 vp_rect(Vector2(), vp_sz);
 	out["viewport_rect"] = vp_rect;
+	out["custom_design_active"] = custom_ui_active;
+
+	if (custom_ui_active && custom_ui_layer && !is_continue_menu_open() && !is_options_menu_open()) {
+		Dictionary cinfo = custom_ui_layer->get_layout_bounds_info(vp_sz);
+		out["stage_rect"] = cinfo.get("stage_rect", Rect2());
+		out["element_rects"] = cinfo.get("element_rects", Dictionary());
+		out["button_rects"] = cinfo.get("button_rects", Array());
+		out["all_within_viewport"] = cinfo.get("all_within_viewport", true);
+		out["any_overlap"] = cinfo.get("any_overlap", false);
+		out["clips"] = cinfo.get("clips", false);
+		return out;
+	}
 
 	auto rel_rect = [&](const Control *p_ctrl) -> Rect2 {
 		if (!p_ctrl || !p_ctrl->is_visible()) {
@@ -1352,6 +1451,8 @@ void ClockGearsTitleScreen::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_background_filter_applied"), &ClockGearsTitleScreen::get_background_filter_applied);
 	ClassDB::bind_method(D_METHOD("get_applied_bgm_path"), &ClockGearsTitleScreen::get_applied_bgm_path);
 	ClassDB::bind_method(D_METHOD("get_last_started_map_path"), &ClockGearsTitleScreen::get_last_started_map_path);
+	ClassDB::bind_method(D_METHOD("is_custom_ui_active"), &ClockGearsTitleScreen::is_custom_ui_active);
+	ClassDB::bind_method(D_METHOD("get_custom_ui_layer"), &ClockGearsTitleScreen::get_custom_ui_layer);
 
 	ADD_SIGNAL(MethodInfo("new_game_started", PropertyInfo(Variant::STRING, "start_map")));
 	ADD_SIGNAL(MethodInfo("save_loaded", PropertyInfo(Variant::INT, "slot"), PropertyInfo(Variant::STRING, "map_path")));

@@ -13,6 +13,7 @@
 #include "scene/gui/texture_rect.h"
 
 class ClockGearsCreditsPlayer;
+class ClockGearsUiDesignLayer;
 
 // ============================================================================
 // ClockGearsOptionsBox — Widget reutilizable de Opciones (Título y Menú)
@@ -98,6 +99,8 @@ private:
 	Button *btn_options_reset = nullptr;
 	Button *btn_options_back = nullptr;
 	ClockGearsCreditsPlayer *credits_player = nullptr;
+	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
+	bool custom_ui_active = false;
 	bool syncing_options_ui = false;
 
 	bool auto_quit_tree = true;
@@ -126,6 +129,8 @@ private:
 	void _on_fullscreen_toggled(bool p_pressed);
 	void _on_reset_options_pressed();
 	void _on_entry_button_pressed(const String &p_id);
+	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
+	bool _execute_title_action(const String &p_action);
 	void _on_save_slot_pressed(int p_slot);
 	void _on_title_credits_finished(bool p_cancelled);
 
@@ -181,6 +186,8 @@ public:
 	String get_background_filter_applied() const;
 	String get_applied_bgm_path() const { return applied_bgm_path; }
 	String get_last_started_map_path() const { return last_started_map_path; }
+	bool is_custom_ui_active() const { return custom_ui_active; }
+	ClockGearsUiDesignLayer *get_custom_ui_layer() const { return custom_ui_layer; }
 
 	ClockGearsTitleScreen();
 };

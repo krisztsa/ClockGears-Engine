@@ -17,6 +17,7 @@ class ClockGearsEventInterpreter;
 class ClockGearsMap;
 class ClockGearsOptionsBox;
 class ClockGearsPlayer;
+class ClockGearsUiDesignLayer;
 
 // ============================================================================
 // ClockGearsGameMenu — Menú del Juego en Runtime (9B Tanda 3)
@@ -108,6 +109,7 @@ private:
 	Label *confirm_title_label = nullptr;
 	Button *btn_confirm_title_yes = nullptr;
 	Button *btn_confirm_title_no = nullptr;
+	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
 
 	bool menu_open = false;
 	String current_subscreen = "main";
@@ -150,6 +152,8 @@ private:
 	Dictionary _build_runtime_save_context() const;
 
 	void _on_entry_pressed(const String &p_id);
+	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
+	String _map_subscreen_to_ui_design_id(const String &p_subscreen) const;
 	void _on_subscreen_back();
 	void _on_item_row_pressed(const String &p_key);
 	void _on_items_target_selected(int p_idx);
@@ -215,6 +219,8 @@ public:
 	bool save_to_slot(int p_slot);
 	bool confirm_return_to_title();
 	bool was_return_to_title_triggered() const { return last_returned_to_title; }
+	bool is_custom_ui_active() const;
+	ClockGearsUiDesignLayer *get_custom_ui_layer() const { return custom_ui_layer; }
 
 	ClockGearsGameMenu();
 };

@@ -8,6 +8,8 @@
 #include "scene/gui/control.h"
 #include "scene/gui/texture_rect.h"
 
+class ClockGearsUiDesignLayer;
+
 class ClockGearsCreditsPlayer : public Control {
 	GDCLASS(ClockGearsCreditsPlayer, Control);
 
@@ -16,6 +18,7 @@ private:
 	TextureRect *bg_texture_rect = nullptr;
 	Control *stage_clip = nullptr;
 	VBoxContainer *scroll_vbox = nullptr;
+	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
 
 	Dictionary active_config;
 	bool playing = false;
@@ -38,6 +41,7 @@ private:
 	void _clear_scroll_items();
 	void _rebuild_from_config(const Dictionary &p_cfg);
 	void _update_responsive_stage(const Vector2 &p_override_vp_size = Vector2());
+	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
 	void _finish(bool p_cancelled);
 
 protected:
@@ -68,6 +72,8 @@ public:
 
 	Dictionary get_scroll_state() const;
 	Dictionary get_layout_bounds_info(const Vector2 &p_viewport_size = Vector2()) const;
+	bool is_custom_ui_active() const;
+	ClockGearsUiDesignLayer *get_custom_ui_layer() const { return custom_ui_layer; }
 
 	ClockGearsCreditsPlayer();
 };

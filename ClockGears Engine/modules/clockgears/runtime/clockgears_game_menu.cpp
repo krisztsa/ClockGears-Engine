@@ -7,6 +7,7 @@
 #include "clockgears_message_window.h"
 #include "clockgears_runtime.h"
 #include "clockgears_title_screen.h"
+#include "clockgears_ui_design_layer.h"
 #include "clockgears_window_style.h"
 
 #include "core/config/engine.h"
@@ -92,6 +93,8 @@ void ClockGearsGameMenu::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("save_to_slot", "slot"), &ClockGearsGameMenu::save_to_slot);
 	ClassDB::bind_method(D_METHOD("confirm_return_to_title"), &ClockGearsGameMenu::confirm_return_to_title);
 	ClassDB::bind_method(D_METHOD("was_return_to_title_triggered"), &ClockGearsGameMenu::was_return_to_title_triggered);
+	ClassDB::bind_method(D_METHOD("is_custom_ui_active"), &ClockGearsGameMenu::is_custom_ui_active);
+	ClassDB::bind_method(D_METHOD("get_custom_ui_layer"), &ClockGearsGameMenu::get_custom_ui_layer);
 
 	ADD_SIGNAL(MethodInfo("menu_opened"));
 	ADD_SIGNAL(MethodInfo("menu_closed"));
@@ -148,6 +151,14 @@ void ClockGearsGameMenu::_build_ui() {
 	content_root->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	content_root->set_clip_contents(true);
 	margin->add_child(content_root);
+
+	custom_ui_layer = memnew(ClockGearsUiDesignLayer);
+	custom_ui_layer->set_name("CustomGameMenuUiLayer");
+	custom_ui_layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	custom_ui_layer->set_window_type_fallback("game_menu");
+	custom_ui_layer->set_visible(false);
+	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsGameMenu::_on_custom_ui_action));
+	root_control->add_child(custom_ui_layer);
 
 	// --- 1. Vista Principal ---
 	main_view = memnew(HBoxContainer);
@@ -793,6 +804,10 @@ Control *ClockGearsGameMenu::_get_active_subscreen_control() const {
 }
 
 void ClockGearsGameMenu::_collect_nav_buttons(Control *p_root, Vector<Button *> &r_buttons) const {
+	if (custom_ui_layer && custom_ui_layer->is_visible() && p_root != confirm_title_panel && p_root != save_panel && p_root != options_panel) {
+		r_buttons = custom_ui_layer->get_focus_ordered_buttons();
+		return;
+	}
 	if (!p_root || !p_root->is_visible()) {
 		return;
 	}
@@ -1008,21 +1023,41 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 	_refresh_background();
 	nav_focus_index = 0;
 
-	if (current_subscreen == "main") {
-		_refresh_main_view();
-	} else if (current_subscreen == "items") {
-		if (item_feedback_label) {
-			item_feedback_label->set_text("");
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String ui_sid = _map_subscreen_to_ui_design_id(current_subscreen);
+	bool use_custom = (dm && !ui_sid.is_empty() && dm->has_custom_ui_design(ui_sid));
+	if (use_custom && custom_ui_layer) {
+		if (main_view) main_view->set_visible(false);
+		if (items_panel) items_panel->set_visible(false);
+		if (equip_panel) equip_panel->set_visible(false);
+		if (status_panel) status_panel->set_visible(false);
+		custom_ui_layer->set_window_type_fallback("game_menu");
+		custom_ui_layer->set_preview_mode(preview_mode);
+		custom_ui_layer->apply_screen_design(ui_sid);
+		custom_ui_layer->set_visible(true);
+	} else {
+		if (custom_ui_layer) {
+			custom_ui_layer->set_visible(false);
+			custom_ui_layer->clear_elements();
 		}
-		_refresh_items_view();
-	} else if (current_subscreen == "equip") {
-		if (equip_feedback_label) {
-			equip_feedback_label->set_text("");
+		if (current_subscreen == "main") {
+			_refresh_main_view();
+		} else if (current_subscreen == "items") {
+			if (item_feedback_label) {
+				item_feedback_label->set_text("");
+			}
+			_refresh_items_view();
+		} else if (current_subscreen == "equip") {
+			if (equip_feedback_label) {
+				equip_feedback_label->set_text("");
+			}
+			_refresh_equip_view();
+		} else if (current_subscreen == "status") {
+			_refresh_status_view();
 		}
-		_refresh_equip_view();
-	} else if (current_subscreen == "status") {
-		_refresh_status_view();
-	} else if (current_subscreen == "save") {
+	}
+
+	if (current_subscreen == "save") {
 		if (save_feedback_label) {
 			save_feedback_label->set_text("");
 		}
@@ -1626,6 +1661,46 @@ void ClockGearsGameMenu::_on_entry_pressed(const String &p_id) {
 	open_subscreen(p_id);
 }
 
+String ClockGearsGameMenu::_map_subscreen_to_ui_design_id(const String &p_subscreen) const {
+	String s = p_subscreen.strip_edges().to_lower();
+	if (s == "main" || s == "menu") {
+		return "game_menu_main";
+	}
+	if (s == "items") {
+		return "game_menu_items";
+	}
+	if (s == "equip") {
+		return "game_menu_equip";
+	}
+	if (s == "status") {
+		return "game_menu_status";
+	}
+	return String();
+}
+
+void ClockGearsGameMenu::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	String act = p_action.strip_edges().to_lower();
+	if (act == "close") {
+		close_menu();
+		return;
+	}
+	if (act == "back") {
+		if (current_subscreen == "main") {
+			close_menu();
+		} else {
+			_on_subscreen_back();
+		}
+		return;
+	}
+	if (!act.is_empty()) {
+		open_subscreen(act);
+	}
+}
+
+bool ClockGearsGameMenu::is_custom_ui_active() const {
+	return custom_ui_layer && custom_ui_layer->is_visible();
+}
+
 void ClockGearsGameMenu::_on_subscreen_back() {
 	if (direct_subscreen_close_on_back) {
 		close_menu();
@@ -1914,6 +1989,17 @@ Dictionary ClockGearsGameMenu::get_layout_bounds_info(const Vector2 &p_viewport_
 	Dictionary info;
 	info["viewport"] = vsz;
 	info["subscreen"] = current_subscreen;
+	info["custom_design_active"] = is_custom_ui_active();
+	if (is_custom_ui_active() && custom_ui_layer) {
+		Dictionary cinfo = custom_ui_layer->get_layout_bounds_info(vsz);
+		info["stage_rect"] = cinfo.get("stage_rect", Rect2());
+		info["element_rects"] = cinfo.get("element_rects", Dictionary());
+		info["button_rects"] = cinfo.get("button_rects", Array());
+		info["clips"] = cinfo.get("clips", false);
+		info["overlaps"] = cinfo.get("any_overlap", false);
+		info["all_within_viewport"] = cinfo.get("all_within_viewport", true);
+		return info;
+	}
 	bool clips = false;
 	bool overlaps = false;
 	Rect2 vp_rect(Vector2(0, 0), vsz);
