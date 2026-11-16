@@ -104,9 +104,9 @@ struct ClockGearsHitShape {
 
 	static int string_to_type(const String &p_str) {
 		String s = p_str.strip_edges().to_lower();
-		if (s == "circle" || s == "circulo" || s == "círculo") return CG_SHAPE_CIRCLE;
-		if (s == "capsule" || s == "capsula" || s == "cápsula") return CG_SHAPE_CAPSULE;
-		if (s == "polygon" || s == "poligono" || s == "polígono") return CG_SHAPE_POLYGON;
+		if (s == "circle" || s == "circulo" || s == String::utf8("círculo")) return CG_SHAPE_CIRCLE;
+		if (s == "capsule" || s == "capsula" || s == String::utf8("cápsula")) return CG_SHAPE_CAPSULE;
+		if (s == "polygon" || s == "poligono" || s == String::utf8("polígono")) return CG_SHAPE_POLYGON;
 		return CG_SHAPE_RECT;
 	}
 

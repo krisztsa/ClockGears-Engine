@@ -183,7 +183,7 @@ void ClockGearsGameMenu::_build_ui() {
 	VBoxContainer *cmd_vb = memnew(VBoxContainer);
 	cmd_vb->add_theme_constant_override("separation", 8);
 	main_cmd_panel->add_child(cmd_vb);
-	cmd_vb->add_child(_cg_make_title_label("Menú"));
+	cmd_vb->add_child(_cg_make_title_label(String::utf8("Menú")));
 
 	ScrollContainer *entries_scroll = memnew(ScrollContainer);
 	entries_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -412,7 +412,7 @@ void ClockGearsGameMenu::_build_ui() {
 	col_prev->set_custom_minimum_size(Size2(240, 0));
 	col_prev->add_theme_constant_override("separation", 6);
 	equip_cols->add_child(col_prev);
-	col_prev->add_child(_cg_make_title_label("Parámetros", 14));
+	col_prev->add_child(_cg_make_title_label(String::utf8("Parámetros"), 14));
 	ScrollContainer *prev_scroll = memnew(ScrollContainer);
 	prev_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
@@ -561,7 +561,7 @@ void ClockGearsGameMenu::_build_ui() {
 	ct_vb->add_theme_constant_override("separation", 12);
 	confirm_title_panel->add_child(ct_vb);
 	confirm_title_label = memnew(Label);
-	confirm_title_label->set_text("¿Salir al título?\nEl progreso no guardado se perderá.");
+	confirm_title_label->set_text(String::utf8("¿Salir al título?\nEl progreso no guardado se perderá."));
 	confirm_title_label->set_custom_minimum_size(Size2(340, 0));
 	confirm_title_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	confirm_title_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
@@ -570,7 +570,7 @@ void ClockGearsGameMenu::_build_ui() {
 	ct_btns->set_alignment(BoxContainer::ALIGNMENT_CENTER);
 	ct_btns->add_theme_constant_override("separation", 12);
 	ct_vb->add_child(ct_btns);
-	btn_confirm_title_yes = _cg_make_menu_button("Sí, salir", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_confirm_title_yes));
+	btn_confirm_title_yes = _cg_make_menu_button(String::utf8("Sí, salir"), "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_confirm_title_yes));
 	ct_btns->add_child(btn_confirm_title_yes);
 	btn_confirm_title_no = _cg_make_menu_button("Cancelar", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_subscreen_back));
 	ct_btns->add_child(btn_confirm_title_no);
@@ -1461,7 +1461,7 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 		String sname = String(sd.get("name", vformat("Hueco %d", i + 1)));
 		int pid = int(sd.get("piece_id", 0));
 		int cat = dm->get_category_from_key(String(sd.get("category", "")));
-		String pname = "--- Vacío ---";
+		String pname = String::utf8("--- Vacío ---");
 		if (pid > 0 && cat >= 0) {
 			Dictionary piece = dm->get_record_by_id(cat, pid);
 			pname = piece.is_empty() ? vformat("#%d", pid) : String(piece.get("name", vformat("#%d", pid)));
@@ -1594,7 +1594,7 @@ void ClockGearsGameMenu::_refresh_status_view() {
 	}
 
 	Dictionary st = sheet.get("stats", Dictionary());
-	String params = vformat("Parámetros:\nHP Máx: %d    MP Máx: %d\nATQ: %d    DEF: %d\nMAT: %d    MDF: %d\nAGI: %d    SUE: %d",
+	String params = vformat(String::utf8("Parámetros:\nHP Máx: %d    MP Máx: %d\nATQ: %d    DEF: %d\nMAT: %d    MDF: %d\nAGI: %d    SUE: %d"),
 			int(st.get("hp", 0)), int(st.get("mp", 0)),
 			int(st.get("atk", 0)), int(st.get("def", 0)),
 			int(st.get("mat", 0)), int(st.get("mdf", 0)),
@@ -1624,7 +1624,7 @@ void ClockGearsGameMenu::_refresh_status_view() {
 	for (int i = 0; i < elems.size(); i++) {
 		Dictionary er = elems[i];
 		int pct = int(er.get("pct", 100));
-		String tag = (pct > 100) ? " [Débil]" : (pct < 100 ? " [Resiste]" : "");
+		String tag = (pct > 100) ? String::utf8(" [Débil]") : (pct < 100 ? String::utf8(" [Resiste]") : String(""));
 		el_str += vformat("- %s: %d%%%s\n", er.get("name", ""), pct, tag);
 	}
 	if (status_elements_label) {

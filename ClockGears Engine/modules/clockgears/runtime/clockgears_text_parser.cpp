@@ -179,7 +179,7 @@ String ClockGearsTextParser::resolve_data_escapes(const String &p_text) {
 							}
 						}
 						if (m_name.is_empty()) {
-							m_name = vformat("Héroe %d", member_idx);
+							m_name = vformat(String::utf8("Héroe %d"), member_idx);
 						}
 						res += m_name;
 						i = close + 1;
@@ -349,7 +349,7 @@ String ClockGearsTextParser::to_bbcode(const String &p_text) {
 				int close = text.find_char(']', i + 3);
 				if (close != -1) {
 					int ico_id = text.substr(i + 3, close - (i + 3)).to_int();
-					res += vformat("[color=#e0a040]◆[%d][/color]", ico_id);
+					res += vformat(String::utf8("[color=#e0a040]◆[%d][/color]"), ico_id);
 					i = close + 1;
 					continue;
 				}

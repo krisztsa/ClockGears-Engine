@@ -677,8 +677,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	can_vb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	canvas_card->add_child(can_vb);
 
-	Label *can_hdr = memnew(Label("Lienzo 960x540 (vista idéntica al juego)"));
-	can_hdr->set_text(String::utf8("Lienzo 960x540 (vista idéntica al juego)"));
+	Label *can_hdr = memnew(Label(String::utf8("Lienzo 960x540 (vista idéntica al juego)")));
 	can_hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
 	can_vb->add_child(can_hdr);
 

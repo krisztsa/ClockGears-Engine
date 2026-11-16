@@ -2356,7 +2356,7 @@ void ClockGearsEventEditorDialog::_refresh_cutscene_kf_tree() {
 		TreeItem *item = cutscene_kf_tree->create_item(root);
 		item->set_text(0, String::num_real(float(kf.get("time", 0.0f)), false));
 		int tr = int(kf.get("track", 0));
-		String tr_str = (tr >= 0 && tr < 8) ? track_names[tr] : itos(tr);
+		String tr_str = (tr >= 0 && tr < 8) ? CG_TR(track_names[tr]) : itos(tr);
 		item->set_text(1, tr_str);
 		item->set_text(2, kf.get("value", ""));
 		item->set_metadata(0, i);
@@ -3934,7 +3934,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	cutscene_file_dialog = memnew(FileDialog);
 	cutscene_file_dialog->set_access(FileDialog::ACCESS_FILESYSTEM);
 	cutscene_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
-	cutscene_file_dialog->add_filter("*.tres, *.res, *.json ; Cinemáticas (*.tres, *.res, *.json)");
+	cutscene_file_dialog->add_filter(CG_TR("*.tres, *.res, *.json ; Cinemáticas (*.tres, *.res, *.json)"));
 	cutscene_file_dialog->set_title(CG_TR("Seleccionar Cinemática"));
 	cutscene_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_cutscene_file_selected));
 	add_child(cutscene_file_dialog);
@@ -5176,14 +5176,14 @@ String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) co
 	} else if (type == "fade") {
 		return vformat(CG_TR("◆ Fundido de Pantalla: %s (%d f)"), d.get("mode", "Oscurecer"), int(d.get("duration", 30)));
 	} else if (type == "battle") {
-		return vformat(CG_TR("◆ Iniciar Batalla: [%s] (Huir: %s, Derrota: %s)"), d.get("troop", "1"), bool(d.get("can_escape", true)) ? "Sí" : "No", bool(d.get("can_lose", false)) ? "Permitida" : "Game Over");
+		return vformat(CG_TR("◆ Iniciar Batalla: [%s] (Huir: %s, Derrota: %s)"), d.get("troop", "1"), bool(d.get("can_escape", true)) ? CG_TR("Sí") : String("No"), bool(d.get("can_lose", false)) ? String("Permitida") : String("Game Over"));
 	} else if (type == "show_picture" || type == "picture") {
 		int dur_m = int(d.get("duration_mode", 0));
 		String dur_str;
 		if (dur_m == 1) {
 			dur_str = vformat(" (%.1fs%s%s)", float(d.get("duration_sec", 3.0f)), bool(d.get("auto_fadeout", false)) ? " + fundido" : "", bool(d.get("wait", false)) ? " [esperar]" : "");
 		} else if (dur_m == 2) {
-			dur_str = " (hasta próx. mensaje)";
+			dur_str = CG_TR(" (hasta próx. mensaje)");
 		}
 		return vformat(CG_TR("◆ Mostrar Imagen: #%d \"%s\" en (%d, %d)%s"), int(d.get("id", 1)), d.get("path", ""), int(d.get("x", 0)), int(d.get("y", 0)), dur_str);
 	} else if (type == "move_picture") {

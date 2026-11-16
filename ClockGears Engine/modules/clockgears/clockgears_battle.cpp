@@ -454,7 +454,7 @@ void ClockGearsBattleController::_log_hit(const String &p_attacker, int p_a_atk,
 		entry = vformat(String::utf8("[Batalla] %s (ATK: %d) usa %s en %s (DEF: %d) -> ¡FALLÓ!%s"), p_attacker, p_a_atk, p_action, p_target, p_b_def, elem_suffix);
 	} else {
 		entry = vformat(String::utf8("[Batalla] %s (ATK: %d) usa %s -> %s (DEF: %d) | Fórmula: '%s'%s | Daño final: %d (Crítico: %s)"),
-				p_attacker, p_a_atk, p_action, p_target, p_b_def, p_formula, elem_suffix, p_damage, p_crit ? "Sí" : "No");
+				p_attacker, p_a_atk, p_action, p_target, p_b_def, p_formula, elem_suffix, p_damage, p_crit ? String::utf8("Sí") : String("No"));
 	}
 	print_line(entry);
 	log_history.push_back(entry);
@@ -756,7 +756,7 @@ void ClockGearsBattleController::setup_battle(int p_troop_id, bool p_can_escape,
 		bat->set_luk(10);
 		bat->set_exp_reward(40);
 		bat->set_gold_reward(25);
-		bat->set_graphic_path("res://img/battlers/cañón_musgoso_down.png");
+		bat->set_graphic_path(String::utf8("res://img/battlers/cañón_musgoso_down.png"));
 		ClockGearsSpriteAnimation idle_a;
 		idle_a.name = "idle";
 		idle_a.frames.push_back(0);
@@ -1105,7 +1105,7 @@ bool ClockGearsBattleController::action_item(const String &p_item_name, int p_ta
 	int heal = 150;
 	target->set_hp(target->get_hp() + heal);
 
-	String entry = vformat("[Batalla] %s usa %s en %s -> ¡Recupera %d HP!", attacker->get_name(), p_item_name, target->get_name(), heal);
+	String entry = vformat(String::utf8("[Batalla] %s usa %s en %s -> ¡Recupera %d HP!"), attacker->get_name(), p_item_name, target->get_name(), heal);
 	print_line(entry);
 	log_history.push_back(entry);
 	ClockGearsDebugOverlay::log_battle(entry);

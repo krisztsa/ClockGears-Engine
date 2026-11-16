@@ -3781,7 +3781,7 @@ static Dictionary _cg_make_credits_text_style(int p_size, const String &p_col, c
 static Dictionary _cg_normalize_credits_item(const Dictionary &p_raw) {
 	Dictionary item;
 	String t = String(p_raw.get("type", "text")).strip_edges().to_lower();
-	if (t == "title" || t == "seccion" || t == "sección") {
+	if (t == "title" || t == "seccion" || t == String::utf8("sección")) {
 		t = "section";
 	} else if (t == "role" || t == "credit" || t == "rol_nombre") {
 		t = "role_name";

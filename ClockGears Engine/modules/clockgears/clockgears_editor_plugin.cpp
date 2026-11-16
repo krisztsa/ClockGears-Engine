@@ -1653,7 +1653,7 @@ Dictionary ClockGearsEditorPlugin::validate_playtest_conditions() {
 	print_line("[ClockGears Playtest] Verificando condiciones de arranque (F5 / Jugar):");
 	print_line(vformat("  1. Actor en Base de Datos : %s (Total: %d)", has_actor ? "OK" : "FALTA", actors.size()));
 	print_line(vformat("  2. Mapa inicial           : %s (Ruta: '%s')", has_map ? "OK" : "FALTA", target_map_path));
-	print_line(vformat("  3. Posición inicial (PJ)  : %s (Mapa: '%s', X: %d, Y: %d, Dir: %d)",
+	print_line(vformat(CG_TR("  3. Posición inicial (PJ)  : %s (Mapa: '%s', X: %d, Y: %d, Dir: %d)"),
 			has_start_pos ? "OK" : "FALTA", sys_start_map, start_x, start_y, start_dir));
 	print_line(vformat("  4. Tileset                : %s (%s)", has_tileset ? "OK" : "AVISO", tileset_info));
 	print_line("==========================================================");
@@ -1685,7 +1685,7 @@ Dictionary ClockGearsEditorPlugin::validate_playtest_conditions() {
 bool ClockGearsEditorPlugin::start_playtest() {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (!dm) {
-		ERR_PRINT("[ClockGears Playtest] Error crítico: ClockGearsDataManager no disponible.");
+		ERR_PRINT(CG_TR("[ClockGears Playtest] Error crítico: ClockGearsDataManager no disponible."));
 		return false;
 	}
 

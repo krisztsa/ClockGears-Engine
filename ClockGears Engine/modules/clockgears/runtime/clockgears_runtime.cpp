@@ -3643,9 +3643,9 @@ void ClockGearsEventInterpreter::start_screen_shake(float p_power, float p_speed
 
 	String target_name = "Ninguno";
 	if (current_map && current_map->get_runtime_camera()) {
-		target_name = "Cámara (Offset)";
+		target_name = CG_RT_TR("Cámara (Offset)");
 	} else if (current_map) {
-		target_name = "Mapa (Posición)";
+		target_name = CG_RT_TR("Mapa (Posición)");
 	}
 
 	print_line(vformat("[ClockGears Shake] Temblor iniciado: potencia=%.1f, vel=%.1f, dur=%.2fs aplicado a '%s'", shake_power, shake_speed, shake_duration, target_name));

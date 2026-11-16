@@ -11391,7 +11391,7 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 			min_hb->add_theme_constant_override("separation", 2);
 			vb->add_child(min_hb);
 
-			Label *lbl_min = memnew(Label("Mín:"));
+			Label *lbl_min = memnew(Label(CG_DB_TR("Mín:")));
 			lbl_min->add_theme_font_size_override("font_size", 8);
 			min_hb->add_child(lbl_min);
 
@@ -11410,7 +11410,7 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 			max_hb->add_theme_constant_override("separation", 2);
 			vb->add_child(max_hb);
 
-			Label *lbl_max = memnew(Label("Máx:"));
+			Label *lbl_max = memnew(Label(CG_DB_TR("Máx:")));
 			lbl_max->add_theme_font_size_override("font_size", 8);
 			max_hb->add_child(lbl_max);
 
@@ -12600,7 +12600,7 @@ void ClockGearsDatabaseDialog::_setup_arpg_equip_anim_ui() {
 	arpg_simple_file_dialog = memnew(FileDialog);
 	arpg_simple_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
 	arpg_simple_file_dialog->set_access(FileDialog::ACCESS_RESOURCES);
-	arpg_simple_file_dialog->add_filter("*.png", "Imágenes PNG");
+	arpg_simple_file_dialog->add_filter("*.png", CG_DB_TR("Imágenes PNG"));
 	arpg_simple_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_simple_file_selected));
 	add_child(arpg_simple_file_dialog);
 
@@ -18209,12 +18209,12 @@ static String s_cred_item_summary(int p_index, const Dictionary &p_item) {
 	String itype = String(p_item.get("type", "text"));
 	if (itype == "section") {
 		String txt = String(p_item.get("text", "")).strip_edges();
-		return vformat("%d. [Sección] %s", p_index + 1, txt.is_empty() ? CG_DB_TR("(sin título)") : txt);
+		return vformat(CG_DB_TR("%d. [Sección] %s"), p_index + 1, txt.is_empty() ? CG_DB_TR("(sin título)") : txt);
 	}
 	if (itype == "role_name") {
 		String r = String(p_item.get("role", "")).strip_edges();
 		String n = String(p_item.get("name", "")).strip_edges();
-		return vformat("%d. [Rol/Nombre] %s — %s", p_index + 1, r.is_empty() ? CG_DB_TR("(rol)") : r, n.is_empty() ? CG_DB_TR("(nombre)") : n);
+		return vformat(CG_DB_TR("%d. [Rol/Nombre] %s — %s"), p_index + 1, r.is_empty() ? CG_DB_TR("(rol)") : r, n.is_empty() ? CG_DB_TR("(nombre)") : n);
 	}
 	if (itype == "image") {
 		String p = String(p_item.get("image_path", "")).get_file();

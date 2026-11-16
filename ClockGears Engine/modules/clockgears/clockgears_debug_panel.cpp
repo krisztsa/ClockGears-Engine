@@ -635,7 +635,7 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	lbl_player_hp->add_theme_color_override("font_color", Color(1.0f, 0.45f, 0.48f));
 	hud_vb->add_child(lbl_player_hp);
 
-	lbl_camera = memnew(Label("Cámara: Zoom 2.0x"));
+	lbl_camera = memnew(Label(CG_DBG_TR("Cámara: Zoom 2.0x")));
 	lbl_camera->add_theme_color_override("font_color", Color(1.0f, 0.85f, 0.40f));
 	hud_vb->add_child(lbl_camera);
 
@@ -678,7 +678,7 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	title_lbl->add_theme_color_override("font_color", Color(1.0f, 0.85f, 0.35f));
 	title_hb->add_child(title_lbl);
 
-	Button *btn_close = memnew(Button("✕"));
+	Button *btn_close = memnew(Button(CG_DBG_TR("✕")));
 	btn_close->set_custom_minimum_size(Size2(24, 24));
 	btn_close->connect("pressed", callable_mp(this, &ClockGearsDebugOverlay::toggle_debug_panel));
 	title_hb->add_child(btn_close);
@@ -1409,7 +1409,7 @@ void ClockGearsDebugOverlay::_update_hud() {
 			Size2 vsz = get_viewport_size();
 			if (vsz.x <= 0 || vsz.y <= 0) vsz = Size2(960, 540);
 			Rect2 vis_rect(cpos - (vsz / z) * 0.5f, vsz / z);
-			lbl_camera->set_text(vformat("Cámara: Zoom %.1fx | Rect: (%.0f, %.0f, %.0f, %.0f)", z, vis_rect.position.x, vis_rect.position.y, vis_rect.size.x, vis_rect.size.y));
+			lbl_camera->set_text(vformat(CG_DBG_TR("Cámara: Zoom %.1fx | Rect: (%.0f, %.0f, %.0f, %.0f)"), z, vis_rect.position.x, vis_rect.position.y, vis_rect.size.x, vis_rect.size.y));
 		}
 	}
 }
