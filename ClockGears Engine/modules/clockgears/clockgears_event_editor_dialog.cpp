@@ -20,6 +20,7 @@
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
+#include "servers/display/display_server.h"
 
 static void s_parse_hud_visibility_cmd(const Dictionary &p_cmd, String &r_scope, String &r_target, bool &r_vis) {
 	r_target = String(p_cmd.get("widget_name", p_cmd.get("widget_id", p_cmd.get("widget", p_cmd.get("target", ""))))).strip_edges();
@@ -54,6 +55,9 @@ static Ref<StyleBoxFlat> _event_card_style() {
 void ClockGearsEventEditorDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("edit_event", "event"), &ClockGearsEventEditorDialog::edit_event);
 	ClassDB::bind_method(D_METHOD("edit_database_event", "category_key", "record_id", "record_name", "pages", "on_saved"), &ClockGearsEventEditorDialog::edit_database_event, DEFVAL(Callable()));
+	ClassDB::bind_method(D_METHOD("adjust_and_popup"), &ClockGearsEventEditorDialog::adjust_and_popup);
+	ClassDB::bind_method(D_METHOD("get_cancel_button"), &ClockGearsEventEditorDialog::get_cancel_button);
+	ClassDB::bind_method(D_METHOD("get_apply_button"), &ClockGearsEventEditorDialog::get_apply_button);
 	ClassDB::bind_method(D_METHOD("is_sprite_selector_visible"), &ClockGearsEventEditorDialog::is_sprite_selector_visible);
 	ClassDB::bind_method(D_METHOD("get_working_pages"), &ClockGearsEventEditorDialog::get_working_pages);
 	ClassDB::bind_method(D_METHOD("trigger_command_id", "cmd_id"), &ClockGearsEventEditorDialog::trigger_command_id);
@@ -4417,9 +4421,18 @@ void ClockGearsEventEditorDialog::_on_actor_picker_confirmed() {
 
 ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	set_title(CG_TR("Editor de Eventos - ClockGears Engine"));
-	set_min_size(Size2(860, 560) * EDSCALE);
+	set_min_size(Size2(740, 420) * EDSCALE);
 	set_ok_button_text(CG_TR("Aceptar"));
-	add_cancel_button(CG_TR("Cancelar"));
+	btn_cancel = add_cancel_button(CG_TR("Cancelar"));
+	if (btn_cancel) {
+		btn_cancel->set_custom_minimum_size(Size2(90, 28) * EDSCALE);
+	}
+
+	btn_apply = add_button(CG_TR("Aplicar"), false, "apply");
+	if (btn_apply) {
+		btn_apply->set_custom_minimum_size(Size2(90, 28) * EDSCALE);
+	}
+	connect("custom_action", callable_mp(this, &ClockGearsEventEditorDialog::_on_custom_action));
 
 	if (get_ok_button()) {
 		get_ok_button()->set_custom_minimum_size(Size2(90, 28) * EDSCALE);
@@ -4503,13 +4516,20 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	main_vb->add_child(memnew(HSeparator));
 
 	// -------------------------------------------------------------
-	// Three-Column Body (HBoxContainer de 3 columnas)
+	// Three-Column Body (HBoxContainer de 3 columnas con scroll vertical interno)
 	// -------------------------------------------------------------
+	columns_scroll = memnew(ScrollContainer);
+	columns_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	columns_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	columns_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	columns_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	main_vb->add_child(columns_scroll);
+
 	HBoxContainer *columns_hb = memnew(HBoxContainer);
 	columns_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	columns_hb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	columns_hb->add_theme_constant_override("separation", 6);
-	main_vb->add_child(columns_hb);
+	columns_scroll->add_child(columns_hb);
 
 	// =============================================================
 	// COLUMN 1: Condiciones de Aparición, Disparador y Opciones
@@ -4836,6 +4856,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	command_tree->set_columns(1);
 	command_tree->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	command_tree->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	command_tree->set_custom_minimum_size(Size2(280, 200) * EDSCALE);
 	command_tree->connect("item_activated", callable_mp(this, &ClockGearsEventEditorDialog::_on_edit_command_pressed));
 	col3->add_child(command_tree);
 
@@ -5085,7 +5106,7 @@ void ClockGearsEventEditorDialog::edit_event(ClockGearsEvent *p_event) {
 	_update_mode_and_behavior_visibility();
 
 	if (is_inside_tree()) {
-		popup_centered();
+		_adjust_and_popup();
 	}
 }
 
@@ -5112,7 +5133,7 @@ void ClockGearsEventEditorDialog::edit_database_event(const String &p_category_k
 	_update_mode_and_behavior_visibility();
 
 	if (is_inside_tree()) {
-		popup_centered();
+		_adjust_and_popup();
 	}
 }
 
@@ -5440,13 +5461,12 @@ void ClockGearsEventEditorDialog::_on_clear_commands_pressed() {
 	_refresh_command_list();
 }
 
-void ClockGearsEventEditorDialog::_on_dialog_confirmed() {
+void ClockGearsEventEditorDialog::_apply_event_changes() {
 	_save_current_page_from_ui();
 	if (db_edit_mode) {
 		if (db_edit_on_saved.is_valid()) {
 			db_edit_on_saved.call(working_pages.duplicate(true));
 		}
-		db_edit_mode = false;
 		return;
 	}
 	if (!target_event) {
@@ -5542,6 +5562,66 @@ void ClockGearsEventEditorDialog::_on_dialog_confirmed() {
 	if (CanvasItemEditor::get_singleton()) {
 		CanvasItemEditor::get_singleton()->update_viewport();
 	}
+}
+
+void ClockGearsEventEditorDialog::_on_dialog_confirmed() {
+	_apply_event_changes();
+	if (db_edit_mode) {
+		db_edit_mode = false;
+	}
+}
+
+void ClockGearsEventEditorDialog::_on_custom_action(const String &p_action) {
+	if (p_action == "apply") {
+		_apply_event_changes();
+	}
+}
+
+void ClockGearsEventEditorDialog::_adjust_and_popup() {
+	Rect2i usable_rect(0, 0, 1920, 1080);
+	if (DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		usable_rect = DisplayServer::get_singleton()->screen_get_usable_rect(scr);
+		if (usable_rect.size.x <= 0 || usable_rect.size.y <= 0) {
+			usable_rect = Rect2i(Point2i(), DisplayServer::get_singleton()->screen_get_size(scr));
+		}
+	} else if (Window *parent_win = get_parent_visible_window()) {
+		usable_rect = Rect2i(Point2i(), parent_win->get_size());
+	}
+
+	Size2i usable_sz = usable_rect.size;
+	if (usable_sz.x <= 0) {
+		usable_sz.x = 1920;
+	}
+	if (usable_sz.y <= 0) {
+		usable_sz.y = 1080;
+	}
+
+	// Reducir min_size si la pantalla util es baja para que encaje en el area util sin salirse
+	Size2i min_sz = Size2i(int(740 * EDSCALE), int(380 * EDSCALE));
+	if (min_sz.x > usable_sz.x - 16) {
+		min_sz.x = MAX(360, usable_sz.x - 16);
+	}
+	if (min_sz.y > usable_sz.y - 32) {
+		min_sz.y = MAX(260, usable_sz.y - 32);
+	}
+	set_min_size(min_sz);
+
+	// Tamano deseado: 920x620 ajustado por escala
+	Size2i target_sz = Size2i(int(920 * EDSCALE), int(620 * EDSCALE));
+	// Descontar margen de aire (24px horizontal, 48px vertical para bordes y barra de tareas)
+	Size2i max_allowed = usable_sz - Size2i(24, 48);
+	target_sz = target_sz.min(max_allowed).max(min_sz);
+
+	popup_centered(target_sz);
+
+	// Asegurar que la ventana quede dentro del rectangulo util de la pantalla
+	Point2i cur_pos = get_position();
+	int max_x = MAX(usable_rect.position.x + 8, usable_rect.position.x + usable_rect.size.x - target_sz.x - 8);
+	int max_y = MAX(usable_rect.position.y + 8, usable_rect.position.y + usable_rect.size.y - target_sz.y - 8);
+	cur_pos.x = CLAMP(cur_pos.x, usable_rect.position.x + 8, max_x);
+	cur_pos.y = CLAMP(cur_pos.y, usable_rect.position.y + 8, max_y);
+	set_position(cur_pos);
 }
 
 void ClockGearsEventEditorDialog::_on_dialog_canceled() {

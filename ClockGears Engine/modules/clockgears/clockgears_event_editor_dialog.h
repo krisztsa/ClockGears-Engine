@@ -72,6 +72,9 @@ private:
 	CheckBox *dir_fix_check = nullptr;
 
 	// 3. Column 2: Graphic (SpriteSheet/Atlas Frame) & Autonomous Movement
+	ScrollContainer *columns_scroll = nullptr;
+	Button *btn_cancel = nullptr;
+	Button *btn_apply = nullptr;
 	VBoxContainer *ev_col1 = nullptr;
 	PanelContainer *gfx_card = nullptr;
 	PanelContainer *move_card = nullptr;
@@ -536,6 +539,9 @@ private:
 	void _on_chv_scope_changed(int p_idx);
 	void _on_chv_widget_picked(int p_idx);
 	void _on_confirm_change_hud_visibility();
+	void _on_custom_action(const String &p_action);
+	void _apply_event_changes();
+	void _adjust_and_popup();
 
 protected:
 	static void _bind_methods();
@@ -543,6 +549,10 @@ protected:
 public:
 	void edit_event(ClockGearsEvent *p_event);
 	void edit_database_event(const String &p_category_key, int p_record_id, const String &p_record_name, const Array &p_pages, const Callable &p_on_saved = Callable());
+	void adjust_and_popup() { _adjust_and_popup(); }
+	ScrollContainer *get_columns_scroll() const { return columns_scroll; }
+	Button *get_cancel_button() const { return btn_cancel; }
+	Button *get_apply_button() const { return btn_apply; }
 	bool is_sprite_selector_visible() const;
 	Array get_working_pages() const { return working_pages.duplicate(true); }
 	void trigger_command_id(int p_cmd_id) { _on_command_id_selected(p_cmd_id); }

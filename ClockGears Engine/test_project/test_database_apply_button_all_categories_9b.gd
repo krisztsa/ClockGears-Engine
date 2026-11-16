@@ -106,6 +106,8 @@ func _find_button_by_text(node: Node, text: String) -> Button:
 	if node is Button and node.text == text:
 		return node
 	for c in node.get_children(true):
+		if c is Window and c != node:
+			continue
 		var b = _find_button_by_text(c, text)
 		if b:
 			return b
