@@ -339,6 +339,7 @@ void ClockGearsGameMenu::_build_ui() {
 
 	item_desc_box = memnew(PanelContainer);
 	item_desc_box->set_name("ItemDescBox");
+	item_desc_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	item_desc_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	item_desc_box->set_custom_minimum_size(Size2(300, 180));
 	item_side_panel->add_child(item_desc_box);
@@ -350,21 +351,26 @@ void ClockGearsGameMenu::_build_ui() {
 	item_detail_name = _cg_make_title_label("-", 16);
 	item_desc_content->add_child(item_detail_name);
 	item_detail_meta = memnew(Label);
+	item_detail_meta->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	item_detail_meta->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	item_desc_content->add_child(item_detail_meta);
 
 	item_desc_scroll = memnew(ScrollContainer);
 	item_desc_scroll->set_name("ItemDescScroll");
+	item_desc_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	item_desc_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	item_desc_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	item_desc_content->add_child(item_desc_scroll);
 
 	item_detail_desc = memnew(Label);
-	item_detail_desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	item_detail_desc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	item_detail_desc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	item_detail_desc->set_custom_minimum_size(Size2(200, 0));
+	item_detail_desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	item_desc_scroll->add_child(item_detail_desc);
 
 	item_feedback_label = memnew(Label);
+	item_feedback_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	item_feedback_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	item_feedback_label->add_theme_color_override("font_color", Color(0.65f, 0.92f, 0.65f, 1.0f));
 	item_desc_content->add_child(item_feedback_label);
@@ -489,6 +495,7 @@ void ClockGearsGameMenu::_build_ui() {
 
 	equip_desc_box = memnew(PanelContainer);
 	equip_desc_box->set_name("EquipDescBox");
+	equip_desc_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_desc_box->set_custom_minimum_size(Size2(260, 70));
 	equip_desc_content = memnew(VBoxContainer);
 	equip_desc_content->add_theme_constant_override("separation", 2);
@@ -497,14 +504,19 @@ void ClockGearsGameMenu::_build_ui() {
 	equip_detail_name = _cg_make_title_label("-", 14);
 	equip_desc_content->add_child(equip_detail_name);
 	equip_detail_meta = memnew(Label);
+	equip_detail_meta->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_detail_meta->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	equip_desc_content->add_child(equip_detail_meta);
 	equip_desc_scroll = memnew(ScrollContainer);
 	equip_desc_scroll->set_name("EquipDescScroll");
+	equip_desc_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_desc_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_desc_scroll->set_custom_minimum_size(Size2(0, 40));
 	equip_desc_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	equip_desc_content->add_child(equip_desc_scroll);
 	equip_detail_desc = memnew(Label);
+	equip_detail_desc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_detail_desc->set_custom_minimum_size(Size2(200, 0));
 	equip_detail_desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	equip_desc_scroll->add_child(equip_detail_desc);
 	col_prev->add_child(equip_desc_box);
@@ -519,6 +531,7 @@ void ClockGearsGameMenu::_build_ui() {
 	equip_preview_box->add_theme_constant_override("separation", 4);
 	prev_scroll->add_child(equip_preview_box);
 	equip_feedback_label = memnew(Label);
+	equip_feedback_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_feedback_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	col_prev->add_child(equip_feedback_label);
 
@@ -587,6 +600,7 @@ void ClockGearsGameMenu::_build_ui() {
 	status_basic_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	st_top_row->add_child(status_basic_label);
 	status_states_label = memnew(Label);
+	status_states_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_states_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	st_left->add_child(status_states_label);
 
@@ -606,9 +620,11 @@ void ClockGearsGameMenu::_build_ui() {
 	st_right->add_theme_constant_override("separation", 8);
 	st_cols->add_child(st_right);
 	status_params_label = memnew(Label);
+	status_params_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_params_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	st_right->add_child(status_params_label);
 	status_elements_label = memnew(Label);
+	status_elements_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_elements_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	st_right->add_child(status_elements_label);
 
