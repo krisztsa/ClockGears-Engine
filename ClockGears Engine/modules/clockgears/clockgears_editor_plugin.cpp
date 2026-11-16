@@ -18,6 +18,7 @@
 #include "editor/editor_node.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/clockgears_map_cell_selector.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/margin_container.h"
@@ -527,6 +528,9 @@ void ClockGearsEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("show_event_context_menu", "x", "y", "screen_pos"), &ClockGearsEditorPlugin::show_event_context_menu);
 	ClassDB::bind_method(D_METHOD("get_event_context_menu"), &ClockGearsEditorPlugin::get_event_context_menu);
 	ClassDB::bind_method(D_METHOD("get_generate_entity_dialog"), &ClockGearsEditorPlugin::get_generate_entity_dialog);
+	ClassDB::bind_method(D_METHOD("open_quick_door_dialog", "cell"), &ClockGearsEditorPlugin::open_quick_door_dialog);
+	ClassDB::bind_method(D_METHOD("create_quick_door_event", "cell", "map", "x", "y", "dir", "sprite_path", "hframes"), &ClockGearsEditorPlugin::create_quick_door_event, DEFVAL("Abajo"), DEFVAL(""), DEFVAL(1));
+	ClassDB::bind_method(D_METHOD("get_quick_door_dialog"), &ClockGearsEditorPlugin::get_quick_door_dialog);
 }
 
 void ClockGearsExportPlugin::_export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) {
@@ -1097,63 +1101,11 @@ void ClockGearsEditorPlugin::_on_quick_event_id_pressed(int p_id) {
 		} break;
 
 		case QUICK_EV_DOOR: {
-			ev->set_name(vformat("EV_Puerta_%03d_%03d", context_menu_cell.x, context_menu_cell.y));
-			ev->set_event_name("EV_Puerta");
-			Dictionary p1;
-			p1["sw1_en"] = false;
-			p1["sw2_en"] = false;
-			p1["self_sw_en"] = false;
-			p1["self_sw_letter"] = "A";
-			p1["var_en"] = false;
-			p1["item_en"] = false;
-			p1["actor_en"] = false;
-			p1["trigger"] = TRIGGER_PLAYER_TOUCH;
-			p1["priority"] = 1;
-			p1["through"] = false;
-			p1["dir_fix"] = true;
-			p1["graphic_path"] = "";
-			p1["hframes"] = 1;
-			p1["vframes"] = 1;
-			p1["frame"] = 0;
-			p1["move_type"] = MOVE_FIXED;
-			p1["speed"] = 3;
-			p1["freq"] = 3;
-
-			Array cmds;
-			Dictionary c_se;
-			c_se["type"] = "se";
-			c_se["file"] = "res://audio/se/door.ogg";
-			c_se["volume"] = 90;
-			c_se["pitch"] = 100;
-			cmds.push_back(c_se);
-
-			Dictionary c_wait;
-			c_wait["type"] = "wait";
-			c_wait["frames"] = 15;
-			cmds.push_back(c_wait);
-
-			Dictionary c_fade_out;
-			c_fade_out["type"] = "fade";
-			c_fade_out["mode"] = "Oscurecer";
-			c_fade_out["duration"] = 20;
-			cmds.push_back(c_fade_out);
-
-			Dictionary c_tele;
-			c_tele["type"] = "teleport";
-			c_tele["map"] = "maps/map002.tscn";
-			c_tele["x"] = 10;
-			c_tele["y"] = 10;
-			c_tele["dir"] = "Abajo";
-			cmds.push_back(c_tele);
-
-			Dictionary c_fade_in;
-			c_fade_in["type"] = "fade";
-			c_fade_in["mode"] = "Aclarar";
-			c_fade_in["duration"] = 20;
-			cmds.push_back(c_fade_in);
-
-			p1["commands"] = cmds;
-			pages.push_back(p1);
+			if (ev) {
+				memdelete(ev);
+			}
+			open_quick_door_dialog(context_menu_cell);
+			return;
 		} break;
 
 		case QUICK_EV_TRANSFER: {
@@ -1355,6 +1307,117 @@ void ClockGearsEditorPlugin::_on_quick_event_id_pressed(int p_id) {
 	if (CanvasItemEditor::get_singleton()) {
 		CanvasItemEditor::get_singleton()->update_viewport();
 	}
+}
+
+void ClockGearsEditorPlugin::open_quick_door_dialog(const Point2i &p_cell) {
+	quick_door_cell = p_cell;
+	_populate_quick_door_sprites();
+	if (quick_door_map_selector) {
+		quick_door_map_selector->populate_maps();
+	}
+	if (dlg_quick_door) {
+		dlg_quick_door->popup_centered(Size2(680, 520) * EDSCALE);
+	}
+}
+
+void ClockGearsEditorPlugin::_populate_quick_door_sprites() {
+	if (!quick_door_sprite_opt) return;
+	quick_door_sprite_opt->clear();
+	quick_door_sprite_opt->add_item(CG_TR("(Sin gráfico / Invisible)"), 0);
+	quick_door_sprite_opt->set_item_metadata(0, "");
+
+	Vector<String> files;
+	if (DirAccess::exists("res://img/characters")) {
+		Ref<DirAccess> da = DirAccess::open("res://img/characters");
+		if (da.is_valid()) {
+			da->list_dir_begin();
+			String f = da->get_next();
+			while (!f.is_empty()) {
+				if (!da->current_is_dir() && (f.ends_with(".png") || f.ends_with(".webp"))) {
+					files.push_back(String("res://img/characters").path_join(f));
+				}
+				f = da->get_next();
+			}
+			da->list_dir_end();
+		}
+	}
+	files.sort();
+
+	int sel_idx = 0;
+	int item_count = 1;
+	for (int i = 0; i < files.size(); i++) {
+		String fpath = files[i];
+		String fname = fpath.get_file();
+		quick_door_sprite_opt->add_item(fname, item_count);
+		quick_door_sprite_opt->set_item_metadata(item_count, fpath);
+		if (fname.to_lower().contains("door") || fname.to_lower().contains("puerta")) {
+			if (sel_idx == 0) {
+				sel_idx = item_count;
+			}
+		}
+		item_count++;
+	}
+
+	if (files.is_empty()) {
+		quick_door_sprite_opt->select(0);
+		if (quick_door_preview) quick_door_preview->set_texture(Ref<Texture2D>());
+	} else {
+		quick_door_sprite_opt->select(sel_idx);
+		_on_quick_door_sprite_selected(sel_idx);
+	}
+}
+
+void ClockGearsEditorPlugin::_on_quick_door_sprite_selected(int p_idx) {
+	if (!quick_door_sprite_opt || p_idx < 0 || p_idx >= quick_door_sprite_opt->get_item_count()) return;
+	String fpath = quick_door_sprite_opt->get_item_metadata(p_idx);
+	if (quick_door_preview) {
+		if (!fpath.is_empty() && ResourceLoader::exists(fpath)) {
+			Ref<Texture2D> tex = ResourceLoader::load(fpath);
+			quick_door_preview->set_texture(tex);
+		} else {
+			quick_door_preview->set_texture(Ref<Texture2D>());
+		}
+	}
+}
+
+void ClockGearsEditorPlugin::_on_quick_door_confirmed() {
+	String target_map = quick_door_map_selector ? quick_door_map_selector->get_target_map() : "";
+	Vector2i target_coords = quick_door_map_selector ? quick_door_map_selector->get_target_coords() : Vector2i(0, 0);
+	String target_dir = quick_door_map_selector ? quick_door_map_selector->get_target_direction() : "Abajo";
+	String sprite_path;
+	if (quick_door_sprite_opt && quick_door_sprite_opt->get_selected() > 0) {
+		sprite_path = quick_door_sprite_opt->get_item_metadata(quick_door_sprite_opt->get_selected());
+	}
+	int hframes = quick_door_hframes_spin ? int(quick_door_hframes_spin->get_value()) : 1;
+
+	create_quick_door_event(quick_door_cell, target_map, target_coords.x, target_coords.y, target_dir, sprite_path, hframes);
+}
+
+ClockGearsEvent *ClockGearsEditorPlugin::create_quick_door_event(const Point2i &p_cell, const String &p_map, int p_x, int p_y, const String &p_dir, const String &p_sprite_path, int p_hframes) {
+	Node *scene = ensure_active_map();
+	ERR_FAIL_COND_V(!scene, nullptr);
+
+	ClockGearsEvent *ev = ClockGearsMapCellSelector::create_quick_door_event(scene, p_cell, p_map, p_x, p_y, p_dir, p_sprite_path, p_hframes);
+	if (!ev) return nullptr;
+
+	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
+	if (ur) {
+		int history_id = ur->get_history_id_for_object(scene);
+		ur->set_history_as_unsaved(history_id);
+	}
+
+	String scene_path = scene->get_scene_file_path();
+	if (!scene_path.is_empty()) {
+		EditorNode::get_singleton()->save_scene_if_open(scene_path);
+	} else {
+		EditorNode::get_singleton()->clockgears_save_scene();
+	}
+
+	if (CanvasItemEditor::get_singleton()) {
+		CanvasItemEditor::get_singleton()->update_viewport();
+	}
+
+	return ev;
 }
 
 void ClockGearsEditorPlugin::open_database() {
@@ -1972,6 +2035,57 @@ ClockGearsEditorPlugin::ClockGearsEditorPlugin() {
 	quick_events_menu->set_name("QuickEventsSubmenu");
 	quick_events_menu->connect("id_pressed", callable_mp(this, &ClockGearsEditorPlugin::_on_quick_event_id_pressed));
 	event_context_menu->add_child(quick_events_menu);
+
+	// Diálogo Creación Rápida: Puerta
+	dlg_quick_door = memnew(ConfirmationDialog);
+	dlg_quick_door->set_title(CG_TR("Creación Rápida: Puerta"));
+	dlg_quick_door->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_quick_door->set_cancel_button_text(CG_TR("Cancelar"));
+
+	VBoxContainer *qd_main_vb = memnew(VBoxContainer);
+	qd_main_vb->add_theme_constant_override("separation", 8);
+	dlg_quick_door->add_child(qd_main_vb);
+
+	PanelContainer *qd_sprite_card = memnew(PanelContainer);
+	qd_main_vb->add_child(qd_sprite_card);
+
+	HBoxContainer *qd_sprite_hb = memnew(HBoxContainer);
+	qd_sprite_hb->add_theme_constant_override("separation", 8);
+	qd_sprite_card->add_child(qd_sprite_hb);
+
+	quick_door_preview = memnew(TextureRect);
+	quick_door_preview->set_custom_minimum_size(Size2(64, 64) * EDSCALE);
+	quick_door_preview->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	quick_door_preview->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	quick_door_preview->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	qd_sprite_hb->add_child(quick_door_preview);
+
+	VBoxContainer *qd_sp_info = memnew(VBoxContainer);
+	qd_sp_info->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	qd_sprite_hb->add_child(qd_sp_info);
+
+	HBoxContainer *qd_opt_hb = memnew(HBoxContainer);
+	qd_opt_hb->add_child(memnew(Label(CG_TR("Sprite de Puerta (img/characters):"))));
+	quick_door_sprite_opt = memnew(OptionButton);
+	quick_door_sprite_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	quick_door_sprite_opt->connect("item_selected", callable_mp(this, &ClockGearsEditorPlugin::_on_quick_door_sprite_selected));
+	qd_opt_hb->add_child(quick_door_sprite_opt);
+	qd_sp_info->add_child(qd_opt_hb);
+
+	HBoxContainer *qd_frames_hb = memnew(HBoxContainer);
+	qd_frames_hb->add_child(memnew(Label(CG_TR("Frames horizontales (hframes):"))));
+	quick_door_hframes_spin = memnew(SpinBox);
+	quick_door_hframes_spin->set_min(1);
+	quick_door_hframes_spin->set_max(16);
+	quick_door_hframes_spin->set_value(4);
+	qd_frames_hb->add_child(quick_door_hframes_spin);
+	qd_sp_info->add_child(qd_frames_hb);
+
+	quick_door_map_selector = memnew(ClockGearsMapCellSelector);
+	qd_main_vb->add_child(quick_door_map_selector);
+
+	dlg_quick_door->connect("confirmed", callable_mp(this, &ClockGearsEditorPlugin::_on_quick_door_confirmed));
+	EditorNode::get_singleton()->get_gui_base()->add_child(dlg_quick_door);
 
 	// Instantiate Top Bar
 	top_bar = memnew(ClockGearsTopBar);

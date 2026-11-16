@@ -180,6 +180,7 @@ private:
 	SpinBox *wait_frames_spin = nullptr;
 
 	ConfirmationDialog *dlg_teleport = nullptr;
+	class ClockGearsMapCellSelector *tele_selector = nullptr;
 	OptionButton *tele_map_opt = nullptr;
 	LineEdit *tele_map_edit = nullptr;
 	SpinBox *tele_x_spin = nullptr;
@@ -553,6 +554,7 @@ public:
 	ScrollContainer *get_columns_scroll() const { return columns_scroll; }
 	Button *get_cancel_button() const { return btn_cancel; }
 	Button *get_apply_button() const { return btn_apply; }
+	class ClockGearsMapCellSelector *get_teleport_selector() const { return tele_selector; }
 	bool is_sprite_selector_visible() const;
 	Array get_working_pages() const { return working_pages.duplicate(true); }
 	void trigger_command_id(int p_cmd_id) { _on_command_id_selected(p_cmd_id); }

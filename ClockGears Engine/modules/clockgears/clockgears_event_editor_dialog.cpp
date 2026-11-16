@@ -8,6 +8,7 @@
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "editor/clockgears_project_manager.h"
+#include "editor/clockgears_map_cell_selector.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -58,6 +59,7 @@ void ClockGearsEventEditorDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("adjust_and_popup"), &ClockGearsEventEditorDialog::adjust_and_popup);
 	ClassDB::bind_method(D_METHOD("get_cancel_button"), &ClockGearsEventEditorDialog::get_cancel_button);
 	ClassDB::bind_method(D_METHOD("get_apply_button"), &ClockGearsEventEditorDialog::get_apply_button);
+	ClassDB::bind_method(D_METHOD("get_teleport_selector"), &ClockGearsEventEditorDialog::get_teleport_selector);
 	ClassDB::bind_method(D_METHOD("is_sprite_selector_visible"), &ClockGearsEventEditorDialog::is_sprite_selector_visible);
 	ClassDB::bind_method(D_METHOD("get_working_pages"), &ClockGearsEventEditorDialog::get_working_pages);
 	ClassDB::bind_method(D_METHOD("trigger_command_id", "cmd_id"), &ClockGearsEventEditorDialog::trigger_command_id);
@@ -601,23 +603,30 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 		if (wait_frames_spin) wait_frames_spin->set_value(int(d.get("frames", 60)));
 		dlg_wait->popup_centered(Size2(320, 140) * EDSCALE);
 	} else if (type == "teleport" && dlg_teleport) {
-		_populate_teleport_maps();
-		String tele_mpath = d.get("map", "");
-		if (tele_map_edit) tele_map_edit->set_text(tele_mpath);
-		if (tele_map_opt) {
-			for (int i = 0; i < tele_map_opt->get_item_count(); i++) {
-				if (tele_map_opt->get_item_metadata(i) == tele_mpath) {
-					tele_map_opt->select(i);
-					break;
+		if (tele_selector) {
+			tele_selector->populate_maps();
+			tele_selector->set_target_map(d.get("map", ""));
+			tele_selector->set_target_coords(int(d.get("x", 0)), int(d.get("y", 0)));
+			tele_selector->set_target_direction(d.get("dir", "Abajo"));
+		} else {
+			_populate_teleport_maps();
+			String tele_mpath = d.get("map", "");
+			if (tele_map_edit) tele_map_edit->set_text(tele_mpath);
+			if (tele_map_opt) {
+				for (int i = 0; i < tele_map_opt->get_item_count(); i++) {
+					if (tele_map_opt->get_item_metadata(i) == tele_mpath) {
+						tele_map_opt->select(i);
+						break;
+					}
 				}
 			}
+			if (tele_x_spin) tele_x_spin->set_value(int(d.get("x", 0)));
+			if (tele_y_spin) tele_y_spin->set_value(int(d.get("y", 0)));
+			String dir_str = d.get("dir", "Abajo");
+			int dir_idx = (dir_str == "Izquierda") ? 1 : ((dir_str == "Derecha") ? 2 : ((dir_str == "Arriba") ? 3 : ((dir_str == "Mantener") ? 4 : 0)));
+			if (tele_dir_opt) tele_dir_opt->select(dir_idx);
 		}
-		if (tele_x_spin) tele_x_spin->set_value(int(d.get("x", 0)));
-		if (tele_y_spin) tele_y_spin->set_value(int(d.get("y", 0)));
-		String dir_str = d.get("dir", "Abajo");
-		int dir_idx = (dir_str == "Izquierda") ? 1 : ((dir_str == "Derecha") ? 2 : ((dir_str == "Arriba") ? 3 : ((dir_str == "Mantener") ? 4 : 0)));
-		if (tele_dir_opt) tele_dir_opt->select(dir_idx);
-		dlg_teleport->popup_centered(Size2(420, 260) * EDSCALE);
+		dlg_teleport->popup_centered(Size2(640, 480) * EDSCALE);
 	} else if (type == "move_route" && dlg_move_route) {
 		if (mr_target_opt) mr_target_opt->select(d.get("target", "Este Evento") == "Este Evento" ? 0 : 1);
 		String act = d.get("action", "");
@@ -995,8 +1004,12 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 			if (dlg_wait) dlg_wait->popup_centered(Size2(320, 140) * EDSCALE);
 			break;
 		case CMD_TRANSFER_PLAYER:
-			_populate_teleport_maps();
-			if (dlg_teleport) dlg_teleport->popup_centered(Size2(420, 260) * EDSCALE);
+			if (tele_selector) {
+				tele_selector->populate_maps();
+			} else {
+				_populate_teleport_maps();
+			}
+			if (dlg_teleport) dlg_teleport->popup_centered(Size2(640, 480) * EDSCALE);
 			break;
 		case CMD_SET_MOVE_ROUTE:
 			if (dlg_move_route) dlg_move_route->popup_centered(Size2(380, 200) * EDSCALE);
@@ -1544,6 +1557,10 @@ void ClockGearsEventEditorDialog::_on_confirm_wait() {
 }
 
 void ClockGearsEventEditorDialog::_populate_teleport_maps() {
+	if (tele_selector) {
+		tele_selector->populate_maps();
+		return;
+	}
 	if (!tele_map_opt) {
 		return;
 	}
@@ -1588,15 +1605,22 @@ void ClockGearsEventEditorDialog::_on_confirm_teleport() {
 	if (!target_event) return;
 	Dictionary cmd;
 	cmd["type"] = "teleport";
-	String map_target = tele_map_edit ? tele_map_edit->get_text().strip_edges() : "";
-	if (map_target.is_empty() && tele_map_opt && tele_map_opt->get_selected() >= 0) {
-		map_target = tele_map_opt->get_item_metadata(tele_map_opt->get_selected());
+	if (tele_selector) {
+		cmd["map"] = tele_selector->get_target_map();
+		cmd["x"] = tele_selector->get_target_coords().x;
+		cmd["y"] = tele_selector->get_target_coords().y;
+		cmd["dir"] = tele_selector->get_target_direction();
+	} else {
+		String map_target = tele_map_edit ? tele_map_edit->get_text().strip_edges() : "";
+		if (map_target.is_empty() && tele_map_opt && tele_map_opt->get_selected() >= 0) {
+			map_target = tele_map_opt->get_item_metadata(tele_map_opt->get_selected());
+		}
+		cmd["map"] = map_target;
+		cmd["x"] = tele_x_spin ? int(tele_x_spin->get_value()) : 0;
+		cmd["y"] = tele_y_spin ? int(tele_y_spin->get_value()) : 0;
+		static const char *dirs[] = { "Abajo", "Izquierda", "Derecha", "Arriba", "Mantener" };
+		cmd["dir"] = dirs[CLAMP(tele_dir_opt ? tele_dir_opt->get_selected() : 0, 0, 4)];
 	}
-	cmd["map"] = map_target;
-	cmd["x"] = int(tele_x_spin->get_value());
-	cmd["y"] = int(tele_y_spin->get_value());
-	static const char *dirs[] = { "Abajo", "Izquierda", "Derecha", "Arriba", "Mantener" };
-	cmd["dir"] = dirs[CLAMP(tele_dir_opt->get_selected(), 0, 4)];
 	_append_command_to_active_page(cmd);
 }
 
@@ -2795,43 +2819,14 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_teleport->set_title(CG_TR("Transferir Jugador"));
 	dlg_teleport->set_ok_button_text(CG_TR("Aceptar"));
 	dlg_teleport->set_cancel_button_text(CG_TR("Cancelar"));
-	VBoxContainer *tv = memnew(VBoxContainer);
-	tv->add_theme_constant_override("separation", 6);
-	dlg_teleport->add_child(tv);
-	HBoxContainer *th0 = memnew(HBoxContainer);
-	th0->add_child(memnew(Label(CG_TR("Seleccionar Mapa:"))));
-	tele_map_opt = memnew(OptionButton);
-	tele_map_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	tele_map_opt->connect("item_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_tele_map_opt_selected));
-	th0->add_child(tele_map_opt);
-	tv->add_child(th0);
-	HBoxContainer *th1 = memnew(HBoxContainer);
-	th1->add_child(memnew(Label(CG_TR("Ruta Mapa Destino:"))));
-	tele_map_edit = memnew(LineEdit);
-	tele_map_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	tele_map_edit->set_placeholder("res://maps/map001.tscn");
-	th1->add_child(tele_map_edit);
-	tv->add_child(th1);
-	HBoxContainer *th2 = memnew(HBoxContainer);
-	th2->add_child(memnew(Label("X:")));
-	tele_x_spin = memnew(SpinBox);
-	tele_x_spin->set_max(999);
-	th2->add_child(tele_x_spin);
-	th2->add_child(memnew(Label("Y:")));
-	tele_y_spin = memnew(SpinBox);
-	tele_y_spin->set_max(999);
-	th2->add_child(tele_y_spin);
-	tv->add_child(th2);
-	HBoxContainer *th3 = memnew(HBoxContainer);
-	th3->add_child(memnew(Label(CG_TR("Dirección:"))));
-	tele_dir_opt = memnew(OptionButton);
-	tele_dir_opt->add_item(CG_TR("Abajo"), 0);
-	tele_dir_opt->add_item(CG_TR("Izquierda"), 1);
-	tele_dir_opt->add_item(CG_TR("Derecha"), 2);
-	tele_dir_opt->add_item(CG_TR("Arriba"), 3);
-	tele_dir_opt->add_item(CG_TR("Mantener"), 4);
-	th3->add_child(tele_dir_opt);
-	tv->add_child(th3);
+	tele_selector = memnew(ClockGearsMapCellSelector);
+	dlg_teleport->add_child(tele_selector);
+
+	tele_map_opt = tele_selector->get_map_option_button();
+	tele_dir_opt = tele_selector->get_dir_option_button();
+	tele_x_spin = tele_selector->get_x_spinbox();
+	tele_y_spin = tele_selector->get_y_spinbox();
+
 	dlg_teleport->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_teleport));
 	add_child(dlg_teleport);
 

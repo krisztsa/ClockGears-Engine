@@ -113,6 +113,17 @@ private:
 	ProcessID playtest_pid = 0;
 	bool workspace_built = false;
 
+	class ClockGearsMapCellSelector *quick_door_map_selector = nullptr;
+	ConfirmationDialog *dlg_quick_door = nullptr;
+	TextureRect *quick_door_preview = nullptr;
+	OptionButton *quick_door_sprite_opt = nullptr;
+	SpinBox *quick_door_hframes_spin = nullptr;
+	Point2i quick_door_cell;
+
+	void _on_quick_door_confirmed();
+	void _populate_quick_door_sprites();
+	void _on_quick_door_sprite_selected(int p_idx);
+
 	enum ContextMenuAction {
 		ACTION_EDIT_OR_CREATE = 0,
 		ACTION_COPY = 1,
@@ -168,6 +179,9 @@ public:
 	void open_export();
 	void open_preferences();
 	void open_camera_dialog();
+	void open_quick_door_dialog(const Point2i &p_cell);
+	ClockGearsEvent *create_quick_door_event(const Point2i &p_cell, const String &p_map, int p_x, int p_y, const String &p_dir = "Abajo", const String &p_sprite_path = "", int p_hframes = 1);
+	ConfirmationDialog *get_quick_door_dialog() const { return dlg_quick_door; }
 	Dictionary validate_playtest_conditions();
 	bool start_playtest();
 	void apply_clockgears_workspace();
