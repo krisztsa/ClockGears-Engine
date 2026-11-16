@@ -1,0 +1,12 @@
+{
+	"camera_clamp": true,
+	"camera_smooth": true,
+	"camera_zoom": 2,
+	"combat_mode": 0,
+	"currency": "G",
+	"game_title": "",
+	"party": [],
+	"start_map": "",
+	"start_x": 0,
+	"start_y": 0
+}

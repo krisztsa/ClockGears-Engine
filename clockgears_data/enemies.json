@@ -1,0 +1,520 @@
+[
+	{
+		"agi": 10,
+		"animations": {
+			"Lanzar fuego": {
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 48,
+				"frame_w": 48,
+				"frames": [
+					2
+				],
+				"frames_data": [
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 96,
+						"y": 0
+					}
+				],
+				"loop": false,
+				"name": "Lanzar fuego",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+			},
+			"attack": {
+				"cols": 4,
+				"fps": 10.0,
+				"frame_h": 48,
+				"frame_w": 48,
+				"frames": [
+					2,
+					3
+				],
+				"frames_data": [
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 96,
+						"y": 0
+					},
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 144,
+						"y": 0
+					}
+				],
+				"loop": false,
+				"name": "attack",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+			},
+			"buff": {
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 48,
+				"frame_w": 48,
+				"frames": [],
+				"frames_data": [],
+				"loop": false,
+				"name": "buff",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			},
+			"death": {
+				"cols": 4,
+				"fps": 5.0,
+				"frame_h": 48,
+				"frame_w": 48,
+				"frames": [
+					3
+				],
+				"frames_data": [
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 144,
+						"y": 0
+					}
+				],
+				"loop": false,
+				"name": "death",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+			},
+			"hurt": {
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 48,
+				"frame_w": 48,
+				"frames": [],
+				"frames_data": [],
+				"loop": false,
+				"name": "hurt",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			},
+			"idle": {
+				"cols": 4,
+				"fps": 8.0,
+				"frame_h": 48,
+				"frame_w": 48,
+				"frames": [
+					0,
+					1,
+					2,
+					3
+				],
+				"frames_data": [
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 0,
+						"y": 0
+					},
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 48,
+						"y": 0
+					},
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 96,
+						"y": 0
+					},
+					{
+						"duration": 0.0,
+						"duration_max": 0.5,
+						"duration_min": 0.100000001490116,
+						"h": 48,
+						"is_random_duration": false,
+						"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+						"w": 48,
+						"x": 144,
+						"y": 0
+					}
+				],
+				"loop": true,
+				"name": "idle",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+			}
+		},
+		"atk": 25,
+		"cast_animations": [
+			{
+				"element": "",
+				"element_id": 0,
+				"element_key": "",
+				"name": "Lanzar fuego"
+			}
+		],
+		"combat_animations": {
+			"attack": "attack",
+			"buff": "buff",
+			"damage": "hurt",
+			"death": "death",
+			"defend": "idle",
+			"idle": "idle"
+		},
+		"def": 12,
+		"desc": "",
+		"exp": 0,
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"gold": 0,
+		"graphic_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+		"hp": 180,
+		"id": 1,
+		"level": 3,
+		"luk": 0,
+		"mat": 0,
+		"mdf": 0,
+		"mp": 0,
+		"name": "Cañón musgoso",
+		"other_animations": [],
+		"secondary_type": 0,
+		"sprite_data": {
+			"animations": {
+				"Lanzar fuego": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 48,
+					"frame_w": 48,
+					"frames": [
+						2
+					],
+					"frames_data": [
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 96,
+							"y": 0
+						}
+					],
+					"loop": false,
+					"name": "Lanzar fuego",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+				},
+				"attack": {
+					"cols": 4,
+					"fps": 10.0,
+					"frame_h": 48,
+					"frame_w": 48,
+					"frames": [
+						2,
+						3
+					],
+					"frames_data": [
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 96,
+							"y": 0
+						},
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 144,
+							"y": 0
+						}
+					],
+					"loop": false,
+					"name": "attack",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+				},
+				"buff": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 48,
+					"frame_w": 48,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "buff",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"death": {
+					"cols": 4,
+					"fps": 5.0,
+					"frame_h": 48,
+					"frame_w": 48,
+					"frames": [
+						3
+					],
+					"frames_data": [
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 144,
+							"y": 0
+						}
+					],
+					"loop": false,
+					"name": "death",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+				},
+				"hurt": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 48,
+					"frame_w": 48,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "hurt",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"idle": {
+					"cols": 4,
+					"fps": 8.0,
+					"frame_h": 48,
+					"frame_w": 48,
+					"frames": [
+						0,
+						1,
+						2,
+						3
+					],
+					"frames_data": [
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 0,
+							"y": 0
+						},
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 48,
+							"y": 0
+						},
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 96,
+							"y": 0
+						},
+						{
+							"duration": 0.0,
+							"duration_max": 0.5,
+							"duration_min": 0.100000001490116,
+							"h": 48,
+							"is_random_duration": false,
+							"sheet": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png",
+							"w": 48,
+							"x": 144,
+							"y": 0
+						}
+					],
+					"loop": true,
+					"name": "idle",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": "C:/Users/Kris/AppData/Roaming/Clockgears/app_userdata/[unnamed project]/test_enemies_troops_logic/enemy_sheet_4frames.png"
+				}
+			},
+			"cols": 4,
+			"frame_h": 48,
+			"frame_w": 48,
+			"margin": 0,
+			"rows": 1,
+			"spacing": 0
+		},
+		"tertiary_type": 0,
+		"traits": [
+			{
+				"code": 11,
+				"data_id": 4,
+				"element_key": "electricidad",
+				"element_migrated": true,
+				"value": 150.0
+			},
+			{
+				"code": 11,
+				"data_id": 2,
+				"element_key": "fuego",
+				"element_migrated": true,
+				"value": 200.0
+			}
+		],
+		"trigger_table": {
+			"1": "attack",
+			"12": "idle",
+			"13": "idle",
+			"4": "hurt",
+			"6": "death"
+		},
+		"type": 0
+	},
+	{
+		"graphic_path": "",
+		"hp": 120,
+		"id": 2,
+		"level": 5,
+		"name": "Espectro sin PNG",
+		"other_animations": [],
+		"sprite_data": {
+			"animations": {
+				"attack": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "attack",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"buff": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "buff",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"death": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "death",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"hurt": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "hurt",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"idle": {
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": true,
+					"name": "idle",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				}
+			},
+			"cols": 4,
+			"frame_h": 32,
+			"frame_w": 32,
+			"rows": 1
+		}
+	}
+]

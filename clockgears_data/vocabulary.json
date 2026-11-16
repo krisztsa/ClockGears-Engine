@@ -1,0 +1,18 @@
+{
+	"attack": "Atacar",
+	"equip": "Equipar",
+	"escape": "Huir",
+	"exp": "EXP",
+	"fight": "Luchar",
+	"formation": "Formación",
+	"game_end": "Salir",
+	"guard": "Defender",
+	"hp": "PV",
+	"item": "Objeto",
+	"level": "Nivel",
+	"mp": "PM",
+	"save": "Guardar",
+	"skill": "Habilidad",
+	"status": "Estado",
+	"tp": "PT"
+}

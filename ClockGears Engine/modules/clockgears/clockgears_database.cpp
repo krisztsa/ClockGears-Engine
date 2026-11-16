@@ -17704,6 +17704,100 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	gm_bg_filter_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_field_changed));
 	bg_grid->add_child(gm_bg_filter_opt);
 
+	// 3) Vista previa de objeto
+	VBoxContainer *prev_obj_card = nullptr;
+	make_card(CG_DB_TR("Vista previa de objeto"), prev_obj_card);
+
+	Label *prev_obj_hint = memnew(Label(CG_DB_TR("Configura el panel lateral de vista previa al pasar el ratón o navegar con teclado en Objetos y Equipo.")));
+	prev_obj_hint->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	prev_obj_hint->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
+	prev_obj_card->add_child(prev_obj_hint);
+
+	GridContainer *prev_grid = memnew(GridContainer);
+	prev_grid->set_columns(2);
+	prev_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_grid->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	prev_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	prev_obj_card->add_child(prev_grid);
+
+	add_grid_label(prev_grid, CG_DB_TR("Activar vista previa:"));
+	gm_item_prev_enabled_chk = memnew(CheckBox);
+	gm_item_prev_enabled_chk->set_text(CG_DB_TR("Activada"));
+	gm_item_prev_enabled_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	prev_grid->add_child(gm_item_prev_enabled_chk);
+
+	add_grid_label(prev_grid, CG_DB_TR("Posición:"));
+	gm_item_prev_pos_opt = memnew(OptionButton);
+	gm_item_prev_pos_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_item_prev_pos_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_item_prev_pos_opt->add_item(CG_DB_TR("Derecha"), 0);
+	gm_item_prev_pos_opt->add_item(CG_DB_TR("Izquierda"), 1);
+	gm_item_prev_pos_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	prev_grid->add_child(gm_item_prev_pos_opt);
+
+	add_grid_label(prev_grid, CG_DB_TR("Mostrar elementos:"));
+	HBoxContainer *elem_hb = memnew(HBoxContainer);
+	elem_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	gm_item_prev_show_icon_chk = memnew(CheckBox);
+	gm_item_prev_show_icon_chk->set_text(CG_DB_TR("Icono"));
+	gm_item_prev_show_icon_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	elem_hb->add_child(gm_item_prev_show_icon_chk);
+
+	gm_item_prev_show_name_chk = memnew(CheckBox);
+	gm_item_prev_show_name_chk->set_text(CG_DB_TR("Nombre"));
+	gm_item_prev_show_name_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	elem_hb->add_child(gm_item_prev_show_name_chk);
+
+	gm_item_prev_show_desc_chk = memnew(CheckBox);
+	gm_item_prev_show_desc_chk->set_text(String::utf8("Descripción"));
+	gm_item_prev_show_desc_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	elem_hb->add_child(gm_item_prev_show_desc_chk);
+	prev_grid->add_child(elem_hb);
+
+	add_grid_label(prev_grid, CG_DB_TR("Tamaño icono:"));
+	gm_item_prev_scale_opt = memnew(OptionButton);
+	gm_item_prev_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_item_prev_scale_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_item_prev_scale_opt->add_item(CG_DB_TR("x2 (64x64)"), 2);
+	gm_item_prev_scale_opt->add_item(CG_DB_TR("x3 (96x96)"), 3);
+	gm_item_prev_scale_opt->add_item(CG_DB_TR("x4 (128x128)"), 4);
+	gm_item_prev_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	prev_grid->add_child(gm_item_prev_scale_opt);
+
+	add_grid_label(prev_grid, String::utf8("Rotación por arrastre:"));
+	HBoxContainer *rot_hb = memnew(HBoxContainer);
+	rot_hb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	gm_item_prev_rot_chk = memnew(CheckBox);
+	gm_item_prev_rot_chk->set_text(CG_DB_TR("Permitir"));
+	gm_item_prev_rot_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	rot_hb->add_child(gm_item_prev_rot_chk);
+
+	Label *step_lbl = memnew(Label(String::utf8("Paso (°):")));
+	rot_hb->add_child(step_lbl);
+
+	gm_item_prev_step_spin = memnew(SpinBox);
+	gm_item_prev_step_spin->set_min(5);
+	gm_item_prev_step_spin->set_max(45);
+	gm_item_prev_step_spin->set_step(1);
+	gm_item_prev_step_spin->set_value(15);
+	gm_item_prev_step_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	rot_hb->add_child(gm_item_prev_step_spin);
+	prev_grid->add_child(rot_hb);
+
+	add_grid_label(prev_grid, CG_DB_TR("Estilo icono:"));
+	gm_item_prev_style_opt = memnew(OptionButton);
+	gm_item_prev_style_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_item_prev_style_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_item_prev_style_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	prev_grid->add_child(gm_item_prev_style_opt);
+
+	add_grid_label(prev_grid, String::utf8("Estilo descripción:"));
+	gm_item_desc_style_opt = memnew(OptionButton);
+	gm_item_desc_style_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_item_desc_style_opt->set_custom_minimum_size(Size2(100 * EDSCALE, row_h));
+	gm_item_desc_style_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
+	prev_grid->add_child(gm_item_desc_style_opt);
+
 	// Columna derecha: Vista previa en vivo + Probar
 	PanelContainer *prev_card = memnew(PanelContainer);
 	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -17899,6 +17993,61 @@ void ClockGearsDatabaseDialog::_refresh_game_menu_editor_ui() {
 		gm_bg_filter_opt->select(String(bg.get("filter", "nearest")) == "linear" ? 1 : 0);
 	}
 
+	Dictionary prev_cfg = game_menu_config_draft.get("item_preview", Dictionary());
+	if (gm_item_prev_enabled_chk) {
+		gm_item_prev_enabled_chk->set_pressed(bool(prev_cfg.get("enabled", true)));
+	}
+	if (gm_item_prev_pos_opt) {
+		gm_item_prev_pos_opt->select(String(prev_cfg.get("position", "right")) == "left" ? 1 : 0);
+	}
+	if (gm_item_prev_show_icon_chk) {
+		gm_item_prev_show_icon_chk->set_pressed(bool(prev_cfg.get("show_icon", true)));
+	}
+	if (gm_item_prev_show_name_chk) {
+		gm_item_prev_show_name_chk->set_pressed(bool(prev_cfg.get("show_name", true)));
+	}
+	if (gm_item_prev_show_desc_chk) {
+		gm_item_prev_show_desc_chk->set_pressed(bool(prev_cfg.get("show_desc", true)));
+	}
+	if (gm_item_prev_scale_opt) {
+		int sc = CLAMP(int(prev_cfg.get("icon_scale", 2)), 2, 4);
+		int idx = 0;
+		if (sc == 3) idx = 1;
+		else if (sc == 4) idx = 2;
+		gm_item_prev_scale_opt->select(idx);
+	}
+	if (gm_item_prev_rot_chk) {
+		gm_item_prev_rot_chk->set_pressed(bool(prev_cfg.get("rotation_enabled", true)));
+	}
+	if (gm_item_prev_step_spin) {
+		gm_item_prev_step_spin->set_value(CLAMP(int(prev_cfg.get("rotation_step", 15)), 5, 45));
+	}
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Array styles = dm ? dm->get_window_styles() : Array();
+	auto populate_styles_opt = [&](OptionButton *opt, const String &cur_style) {
+		if (!opt) return;
+		opt->clear();
+		opt->add_item(CG_DB_TR("(Por defecto del tipo)"), 0);
+		int sel_idx = 0;
+		for (int s = 0; s < styles.size(); s++) {
+			if (styles[s].get_type() != Variant::DICTIONARY) continue;
+			Dictionary sd = styles[s];
+			String sname = String(sd.get("name", ""));
+			opt->add_item(sname, s + 1);
+			if (sname == cur_style) {
+				sel_idx = s + 1;
+			}
+		}
+		opt->select(sel_idx);
+	};
+	if (gm_item_prev_style_opt) {
+		populate_styles_opt(gm_item_prev_style_opt, String(prev_cfg.get("preview_window_style", "")));
+	}
+	if (gm_item_desc_style_opt) {
+		populate_styles_opt(gm_item_desc_style_opt, String(prev_cfg.get("desc_window_style", "")));
+	}
+
 	_update_game_menu_live_preview();
 	updating_ui = prev_upd;
 }
@@ -18028,6 +18177,50 @@ void ClockGearsDatabaseDialog::_on_gm_test_popup_close_requested() {
 	if (gm_test_window) {
 		gm_test_window->hide();
 	}
+}
+
+void ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed(int p_unused) {
+	if (updating_ui) {
+		return;
+	}
+	Dictionary prev_cfg = game_menu_config_draft.get("item_preview", Dictionary());
+	if (gm_item_prev_enabled_chk) {
+		prev_cfg["enabled"] = gm_item_prev_enabled_chk->is_pressed();
+	}
+	if (gm_item_prev_pos_opt) {
+		prev_cfg["position"] = (gm_item_prev_pos_opt->get_selected() == 1) ? "left" : "right";
+	}
+	if (gm_item_prev_show_icon_chk) {
+		prev_cfg["show_icon"] = gm_item_prev_show_icon_chk->is_pressed();
+	}
+	if (gm_item_prev_show_name_chk) {
+		prev_cfg["show_name"] = gm_item_prev_show_name_chk->is_pressed();
+	}
+	if (gm_item_prev_show_desc_chk) {
+		prev_cfg["show_desc"] = gm_item_prev_show_desc_chk->is_pressed();
+	}
+	if (gm_item_prev_scale_opt) {
+		int sel = gm_item_prev_scale_opt->get_selected();
+		int sc = (sel == 1) ? 3 : ((sel == 2) ? 4 : 2);
+		prev_cfg["icon_scale"] = sc;
+	}
+	if (gm_item_prev_rot_chk) {
+		prev_cfg["rotation_enabled"] = gm_item_prev_rot_chk->is_pressed();
+	}
+	if (gm_item_prev_step_spin) {
+		prev_cfg["rotation_step"] = int(gm_item_prev_step_spin->get_value());
+	}
+	if (gm_item_prev_style_opt) {
+		int idx = gm_item_prev_style_opt->get_selected();
+		prev_cfg["preview_window_style"] = (idx > 0) ? gm_item_prev_style_opt->get_item_text(idx) : String("");
+	}
+	if (gm_item_desc_style_opt) {
+		int idx = gm_item_desc_style_opt->get_selected();
+		prev_cfg["desc_window_style"] = (idx > 0) ? gm_item_desc_style_opt->get_item_text(idx) : String("");
+	}
+	game_menu_config_draft["item_preview"] = prev_cfg;
+	_update_game_menu_live_preview();
+	_mark_database_dirty();
 }
 
 Dictionary ClockGearsDatabaseDialog::get_game_menu_draft_copy() const {

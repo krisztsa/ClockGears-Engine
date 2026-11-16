@@ -7,6 +7,8 @@
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
 #include "scene/main/node.h"
+#include "scene/resources/image_texture.h"
+#include "scene/resources/texture.h"
 
 enum ClockGearsDatabaseCategory {
 	CAT_ACTORS = 0,
@@ -94,6 +96,7 @@ private:
 	Dictionary runtime_hud_widget_visibility;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
+	mutable HashMap<String, Ref<Texture2D>> entry_icon_cache;
 
 	Variant _normalize_json_numbers(const Variant &p_val) const;
 	bool _write_json_atomic(const String &p_file_path, const Variant &p_data) const;
@@ -130,6 +133,11 @@ public:
 	bool delete_record_by_id(int p_category, int p_id);
 
 	static int normalize_mannequin_size(int p_size);
+
+	static bool parse_tile_coords_variant(const Variant &p_var, Vector2i &r_coords);
+	static Vector2i parse_tile_block_variant(const Variant &p_var);
+	Ref<Texture2D> get_entry_icon_texture(const Variant &p_entry, int p_target_px = 32, const Ref<Texture2D> &p_fallback = Ref<Texture2D>()) const;
+	void clear_entry_icon_cache();
 
 	Dictionary get_system_config() const { return system_config.duplicate(true); }
 	void set_system_config(const Dictionary &p_cfg);

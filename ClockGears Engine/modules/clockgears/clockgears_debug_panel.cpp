@@ -1448,30 +1448,9 @@ void ClockGearsDebugOverlay::_on_drop_obtained(const String &p_item_name, int p_
 Ref<Texture2D> ClockGearsDebugOverlay::_resolve_item_icon(const String &p_item_name) const {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (dm) {
-		Array items = dm->get_category_array(CAT_ITEMS);
-		for (int i = 0; i < items.size(); i++) {
-			if (items[i].get_type() != Variant::DICTIONARY) {
-				continue;
-			}
-			Dictionary d = items[i];
-			if (String(d.get("name", "")) != p_item_name) {
-				continue;
-			}
-			String gpath = String(d.get("graphic_path", ""));
-			if (!gpath.is_empty() && ResourceLoader::exists(gpath)) {
-				Ref<Texture2D> tex = ResourceLoader::load(gpath);
-				if (tex.is_valid()) {
-					if (d.has("tile_coords")) {
-						Vector2i tc = d["tile_coords"];
-						Ref<AtlasTexture> at;
-						at.instantiate();
-						at->set_atlas(tex);
-						at->set_region(Rect2(tc.x * 32, tc.y * 32, 32, 32));
-						return at;
-					}
-					return tex;
-				}
-			}
+		Ref<Texture2D> ic = dm->get_entry_icon_texture(p_item_name, 32);
+		if (ic.is_valid()) {
+			return ic;
 		}
 	}
 	if (ClockGearsIcons::get_singleton()) {
@@ -1509,9 +1488,10 @@ void ClockGearsDebugOverlay::show_drop_toast(const String &p_item_name, int p_am
 
 	Ref<Texture2D> ic = _resolve_item_icon(p_item_name);
 	TextureRect *tr = memnew(TextureRect);
-	tr->set_custom_minimum_size(Size2(18, 18));
+	tr->set_custom_minimum_size(Size2(24, 24));
 	tr->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 	tr->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	tr->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	tr->set_texture(ic);
 	tr->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	hb->add_child(tr);

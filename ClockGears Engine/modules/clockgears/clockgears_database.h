@@ -741,6 +741,18 @@ private:
 	ClockGearsGameMenu *gm_test_menu = nullptr;
 	FileDialog *gm_asset_file_dialog = nullptr;
 
+	// Menús -> Menú del juego -> Sección Vista previa de objeto
+	CheckBox *gm_item_prev_enabled_chk = nullptr;
+	OptionButton *gm_item_prev_pos_opt = nullptr;
+	CheckBox *gm_item_prev_show_icon_chk = nullptr;
+	CheckBox *gm_item_prev_show_name_chk = nullptr;
+	CheckBox *gm_item_prev_show_desc_chk = nullptr;
+	OptionButton *gm_item_prev_scale_opt = nullptr;
+	CheckBox *gm_item_prev_rot_chk = nullptr;
+	SpinBox *gm_item_prev_step_spin = nullptr;
+	OptionButton *gm_item_prev_style_opt = nullptr;
+	OptionButton *gm_item_desc_style_opt = nullptr;
+
 	// Menús -> Créditos (9B Tanda 4 UI)
 	Dictionary credits_config_draft;
 	int cred_selected_item_idx = -1;
@@ -1309,6 +1321,7 @@ private:
 	void _on_gm_clear_bg_pressed();
 	void _on_gm_bg_file_selected(const String &p_path);
 	void _on_gm_test_popup_close_requested();
+	void _on_gm_item_prev_field_changed(int p_unused = 0);
 
 	// Menús -> Créditos helpers (9B Tanda 4 UI)
 	void _setup_credits_editor_ui();

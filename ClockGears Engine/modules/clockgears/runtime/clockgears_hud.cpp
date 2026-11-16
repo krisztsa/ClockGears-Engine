@@ -949,12 +949,19 @@ void ClockGearsHudOverlay::_update_widget_data(WidgetEntry &r_entry, const Strin
 			iname = "Objeto";
 		}
 		String custom_ic = String(r_entry.config.get("icon_path", "")).strip_edges();
-		String db_ic = bool(info.get("found", false)) ? String(rec.get("icon_path", rec.get("graphic_path", ""))).strip_edges() : String();
-		Ref<Texture2D> tex = ClockGearsWindowStyleManager::load_texture_safe(custom_ic.is_empty() ? db_ic : custom_ic);
+		Ref<Texture2D> tex;
+		if (!custom_ic.is_empty()) {
+			tex = ClockGearsWindowStyleManager::load_texture_safe(custom_ic);
+		} else if (bool(info.get("found", false))) {
+			tex = dm->get_entry_icon_texture(rec, 32);
+		} else {
+			tex = dm->get_entry_icon_texture(ikey, 32);
+		}
 		if (tex.is_null()) {
 			tex = fallback_item_tex;
 		}
 		if (r_entry.icon_rect) {
+			r_entry.icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 			r_entry.icon_rect->set_texture(tex);
 		}
 		bool show_name = bool(r_entry.config.get("show_name", false));

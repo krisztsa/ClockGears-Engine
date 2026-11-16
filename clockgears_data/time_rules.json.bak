@@ -1,0 +1,64 @@
+{
+	"advance_mode": 0,
+	"current_cycle_count": 1,
+	"cycle_mode_enabled": false,
+	"cycle_reset_common_event_id": 0,
+	"cycle_spawn_map": "",
+	"cycle_spawn_x": 0,
+	"cycle_spawn_y": 0,
+	"cycle_start_hour": 6,
+	"day_names": [],
+	"day_periods": [
+		{
+			"end_hour": 5,
+			"name": "madrugada",
+			"start_hour": 0
+		},
+		{
+			"end_hour": 7,
+			"name": "amanecer",
+			"start_hour": 5
+		},
+		{
+			"end_hour": 12,
+			"name": "mañana",
+			"start_hour": 7
+		},
+		{
+			"end_hour": 19,
+			"name": "tarde",
+			"start_hour": 12
+		},
+		{
+			"end_hour": 24,
+			"name": "noche",
+			"start_hour": 19
+		}
+	],
+	"days_per_cycle": 3,
+	"hours_per_day": 24,
+	"minutes_per_hour": 60,
+	"minutes_per_real_second": 1.0,
+	"pause_in_battle": true,
+	"pause_in_cutscene": true,
+	"pause_in_dialogue": true,
+	"pause_in_menu": true,
+	"paused": false,
+	"persistent_rules": {
+		"equipment": {},
+		"events_state": {},
+		"flags": {
+			"equipment_all": false,
+			"gold": false,
+			"inventory_all": false,
+			"party_level_exp": false,
+			"skills_all": false
+		},
+		"items": {},
+		"npc_progress": {},
+		"skills": {},
+		"switches": {},
+		"variables": {}
+	},
+	"total_game_minutes": 360
+}

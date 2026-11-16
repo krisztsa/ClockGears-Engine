@@ -1,0 +1,18 @@
+[
+	{
+		"id": 1,
+		"members": [
+			{
+				"enemy_id": 1,
+				"x": 220,
+				"y": 280
+			},
+			{
+				"enemy_id": 2,
+				"x": 420,
+				"y": 280
+			}
+		],
+		"name": "Patrulla Musgosa"
+	}
+]

@@ -78,6 +78,9 @@ void ClockGearsGameMenu::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_member_selectors_info"), &ClockGearsGameMenu::get_member_selectors_info);
 	ClassDB::bind_method(D_METHOD("get_layout_bounds_info", "viewport_size"), &ClockGearsGameMenu::get_layout_bounds_info, DEFVAL(Vector2()));
 	ClassDB::bind_method(D_METHOD("get_focused_nav_button"), &ClockGearsGameMenu::get_focused_nav_button);
+	ClassDB::bind_method(D_METHOD("get_preview_rotation_deg"), &ClockGearsGameMenu::get_preview_rotation_deg);
+	ClassDB::bind_method(D_METHOD("simulate_preview_drag_rotation", "drag_dx"), &ClockGearsGameMenu::simulate_preview_drag_rotation);
+	ClassDB::bind_method(D_METHOD("get_item_preview_panel_info"), &ClockGearsGameMenu::get_item_preview_panel_info);
 
 	ClassDB::bind_method(D_METHOD("select_item", "item_key"), &ClockGearsGameMenu::select_item);
 	ClassDB::bind_method(D_METHOD("use_selected_item", "target_actor_id"), &ClockGearsGameMenu::use_selected_item, DEFVAL(-1));
@@ -286,12 +289,13 @@ void ClockGearsGameMenu::_build_ui() {
 	btn_items_back->set_custom_minimum_size(Size2(110, 30));
 	items_hdr->add_child(btn_items_back);
 
-	HBoxContainer *items_split = memnew(HBoxContainer);
+	items_split = memnew(HBoxContainer);
+	items_split->set_name("ItemsSplit");
 	items_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	items_split->add_theme_constant_override("separation", 12);
 	items_vb->add_child(items_split);
 
-	ScrollContainer *items_scroll = memnew(ScrollContainer);
+	items_scroll = memnew(ScrollContainer);
 	items_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	items_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	items_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
@@ -302,34 +306,80 @@ void ClockGearsGameMenu::_build_ui() {
 	items_list_box->add_theme_constant_override("separation", 5);
 	items_scroll->add_child(items_list_box);
 
-	VBoxContainer *item_det = memnew(VBoxContainer);
-	item_det->set_custom_minimum_size(Size2(290, 0));
-	item_det->add_theme_constant_override("separation", 8);
-	items_split->add_child(item_det);
+	item_side_panel = memnew(VBoxContainer);
+	item_side_panel->set_name("ItemSidePanel");
+	item_side_panel->set_custom_minimum_size(Size2(300, 0));
+	item_side_panel->add_theme_constant_override("separation", 8);
+	items_split->add_child(item_side_panel);
+
+	item_preview_box = memnew(PanelContainer);
+	item_preview_box->set_name("ItemPreviewBox");
+	item_preview_box->set_custom_minimum_size(Size2(300, 140));
+	item_side_panel->add_child(item_preview_box);
+
+	CenterContainer *prev_cnt = memnew(CenterContainer);
+	prev_cnt->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	item_preview_box->add_child(prev_cnt);
+
+	item_preview_icon_holder = memnew(Control);
+	item_preview_icon_holder->set_name("ItemPreviewIconHolder");
+	item_preview_icon_holder->set_custom_minimum_size(Size2(64, 64));
+	item_preview_icon_holder->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	item_preview_icon_holder->connect("gui_input", callable_mp(this, &ClockGearsGameMenu::_on_preview_icon_gui_input));
+	prev_cnt->add_child(item_preview_icon_holder);
+
+	item_preview_icon_rect = memnew(TextureRect);
+	item_preview_icon_rect->set_name("ItemPreviewIconRect");
+	item_preview_icon_rect->set_custom_minimum_size(Size2(64, 64));
+	item_preview_icon_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	item_preview_icon_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	item_preview_icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	item_preview_icon_rect->set_pivot_offset(Vector2(32, 32));
+	item_preview_icon_holder->add_child(item_preview_icon_rect);
+
+	item_desc_box = memnew(PanelContainer);
+	item_desc_box->set_name("ItemDescBox");
+	item_desc_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	item_desc_box->set_custom_minimum_size(Size2(300, 180));
+	item_side_panel->add_child(item_desc_box);
+
+	item_desc_content = memnew(VBoxContainer);
+	item_desc_content->add_theme_constant_override("separation", 6);
+	item_desc_box->add_child(item_desc_content);
 
 	item_detail_name = _cg_make_title_label("-", 16);
-	item_det->add_child(item_detail_name);
+	item_desc_content->add_child(item_detail_name);
 	item_detail_meta = memnew(Label);
 	item_detail_meta->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	item_det->add_child(item_detail_meta);
+	item_desc_content->add_child(item_detail_meta);
+
+	item_desc_scroll = memnew(ScrollContainer);
+	item_desc_scroll->set_name("ItemDescScroll");
+	item_desc_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	item_desc_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	item_desc_content->add_child(item_desc_scroll);
+
 	item_detail_desc = memnew(Label);
 	item_detail_desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	item_detail_desc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	item_det->add_child(item_detail_desc);
+	item_desc_scroll->add_child(item_detail_desc);
+
 	item_feedback_label = memnew(Label);
 	item_feedback_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	item_feedback_label->add_theme_color_override("font_color", Color(0.65f, 0.92f, 0.65f, 1.0f));
-	item_det->add_child(item_feedback_label);
+	item_desc_content->add_child(item_feedback_label);
 
-	HBoxContainer *item_btns = memnew(HBoxContainer);
-	item_btns->add_theme_constant_override("separation", 8);
-	item_det->add_child(item_btns);
-	btn_item_use = _cg_make_menu_button("Usar", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_use_item_pressed));
+	item_action_btns = memnew(HBoxContainer);
+	item_action_btns->add_theme_constant_override("separation", 8);
+	item_desc_content->add_child(item_action_btns);
+
+	btn_item_use = _cg_make_menu_button(String::utf8("Usar"), "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_use_item_pressed));
 	btn_item_use->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	item_btns->add_child(btn_item_use);
-	btn_item_discard = _cg_make_menu_button("Tirar", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_discard_item_pressed));
+	item_action_btns->add_child(btn_item_use);
+
+	btn_item_discard = _cg_make_menu_button(String::utf8("Tirar"), "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_discard_item_pressed));
 	btn_item_discard->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	item_btns->add_child(btn_item_discard);
+	item_action_btns->add_child(btn_item_discard);
 
 	// --- 3. Subpantalla Equipo ---
 	equip_panel = memnew(PanelContainer);
@@ -407,11 +457,58 @@ void ClockGearsGameMenu::_build_ui() {
 	btn_equip_apply = _cg_make_menu_button("Equipar", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_equip_apply_pressed));
 	col_cand->add_child(btn_equip_apply);
 
-	// Columna Vista previa parámetros antes/después
+	// Columna Vista previa objeto + parámetros antes/después
 	VBoxContainer *col_prev = memnew(VBoxContainer);
-	col_prev->set_custom_minimum_size(Size2(240, 0));
+	col_prev->set_custom_minimum_size(Size2(260, 0));
 	col_prev->add_theme_constant_override("separation", 6);
 	equip_cols->add_child(col_prev);
+
+	equip_item_preview_box = memnew(PanelContainer);
+	equip_item_preview_box->set_name("EquipItemPreviewBox");
+	equip_item_preview_box->set_custom_minimum_size(Size2(260, 100));
+	CenterContainer *eq_prev_cnt = memnew(CenterContainer);
+	eq_prev_cnt->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	equip_item_preview_box->add_child(eq_prev_cnt);
+
+	equip_preview_icon_holder = memnew(Control);
+	equip_preview_icon_holder->set_name("EquipPreviewIconHolder");
+	equip_preview_icon_holder->set_custom_minimum_size(Size2(64, 64));
+	equip_preview_icon_holder->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	equip_preview_icon_holder->connect("gui_input", callable_mp(this, &ClockGearsGameMenu::_on_preview_icon_gui_input));
+	eq_prev_cnt->add_child(equip_preview_icon_holder);
+
+	equip_preview_icon_rect = memnew(TextureRect);
+	equip_preview_icon_rect->set_name("EquipPreviewIconRect");
+	equip_preview_icon_rect->set_custom_minimum_size(Size2(64, 64));
+	equip_preview_icon_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	equip_preview_icon_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	equip_preview_icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	equip_preview_icon_rect->set_pivot_offset(Vector2(32, 32));
+	equip_preview_icon_holder->add_child(equip_preview_icon_rect);
+	col_prev->add_child(equip_item_preview_box);
+
+	equip_desc_box = memnew(PanelContainer);
+	equip_desc_box->set_name("EquipDescBox");
+	equip_desc_box->set_custom_minimum_size(Size2(260, 70));
+	equip_desc_content = memnew(VBoxContainer);
+	equip_desc_content->add_theme_constant_override("separation", 2);
+	equip_desc_box->add_child(equip_desc_content);
+
+	equip_detail_name = _cg_make_title_label("-", 14);
+	equip_desc_content->add_child(equip_detail_name);
+	equip_detail_meta = memnew(Label);
+	equip_detail_meta->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	equip_desc_content->add_child(equip_detail_meta);
+	equip_desc_scroll = memnew(ScrollContainer);
+	equip_desc_scroll->set_name("EquipDescScroll");
+	equip_desc_scroll->set_custom_minimum_size(Size2(0, 40));
+	equip_desc_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	equip_desc_content->add_child(equip_desc_scroll);
+	equip_detail_desc = memnew(Label);
+	equip_detail_desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	equip_desc_scroll->add_child(equip_detail_desc);
+	col_prev->add_child(equip_desc_box);
+
 	col_prev->add_child(_cg_make_title_label(String::utf8("Parámetros"), 14));
 	ScrollContainer *prev_scroll = memnew(ScrollContainer);
 	prev_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -492,6 +589,17 @@ void ClockGearsGameMenu::_build_ui() {
 	status_states_label = memnew(Label);
 	status_states_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	st_left->add_child(status_states_label);
+
+	Label *eq_title = _cg_make_title_label(String::utf8("Equipo equipado:"), 14);
+	st_left->add_child(eq_title);
+	ScrollContainer *st_eq_scroll = memnew(ScrollContainer);
+	st_eq_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	st_eq_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	st_left->add_child(st_eq_scroll);
+	status_equips_box = memnew(VBoxContainer);
+	status_equips_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	status_equips_box->add_theme_constant_override("separation", 4);
+	st_eq_scroll->add_child(status_equips_box);
 
 	VBoxContainer *st_right = memnew(VBoxContainer);
 	st_right->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -588,6 +696,29 @@ void ClockGearsGameMenu::_apply_unified_styles() {
 	ClockGearsWindowStyleManager::apply_window_style(confirm_title_panel, "game_menu");
 	ClockGearsWindowStyleManager::apply_window_style(save_panel, "save_list");
 	ClockGearsWindowStyleManager::apply_window_style(options_panel, "options");
+
+	Dictionary gm_cfg = _get_effective_game_menu_config();
+	Dictionary prev_cfg = gm_cfg.get("item_preview", Dictionary());
+	String prev_st = String(prev_cfg.get("preview_window_style", "")).strip_edges();
+	if (prev_st.is_empty()) {
+		prev_st = "object_preview";
+	}
+	String desc_st = String(prev_cfg.get("desc_window_style", "")).strip_edges();
+	if (desc_st.is_empty()) {
+		desc_st = "object_desc";
+	}
+	if (item_preview_box) {
+		ClockGearsWindowStyleManager::apply_window_style(item_preview_box, prev_st);
+	}
+	if (item_desc_box) {
+		ClockGearsWindowStyleManager::apply_window_style(item_desc_box, desc_st);
+	}
+	if (equip_item_preview_box) {
+		ClockGearsWindowStyleManager::apply_window_style(equip_item_preview_box, prev_st);
+	}
+	if (equip_desc_box) {
+		ClockGearsWindowStyleManager::apply_window_style(equip_desc_box, desc_st);
+	}
 	ClockGearsWindowStyleManager::apply_button_style(btn_close_menu, "game_menu");
 	ClockGearsWindowStyleManager::apply_button_style(btn_items_prev_actor, "game_menu");
 	ClockGearsWindowStyleManager::apply_button_style(btn_items_next_actor, "game_menu");
@@ -786,6 +917,9 @@ void ClockGearsGameMenu::close_menu() {
 	if (!menu_open) {
 		return;
 	}
+	preview_rotation_deg = 0.0f;
+	_apply_preview_rotation(0.0f);
+	preview_is_dragging = false;
 	menu_open = false;
 	direct_subscreen_close_on_back = false;
 	current_subscreen = "main";
@@ -994,6 +1128,9 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 		target = "main";
 	}
 	current_subscreen = target.is_empty() ? String("main") : target;
+	preview_rotation_deg = 0.0f;
+	_apply_preview_rotation(0.0f);
+	preview_is_dragging = false;
 
 	if (main_view) {
 		main_view->set_visible(current_subscreen == "main");
@@ -1370,6 +1507,45 @@ void ClockGearsGameMenu::_refresh_items_view() {
 	_populate_actor_selector(items_target_option, items_member_selector, dummy_actor);
 	selected_status_actor_id = dummy_actor;
 
+	Dictionary gm_cfg = _get_effective_game_menu_config();
+	Dictionary prev_cfg = gm_cfg.get("item_preview", Dictionary());
+	bool prev_enabled = bool(prev_cfg.get("enabled", true));
+	String prev_pos = String(prev_cfg.get("position", "right"));
+	bool show_icon = bool(prev_cfg.get("show_icon", true));
+	bool show_name = bool(prev_cfg.get("show_name", true));
+	bool show_desc = bool(prev_cfg.get("show_desc", true));
+	int icon_scale = CLAMP(int(prev_cfg.get("icon_scale", 2)), 1, 4);
+
+	if (item_side_panel) {
+		item_side_panel->set_visible(prev_enabled);
+		if (items_split && items_split->get_child_count() >= 2) {
+			if (prev_pos == "left") {
+				items_split->move_child(item_side_panel, 0);
+			} else {
+				items_split->move_child(item_side_panel, 1);
+			}
+		}
+	}
+	if (item_preview_box) {
+		item_preview_box->set_visible(show_icon);
+	}
+	if (item_detail_name) {
+		item_detail_name->set_visible(show_name);
+	}
+	if (item_desc_scroll) {
+		item_desc_scroll->set_visible(show_desc);
+	}
+	int preview_px = icon_scale * 32;
+	if (item_preview_icon_holder) {
+		item_preview_icon_holder->set_custom_minimum_size(Size2(preview_px, preview_px));
+	}
+	if (item_preview_icon_rect) {
+		item_preview_icon_rect->set_custom_minimum_size(Size2(preview_px, preview_px));
+		item_preview_icon_rect->set_pivot_offset(Vector2(preview_px * 0.5f, preview_px * 0.5f));
+		item_preview_icon_rect->set_rotation_degrees(preview_rotation_deg);
+		item_preview_icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	}
+
 	_cg_clear_box_children(items_list_box);
 	Array entries = dm->get_inventory_entries();
 	bool found_sel = false;
@@ -1386,55 +1562,173 @@ void ClockGearsGameMenu::_refresh_items_view() {
 
 		HBoxContainer *hb = memnew(HBoxContainer);
 		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		hb->add_theme_constant_override("separation", 6);
+		hb->add_theme_constant_override("separation", 8);
 		items_list_box->add_child(hb);
 
 		TextureRect *ic = memnew(TextureRect);
-		ic->set_custom_minimum_size(Size2(24, 24));
+		ic->set_custom_minimum_size(Size2(32, 32));
 		ic->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 		ic->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
-		String ipath = String(row.get("icon_path", ""));
-		if (!ipath.is_empty()) {
-			ic->set_texture(ClockGearsTitleScreen::load_runtime_texture(ipath));
-		}
+		ic->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		Ref<Texture2D> tex = dm->get_entry_icon_texture(row, 32);
+		ic->set_texture(tex);
 		hb->add_child(ic);
 
-		String label = vformat("%s  x%d", row.get("name", key), int(row.get("qty", 0)));
+		String item_name = String(row.get("name", key));
 		if (bool(row.get("is_key_item", false))) {
-			label += " [Clave]";
+			item_name += " [Clave]";
 		}
-		Button *b = _cg_make_menu_button(label, "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_item_row_pressed).bind(key));
+		Button *b = _cg_make_menu_button(item_name, "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_item_row_pressed).bind(key));
 		b->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		b->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		b->connect("mouse_entered", callable_mp(this, &ClockGearsGameMenu::_on_item_row_hovered).bind(key));
+		b->connect("focus_entered", callable_mp(this, &ClockGearsGameMenu::_on_item_row_hovered).bind(key));
 		hb->add_child(b);
+
+		Label *qty_lbl = memnew(Label);
+		qty_lbl->set_custom_minimum_size(Size2(50, 0));
+		qty_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+		qty_lbl->set_text(vformat("x%d", int(row.get("qty", 0))));
+		hb->add_child(qty_lbl);
 	}
 	if (!found_sel) {
 		selected_item_key = (entries.size() > 0) ? String(Dictionary(entries[0]).get("key", "")) : String();
 	}
 
+	_update_item_preview_panel(selected_item_key, false);
+}
+
+void ClockGearsGameMenu::_update_item_preview_panel(const String &p_key, bool p_is_equip_subscreen) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+
 	Dictionary cur_row;
-	for (int i = 0; i < entries.size(); i++) {
-		if (String(Dictionary(entries[i]).get("key", "")) == selected_item_key) {
-			cur_row = entries[i];
-			break;
+	if (!p_key.is_empty()) {
+		Array entries = dm->get_inventory_entries();
+		for (int i = 0; i < entries.size(); i++) {
+			if (String(Dictionary(entries[i]).get("key", "")) == p_key) {
+				cur_row = entries[i];
+				break;
+			}
+		}
+		if (cur_row.is_empty()) {
+			static const int cats[8] = { CAT_ITEMS, CAT_WEAPONS, CAT_ARMORS, CAT_ACCESSORIES, CAT_ARPG_WEAPONS, CAT_ARPG_ARMORS, CAT_ARPG_SHIELDS, CAT_ARPG_ACCESSORIES };
+			for (int c = 0; c < 8; c++) {
+				Array arr = dm->get_category_array(cats[c]);
+				for (int i = 0; i < arr.size(); i++) {
+					if (arr[i].get_type() != Variant::DICTIONARY) continue;
+					Dictionary d = arr[i];
+					String dname = String(d.get("name", ""));
+					String dkey = vformat("%d:%d", cats[c], int(d.get("id", 0)));
+					if (dkey == p_key || dname == p_key) {
+						cur_row = d;
+						cur_row["category"] = cats[c];
+						break;
+					}
+				}
+				if (!cur_row.is_empty()) break;
+			}
 		}
 	}
-	if (cur_row.is_empty()) {
-		item_detail_name->set_text("Sin objetos");
-		item_detail_meta->set_text("");
-		item_detail_desc->set_text("No hay objetos en el inventario.");
-		btn_item_use->set_disabled(true);
-		btn_item_discard->set_disabled(true);
-	} else {
-		bool is_key = bool(cur_row.get("is_key_item", false));
-		bool usable = bool(cur_row.get("usable_in_menu", false));
-		int qty = int(cur_row.get("qty", 0));
-		int max_st = int(cur_row.get("max_stack", 99));
-		item_detail_name->set_text(String(cur_row.get("name", selected_item_key)));
-		item_detail_meta->set_text(vformat("Cantidad: %d / %d%s", qty, max_st, is_key ? "  |  Objeto clave (no se puede tirar)" : ""));
-		item_detail_desc->set_text(String(cur_row.get("desc", "")));
-		btn_item_use->set_disabled(!usable || qty <= 0);
-		btn_item_discard->set_disabled(is_key || qty <= 0);
+
+	Dictionary gm_cfg = _get_effective_game_menu_config();
+	Dictionary prev_cfg = gm_cfg.get("item_preview", Dictionary());
+	int icon_scale = CLAMP(int(prev_cfg.get("icon_scale", 2)), 1, 4);
+	int preview_px = icon_scale * 32;
+
+	Ref<Texture2D> tex;
+	if (!cur_row.is_empty()) {
+		tex = dm->get_entry_icon_texture(cur_row, 32);
 	}
+
+	if (!p_is_equip_subscreen) {
+		if (cur_row.is_empty()) {
+			if (item_detail_name) item_detail_name->set_text(String::utf8("Sin objetos"));
+			if (item_detail_meta) item_detail_meta->set_text("");
+			if (item_detail_desc) item_detail_desc->set_text(String::utf8("No hay ningún objeto seleccionado."));
+			if (btn_item_use) btn_item_use->set_disabled(true);
+			if (btn_item_discard) btn_item_discard->set_disabled(true);
+			if (item_preview_icon_rect) item_preview_icon_rect->set_texture(Ref<Texture2D>());
+		} else {
+			bool is_key = bool(cur_row.get("is_key_item", false));
+			bool usable = bool(cur_row.get("usable_in_menu", false));
+			int qty = int(cur_row.get("qty", 0));
+			int max_st = int(cur_row.get("max_stack", 99));
+			if (item_detail_name) item_detail_name->set_text(String(cur_row.get("name", p_key)));
+			if (item_detail_meta) item_detail_meta->set_text(vformat(String::utf8("Cantidad: %d / %d%s"), qty, max_st, is_key ? String::utf8("  |  Objeto clave") : ""));
+			if (item_detail_desc) item_detail_desc->set_text(String(cur_row.get("desc", "")));
+			if (btn_item_use) btn_item_use->set_disabled(!usable || qty <= 0);
+			if (btn_item_discard) btn_item_discard->set_disabled(is_key || qty <= 0);
+			if (item_preview_icon_rect) {
+				item_preview_icon_rect->set_custom_minimum_size(Size2(preview_px, preview_px));
+				item_preview_icon_rect->set_pivot_offset(Vector2(preview_px * 0.5f, preview_px * 0.5f));
+				item_preview_icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+				item_preview_icon_rect->set_texture(tex);
+			}
+		}
+	} else {
+		if (cur_row.is_empty()) {
+			if (equip_detail_name) equip_detail_name->set_text(String::utf8("--- Vacío ---"));
+			if (equip_detail_meta) equip_detail_meta->set_text("");
+			if (equip_detail_desc) equip_detail_desc->set_text(String::utf8("Sin pieza seleccionada."));
+			if (equip_preview_icon_rect) equip_preview_icon_rect->set_texture(Ref<Texture2D>());
+		} else {
+			if (equip_detail_name) equip_detail_name->set_text(String(cur_row.get("name", p_key)));
+			String meta_str;
+			if (cur_row.has("qty")) {
+				meta_str = vformat("Cantidad: %d", int(cur_row.get("qty", 1)));
+			}
+			if (equip_detail_meta) equip_detail_meta->set_text(meta_str);
+			if (equip_detail_desc) equip_detail_desc->set_text(String(cur_row.get("desc", "")));
+			if (equip_preview_icon_rect) {
+				equip_preview_icon_rect->set_custom_minimum_size(Size2(preview_px, preview_px));
+				equip_preview_icon_rect->set_pivot_offset(Vector2(preview_px * 0.5f, preview_px * 0.5f));
+				equip_preview_icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+				equip_preview_icon_rect->set_texture(tex);
+			}
+		}
+	}
+}
+
+void ClockGearsGameMenu::_on_item_row_hovered(const String &p_key) {
+	if (selected_item_key != p_key) {
+		preview_rotation_deg = 0.0f;
+		_apply_preview_rotation(0.0f);
+	}
+	selected_item_key = p_key;
+	_update_item_preview_panel(p_key, false);
+}
+
+void ClockGearsGameMenu::_on_equip_slot_hovered(int p_slot_idx) {
+	selected_equip_slot_idx = p_slot_idx;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+	Array slots = dm->get_actor_equip_slots(selected_equip_actor_id);
+	if (p_slot_idx >= 0 && p_slot_idx < slots.size()) {
+		Dictionary sd = slots[p_slot_idx];
+		int pid = int(sd.get("piece_id", 0));
+		int cat = dm->get_category_from_key(String(sd.get("category", "")));
+		if (pid > 0 && cat >= 0) {
+			Dictionary piece = dm->get_record_by_id(cat, pid);
+			preview_rotation_deg = 0.0f;
+			_apply_preview_rotation(0.0f);
+			_update_item_preview_panel(String(piece.get("name", "")), true);
+		} else {
+			_update_item_preview_panel("", true);
+		}
+	}
+}
+
+void ClockGearsGameMenu::_on_equip_candidate_hovered(const String &p_key) {
+	if (selected_equip_candidate_key != p_key) {
+		preview_rotation_deg = 0.0f;
+		_apply_preview_rotation(0.0f);
+	}
+	selected_equip_candidate_key = p_key;
+	_update_item_preview_panel(p_key, true);
+	_refresh_equip_preview_labels();
 }
 
 void ClockGearsGameMenu::_refresh_equip_view() {
@@ -1446,6 +1740,37 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 	bool arpg = dm->is_arpg_mode_active();
 	if (equip_mode_label) {
 		equip_mode_label->set_text(arpg ? "Modo ARPG (5 huecos)" : "Modo Por Turnos");
+	}
+
+	Dictionary gm_cfg = _get_effective_game_menu_config();
+	Dictionary prev_cfg = gm_cfg.get("item_preview", Dictionary());
+	bool prev_enabled = bool(prev_cfg.get("enabled", true));
+	bool show_icon = bool(prev_cfg.get("show_icon", true));
+	bool show_name = bool(prev_cfg.get("show_name", true));
+	bool show_desc = bool(prev_cfg.get("show_desc", true));
+	int icon_scale = CLAMP(int(prev_cfg.get("icon_scale", 2)), 1, 4);
+
+	if (equip_item_preview_box) {
+		equip_item_preview_box->set_visible(prev_enabled && show_icon);
+	}
+	if (equip_desc_box) {
+		equip_desc_box->set_visible(prev_enabled && (show_name || show_desc));
+	}
+	if (equip_detail_name) {
+		equip_detail_name->set_visible(show_name);
+	}
+	if (equip_desc_scroll) {
+		equip_desc_scroll->set_visible(show_desc);
+	}
+	int preview_px = icon_scale * 32;
+	if (equip_preview_icon_holder) {
+		equip_preview_icon_holder->set_custom_minimum_size(Size2(preview_px, preview_px));
+	}
+	if (equip_preview_icon_rect) {
+		equip_preview_icon_rect->set_custom_minimum_size(Size2(preview_px, preview_px));
+		equip_preview_icon_rect->set_pivot_offset(Vector2(preview_px * 0.5f, preview_px * 0.5f));
+		equip_preview_icon_rect->set_rotation_degrees(preview_rotation_deg);
+		equip_preview_icon_rect->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	}
 
 	_cg_clear_box_children(equip_slots_box);
@@ -1462,9 +1787,11 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 		int pid = int(sd.get("piece_id", 0));
 		int cat = dm->get_category_from_key(String(sd.get("category", "")));
 		String pname = String::utf8("--- Vacío ---");
+		Ref<Texture2D> slot_ic;
 		if (pid > 0 && cat >= 0) {
 			Dictionary piece = dm->get_record_by_id(cat, pid);
 			pname = piece.is_empty() ? vformat("#%d", pid) : String(piece.get("name", vformat("#%d", pid)));
+			slot_ic = dm->get_entry_icon_texture(piece, 32);
 		}
 		bool locked = dm->is_actor_equip_slot_locked(selected_equip_actor_id, i);
 		bool sealed = dm->is_actor_equip_slot_sealed(selected_equip_actor_id, i);
@@ -1473,6 +1800,13 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 		Button *sb = _cg_make_menu_button(vformat("%s%s: %s%s", prefix, sname, pname, suffix), "game_menu",
 				callable_mp(this, &ClockGearsGameMenu::_on_equip_slot_pressed).bind(i));
 		sb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		sb->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		if (slot_ic.is_valid()) {
+			sb->set_button_icon(slot_ic);
+			sb->set_icon_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		}
+		sb->connect("mouse_entered", callable_mp(this, &ClockGearsGameMenu::_on_equip_slot_hovered).bind(i));
+		sb->connect("focus_entered", callable_mp(this, &ClockGearsGameMenu::_on_equip_slot_hovered).bind(i));
 		equip_slots_box->add_child(sb);
 	}
 
@@ -1502,6 +1836,14 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 		Button *cb = _cg_make_menu_button(vformat("%s%s (x%d)", prefix, crow.get("name", ckey), int(crow.get("qty", 0))),
 				"game_menu", callable_mp(this, &ClockGearsGameMenu::_on_equip_candidate_pressed).bind(ckey));
 		cb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		cb->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		Ref<Texture2D> cand_ic = dm->get_entry_icon_texture(crow, 32);
+		if (cand_ic.is_valid()) {
+			cb->set_button_icon(cand_ic);
+			cb->set_icon_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		}
+		cb->connect("mouse_entered", callable_mp(this, &ClockGearsGameMenu::_on_equip_candidate_hovered).bind(ckey));
+		cb->connect("focus_entered", callable_mp(this, &ClockGearsGameMenu::_on_equip_candidate_hovered).bind(ckey));
 		equip_candidates_box->add_child(cb);
 	}
 	if (!found_cand) {
@@ -1511,6 +1853,18 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 		btn_equip_apply->set_disabled(selected_equip_candidate_key.is_empty() || cur_locked || cur_sealed);
 	}
 	_refresh_equip_preview_labels();
+
+	String target_preview_key = selected_equip_candidate_key;
+	if (target_preview_key.is_empty() && selected_equip_slot_idx >= 0 && selected_equip_slot_idx < slots.size()) {
+		Dictionary sd = slots[selected_equip_slot_idx];
+		int pid = int(sd.get("piece_id", 0));
+		int cat = dm->get_category_from_key(String(sd.get("category", "")));
+		if (pid > 0 && cat >= 0) {
+			Dictionary piece = dm->get_record_by_id(cat, pid);
+			target_preview_key = String(piece.get("name", ""));
+		}
+	}
+	_update_item_preview_panel(target_preview_key, true);
 }
 
 Dictionary ClockGearsGameMenu::get_current_equip_preview() const {
@@ -1630,6 +1984,116 @@ void ClockGearsGameMenu::_refresh_status_view() {
 	if (status_elements_label) {
 		status_elements_label->set_text(el_str.strip_edges());
 	}
+
+	if (status_equips_box) {
+		_cg_clear_box_children(status_equips_box);
+		Array slots = dm->get_actor_equip_slots(selected_status_actor_id);
+		for (int i = 0; i < slots.size(); i++) {
+			Dictionary sd = slots[i];
+			String sname = String(sd.get("name", vformat("Hueco %d", i + 1)));
+			int pid = int(sd.get("piece_id", 0));
+			int cat = dm->get_category_from_key(String(sd.get("category", "")));
+			String pname = String::utf8("--- Vacío ---");
+			Dictionary piece;
+			if (pid > 0 && cat >= 0) {
+				piece = dm->get_record_by_id(cat, pid);
+				pname = piece.is_empty() ? vformat("#%d", pid) : String(piece.get("name", vformat("#%d", pid)));
+			}
+			HBoxContainer *row_hb = memnew(HBoxContainer);
+			row_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			row_hb->add_theme_constant_override("separation", 6);
+			status_equips_box->add_child(row_hb);
+
+			TextureRect *ic = memnew(TextureRect);
+			ic->set_custom_minimum_size(Size2(32, 32));
+			ic->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+			ic->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+			ic->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			Ref<Texture2D> tex = pid > 0 ? dm->get_entry_icon_texture(piece, 32) : Ref<Texture2D>();
+			ic->set_texture(tex);
+			row_hb->add_child(ic);
+
+			Label *lbl = memnew(Label);
+			lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			lbl->set_text(vformat("%s: %s", sname, pname));
+			row_hb->add_child(lbl);
+		}
+	}
+}
+
+void ClockGearsGameMenu::_apply_preview_rotation(float p_deg) {
+	preview_rotation_deg = p_deg;
+	if (item_preview_icon_rect) {
+		item_preview_icon_rect->set_rotation_degrees(preview_rotation_deg);
+	}
+	if (equip_preview_icon_rect) {
+		equip_preview_icon_rect->set_rotation_degrees(preview_rotation_deg);
+	}
+}
+
+void ClockGearsGameMenu::_on_preview_icon_gui_input(const Ref<InputEvent> &p_event) {
+	Dictionary gm_cfg = _get_effective_game_menu_config();
+	Dictionary prev_cfg = gm_cfg.get("item_preview", Dictionary());
+	if (!bool(prev_cfg.get("rotation_enabled", true))) {
+		return;
+	}
+	int rot_step = CLAMP(int(prev_cfg.get("rotation_step", 15)), 5, 45);
+
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
+		if (mb->is_pressed()) {
+			preview_is_dragging = true;
+			preview_drag_start_pos = mb->get_position();
+			preview_drag_start_deg = preview_rotation_deg;
+		} else {
+			preview_is_dragging = false;
+		}
+		return;
+	}
+
+	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && preview_is_dragging) {
+		float dx = mm->get_position().x - preview_drag_start_pos.x;
+		int steps = Math::round(dx / 8.0f);
+		float target_deg = Math::wrapf(preview_drag_start_deg + float(steps * rot_step), 0.0f, 360.0f);
+		_apply_preview_rotation(target_deg);
+	}
+}
+
+void ClockGearsGameMenu::simulate_preview_drag_rotation(float p_drag_dx) {
+	Dictionary gm_cfg = _get_effective_game_menu_config();
+	Dictionary prev_cfg = gm_cfg.get("item_preview", Dictionary());
+	if (!bool(prev_cfg.get("rotation_enabled", true))) {
+		return;
+	}
+	int rot_step = CLAMP(int(prev_cfg.get("rotation_step", 15)), 5, 45);
+	int steps = Math::round(p_drag_dx / 8.0f);
+	if (steps == 0 && Math::abs(p_drag_dx) > 0.001f) {
+		steps = (p_drag_dx > 0.0f) ? 1 : -1;
+	}
+	float target_deg = Math::wrapf(preview_rotation_deg + float(steps * rot_step), 0.0f, 360.0f);
+	_apply_preview_rotation(target_deg);
+}
+
+Dictionary ClockGearsGameMenu::get_item_preview_panel_info() const {
+	Dictionary res;
+	res["visible"] = (item_side_panel && item_side_panel->is_visible());
+	res["icon_visible"] = (item_preview_box && item_preview_box->is_visible());
+	res["name_visible"] = (item_detail_name && item_detail_name->is_visible());
+	res["desc_visible"] = (item_desc_scroll && item_desc_scroll->is_visible());
+	res["name"] = item_detail_name ? item_detail_name->get_text() : String();
+	res["desc"] = item_detail_desc ? item_detail_desc->get_text() : String();
+	res["meta"] = item_detail_meta ? item_detail_meta->get_text() : String();
+	res["rotation_deg"] = preview_rotation_deg;
+	Ref<Texture2D> tex = item_preview_icon_rect ? item_preview_icon_rect->get_texture() : Ref<Texture2D>();
+	res["has_texture"] = tex.is_valid();
+	if (tex.is_valid()) {
+		res["texture_size"] = tex->get_size();
+	}
+	if (items_split && item_side_panel) {
+		res["panel_index"] = items_split->get_children().find(item_side_panel);
+	}
+	return res;
 }
 
 void ClockGearsGameMenu::_refresh_save_view() {

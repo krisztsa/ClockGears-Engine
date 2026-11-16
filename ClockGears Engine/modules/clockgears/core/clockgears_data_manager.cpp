@@ -3,6 +3,7 @@
 #include "../clockgears_battle.h"
 #include "../clockgears_map.h"
 #include "../clockgears_types.h"
+#include "../icons/clockgears_icons.h"
 #include "../runtime/clockgears_audio_manager.h"
 #include "../runtime/clockgears_runtime.h"
 #include "clockgears_formulas.h"
@@ -13,6 +14,7 @@
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/image.h"
 #include "core/io/json.h"
 #include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
@@ -1120,6 +1122,239 @@ int ClockGearsDataManager::normalize_mannequin_size(int p_size) {
 		return 64;
 	}
 	return 32;
+}
+
+bool ClockGearsDataManager::parse_tile_coords_variant(const Variant &p_var, Vector2i &r_coords) {
+	switch (p_var.get_type()) {
+		case Variant::VECTOR2I: {
+			r_coords = p_var;
+			return (r_coords.x >= 0 && r_coords.y >= 0);
+		}
+		case Variant::VECTOR2: {
+			Vector2 v = p_var;
+			r_coords = Vector2i(int(Math::round(v.x)), int(Math::round(v.y)));
+			return (r_coords.x >= 0 && r_coords.y >= 0);
+		}
+		case Variant::ARRAY: {
+			Array a = p_var;
+			if (a.size() >= 2) {
+				r_coords = Vector2i(int(a[0]), int(a[1]));
+				return (r_coords.x >= 0 && r_coords.y >= 0);
+			}
+			return false;
+		}
+		case Variant::DICTIONARY: {
+			Dictionary d = p_var;
+			if (d.has("x") && d.has("y")) {
+				r_coords = Vector2i(int(d["x"]), int(d["y"]));
+				return (r_coords.x >= 0 && r_coords.y >= 0);
+			}
+			return false;
+		}
+		case Variant::STRING: {
+			String s = String(p_var).strip_edges();
+			s = s.replace("(", "").replace(")", "").replace("[", "").replace("]", "").strip_edges();
+			PackedStringArray parts = s.split(",", false);
+			if (parts.size() >= 2) {
+				String p0 = parts[0].strip_edges();
+				String p1 = parts[1].strip_edges();
+				if (p0.is_valid_int() && p1.is_valid_int()) {
+					r_coords = Vector2i(p0.to_int(), p1.to_int());
+					return (r_coords.x >= 0 && r_coords.y >= 0);
+				}
+			}
+			return false;
+		}
+		default:
+			return false;
+	}
+}
+
+Vector2i ClockGearsDataManager::parse_tile_block_variant(const Variant &p_var) {
+	Vector2i blk(1, 1);
+	if (parse_tile_coords_variant(p_var, blk)) {
+		return Vector2i(MAX(1, blk.x), MAX(1, blk.y));
+	}
+	return Vector2i(1, 1);
+}
+
+void ClockGearsDataManager::clear_entry_icon_cache() {
+	entry_icon_cache.clear();
+}
+
+Ref<Texture2D> ClockGearsDataManager::get_entry_icon_texture(const Variant &p_entry, int p_target_px, const Ref<Texture2D> &p_fallback) const {
+	if (p_target_px <= 0) {
+		p_target_px = 32;
+	}
+
+	Dictionary rec;
+	int cat_hint = -1;
+
+	if (p_entry.get_type() == Variant::DICTIONARY) {
+		Dictionary d = p_entry;
+		if (d.has("record") && d["record"].get_type() == Variant::DICTIONARY) {
+			rec = d["record"];
+			cat_hint = int(d.get("category", -1));
+		} else if (d.has("piece_id") && d.has("category")) {
+			int cat = get_category_from_key(String(d.get("category", "")));
+			int pid = int(d.get("piece_id", 0));
+			if (cat >= 0 && pid > 0) {
+				rec = get_record_by_id(cat, pid);
+				cat_hint = cat;
+			}
+		} else {
+			rec = d;
+			cat_hint = int(d.get("category", -1));
+		}
+	} else if (p_entry.get_type() == Variant::STRING) {
+		String key_or_name = p_entry;
+		Dictionary info = find_inventory_record(key_or_name);
+		if (bool(info.get("found", false))) {
+			rec = info.get("record", Dictionary());
+			cat_hint = int(info.get("category", -1));
+		} else {
+			static const int k_cats[8] = {
+				CAT_ITEMS, CAT_WEAPONS, CAT_ARMORS, CAT_ACCESSORIES,
+				CAT_ARPG_WEAPONS, CAT_ARPG_ARMORS, CAT_ARPG_SHIELDS, CAT_ARPG_ACCESSORIES
+			};
+			String kn = key_or_name.strip_edges().to_lower();
+			for (int ci = 0; ci < 8; ci++) {
+				int cat = k_cats[ci];
+				const Array &arr = category_data[cat];
+				for (int i = 0; i < arr.size(); i++) {
+					if (arr[i].get_type() != Variant::DICTIONARY) continue;
+					Dictionary r = arr[i];
+					if (String(r.get("name", "")).strip_edges().to_lower() == kn) {
+						rec = r;
+						cat_hint = cat;
+						break;
+					}
+				}
+				if (!rec.is_empty()) break;
+			}
+		}
+	}
+
+	if (rec.is_empty()) {
+		if (p_fallback.is_valid()) {
+			return p_fallback;
+		}
+		if (ClockGearsIcons::get_singleton() && cat_hint >= 0) {
+			return ClockGearsIcons::get_singleton()->get_db_category_icon(cat_hint, float(p_target_px) / 32.0f);
+		}
+		return Ref<Texture2D>();
+	}
+
+	String gpath = String(rec.get("graphic_path", rec.get("icon_path", ""))).strip_edges();
+	if (gpath.is_empty()) {
+		if (p_fallback.is_valid()) {
+			return p_fallback;
+		}
+		if (ClockGearsIcons::get_singleton() && cat_hint >= 0) {
+			return ClockGearsIcons::get_singleton()->get_db_category_icon(cat_hint, float(p_target_px) / 32.0f);
+		}
+		return Ref<Texture2D>();
+	}
+
+	Vector2i tc;
+	bool has_tc = parse_tile_coords_variant(rec.get("tile_coords", Variant()), tc);
+	Vector2i blk = has_tc ? parse_tile_block_variant(rec.get("tile_block_size", Variant())) : Vector2i(1, 1);
+
+	String cache_key = has_tc
+			? vformat("%s|%d,%d|%dx%d|%d", gpath, tc.x, tc.y, blk.x, blk.y, p_target_px)
+			: vformat("%s|full|%d", gpath, p_target_px);
+
+	if (entry_icon_cache.has(cache_key)) {
+		Ref<Texture2D> cached = entry_icon_cache[cache_key];
+		if (cached.is_valid()) {
+			return cached;
+		}
+	}
+
+	Ref<Image> src_img;
+	if (ResourceLoader::exists(gpath)) {
+		Ref<Texture2D> tex = ResourceLoader::load(gpath);
+		if (tex.is_valid()) {
+			src_img = tex->get_image();
+		}
+	}
+	if (src_img.is_null() || src_img->is_empty()) {
+		if (FileAccess::exists(gpath)) {
+			src_img = Image::load_from_file(gpath);
+		} else {
+			String gl_path = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->globalize_path(gpath) : gpath;
+			if (FileAccess::exists(gl_path)) {
+				src_img = Image::load_from_file(gl_path);
+			}
+		}
+	}
+
+	if (src_img.is_null() || src_img->is_empty()) {
+		if (p_fallback.is_valid()) {
+			return p_fallback;
+		}
+		if (ClockGearsIcons::get_singleton() && cat_hint >= 0) {
+			return ClockGearsIcons::get_singleton()->get_db_category_icon(cat_hint, float(p_target_px) / 32.0f);
+		}
+		return Ref<Texture2D>();
+	}
+
+	Ref<Image> src_crop;
+	if (has_tc) {
+		const int tsz = 32;
+		Rect2i r(tc.x * tsz, tc.y * tsz, blk.x * tsz, blk.y * tsz);
+		r = r.intersection(Rect2i(0, 0, src_img->get_width(), src_img->get_height()));
+		if (r.size.x <= 0 || r.size.y <= 0) {
+			return p_fallback;
+		}
+		src_crop = src_img->get_region(r);
+	} else {
+		src_crop = src_img->duplicate();
+	}
+
+	if (src_crop.is_null() || src_crop->is_empty()) {
+		return p_fallback;
+	}
+
+	int sw = src_crop->get_width();
+	int sh = src_crop->get_height();
+	if (sw <= 0 || sh <= 0) {
+		return p_fallback;
+	}
+
+	int dw = sw;
+	int dh = sh;
+	if (sw <= p_target_px && sh <= p_target_px) {
+		int mult = MAX(1, MIN(p_target_px / sw, p_target_px / sh));
+		dw = sw * mult;
+		dh = sh * mult;
+	} else {
+		int div = 2;
+		while ((sw / div) > p_target_px || (sh / div) > p_target_px) {
+			div++;
+		}
+		dw = MAX(1, sw / div);
+		dh = MAX(1, sh / div);
+	}
+
+	if (src_crop->get_format() != Image::FORMAT_RGBA8) {
+		src_crop->convert(Image::FORMAT_RGBA8);
+	}
+	if (dw != sw || dh != sh) {
+		src_crop->resize(dw, dh, Image::INTERPOLATE_NEAREST);
+	}
+
+	Ref<Image> canvas = Image::create_empty(p_target_px, p_target_px, false, Image::FORMAT_RGBA8);
+	canvas->fill(Color(0, 0, 0, 0));
+	canvas->blit_rect(src_crop, Rect2i(0, 0, dw, dh), Point2i((p_target_px - dw) / 2, (p_target_px - dh) / 2));
+
+	Ref<ImageTexture> out = ImageTexture::create_from_image(canvas);
+	if (out.is_null()) {
+		return p_fallback;
+	}
+
+	entry_icon_cache[cache_key] = out;
+	return out;
 }
 
 void ClockGearsDataManager::normalize_arpg_system_config(Dictionary &r_cfg) {
@@ -3659,6 +3894,20 @@ Dictionary ClockGearsDataManager::get_default_game_menu_config() {
 		entries.push_back(e);
 	}
 	cfg["entries"] = entries;
+
+	Dictionary item_prev;
+	item_prev["enabled"] = true;
+	item_prev["position"] = "right";
+	item_prev["show_icon"] = true;
+	item_prev["show_name"] = true;
+	item_prev["show_desc"] = true;
+	item_prev["icon_scale"] = 2;
+	item_prev["rotation_enabled"] = true;
+	item_prev["rotation_step"] = 15;
+	item_prev["preview_window_style"] = "";
+	item_prev["desc_window_style"] = "";
+	cfg["item_preview"] = item_prev;
+
 	return cfg;
 }
 
@@ -3726,6 +3975,30 @@ Dictionary ClockGearsDataManager::normalize_game_menu_config(const Dictionary &p
 		norm_entries.push_back(e);
 	}
 	out["entries"] = norm_entries;
+
+	Dictionary def_item_prev = def.get("item_preview", Dictionary());
+	Dictionary raw_item_prev = (p_cfg.has("item_preview") && p_cfg["item_preview"].get_type() == Variant::DICTIONARY)
+			? Dictionary(p_cfg["item_preview"])
+			: Dictionary();
+	Dictionary norm_item_prev;
+	norm_item_prev["enabled"] = bool(raw_item_prev.get("enabled", def_item_prev.get("enabled", true)));
+	String pos = String(raw_item_prev.get("position", def_item_prev.get("position", "right"))).to_lower().strip_edges();
+	norm_item_prev["position"] = (pos == "left") ? "left" : "right";
+	norm_item_prev["show_icon"] = bool(raw_item_prev.get("show_icon", def_item_prev.get("show_icon", true)));
+	norm_item_prev["show_name"] = bool(raw_item_prev.get("show_name", def_item_prev.get("show_name", true)));
+	norm_item_prev["show_desc"] = bool(raw_item_prev.get("show_desc", def_item_prev.get("show_desc", true)));
+	int sc = int(raw_item_prev.get("icon_scale", def_item_prev.get("icon_scale", 2)));
+	norm_item_prev["icon_scale"] = (sc == 3 || sc == 4) ? sc : 2;
+	norm_item_prev["rotation_enabled"] = bool(raw_item_prev.get("rotation_enabled", def_item_prev.get("rotation_enabled", true)));
+	int step = int(raw_item_prev.get("rotation_step", def_item_prev.get("rotation_step", 15)));
+	if (step <= 0 || step > 90) {
+		step = 15;
+	}
+	norm_item_prev["rotation_step"] = step;
+	norm_item_prev["preview_window_style"] = String(raw_item_prev.get("preview_window_style", def_item_prev.get("preview_window_style", "")));
+	norm_item_prev["desc_window_style"] = String(raw_item_prev.get("desc_window_style", def_item_prev.get("desc_window_style", "")));
+	out["item_preview"] = norm_item_prev;
+
 	return out;
 }
 
@@ -5550,10 +5823,6 @@ static String s_slugify_style_id(const String &p_name) {
 } // namespace
 
 void ClockGearsDataManager::ensure_default_window_types_registered() {
-	Vector<CGWindowTypeEntry> &reg = s_get_window_type_registry();
-	if (!reg.is_empty()) {
-		return;
-	}
 	register_window_type("message", "Mensajes");
 	register_window_type("choices", "Elecciones");
 	register_window_type("battle_party", "Panel de grupo (Batalla)");
@@ -5563,6 +5832,8 @@ void ClockGearsDataManager::ensure_default_window_types_registered() {
 	register_window_type("save_list", "Lista de partidas");
 	register_window_type("game_menu", String::utf8("Menú del juego"));
 	register_window_type("hud", "HUD y Widgets");
+	register_window_type("object_preview", String::utf8("Vista previa de objeto"));
+	register_window_type("object_desc", String::utf8("Descripción de objeto"));
 }
 
 void ClockGearsDataManager::register_window_type(const String &p_id, const String &p_label) {
@@ -6425,6 +6696,9 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("create_record", "category", "initial_data"), &ClockGearsDataManager::create_record, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("update_record", "category", "id", "record"), &ClockGearsDataManager::update_record);
 	ClassDB::bind_method(D_METHOD("delete_record_by_id", "category", "id"), &ClockGearsDataManager::delete_record_by_id);
+	ClassDB::bind_method(D_METHOD("get_entry_icon_texture", "entry", "target_px", "fallback"), &ClockGearsDataManager::get_entry_icon_texture, DEFVAL(32), DEFVAL(Ref<Texture2D>()));
+	ClassDB::bind_method(D_METHOD("clear_entry_icon_cache"), &ClockGearsDataManager::clear_entry_icon_cache);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("parse_tile_block_variant", "var"), &ClockGearsDataManager::parse_tile_block_variant);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_normalized_record", "category", "record"), &ClockGearsDataManager::get_normalized_record);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_arpg_ai_types"), &ClockGearsDataManager::get_arpg_ai_types);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_npc_move_types"), &ClockGearsDataManager::get_npc_move_types);

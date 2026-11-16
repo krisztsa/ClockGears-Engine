@@ -56,14 +56,24 @@ private:
 	Button *btn_items_prev_actor = nullptr;
 	OptionButton *items_target_option = nullptr;
 	Button *btn_items_next_actor = nullptr;
+	HBoxContainer *items_split = nullptr;
+	ScrollContainer *items_scroll = nullptr;
 	VBoxContainer *items_list_box = nullptr;
+	PanelContainer *item_preview_box = nullptr;
+	Control *item_preview_icon_holder = nullptr;
+	TextureRect *item_preview_icon_rect = nullptr;
+	PanelContainer *item_desc_box = nullptr;
+	VBoxContainer *item_desc_content = nullptr;
+	ScrollContainer *item_desc_scroll = nullptr;
 	Label *item_detail_name = nullptr;
 	Label *item_detail_desc = nullptr;
 	Label *item_detail_meta = nullptr;
 	Label *item_feedback_label = nullptr;
+	HBoxContainer *item_action_btns = nullptr;
 	Button *btn_item_use = nullptr;
 	Button *btn_item_discard = nullptr;
 	Button *btn_items_back = nullptr;
+	VBoxContainer *item_side_panel = nullptr;
 
 	// Subpantalla Equipo
 	PanelContainer *equip_panel = nullptr;
@@ -79,6 +89,16 @@ private:
 	Button *btn_equip_apply = nullptr;
 	Button *btn_equip_clear = nullptr;
 	Button *btn_equip_back = nullptr;
+	PanelContainer *equip_item_preview_box = nullptr;
+	Control *equip_preview_icon_holder = nullptr;
+	TextureRect *equip_preview_icon_rect = nullptr;
+	PanelContainer *equip_desc_box = nullptr;
+	VBoxContainer *equip_desc_content = nullptr;
+	ScrollContainer *equip_desc_scroll = nullptr;
+	Label *equip_detail_name = nullptr;
+	Label *equip_detail_meta = nullptr;
+	Label *equip_detail_desc = nullptr;
+	VBoxContainer *equip_side_panel = nullptr;
 
 	// Subpantalla Estado
 	PanelContainer *status_panel = nullptr;
@@ -91,6 +111,7 @@ private:
 	Label *status_params_label = nullptr;
 	Label *status_states_label = nullptr;
 	Label *status_elements_label = nullptr;
+	VBoxContainer *status_equips_box = nullptr;
 	Button *btn_status_back = nullptr;
 
 	// Subpantalla Guardar
@@ -130,6 +151,10 @@ private:
 	Dictionary preview_config_override;
 	int nav_focus_index = 0;
 	double playtime_refresh_accum = 0.0;
+	float preview_rotation_deg = 0.0f;
+	bool preview_is_dragging = false;
+	Vector2 preview_drag_start_pos;
+	float preview_drag_start_deg = 0.0f;
 
 	void _build_ui();
 	void _apply_unified_styles();
@@ -156,6 +181,7 @@ private:
 	String _map_subscreen_to_ui_design_id(const String &p_subscreen) const;
 	void _on_subscreen_back();
 	void _on_item_row_pressed(const String &p_key);
+	void _on_item_row_hovered(const String &p_key);
 	void _on_items_target_selected(int p_idx);
 	void _on_items_actor_cycle(int p_delta);
 	void _on_use_item_pressed();
@@ -163,9 +189,14 @@ private:
 	void _on_equip_actor_selected(int p_idx);
 	void _on_equip_actor_cycle(int p_delta);
 	void _on_equip_slot_pressed(int p_slot_idx);
+	void _on_equip_slot_hovered(int p_slot_idx);
 	void _on_equip_candidate_pressed(const String &p_key);
+	void _on_equip_candidate_hovered(const String &p_key);
 	void _on_equip_apply_pressed();
 	void _on_equip_clear_pressed();
+	void _on_preview_icon_gui_input(const Ref<InputEvent> &p_event);
+	void _update_item_preview_panel(const String &p_key, bool p_is_equip_subscreen = false);
+	void _apply_preview_rotation(float p_deg);
 	void _on_status_actor_selected(int p_idx);
 	void _on_status_actor_cycle(int p_delta);
 	void _on_save_slot_pressed(int p_slot);
@@ -203,6 +234,9 @@ public:
 	Dictionary get_member_selectors_info() const;
 	Dictionary get_layout_bounds_info(const Vector2 &p_viewport_size = Vector2()) const;
 	Button *get_focused_nav_button() const;
+	float get_preview_rotation_deg() const { return preview_rotation_deg; }
+	void simulate_preview_drag_rotation(float p_drag_dx);
+	Dictionary get_item_preview_panel_info() const;
 
 	// Acciones directas invocables desde UI y tests
 	bool select_item(const String &p_item_key);
