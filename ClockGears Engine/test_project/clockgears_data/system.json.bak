@@ -23,6 +23,6 @@
 	"movement_directions": 4,
 	"party": [],
 	"start_map": "res://maps/map001.tscn",
-	"start_x": 2,
+	"start_x": 3,
 	"start_y": 0
 }

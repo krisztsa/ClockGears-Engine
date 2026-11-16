@@ -1457,6 +1457,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (arpg_ai_box) {
 		arpg_ai_box->set_visible(is_arpg_enemy);
 	}
+	if (arpg_attack_box) {
+		arpg_attack_box->set_visible(is_arpg_enemy);
+	}
 	if (enemy_casts_box) {
 		enemy_casts_box->set_visible(is_enemy);
 	}
@@ -1961,6 +1964,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (arpg_ai_box) {
 		arpg_ai_box->set_visible(is_arpg_enemy);
 	}
+	if (arpg_attack_box) {
+		arpg_attack_box->set_visible(is_arpg_enemy);
+	}
 
 	bool is_arpg_equip_cur = s_is_arpg_equip_category(current_category);
 	bool show_stats = (current_category == CAT_ACTORS || current_category == CAT_CLASSES ||
@@ -2422,15 +2428,40 @@ void ClockGearsDatabaseDialog::_on_record_selected(int p_index) {
 				arpg_ai_vision_spin->set_value(v);
 				arpg_ai_vision_spin->set_meta("cg_last_valid_val", v);
 			}
-			if (arpg_ai_range_spin) {
+			if (arpg_atk_range_spin) {
 				double r = MAX(0.0, double(d.get("attack_range", 1.0)));
-				arpg_ai_range_spin->set_value(r);
-				arpg_ai_range_spin->set_meta("cg_last_valid_val", r);
+				arpg_atk_range_spin->set_value(r);
+				arpg_atk_range_spin->set_meta("cg_last_valid_val", r);
 			}
-			if (arpg_ai_interval_spin) {
+			if (arpg_atk_interval_spin) {
 				double iv = MAX(0.0, double(d.get("attack_interval", 1.5)));
-				arpg_ai_interval_spin->set_value(iv);
-				arpg_ai_interval_spin->set_meta("cg_last_valid_val", iv);
+				arpg_atk_interval_spin->set_value(iv);
+				arpg_atk_interval_spin->set_meta("cg_last_valid_val", iv);
+			}
+			if (arpg_atk_interval_var_spin) {
+				double iv_var = CLAMP(double(d.get("attack_interval_variance_pct", 0.0)), 0.0, 100.0);
+				arpg_atk_interval_var_spin->set_value(iv_var);
+				arpg_atk_interval_var_spin->set_meta("cg_last_valid_val", iv_var);
+			}
+			if (arpg_atk_speed_spin) {
+				double spd = MAX(1.0, double(d.get("attack_speed_pct", 100.0)));
+				arpg_atk_speed_spin->set_value(spd);
+				arpg_atk_speed_spin->set_meta("cg_last_valid_val", spd);
+			}
+			if (arpg_atk_windup_spin) {
+				double wnd = MAX(0.0, double(d.get("attack_windup_ms", 0)));
+				arpg_atk_windup_spin->set_value(wnd);
+				arpg_atk_windup_spin->set_meta("cg_last_valid_val", wnd);
+			}
+			if (arpg_atk_recovery_spin) {
+				double rec = MAX(0.0, double(d.get("attack_recovery_ms", 0)));
+				arpg_atk_recovery_spin->set_value(rec);
+				arpg_atk_recovery_spin->set_meta("cg_last_valid_val", rec);
+			}
+			if (arpg_atk_dmg_mult_spin) {
+				double dm = MAX(0.0, double(d.get("attack_damage_mult_pct", 100.0)));
+				arpg_atk_dmg_mult_spin->set_value(dm);
+				arpg_atk_dmg_mult_spin->set_meta("cg_last_valid_val", dm);
 			}
 			if (arpg_ai_kb_resist_spin) {
 				double kb = CLAMP(double(d.get("knockback_resist", 0)), 0.0, 100.0);
@@ -6871,34 +6902,6 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	arpg_ai_vision_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
 	arpg_ai_grid->add_child(arpg_ai_vision_spin);
 
-	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Alcance:"))));
-	arpg_ai_range_spin = memnew(SpinBox);
-	arpg_ai_range_spin->set_min(0.0);
-	arpg_ai_range_spin->set_max(100.0);
-	arpg_ai_range_spin->set_step(0.5);
-	arpg_ai_range_spin->set_value(1.0);
-	arpg_ai_range_spin->set_suffix(" tiles");
-	arpg_ai_range_spin->set_editable(true);
-	arpg_ai_range_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	arpg_ai_range_spin->set_custom_minimum_size(Size2(0, row_h));
-	_bind_numeric_spinbox(arpg_ai_range_spin);
-	arpg_ai_range_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
-	arpg_ai_grid->add_child(arpg_ai_range_spin);
-
-	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Tiempo entre ataques:"))));
-	arpg_ai_interval_spin = memnew(SpinBox);
-	arpg_ai_interval_spin->set_min(0.0);
-	arpg_ai_interval_spin->set_max(60.0);
-	arpg_ai_interval_spin->set_step(0.1);
-	arpg_ai_interval_spin->set_value(1.5);
-	arpg_ai_interval_spin->set_suffix(" s");
-	arpg_ai_interval_spin->set_editable(true);
-	arpg_ai_interval_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	arpg_ai_interval_spin->set_custom_minimum_size(Size2(0, row_h));
-	_bind_numeric_spinbox(arpg_ai_interval_spin);
-	arpg_ai_interval_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
-	arpg_ai_grid->add_child(arpg_ai_interval_spin);
-
 	arpg_ai_grid->add_child(memnew(Label(CG_DB_TR("Resistencia al retroceso:"))));
 	arpg_ai_kb_resist_spin = memnew(SpinBox);
 	arpg_ai_kb_resist_spin->set_min(0);
@@ -6912,6 +6915,135 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	_bind_numeric_spinbox(arpg_ai_kb_resist_spin);
 	arpg_ai_kb_resist_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_ai_field_changed).unbind(1));
 	arpg_ai_grid->add_child(arpg_ai_kb_resist_spin);
+
+	// ========================================================================
+	// SECCIÓN ATAQUE DE ENEMIGOS ARPG (En Pestaña Combate, sección "Ataque")
+	// ========================================================================
+	arpg_attack_box = memnew(VBoxContainer);
+	arpg_attack_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_attack_box->add_theme_constant_override("separation", int(8 * EDSCALE));
+	arpg_attack_box->hide();
+	combat_tab_vbox->add_child(arpg_attack_box);
+
+	Label *lbl_arpg_attack = memnew(Label(CG_DB_TR("Ataque")));
+	lbl_arpg_attack->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	arpg_attack_box->add_child(lbl_arpg_attack);
+	arpg_attack_box->add_child(memnew(HSeparator));
+
+	GridContainer *arpg_attack_grid = memnew(GridContainer);
+	arpg_attack_grid->set_columns(4);
+	arpg_attack_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_attack_grid->add_theme_constant_override("h_separation", int(12 * EDSCALE));
+	arpg_attack_grid->add_theme_constant_override("v_separation", int(8 * EDSCALE));
+	arpg_attack_box->add_child(arpg_attack_grid);
+
+	// 1. Frecuencia de ataque (tiempo entre ataques)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Tiempo entre ataques:"))));
+	arpg_atk_interval_spin = memnew(SpinBox);
+	arpg_atk_interval_spin->set_min(0.0);
+	arpg_atk_interval_spin->set_max(60.0);
+	arpg_atk_interval_spin->set_step(0.1);
+	arpg_atk_interval_spin->set_value(1.5);
+	arpg_atk_interval_spin->set_suffix(" s");
+	arpg_atk_interval_spin->set_editable(true);
+	arpg_atk_interval_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_interval_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_interval_spin);
+	arpg_atk_interval_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_interval_spin);
+	arpg_ai_interval_spin = arpg_atk_interval_spin;
+
+	// 1b. Variación aleatoria (±%)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Variación aleatoria:"))));
+	arpg_atk_interval_var_spin = memnew(SpinBox);
+	arpg_atk_interval_var_spin->set_min(0.0);
+	arpg_atk_interval_var_spin->set_max(100.0);
+	arpg_atk_interval_var_spin->set_step(1.0);
+	arpg_atk_interval_var_spin->set_value(0.0);
+	arpg_atk_interval_var_spin->set_prefix(U"±");
+	arpg_atk_interval_var_spin->set_suffix("%");
+	arpg_atk_interval_var_spin->set_editable(true);
+	arpg_atk_interval_var_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_interval_var_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_interval_var_spin);
+	arpg_atk_interval_var_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_interval_var_spin);
+
+	// 2. Velocidad de ataque (% que acelera o frena la animación)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Velocidad de ataque:"))));
+	arpg_atk_speed_spin = memnew(SpinBox);
+	arpg_atk_speed_spin->set_min(1.0);
+	arpg_atk_speed_spin->set_max(1000.0);
+	arpg_atk_speed_spin->set_step(5.0);
+	arpg_atk_speed_spin->set_value(100.0);
+	arpg_atk_speed_spin->set_suffix("%");
+	arpg_atk_speed_spin->set_editable(true);
+	arpg_atk_speed_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_speed_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_speed_spin);
+	arpg_atk_speed_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_speed_spin);
+
+	// 3. Anticipación (ms antes de golpear)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Anticipación:"))));
+	arpg_atk_windup_spin = memnew(SpinBox);
+	arpg_atk_windup_spin->set_min(0);
+	arpg_atk_windup_spin->set_max(5000);
+	arpg_atk_windup_spin->set_step(50);
+	arpg_atk_windup_spin->set_value(0);
+	arpg_atk_windup_spin->set_suffix(" ms");
+	arpg_atk_windup_spin->set_editable(true);
+	arpg_atk_windup_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_windup_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_windup_spin);
+	arpg_atk_windup_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_windup_spin);
+
+	// 4. Recuperación (ms tras atacar antes de volver a moverse)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Recuperación:"))));
+	arpg_atk_recovery_spin = memnew(SpinBox);
+	arpg_atk_recovery_spin->set_min(0);
+	arpg_atk_recovery_spin->set_max(5000);
+	arpg_atk_recovery_spin->set_step(50);
+	arpg_atk_recovery_spin->set_value(0);
+	arpg_atk_recovery_spin->set_suffix(" ms");
+	arpg_atk_recovery_spin->set_editable(true);
+	arpg_atk_recovery_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_recovery_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_recovery_spin);
+	arpg_atk_recovery_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_recovery_spin);
+
+	// 5. Multiplicador de daño (%)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Multiplicador daño:"))));
+	arpg_atk_dmg_mult_spin = memnew(SpinBox);
+	arpg_atk_dmg_mult_spin->set_min(0.0);
+	arpg_atk_dmg_mult_spin->set_max(1000.0);
+	arpg_atk_dmg_mult_spin->set_step(5.0);
+	arpg_atk_dmg_mult_spin->set_value(100.0);
+	arpg_atk_dmg_mult_spin->set_suffix("%");
+	arpg_atk_dmg_mult_spin->set_editable(true);
+	arpg_atk_dmg_mult_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_dmg_mult_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_dmg_mult_spin);
+	arpg_atk_dmg_mult_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_dmg_mult_spin);
+
+	// 6. Alcance (ya existe)
+	arpg_attack_grid->add_child(memnew(Label(CG_DB_TR("Alcance:"))));
+	arpg_atk_range_spin = memnew(SpinBox);
+	arpg_atk_range_spin->set_min(0.0);
+	arpg_atk_range_spin->set_max(100.0);
+	arpg_atk_range_spin->set_step(0.5);
+	arpg_atk_range_spin->set_value(1.0);
+	arpg_atk_range_spin->set_suffix(" tiles");
+	arpg_atk_range_spin->set_editable(true);
+	arpg_atk_range_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	arpg_atk_range_spin->set_custom_minimum_size(Size2(0, row_h));
+	_bind_numeric_spinbox(arpg_atk_range_spin);
+	arpg_atk_range_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_arpg_attack_field_changed));
+	arpg_attack_grid->add_child(arpg_atk_range_spin);
+	arpg_ai_range_spin = arpg_atk_range_spin;
 
 	// ========================================================================
 	// SYSTEM CONFIG PANEL (CAT_SYSTEM)
@@ -10159,6 +10291,43 @@ void ClockGearsDatabaseDialog::_on_arpg_ai_field_changed() {
 	ClockGearsDataManager::normalize_record_defaults(CAT_ARPG_ENEMIES, d);
 	arr[rec_idx] = d;
 	_load_movement_tab_from_record(d);
+	_mark_database_dirty();
+}
+
+void ClockGearsDatabaseDialog::_on_arpg_attack_field_changed() {
+	if (updating_ui || current_category != CAT_ARPG_ENEMIES) {
+		return;
+	}
+	Array &arr = category_data[CAT_ARPG_ENEMIES];
+	Vector<int> sel = record_list ? record_list->get_selected_items() : Vector<int>();
+	if (sel.is_empty() || sel[0] < 0 || sel[0] >= arr.size()) {
+		return;
+	}
+	int rec_idx = sel[0];
+	Dictionary d = arr[rec_idx];
+	if (arpg_atk_interval_spin) {
+		d["attack_interval"] = MAX(0.0, double(arpg_atk_interval_spin->get_value()));
+	}
+	if (arpg_atk_interval_var_spin) {
+		d["attack_interval_variance_pct"] = CLAMP(double(arpg_atk_interval_var_spin->get_value()), 0.0, 100.0);
+	}
+	if (arpg_atk_speed_spin) {
+		d["attack_speed_pct"] = MAX(1.0, double(arpg_atk_speed_spin->get_value()));
+	}
+	if (arpg_atk_windup_spin) {
+		d["attack_windup_ms"] = MAX(0, int(arpg_atk_windup_spin->get_value()));
+	}
+	if (arpg_atk_recovery_spin) {
+		d["attack_recovery_ms"] = MAX(0, int(arpg_atk_recovery_spin->get_value()));
+	}
+	if (arpg_atk_dmg_mult_spin) {
+		d["attack_damage_mult_pct"] = MAX(0.0, double(arpg_atk_dmg_mult_spin->get_value()));
+	}
+	if (arpg_atk_range_spin) {
+		d["attack_range"] = MAX(0.0, double(arpg_atk_range_spin->get_value()));
+	}
+	ClockGearsDataManager::normalize_record_defaults(CAT_ARPG_ENEMIES, d);
+	arr[rec_idx] = d;
 	_mark_database_dirty();
 }
 

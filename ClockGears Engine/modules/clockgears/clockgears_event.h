@@ -63,7 +63,15 @@ private:
 	float run_move_speed = 180.0f;
 	float attack_speed_pct = 100.0f;
 	float attack_interval = 1.5f;
+	float attack_interval_variance_pct = 0.0f;
+	int attack_windup_ms = 0;
+	int attack_recovery_ms = 0;
+	float attack_damage_mult_pct = 100.0f;
+	float attack_range = 1.0f;
 	float arpg_attack_cooldown_timer = 0.0f;
+	float ev_attack_windup_timer = 0.0f;
+	float ev_attack_recovery_timer = 0.0f;
+	bool ev_attack_hit_done = false;
 	float wander_radius = 3.0f;
 	Vector<Vector2> patrol_points;
 	bool patrol_loop = false;
@@ -146,6 +154,9 @@ private:
 	void _process_enemy_attack_hits(ClockGearsMap *p_map);
 
 	void _apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed);
+	void apply_behavior_record_config(const Dictionary &p_rec, float p_base_ev_speed = 120.0f) {
+		_apply_behavior_record_config(p_rec, p_base_ev_speed);
+	}
 	void _sync_runtime_entity_components();
 	void _sync_runtime_origins();
 	void _clear_runtime_entity_components();
@@ -272,6 +283,14 @@ public:
 	float get_arpg_hp_bar_remaining() const { return arpg_hp_bar_timer; }
 	float get_arpg_hitstop_remaining() const { return arpg_hitstop_timer; }
 	float get_arpg_knockback_remaining() const { return arpg_knockback_timer; }
+	float get_attack_interval() const { return attack_interval; }
+	float get_attack_interval_variance_pct() const { return attack_interval_variance_pct; }
+	float get_attack_speed_pct() const { return attack_speed_pct; }
+	int get_attack_windup_ms() const { return attack_windup_ms; }
+	int get_attack_recovery_ms() const { return attack_recovery_ms; }
+	float get_attack_damage_mult_pct() const { return attack_damage_mult_pct; }
+	float get_attack_range() const { return attack_range; }
+	float get_arpg_attack_cooldown_timer() const { return arpg_attack_cooldown_timer; }
 	Vector2 get_arpg_world_center() const;
 	Dictionary get_arpg_effective_hurtbox() const;
 	Dictionary get_arpg_enemy_record() const { return cached_db_rec; }

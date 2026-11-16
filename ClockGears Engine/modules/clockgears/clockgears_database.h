@@ -317,6 +317,16 @@ private:
 	SpinBox *arpg_ai_interval_spin = nullptr;
 	SpinBox *arpg_ai_kb_resist_spin = nullptr;
 
+	// Sección Ataque de Enemigos ARPG (Pestaña Combate)
+	VBoxContainer *arpg_attack_box = nullptr;
+	SpinBox *arpg_atk_interval_spin = nullptr;
+	SpinBox *arpg_atk_interval_var_spin = nullptr;
+	SpinBox *arpg_atk_speed_spin = nullptr;
+	SpinBox *arpg_atk_windup_spin = nullptr;
+	SpinBox *arpg_atk_recovery_spin = nullptr;
+	SpinBox *arpg_atk_dmg_mult_spin = nullptr;
+	SpinBox *arpg_atk_range_spin = nullptr;
+
 	// System category panel
 	VBoxContainer *system_panel = nullptr;
 	LineEdit *sys_game_title_edit = nullptr;
@@ -1000,6 +1010,7 @@ private:
 	void _on_drop_kind_changed(int p_idx, int p_slot);
 	void _on_drop_field_changed(int p_slot);
 	void _on_arpg_ai_field_changed();
+	void _on_arpg_attack_field_changed();
 	void _refresh_action_patterns_tree(const Array &p_actions);
 	void _on_add_action_pattern_pressed();
 	void _on_remove_action_pattern_pressed();

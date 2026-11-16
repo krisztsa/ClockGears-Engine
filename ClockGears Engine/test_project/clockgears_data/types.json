@@ -24,7 +24,7 @@
 			"desc": "",
 			"id": 1,
 			"key": "agua",
-			"name": "AguaX Mod Mod",
+			"name": "AguaX Mod Mod Mod",
 			"type": 0
 		},
 		{
@@ -92,7 +92,7 @@
 		}
 	],
 	"elements": [
-		"AguaX Mod Mod",
+		"AguaX Mod Mod Mod",
 		"Fuego",
 		"Hielo",
 		"Electricidad",

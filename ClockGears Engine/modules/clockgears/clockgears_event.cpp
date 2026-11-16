@@ -137,7 +137,16 @@ void ClockGearsEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_arpg_hp_bar_visible"), &ClockGearsEvent::is_arpg_hp_bar_visible);
 	ClassDB::bind_method(D_METHOD("get_arpg_hp_bar_remaining"), &ClockGearsEvent::get_arpg_hp_bar_remaining);
 	ClassDB::bind_method(D_METHOD("get_arpg_hitstop_remaining"), &ClockGearsEvent::get_arpg_hitstop_remaining);
+	ClassDB::bind_method(D_METHOD("apply_behavior_record_config", "record", "base_speed"), &ClockGearsEvent::apply_behavior_record_config, DEFVAL(120.0f));
 	ClassDB::bind_method(D_METHOD("get_arpg_knockback_remaining"), &ClockGearsEvent::get_arpg_knockback_remaining);
+	ClassDB::bind_method(D_METHOD("get_attack_interval"), &ClockGearsEvent::get_attack_interval);
+	ClassDB::bind_method(D_METHOD("get_attack_interval_variance_pct"), &ClockGearsEvent::get_attack_interval_variance_pct);
+	ClassDB::bind_method(D_METHOD("get_attack_speed_pct"), &ClockGearsEvent::get_attack_speed_pct);
+	ClassDB::bind_method(D_METHOD("get_attack_windup_ms"), &ClockGearsEvent::get_attack_windup_ms);
+	ClassDB::bind_method(D_METHOD("get_attack_recovery_ms"), &ClockGearsEvent::get_attack_recovery_ms);
+	ClassDB::bind_method(D_METHOD("get_attack_damage_mult_pct"), &ClockGearsEvent::get_attack_damage_mult_pct);
+	ClassDB::bind_method(D_METHOD("get_attack_range"), &ClockGearsEvent::get_attack_range);
+	ClassDB::bind_method(D_METHOD("get_arpg_attack_cooldown_timer"), &ClockGearsEvent::get_arpg_attack_cooldown_timer);
 	ClassDB::bind_method(D_METHOD("get_body_local_origin"), &ClockGearsEvent::get_body_local_origin);
 	ClassDB::bind_method(D_METHOD("get_body_world_origin"), &ClockGearsEvent::get_body_world_origin);
 	ClassDB::bind_method(D_METHOD("get_arpg_world_center"), &ClockGearsEvent::get_arpg_world_center);
@@ -814,6 +823,11 @@ void ClockGearsEvent::_apply_behavior_record_config(const Dictionary &p_rec, flo
 	float run_pct = MAX(1.0f, float(p_rec.get("run_speed_pct", 100)));
 	attack_speed_pct = MAX(1.0f, float(p_rec.get("attack_speed_pct", 100)));
 	attack_interval = MAX(0.0f, float(p_rec.get("attack_interval", 1.5)));
+	attack_interval_variance_pct = CLAMP(float(p_rec.get("attack_interval_variance_pct", 0.0)), 0.0f, 100.0f);
+	attack_windup_ms = MAX(0, int(p_rec.get("attack_windup_ms", 0)));
+	attack_recovery_ms = MAX(0, int(p_rec.get("attack_recovery_ms", 0)));
+	attack_damage_mult_pct = MAX(0.0f, float(p_rec.get("attack_damage_mult_pct", 100.0)));
+	attack_range = MAX(0.0f, float(p_rec.get("attack_range", 1.0)));
 	walk_move_speed = MAX(8.0f, p_base_ev_speed * (walk_pct / 100.0f));
 	run_move_speed = MAX(8.0f, p_base_ev_speed * 1.5f * (run_pct / 100.0f));
 
@@ -1408,11 +1422,25 @@ void ClockGearsEvent::start_arpg_attack(Node *p_target) {
 	ev_action_state = "atacar";
 	ev_anim_frame = 0;
 	ev_anim_timer = 0.0f;
-	ev_attack_timer = 0.45f * (100.0f / MAX(1.0f, attack_speed_pct));
-	arpg_attack_cooldown_timer = attack_interval;
+	float speed_factor = (100.0f / MAX(1.0f, attack_speed_pct));
+	ev_attack_timer = 0.45f * speed_factor;
+	ev_attack_windup_timer = (float(attack_windup_ms) / 1000.0f) * speed_factor;
+	ev_attack_recovery_timer = 0.0f;
+	ev_attack_hit_done = false;
+
+	float variance = 0.0f;
+	if (attack_interval_variance_pct > 0.001f) {
+		float rand_val = (Math::randf() * 2.0f - 1.0f);
+		variance = rand_val * (attack_interval_variance_pct / 100.0f);
+	}
+	arpg_attack_cooldown_timer = MAX(0.05f, attack_interval * (1.0f + variance));
+
 	_begin_enemy_attack_swing();
 	_update_behavior_visual_frame();
-	_process_enemy_attack_hits(map);
+	if (ev_attack_windup_timer <= 0.0f) {
+		_process_enemy_attack_hits(map);
+		ev_attack_hit_done = true;
+	}
 }
 
 void ClockGearsEvent::_collect_enemy_attack_hitboxes(Vector<ClockGearsFrameHitboxData> &r_hitboxes) const {
@@ -1509,6 +1537,7 @@ void ClockGearsEvent::_process_enemy_attack_hits(ClockGearsMap *p_map) {
 	double hurt_mult_pct = MAX(0.0, double(pl_hurt.get("damage_mult_pct", 100.0)));
 	bool is_crit = false;
 	int final_dmg = ClockGearsDataManager::compute_arpg_hit_damage(attacker_dict, defender_dict, elem_mult, hb.damage_mult_pct, hurt_mult_pct, is_crit);
+	final_dmg = int(Math::round(float(final_dmg) * (attack_damage_mult_pct / 100.0f)));
 
 	Vector2 hit_dir = pl_origin - atk_origin;
 	if (hit_dir.length_squared() < 1.0f) {
@@ -1727,17 +1756,37 @@ void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 		}
 	}
 
-	// 3. Animación de ataque (con hitboxes ARPG hacia el jugador)
+	// 3. Animación de ataque (con anticipación, hitboxes y recuperación ARPG)
 	if (ev_action_state == "atacar") {
-		ev_attack_timer -= p_delta;
-		_advance_behavior_animation(p_delta);
-		_process_enemy_attack_hits(map);
-		if (ev_attack_timer <= 0.0f && ev_action_state == "atacar") {
-			_end_enemy_attack_swing();
-			ev_action_state = "quieto";
-			ev_anim_frame = 0;
-			ev_anim_timer = 0.0f;
-			_update_behavior_visual_frame();
+		if (ev_attack_windup_timer > 0.0f) {
+			ev_attack_windup_timer -= p_delta;
+			if (ev_attack_windup_timer <= 0.0f && !ev_attack_hit_done) {
+				_process_enemy_attack_hits(map);
+				ev_attack_hit_done = true;
+			}
+		} else {
+			ev_attack_timer -= p_delta;
+			_advance_behavior_animation(p_delta);
+			if (!ev_attack_hit_done) {
+				_process_enemy_attack_hits(map);
+				ev_attack_hit_done = true;
+			}
+			if (ev_attack_timer <= 0.0f) {
+				if (attack_recovery_ms > 0 && ev_attack_recovery_timer <= 0.0f) {
+					float speed_factor = (100.0f / MAX(1.0f, attack_speed_pct));
+					ev_attack_recovery_timer = (float(attack_recovery_ms) / 1000.0f) * speed_factor;
+				}
+				if (ev_attack_recovery_timer > 0.0f) {
+					ev_attack_recovery_timer -= p_delta;
+				}
+				if (ev_attack_recovery_timer <= 0.0f) {
+					_end_enemy_attack_swing();
+					ev_action_state = "quieto";
+					ev_anim_frame = 0;
+					ev_anim_timer = 0.0f;
+					_update_behavior_visual_frame();
+				}
+			}
 		}
 		return;
 	}
@@ -1827,7 +1876,7 @@ void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 					_face_toward_world_pos(tpos);
 				}
 			} else {
-				float stop_dist = float(ts) * 0.7f;
+				float stop_dist = MAX(float(ts) * 0.7f, attack_range * float(ts));
 				if (dist > stop_dist) {
 					move_dir = _compute_move_toward(map, tpos, p_delta, ts);
 					if (astar_no_path) {
@@ -1841,6 +1890,9 @@ void ClockGearsEvent::_physics_tick_behavior(float p_delta) {
 					}
 				} else {
 					_face_toward_world_pos(tpos);
+					if (behavior_type == 3 && ai_type_str == "persigue_y_ataca" && ev_action_state != "atacar" && arpg_attack_cooldown_timer <= 0.005f) {
+						start_arpg_attack(t2d);
+					}
 				}
 			}
 		}

@@ -8,7 +8,7 @@
 		"desc": "",
 		"formula": "max(a.atk * 4 - b.def * 2, 0)",
 		"graphic_path": "",
-		"hp": 2,
+		"hp": 3,
 		"id": 1,
 		"luk": 0,
 		"mat": 0,

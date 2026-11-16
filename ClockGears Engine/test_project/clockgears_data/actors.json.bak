@@ -60,7 +60,7 @@
 		"directional_idle": false,
 		"formula": "max(a.atk * 4 - b.def * 2, 0)",
 		"graphic_path": "",
-		"hp": 9,
+		"hp": 14,
 		"id": 1,
 		"luk": 0,
 		"mat": 0,
