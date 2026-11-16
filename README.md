@@ -5,7 +5,7 @@
 ![Estilo](https://img.shields.io/badge/diseño-RPG%20Maker%20MZ-purple)
 ![Plataforma](https://img.shields.io/badge/plataforma-Windows%20%7C%20Linux-blue)
 [![Licencia](https://img.shields.io/badge/Licencia-ClockGears%20%2B%20MIT%20(Godot)-lightgrey)](LICENSE-CLOCKGEARS.txt)
-![Versión](https://img.shields.io/badge/versión-Alpha--0.0.2-orange)
+![Versión](https://img.shields.io/badge/versión-Alpha--0.0.3-orange)
 
 > **ClockGears Engine es gratuito en GitHub. Cualquier venta o redistribución no autorizada no es oficial.**
 
@@ -44,7 +44,7 @@ Si solo quieres usar el motor listo para abrir y crear tu juego, descarga el eje
 
 ## 📌 Versión actual
 
-**Alpha-0.0.2**
+**Alpha-0.0.3**
 
 ---
 

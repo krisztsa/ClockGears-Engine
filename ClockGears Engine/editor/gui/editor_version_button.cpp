@@ -37,7 +37,7 @@
 
 // ClockGears Engine: only the DISPLAYED version. Internal Godot version numbers
 // (GODOT_VERSION_*) stay untouched for project/export compatibility.
-static const char *CLOCKGEARS_DISPLAY_VERSION = "Alpha-0.0.2";
+static const char *CLOCKGEARS_DISPLAY_VERSION = CLOCKGEARS_VERSION;
 
 String _get_version_string(EditorVersionButton::VersionFormat p_format) {
 	return CLOCKGEARS_DISPLAY_VERSION;
