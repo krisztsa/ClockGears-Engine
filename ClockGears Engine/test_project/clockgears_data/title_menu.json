@@ -1,0 +1,52 @@
+{
+	"background": {
+		"color": "#12151e",
+		"filter": "nearest",
+		"image_path": "",
+		"scale_mode": "fit",
+		"type": "color"
+	},
+	"bgm_path": "",
+	"credits": [],
+	"credits_configured": false,
+	"entries": [
+		{
+			"enabled": true,
+			"id": "new_game",
+			"order": 0,
+			"text": "Nueva partida"
+		},
+		{
+			"enabled": true,
+			"id": "continue",
+			"order": 1,
+			"text": "Continuar"
+		},
+		{
+			"enabled": true,
+			"id": "options",
+			"order": 2,
+			"text": "Opciones"
+		},
+		{
+			"enabled": true,
+			"id": "credits",
+			"order": 3,
+			"text": "Créditos"
+		},
+		{
+			"enabled": true,
+			"id": "quit",
+			"order": 4,
+			"text": "Salir"
+		}
+	],
+	"save_slots": 10,
+	"schema_version": 1,
+	"title": {
+		"filter": "nearest",
+		"image_path": "",
+		"text": "",
+		"type": "text"
+	}
+}

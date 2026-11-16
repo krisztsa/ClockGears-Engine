@@ -1,1 +1,106 @@
-[]
+[
+	{
+		"agi": 0,
+		"animations": {},
+		"arpg_equip_slots": [
+			{
+				"category": "arpg_weapons",
+				"label": "Arma",
+				"piece_id": 0,
+				"slot": "weapon"
+			},
+			{
+				"category": "arpg_armors",
+				"label": "Armadura",
+				"piece_id": 0,
+				"slot": "armor"
+			},
+			{
+				"category": "arpg_shields",
+				"label": "Escudo",
+				"piece_id": 0,
+				"slot": "shield"
+			},
+			{
+				"category": "arpg_accessories",
+				"label": "Accesorio 1",
+				"piece_id": 0,
+				"slot": "accessory_1"
+			},
+			{
+				"category": "arpg_accessories",
+				"label": "Accesorio 2",
+				"piece_id": 0,
+				"slot": "accessory_2"
+			}
+		],
+		"atk": 0,
+		"attack_speed_pct": 100,
+		"body_shape": {
+			"offset_x": 0.0,
+			"offset_y": 6.0,
+			"radius": 10.0,
+			"rotation": 0.0,
+			"size_x": 10.0,
+			"size_y": 10.0,
+			"type": "circle"
+		},
+		"body_through": false,
+		"class_id": 1,
+		"combat_animations": {
+			"attack": "",
+			"damage": "",
+			"death": "",
+			"defend": "",
+			"idle": "",
+			"victory": ""
+		},
+		"def": 0,
+		"desc": "",
+		"directional_idle": false,
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"graphic_path": "",
+		"hp": 10,
+		"id": 1,
+		"luk": 0,
+		"mat": 0,
+		"mdf": 0,
+		"mp": 0,
+		"name": "XXXXX",
+		"run_speed_pct": 100,
+		"secondary_type": 0,
+		"sprite_data": {
+			"animations": {},
+			"cols": 4,
+			"frame_h": 32,
+			"frame_w": 32,
+			"hurtbox": {
+				"damage_mult_pct": 100.0,
+				"enabled": true,
+				"shape": {
+					"offset_x": 0.0,
+					"offset_y": 0.0,
+					"rotation": 0.0,
+					"size_x": 32.0,
+					"size_y": 32.0,
+					"type": "rect"
+				}
+			},
+			"margin": 0,
+			"rows": 1,
+			"spacing": 0
+		},
+		"tertiary_type": 0,
+		"traits": [],
+		"trigger_table": {
+			"1": "",
+			"12": "",
+			"13": "",
+			"4": "",
+			"6": "",
+			"8": ""
+		},
+		"type": 1,
+		"walk_speed_pct": 100
+	}
+]

@@ -20,8 +20,15 @@
 		"system.json",
 		"types.json",
 		"vocabulary.json",
-		"switches_vars.json"
+		"switches_vars.json",
+		"npcs.json",
+		"arpg_enemies.json",
+		"arpg_npcs.json",
+		"arpg_weapons.json",
+		"arpg_armors.json",
+		"arpg_shields.json",
+		"arpg_accessories.json"
 	],
-	"saved_at": "2026-11-07T16:58:57",
-	"schema_version": 2
+	"saved_at": "2026-11-16T01:47:27",
+	"schema_version": 3
 }

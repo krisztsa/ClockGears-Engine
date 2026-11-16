@@ -1,0 +1,421 @@
+{
+	"assignments": {
+		"battle_commands": "",
+		"battle_party": "",
+		"choices": "",
+		"game_menu": "",
+		"hud": "",
+		"message": "",
+		"object_desc": "",
+		"object_preview": "",
+		"options": "",
+		"save_list": "",
+		"title_buttons": ""
+	},
+	"default_style_id": "rounded",
+	"schema_version": 1,
+	"styles": [
+		{
+			"border_color": "#e0a040ff",
+			"border_type": "rounded",
+			"border_width": 2,
+			"built_in": true,
+			"buttons": {
+				"disabled": {
+					"border_color": "#474e5db3",
+					"border_type": "rounded",
+					"border_width": 1,
+					"center_mode": "stretch",
+					"corner_radius": 8,
+					"fill_color": "#14171f8c",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#737a8cff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"hover": {
+					"border_color": "#ffd25aff",
+					"border_type": "rounded",
+					"border_width": 1,
+					"center_mode": "stretch",
+					"corner_radius": 8,
+					"fill_color": "#2e3854fa",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#ffffffff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"normal": {
+					"border_color": "#e0a040ff",
+					"border_type": "rounded",
+					"border_width": 1,
+					"center_mode": "stretch",
+					"corner_radius": 8,
+					"fill_color": "#1f2536f0",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#eef2faff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"pressed": {
+					"border_color": "#c88a2eff",
+					"border_type": "rounded",
+					"border_width": 1,
+					"center_mode": "stretch",
+					"corner_radius": 8,
+					"fill_color": "#141a29fa",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#ffe6a8ff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				}
+			},
+			"center_mode": "stretch",
+			"corner_radius": 8,
+			"fill_color": "#14171ff0",
+			"fill_image_path": "",
+			"fill_type": "color",
+			"font_color": "#eef2faff",
+			"id": "rounded",
+			"image_path": "",
+			"name": "Redondeado",
+			"nine_slice": {
+				"bottom": 8,
+				"left": 8,
+				"right": 8,
+				"top": 8
+			},
+			"padding": {
+				"bottom": 10,
+				"left": 12,
+				"right": 12,
+				"top": 10
+			},
+			"pixel_art": true
+		},
+		{
+			"border_color": "#d8dde8ff",
+			"border_type": "rect",
+			"border_width": 2,
+			"built_in": true,
+			"buttons": {
+				"disabled": {
+					"border_color": "#464d5cb3",
+					"border_type": "rect",
+					"border_width": 2,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#10131c8c",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#70788aff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"hover": {
+					"border_color": "#ffffffff",
+					"border_type": "rect",
+					"border_width": 2,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#2a344dfa",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#ffffffff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"normal": {
+					"border_color": "#9aa6bdff",
+					"border_type": "rect",
+					"border_width": 2,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#1a2030f2",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#f0f4fcff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"pressed": {
+					"border_color": "#e0a040ff",
+					"border_type": "rect",
+					"border_width": 2,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#111622fa",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#ffe6a8ff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 12,
+						"right": 12,
+						"top": 6
+					},
+					"pixel_art": true
+				}
+			},
+			"center_mode": "stretch",
+			"corner_radius": 0,
+			"fill_color": "#10131cf2",
+			"fill_image_path": "",
+			"fill_type": "color",
+			"font_color": "#f0f4fcff",
+			"id": "rect",
+			"image_path": "",
+			"name": "Recto",
+			"nine_slice": {
+				"bottom": 8,
+				"left": 8,
+				"right": 8,
+				"top": 8
+			},
+			"padding": {
+				"bottom": 10,
+				"left": 12,
+				"right": 12,
+				"top": 10
+			},
+			"pixel_art": true
+		},
+		{
+			"border_color": "#00000000",
+			"border_type": "none",
+			"border_width": 0,
+			"built_in": true,
+			"buttons": {
+				"disabled": {
+					"border_color": "#00000000",
+					"border_type": "none",
+					"border_width": 0,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#12151f73",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#70788aff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 10,
+						"right": 10,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"hover": {
+					"border_color": "#00000000",
+					"border_type": "none",
+					"border_width": 0,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#2f3a57f2",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#ffffffff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 10,
+						"right": 10,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"normal": {
+					"border_color": "#00000000",
+					"border_type": "none",
+					"border_width": 0,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#1c2233d9",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#eef2faff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 10,
+						"right": 10,
+						"top": 6
+					},
+					"pixel_art": true
+				},
+				"pressed": {
+					"border_color": "#00000000",
+					"border_type": "none",
+					"border_width": 0,
+					"center_mode": "stretch",
+					"corner_radius": 0,
+					"fill_color": "#121724f2",
+					"fill_image_path": "",
+					"fill_type": "color",
+					"font_color": "#ffe6a8ff",
+					"image_path": "",
+					"inherit_normal": false,
+					"nine_slice": {
+						"bottom": 8,
+						"left": 8,
+						"right": 8,
+						"top": 8
+					},
+					"padding": {
+						"bottom": 6,
+						"left": 10,
+						"right": 10,
+						"top": 6
+					},
+					"pixel_art": true
+				}
+			},
+			"center_mode": "stretch",
+			"corner_radius": 0,
+			"fill_color": "#0f121ae6",
+			"fill_image_path": "",
+			"fill_type": "color",
+			"font_color": "#eef2faff",
+			"id": "none",
+			"image_path": "",
+			"name": "Sin bordes",
+			"nine_slice": {
+				"bottom": 8,
+				"left": 8,
+				"right": 8,
+				"top": 8
+			},
+			"padding": {
+				"bottom": 8,
+				"left": 10,
+				"right": 10,
+				"top": 8
+			},
+			"pixel_art": true
+		}
+	]
+}

@@ -1,0 +1,35 @@
+{
+	"schema_version": 1,
+	"screens": {
+		"credits": {
+			"custom_enabled": false,
+			"elements": [],
+			"screen_id": "credits"
+		},
+		"game_menu_equip": {
+			"custom_enabled": false,
+			"elements": [],
+			"screen_id": "game_menu_equip"
+		},
+		"game_menu_items": {
+			"custom_enabled": false,
+			"elements": [],
+			"screen_id": "game_menu_items"
+		},
+		"game_menu_main": {
+			"custom_enabled": false,
+			"elements": [],
+			"screen_id": "game_menu_main"
+		},
+		"game_menu_status": {
+			"custom_enabled": false,
+			"elements": [],
+			"screen_id": "game_menu_status"
+		},
+		"title": {
+			"custom_enabled": false,
+			"elements": [],
+			"screen_id": "title"
+		}
+	}
+}

@@ -1,0 +1,67 @@
+[
+	{
+		"agi": 0,
+		"animations": {},
+		"atk": 0,
+		"avoid_obstacles": true,
+		"body_shape": {
+			"offset_x": 0.0,
+			"offset_y": 6.0,
+			"radius": 10.0,
+			"rotation": 0.0,
+			"size_x": 10.0,
+			"size_y": 10.0,
+			"type": "circle"
+		},
+		"body_through": false,
+		"def": 0,
+		"desc": "",
+		"detection_zones": [],
+		"directional_idle": false,
+		"event_pages": [],
+		"face_player_on_event": true,
+		"follow_distance": 2.0,
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"graphic_path": "",
+		"hp": 0,
+		"id": 1,
+		"luk": 0,
+		"mat": 0,
+		"mdf": 0,
+		"mp": 0,
+		"name": "X",
+		"npc_move_type": "quieto",
+		"path_max_nodes": 256,
+		"path_recalc_ms": 250,
+		"patrol_loop": false,
+		"patrol_points": [],
+		"run_speed_pct": 100,
+		"secondary_type": 0,
+		"sprite_data": {
+			"animations": {},
+			"cols": 4,
+			"frame_h": 32,
+			"frame_w": 32,
+			"hurtbox": {
+				"damage_mult_pct": 100.0,
+				"enabled": true,
+				"shape": {
+					"offset_x": 0.0,
+					"offset_y": 0.0,
+					"rotation": 0.0,
+					"size_x": 32.0,
+					"size_y": 32.0,
+					"type": "rect"
+				}
+			},
+			"margin": 0,
+			"rows": 1,
+			"spacing": 0
+		},
+		"tertiary_type": 0,
+		"traits": [],
+		"type": 0,
+		"walk_speed_pct": 102,
+		"wander_radius": 3.0
+	}
+]

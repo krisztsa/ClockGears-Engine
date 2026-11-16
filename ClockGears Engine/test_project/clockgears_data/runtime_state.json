@@ -1,0 +1,15 @@
+{
+	"actor_states": {},
+	"arpg_equips": {},
+	"defeated_enemies": {},
+	"equips": {},
+	"game_menu_disabled": false,
+	"gold": 0,
+	"hud_visible": true,
+	"hud_widget_visibility": {},
+	"inventory": {},
+	"playtime_sec": 0.0,
+	"switches": {},
+	"variables": {},
+	"window_style_overrides": {}
+}

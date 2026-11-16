@@ -1,1 +1,21 @@
-[]
+[
+	{
+		"agi": 0,
+		"atk": 0,
+		"def": 0,
+		"desc": "",
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"graphic_path": "",
+		"hp": 0,
+		"id": 1,
+		"luk": 0,
+		"mat": 0,
+		"mdf": 0,
+		"mp": 0,
+		"name": "X Mod Mod",
+		"secondary_type": 0,
+		"tertiary_type": 0,
+		"traits": [],
+		"type": 0
+	}
+]

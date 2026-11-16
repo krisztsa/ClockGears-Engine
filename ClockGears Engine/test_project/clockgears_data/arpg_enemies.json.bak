@@ -1,0 +1,210 @@
+[
+	{
+		"ai_type": "persigue_y_ataca",
+		"animations": {},
+		"atk": 15,
+		"attack_interval": 1.5,
+		"attack_range": 1.0,
+		"attack_speed_pct": 100,
+		"avoid_obstacles": true,
+		"body_shape": {
+			"offset_x": 0.0,
+			"offset_y": 6.0,
+			"radius": 10.0,
+			"rotation": 0.0,
+			"size_x": 10.0,
+			"size_y": 10.0,
+			"type": "circle"
+		},
+		"body_through": false,
+		"def": 10,
+		"desc": "",
+		"detection_zones": [
+			{
+				"actions": [
+					{
+						"type": "perseguir"
+					}
+				],
+				"interval_sec": 0.5,
+				"name": "Visión",
+				"shape": {
+					"offset_x": 0.0,
+					"offset_y": 0.0,
+					"radius": 192.0,
+					"rotation": 0.0,
+					"size_x": 192.0,
+					"size_y": 192.0,
+					"type": "circle"
+				},
+				"target_filter": "player",
+				"trigger": "enter"
+			},
+			{
+				"actions": [
+					{
+						"type": "atacar"
+					}
+				],
+				"interval_sec": 1.5,
+				"name": "Ataque",
+				"shape": {
+					"offset_x": 0.0,
+					"offset_y": 0.0,
+					"radius": 32.0,
+					"rotation": 0.0,
+					"size_x": 32.0,
+					"size_y": 32.0,
+					"type": "circle"
+				},
+				"target_filter": "player",
+				"trigger": "while_inside"
+			}
+		],
+		"directional_idle": false,
+		"drops": [
+			{
+				"item_id": 0,
+				"kind": 0,
+				"prob": 100
+			},
+			{
+				"item_id": 0,
+				"kind": 0,
+				"prob": 100
+			},
+			{
+				"item_id": 0,
+				"kind": 0,
+				"prob": 100
+			}
+		],
+		"event_pages": [],
+		"exp": 10,
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"gold": 5,
+		"graphic_path": "",
+		"hp": 100,
+		"id": 1,
+		"knockback_resist": 0,
+		"level": 3,
+		"lose_sight_sec": 4.0,
+		"luk": 5,
+		"mat": 10,
+		"max_distance": 5.0,
+		"mdf": 10,
+		"min_distance": 3.0,
+		"name": "X",
+		"path_max_nodes": 256,
+		"path_recalc_ms": 250,
+		"patrol_loop": false,
+		"patrol_points": [],
+		"run_speed_pct": 100,
+		"secondary_type": 0,
+		"sprite_data": {
+			"animations": {},
+			"cols": 4,
+			"frame_h": 32,
+			"frame_w": 32,
+			"hurtbox": {
+				"damage_mult_pct": 100.0,
+				"enabled": true,
+				"shape": {
+					"offset_x": 0.0,
+					"offset_y": 0.0,
+					"rotation": 0.0,
+					"size_x": 32.0,
+					"size_y": 32.0,
+					"type": "rect"
+				}
+			},
+			"margin": 0,
+			"rows": 1,
+			"spacing": 0
+		},
+		"tertiary_type": 0,
+		"traits": [
+			{
+				"code": 11,
+				"data_id": 0,
+				"element_key": "fisico",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 1,
+				"element_key": "agua",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 2,
+				"element_key": "fuego",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 3,
+				"element_key": "hielo",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 4,
+				"element_key": "electricidad",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 5,
+				"element_key": "viento",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 6,
+				"element_key": "luz",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 7,
+				"element_key": "oscuridad",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 8,
+				"element_key": "astral",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 9,
+				"element_key": "tierra",
+				"element_migrated": true,
+				"value": 100.0
+			},
+			{
+				"code": 11,
+				"data_id": 10,
+				"element_key": "naturaleza",
+				"element_migrated": true,
+				"value": 100.0
+			}
+		],
+		"type": 0,
+		"vision_radius": 6.0,
+		"walk_speed_pct": 100,
+		"wander_radius": 3.0
+	}
+]

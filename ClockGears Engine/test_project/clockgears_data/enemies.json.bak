@@ -1,1 +1,223 @@
-[]
+[
+	{
+		"actions": [],
+		"agi": 0,
+		"animations": {
+			"attack": {
+				"behind_body": false,
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 32,
+				"frame_w": 32,
+				"frames": [],
+				"frames_data": [],
+				"loop": false,
+				"name": "attack",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			},
+			"buff": {
+				"behind_body": false,
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 32,
+				"frame_w": 32,
+				"frames": [],
+				"frames_data": [],
+				"loop": false,
+				"name": "buff",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			},
+			"death": {
+				"behind_body": false,
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 32,
+				"frame_w": 32,
+				"frames": [],
+				"frames_data": [],
+				"loop": false,
+				"name": "death",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			},
+			"hurt": {
+				"behind_body": false,
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 32,
+				"frame_w": 32,
+				"frames": [],
+				"frames_data": [],
+				"loop": false,
+				"name": "hurt",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			},
+			"idle": {
+				"behind_body": false,
+				"cols": 4,
+				"fps": 6.0,
+				"frame_h": 32,
+				"frame_w": 32,
+				"frames": [],
+				"frames_data": [],
+				"loop": true,
+				"name": "idle",
+				"random_order": false,
+				"rows": 1,
+				"spritesheet_path": ""
+			}
+		},
+		"atk": 0,
+		"cast_animations": [],
+		"combat_animations": {
+			"attack": "attack",
+			"buff": "buff",
+			"damage": "hurt",
+			"death": "death",
+			"defend": "idle",
+			"idle": "idle"
+		},
+		"def": 0,
+		"desc": "",
+		"drops": [
+			{
+				"item_id": 0,
+				"kind": 0,
+				"prob": 100
+			},
+			{
+				"item_id": 0,
+				"kind": 0,
+				"prob": 100
+			},
+			{
+				"item_id": 0,
+				"kind": 0,
+				"prob": 100
+			}
+		],
+		"exp": 0,
+		"formula": "max(a.atk * 4 - b.def * 2, 0)",
+		"gold": 0,
+		"graphic_path": "",
+		"hp": 0,
+		"id": 1,
+		"level": 3,
+		"luk": 0,
+		"mat": 0,
+		"mdf": 0,
+		"mp": 0,
+		"name": "X",
+		"other_animations": [],
+		"secondary_type": 0,
+		"sprite_data": {
+			"animations": {
+				"attack": {
+					"behind_body": false,
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "attack",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"buff": {
+					"behind_body": false,
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "buff",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"death": {
+					"behind_body": false,
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "death",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"hurt": {
+					"behind_body": false,
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": false,
+					"name": "hurt",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				},
+				"idle": {
+					"behind_body": false,
+					"cols": 4,
+					"fps": 6.0,
+					"frame_h": 32,
+					"frame_w": 32,
+					"frames": [],
+					"frames_data": [],
+					"loop": true,
+					"name": "idle",
+					"random_order": false,
+					"rows": 1,
+					"spritesheet_path": ""
+				}
+			},
+			"cols": 4,
+			"frame_h": 32,
+			"frame_w": 32,
+			"hurtbox": {
+				"damage_mult_pct": 100.0,
+				"enabled": true,
+				"shape": {
+					"offset_x": 0.0,
+					"offset_y": 0.0,
+					"rotation": 0.0,
+					"size_x": 32.0,
+					"size_y": 32.0,
+					"type": "rect"
+				}
+			},
+			"margin": 0,
+			"rows": 1,
+			"spacing": 0
+		},
+		"tertiary_type": 0,
+		"traits": [],
+		"trigger_table": {
+			"1": "attack",
+			"12": "idle",
+			"13": "idle",
+			"4": "hurt",
+			"6": "death"
+		},
+		"type": 0
+	}
+]

@@ -1287,7 +1287,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		general_section_box->set_visible(!hide_record_col && !is_window_styles);
 	}
 	if (params_grid) {
-		params_grid->set_visible(!hide_record_col && !is_window_styles && !is_classes && current_category != CAT_VOCABULARY && current_category != CAT_SWITCHES_VARS);
+		params_grid->set_visible(!hide_record_col && !is_window_styles && !is_classes);
 	}
 	if (system_panel) {
 		system_panel->set_visible(is_system);
@@ -4002,6 +4002,7 @@ void ClockGearsDatabaseDialog::_set_pending_changes(bool p_pending) {
 	has_pending_changes = p_pending;
 	if (btn_apply_changes) {
 		btn_apply_changes->set_disabled(!has_pending_changes);
+		btn_apply_changes->set_modulate(has_pending_changes ? Color(1.0f, 1.0f, 1.0f, 1.0f) : Color(1.0f, 1.0f, 1.0f, 0.40f));
 	}
 }
 
@@ -5434,6 +5435,13 @@ void ClockGearsDatabaseDialog::_on_spinbox_line_edit_text_changed(const String &
 		le->set_text(filtered);
 		le->set_caret_column(MAX(0, col - diff));
 	}
+	if (!filtered.is_empty() && filtered.is_valid_float()) {
+		double cur_v = filtered.to_float();
+		double last_v = p_spin->has_meta("cg_last_valid_val") ? (double)p_spin->get_meta("cg_last_valid_val") : p_spin->get_value();
+		if (Math::abs(cur_v - last_v) > 0.0001) {
+			_mark_database_dirty();
+		}
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_spinbox_line_edit_submitted(const String &p_text, SpinBox *p_spin) {
@@ -5455,9 +5463,13 @@ void ClockGearsDatabaseDialog::_on_spinbox_line_edit_focus_exited(SpinBox *p_spi
 		le->set_text(String::num(p_spin->get_value(), Math::range_step_decimals(p_spin->get_step())));
 	} else {
 		double parsed = txt.to_float();
+		bool changed = (Math::abs(parsed - prev_val) > 0.0001);
 		p_spin->set_value(parsed);
 		p_spin->set_meta("cg_last_valid_val", p_spin->get_value());
 		le->set_text(String::num(p_spin->get_value(), Math::range_step_decimals(p_spin->get_step())));
+		if (changed) {
+			_mark_database_dirty();
+		}
 	}
 }
 

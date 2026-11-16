@@ -7,16 +7,101 @@
 		"Escudo Pequeño",
 		"Escudo Grande"
 	],
+	"element_keys": [
+		"agua",
+		"fuego",
+		"hielo",
+		"electricidad",
+		"viento",
+		"luz",
+		"oscuridad",
+		"astral",
+		"tierra",
+		"naturaleza"
+	],
+	"element_records": [
+		{
+			"desc": "",
+			"id": 1,
+			"key": "agua",
+			"name": "AguaX Mod Mod",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 2,
+			"key": "fuego",
+			"name": "Fuego",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 3,
+			"key": "hielo",
+			"name": "Hielo",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 4,
+			"key": "electricidad",
+			"name": "Electricidad",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 5,
+			"key": "viento",
+			"name": "Viento",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 6,
+			"key": "luz",
+			"name": "Luz",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 7,
+			"key": "oscuridad",
+			"name": "Oscuridad",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 8,
+			"key": "astral",
+			"name": "Astral",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 9,
+			"key": "tierra",
+			"name": "Tierra",
+			"type": 0
+		},
+		{
+			"desc": "",
+			"id": 10,
+			"key": "naturaleza",
+			"name": "Naturaleza",
+			"type": 0
+		}
+	],
 	"elements": [
-		"Físico",
+		"AguaX Mod Mod",
 		"Fuego",
 		"Hielo",
-		"Rayo",
-		"Agua",
-		"Tierra",
+		"Electricidad",
 		"Viento",
 		"Luz",
-		"Oscuridad"
+		"Oscuridad",
+		"Astral",
+		"Tierra",
+		"Naturaleza"
 	],
 	"equip_slots": [
 		"Mano Derecha (Arma)",

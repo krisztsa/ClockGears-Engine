@@ -1,0 +1,36 @@
+{
+	"alignment": "center",
+	"background": {
+		"color": "#090b12ff",
+		"filter": "nearest",
+		"image_path": "",
+		"scale_mode": "fit",
+		"type": "color"
+	},
+	"bgm_path": "",
+	"items": [],
+	"schema_version": 1,
+	"scroll_speed": 60.0,
+	"styles": {
+		"name": {
+			"align": "",
+			"color": "#ffffffff",
+			"font_size": 20
+		},
+		"role": {
+			"align": "",
+			"color": "#9fb4d9ff",
+			"font_size": 14
+		},
+		"section": {
+			"align": "",
+			"color": "#ffd97dff",
+			"font_size": 26
+		},
+		"text": {
+			"align": "",
+			"color": "#dce4f2ff",
+			"font_size": 16
+		}
+	}
+}

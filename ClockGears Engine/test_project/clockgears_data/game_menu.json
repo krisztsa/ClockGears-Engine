@@ -1,0 +1,96 @@
+{
+	"backgrounds": {
+		"equip": {
+			"color": "#0c101ccc",
+			"filter": "nearest",
+			"image_path": "",
+			"scale_mode": "fit",
+			"type": "color"
+		},
+		"items": {
+			"color": "#0c101ccc",
+			"filter": "nearest",
+			"image_path": "",
+			"scale_mode": "fit",
+			"type": "color"
+		},
+		"menu": {
+			"color": "#0c101ccc",
+			"filter": "nearest",
+			"image_path": "",
+			"scale_mode": "fit",
+			"type": "color"
+		},
+		"status": {
+			"color": "#0c101ccc",
+			"filter": "nearest",
+			"image_path": "",
+			"scale_mode": "fit",
+			"type": "color"
+		}
+	},
+	"entries": [
+		{
+			"enabled": true,
+			"id": "items",
+			"order": 0,
+			"reserved": false,
+			"text": "Objetos"
+		},
+		{
+			"enabled": true,
+			"id": "equip",
+			"order": 1,
+			"reserved": false,
+			"text": "Equipo"
+		},
+		{
+			"enabled": true,
+			"id": "status",
+			"order": 2,
+			"reserved": false,
+			"text": "Estado"
+		},
+		{
+			"enabled": true,
+			"id": "save",
+			"order": 3,
+			"reserved": false,
+			"text": "Guardar"
+		},
+		{
+			"enabled": true,
+			"id": "options",
+			"order": 4,
+			"reserved": false,
+			"text": "Opciones"
+		},
+		{
+			"enabled": true,
+			"id": "to_title",
+			"order": 5,
+			"reserved": false,
+			"text": "Salir al título"
+		},
+		{
+			"enabled": false,
+			"id": "magic",
+			"order": 6,
+			"reserved": true,
+			"text": "Magia"
+		}
+	],
+	"item_preview": {
+		"desc_window_style": "",
+		"enabled": true,
+		"icon_scale": 2,
+		"position": "right",
+		"preview_window_style": "",
+		"rotation_enabled": true,
+		"rotation_step": 15,
+		"show_desc": true,
+		"show_icon": true,
+		"show_name": true
+	},
+	"schema_version": 1
+}
