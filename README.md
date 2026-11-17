@@ -70,7 +70,7 @@ El texto completo está en el archivo de licencia del repositorio, y también de
 © 2026 Kris'ZtS / ClockGears Studio. Todos los derechos reservados sobre las modificaciones y el código original de ClockGears Studio.
 
 🤝 Estado del proyecto y créditos
-Creado por Kris'ZtS (ClockGears Studio), con asistencia de Claude, sobre la base de código de Godot Engine.
+Creado por Kris'ZtS (ClockGears Studio), sobre la base de código de Godot Engine.
 Hoja de ruta: el desarrollo avanza por fases hacia la versión 1.0, y puede cambiar, ampliarse o reajustarse sobre la marcha.
 GitHub oficial: https://github.com/krisztsa/ClockGears-Engine
 Canal de YouTube: https://www.youtube.com/@KrisZtS
