@@ -2227,6 +2227,8 @@ void ClockGearsDataManager::reset_runtime_state() {
 	runtime_game_menu_disabled = false;
 	runtime_hud_visible = true;
 	runtime_hud_widget_visibility.clear();
+	pending_post_transfer_commands.clear();
+	set_runtime_fade_alpha(0.0f);
 	ClockGearsSystemCatalog *cat = ClockGearsSystemCatalog::get_singleton();
 	PackedStringArray sys_slots = cat ? cat->get_equip_slots() : PackedStringArray();
 	for (int i = 0; i < category_data[CAT_ACTORS].size(); i++) {
@@ -2759,6 +2761,88 @@ Array ClockGearsDataManager::resolve_arpg_enemy_drops(const Dictionary &p_enemy_
 		emit_signal("drop_obtained", iname, qty);
 	}
 	return obtained;
+}
+
+void ClockGearsDataManager::set_runtime_fade_alpha(float p_alpha, Node *p_context) {
+	runtime_fade_alpha = CLAMP(p_alpha, 0.0f, 1.0f);
+	ColorRect *rect = Object::cast_to<ColorRect>(ObjectDB::get_instance(persistent_fade_rect_id));
+	if (!rect && p_context && p_context->is_inside_tree()) {
+		rect = ensure_persistent_fade_rect(p_context);
+	}
+	if (rect) {
+		rect->set_color(Color(0.0f, 0.0f, 0.0f, runtime_fade_alpha));
+		rect->set_visible(runtime_fade_alpha > 0.001f);
+		if (Viewport *vp = rect->get_viewport()) {
+			Size2 vsz = vp->get_visible_rect().size;
+			if (vsz.x > 0 && vsz.y > 0) {
+				rect->set_position(Vector2(0, 0));
+				rect->set_size(vsz);
+			}
+		}
+	}
+}
+
+CanvasLayer *ClockGearsDataManager::get_persistent_fade_layer() const {
+	return Object::cast_to<CanvasLayer>(ObjectDB::get_instance(persistent_fade_layer_id));
+}
+
+ColorRect *ClockGearsDataManager::ensure_persistent_fade_rect(Node *p_context, CanvasLayer **r_layer) {
+	CanvasLayer *layer = Object::cast_to<CanvasLayer>(ObjectDB::get_instance(persistent_fade_layer_id));
+	ColorRect *rect = Object::cast_to<ColorRect>(ObjectDB::get_instance(persistent_fade_rect_id));
+
+	Window *root_win = nullptr;
+	if (p_context && p_context->is_inside_tree() && p_context->get_tree()) {
+		root_win = p_context->get_tree()->get_root();
+	}
+
+	if (layer && (!layer->is_inside_tree() || (root_win && layer->get_parent() != root_win))) {
+		layer->queue_free();
+		layer = nullptr;
+		rect = nullptr;
+		persistent_fade_layer_id = ObjectID();
+		persistent_fade_rect_id = ObjectID();
+	}
+
+	if (!layer && root_win) {
+		layer = memnew(CanvasLayer);
+		layer->set_name("ClockGearsGlobalFadeLayer");
+		layer->set_layer(120); // Por encima del mundo (0), HUD (50) y UI (100).
+		root_win->add_child(layer);
+		persistent_fade_layer_id = layer->get_instance_id();
+
+		rect = memnew(ColorRect);
+		rect->set_name("GlobalFadeRect");
+		rect->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		rect->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		rect->set_color(Color(0.0f, 0.0f, 0.0f, runtime_fade_alpha));
+		rect->set_visible(runtime_fade_alpha > 0.001f);
+		layer->add_child(rect);
+		persistent_fade_rect_id = rect->get_instance_id();
+	}
+
+	if (rect && root_win) {
+		Size2 vsz = root_win->get_visible_rect().size;
+		if (vsz.x > 0 && vsz.y > 0) {
+			rect->set_position(Vector2(0, 0));
+			rect->set_size(vsz);
+		}
+		rect->set_color(Color(0.0f, 0.0f, 0.0f, runtime_fade_alpha));
+		rect->set_visible(runtime_fade_alpha > 0.001f);
+	}
+	if (r_layer) {
+		*r_layer = layer;
+	}
+	return rect;
+}
+
+void ClockGearsDataManager::set_pending_post_transfer_commands(const Array &p_cmds) {
+	pending_post_transfer_commands = p_cmds.duplicate(true);
+}
+
+Array ClockGearsDataManager::take_pending_post_transfer_commands() {
+	Array out = pending_post_transfer_commands.duplicate(true);
+	pending_post_transfer_commands.clear();
+	return out;
 }
 
 void ClockGearsDataManager::advance_runtime_clock(double p_delta_sec) {
@@ -6993,6 +7077,7 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_gold", "gold"), &ClockGearsDataManager::set_gold);
 	ClassDB::bind_method(D_METHOD("change_gold", "amount"), &ClockGearsDataManager::change_gold);
 	ClassDB::bind_method(D_METHOD("reset_runtime_state"), &ClockGearsDataManager::reset_runtime_state);
+	ClassDB::bind_method(D_METHOD("get_runtime_fade_alpha"), &ClockGearsDataManager::get_runtime_fade_alpha);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("evaluate_traits_element_rate", "traits", "element_id", "element_name"), &ClockGearsDataManager::evaluate_traits_element_rate, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("get_actor_runtime_state", "actor_id"), &ClockGearsDataManager::get_actor_runtime_state);
 	ClassDB::bind_method(D_METHOD("set_actor_runtime_hp", "actor_id", "hp"), &ClockGearsDataManager::set_actor_runtime_hp);

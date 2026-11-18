@@ -2454,6 +2454,7 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_credits_player"), &ClockGearsEventInterpreter::get_credits_player);
 	ClassDB::bind_method(D_METHOD("get_game_over_screen"), &ClockGearsEventInterpreter::get_game_over_screen);
 	ClassDB::bind_method(D_METHOD("show_game_over", "cfg_override"), &ClockGearsEventInterpreter::show_game_over, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("get_fade_state"), &ClockGearsEventInterpreter::get_fade_state);
 	ClassDB::bind_method(D_METHOD("get_hud_layer"), &ClockGearsEventInterpreter::get_hud_layer);
 	ClassDB::bind_method(D_METHOD("get_hud_overlay"), &ClockGearsEventInterpreter::get_hud_overlay);
 	ClassDB::bind_method(D_METHOD("has_active_battle"), &ClockGearsEventInterpreter::has_active_battle);
@@ -2616,6 +2617,12 @@ void ClockGearsEventInterpreter::setup_interpreter(ClockGearsMap *p_map, ClockGe
 	}
 	_sync_hud_context_visibility();
 	_refresh_all_map_events();
+	_get_fade_rect();
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		if (dm->has_pending_post_transfer_commands()) {
+			callable_mp(this, &ClockGearsEventInterpreter::_resume_post_transfer_commands).call_deferred();
+		}
+	}
 }
 
 void ClockGearsEventInterpreter::_refresh_all_map_events() {
@@ -3172,13 +3179,22 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 	}
 
 	if (type == "fade" || code == CG_CMD_FADEOUT_SCREEN || code == CG_CMD_FADEIN_SCREEN) {
-		String mode = p_cmd.get("mode", (code == CG_CMD_FADEIN_SCREEN) ? "Mostrar" : "Oscurecer");
-		int dur_frames = MAX(1, int(p_cmd.get("duration", 30)));
-		fade_duration = float(dur_frames) / 60.0f;
-		fade_timer = 0.0f;
-		if (screen_fade_rect) {
-			fade_start_color = screen_fade_rect->get_color();
-			fade_target_color = mode.begins_with("Oscurecer") ? Color(0, 0, 0, 1) : Color(0, 0, 0, 0);
+		_build_runtime_ui();
+		String mode = String(p_cmd.get("mode", (code == CG_CMD_FADEIN_SCREEN) ? "Aclarar" : "Oscurecer")).strip_edges();
+		int dur_frames = MAX(1, int(p_cmd.get("duration", p_cmd.get("frames", 30))));
+		bool is_out = mode.begins_with("Oscurecer") || mode.to_lower() == "oscurecer" || mode.to_lower().find("out") >= 0;
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		_get_fade_rect();
+		fade_start_alpha = dm ? dm->get_runtime_fade_alpha() : (screen_fade_rect ? screen_fade_rect->get_color().a : 0.0f);
+		fade_target_alpha = is_out ? 1.0f : 0.0f;
+		fade_frames_elapsed = 0;
+		fade_frames_total = dur_frames;
+		fade_active = true;
+		_apply_fade_alpha(fade_start_alpha);
+		if (bool(p_cmd.get("wait", true))) {
+			wait_frames_remaining = dur_frames;
+			state = STATE_WAITING_FRAMES;
+			return false;
 		}
 		return true;
 	}
@@ -3691,6 +3707,15 @@ void ClockGearsEventInterpreter::_perform_map_transfer(const String &p_map_path,
 				sys["runtime_transfer_dir"] = p_dir;
 				sys["runtime_has_transfer"] = true;
 				dm->set_system_config(sys);
+
+				// Preservar los comandos posteriores al Transferir (ej. Aclarar en preset Puerta) al cambiar de escena.
+				if (command_index + 1 < active_commands.size()) {
+					Array rem;
+					for (int ci = command_index + 1; ci < active_commands.size(); ci++) {
+						rem.push_back(active_commands[ci]);
+					}
+					dm->set_pending_post_transfer_commands(rem);
+				}
 			}
 			get_tree()->change_scene_to_file(path);
 		}
@@ -3698,6 +3723,66 @@ void ClockGearsEventInterpreter::_perform_map_transfer(const String &p_map_path,
 	if (!changing_scene && current_map) {
 		current_map->apply_enemy_respawns_on_enter();
 	}
+}
+
+ColorRect *ClockGearsEventInterpreter::_get_fade_rect(CanvasLayer **r_layer) {
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		CanvasLayer *pl = nullptr;
+		ColorRect *pr = dm->ensure_persistent_fade_rect(this, &pl);
+		if (pr) {
+			if (screen_fade_rect) {
+				screen_fade_rect->set_visible(false);
+			}
+			if (r_layer) {
+				*r_layer = pl;
+			}
+			return pr;
+		}
+	}
+	if (r_layer) {
+		*r_layer = ui_layer;
+	}
+	return screen_fade_rect;
+}
+
+void ClockGearsEventInterpreter::_apply_fade_alpha(float p_alpha) {
+	float a = CLAMP(p_alpha, 0.0f, 1.0f);
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		dm->set_runtime_fade_alpha(a, this);
+		if (dm->get_persistent_fade_layer()) {
+			return;
+		}
+	}
+	if (screen_fade_rect) {
+		screen_fade_rect->set_color(Color(0.0f, 0.0f, 0.0f, a));
+		screen_fade_rect->set_visible(a > 0.001f);
+	}
+}
+
+void ClockGearsEventInterpreter::_resume_post_transfer_commands() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !dm->has_pending_post_transfer_commands()) {
+		return;
+	}
+	Array cmds = dm->take_pending_post_transfer_commands();
+	if (!cmds.is_empty() && state == STATE_IDLE) {
+		start_command_list(cmds, nullptr);
+	}
+}
+
+Dictionary ClockGearsEventInterpreter::get_fade_state() {
+	Dictionary out;
+	CanvasLayer *layer = nullptr;
+	ColorRect *rect = _get_fade_rect(&layer);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	out["layer"] = layer ? layer->get_layer() : -1;
+	out["layer_name"] = layer ? String(layer->get_name()) : String();
+	out["visible"] = rect ? rect->is_visible() : false;
+	out["alpha"] = rect ? rect->get_color().a : (dm ? dm->get_runtime_fade_alpha() : 0.0f);
+	out["rect"] = rect ? rect->get_rect() : Rect2();
+	out["viewport_rect"] = (is_inside_tree() && get_viewport()) ? get_viewport()->get_visible_rect() : Rect2();
+	out["fade_active"] = fade_active;
+	return out;
 }
 
 void ClockGearsEventInterpreter::start_screen_shake(float p_power, float p_speed, float p_duration, bool p_wait) {
@@ -3816,6 +3901,7 @@ void ClockGearsEventInterpreter::step_frame() {
 			if (screen_flash_rect && screen_flash_rect->get_size() != vsz) screen_flash_rect->set_size(vsz);
 		}
 	}
+	_get_fade_rect();
 
 	// Actualizar efectos de pantalla (Flash, Fade, Tint y Shake)
 	if (shake_timer > 0.0f) {
@@ -3861,12 +3947,13 @@ void ClockGearsEventInterpreter::step_frame() {
 		c.a = flash_base_color.a * ratio;
 		screen_flash_rect->set_color(c);
 	}
-	if (fade_duration > 0.0f && screen_fade_rect) {
-		fade_timer += dt;
-		float t = CLAMP(fade_timer / fade_duration, 0.0f, 1.0f);
-		screen_fade_rect->set_color(fade_start_color.lerp(fade_target_color, t));
-		if (t >= 1.0f) {
-			fade_duration = 0.0f;
+	if (fade_active) {
+		fade_frames_elapsed++;
+		float t = CLAMP(float(fade_frames_elapsed) / float(MAX(1, fade_frames_total)), 0.0f, 1.0f);
+		_apply_fade_alpha(Math::lerp(fade_start_alpha, fade_target_alpha, t));
+		if (fade_frames_elapsed >= fade_frames_total) {
+			fade_active = false;
+			_apply_fade_alpha(fade_target_alpha);
 		}
 	}
 

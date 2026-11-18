@@ -10,6 +10,9 @@
 #include "scene/resources/image_texture.h"
 #include "scene/resources/texture.h"
 
+class CanvasLayer;
+class ColorRect;
+
 enum ClockGearsDatabaseCategory {
 	CAT_ACTORS = 0,
 	CAT_CLASSES,
@@ -95,6 +98,10 @@ private:
 	bool runtime_game_menu_disabled = false;
 	bool runtime_hud_visible = true;
 	Dictionary runtime_hud_widget_visibility;
+	float runtime_fade_alpha = 0.0f;
+	Array pending_post_transfer_commands;
+	ObjectID persistent_fade_layer_id;
+	ObjectID persistent_fade_rect_id;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
 	mutable HashMap<String, Ref<Texture2D>> entry_icon_cache;
@@ -332,6 +339,15 @@ public:
 	void set_gold(int p_gold);
 	void change_gold(int p_amount);
 	void reset_runtime_state();
+
+	// Fundido persistente entre mapas y cola de comandos post-transferencia (9B Punto 4)
+	float get_runtime_fade_alpha() const { return runtime_fade_alpha; }
+	void set_runtime_fade_alpha(float p_alpha, Node *p_context = nullptr);
+	ColorRect *ensure_persistent_fade_rect(Node *p_context, CanvasLayer **r_layer = nullptr);
+	CanvasLayer *get_persistent_fade_layer() const;
+	void set_pending_post_transfer_commands(const Array &p_cmds);
+	bool has_pending_post_transfer_commands() const { return !pending_post_transfer_commands.is_empty(); }
+	Array take_pending_post_transfer_commands();
 
 	// Estado persistente de actor, combate ARPG, drops y respawn (Tanda 3C-1)
 	static float evaluate_traits_element_rate(const Array &p_traits, int p_element_id, const String &p_element_name = String());

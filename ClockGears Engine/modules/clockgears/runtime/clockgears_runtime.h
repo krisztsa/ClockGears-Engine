@@ -403,6 +403,11 @@ private:
 	float fade_duration = 0.0f;
 	Color fade_start_color = Color(0, 0, 0, 0);
 	Color fade_target_color = Color(0, 0, 0, 0);
+	bool fade_active = false;
+	int fade_frames_elapsed = 0;
+	int fade_frames_total = 0;
+	float fade_start_alpha = 0.0f;
+	float fade_target_alpha = 0.0f;
 
 	// Temblor de Pantalla (Screen Shake)
 	float shake_timer = 0.0f;
@@ -433,6 +438,9 @@ private:
 	bool _execute_single_command(const Dictionary &p_cmd);
 	void _refresh_all_map_events();
 	void _perform_map_transfer(const String &p_map_path, int p_x, int p_y, int p_dir);
+	ColorRect *_get_fade_rect(CanvasLayer **r_layer = nullptr);
+	void _apply_fade_alpha(float p_alpha);
+	void _resume_post_transfer_commands();
 
 protected:
 	static void _bind_methods();
@@ -462,6 +470,7 @@ public:
 	CanvasLayer *get_screen_tint_layer() const { return screen_tint_layer; }
 	CanvasLayer *get_ui_layer() const { return ui_layer; }
 	ClockGearsMessageWindow *get_message_window() const { return message_window; }
+	Dictionary get_fade_state();
 
 	void start_screen_shake(float p_power, float p_speed, float p_duration, bool p_wait = false);
 	void stop_screen_shake();
