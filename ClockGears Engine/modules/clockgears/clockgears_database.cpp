@@ -526,6 +526,7 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_hud_preview_resolution", "width", "height"), &ClockGearsDatabaseDialog::set_hud_preview_resolution);
 	ClassDB::bind_method(D_METHOD("set_hud_preview_sample_values", "hp", "gold", "item_qty"), &ClockGearsDatabaseDialog::set_hud_preview_sample_values);
 	ClassDB::bind_method(D_METHOD("get_hud_live_preview"), &ClockGearsDatabaseDialog::get_hud_live_preview);
+	ClassDB::bind_method(D_METHOD("get_hud_hearts_show_bg_checkbox"), &ClockGearsDatabaseDialog::get_hud_hearts_show_bg_checkbox);
 	ClassDB::bind_method(D_METHOD("get_hud_editor_ui_handles"), &ClockGearsDatabaseDialog::get_hud_editor_ui_handles);
 	ClassDB::bind_method(D_METHOD("get_ui_designer_editor"), &ClockGearsDatabaseDialog::get_ui_designer_editor);
 	ClassDB::bind_method(D_METHOD("get_ui_designer_ui_handles"), &ClockGearsDatabaseDialog::get_ui_designer_ui_handles);
@@ -20232,6 +20233,31 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	hud_hearts_box->add_theme_constant_override("separation", int(6 * EDSCALE));
 	type_body->add_child(hud_hearts_box);
 
+	hud_hearts_show_bg_chk = memnew(CheckBox(CG_DB_TR("Mostrar fondo")));
+	hud_hearts_show_bg_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hud_hearts_box->add_child(hud_hearts_show_bg_chk);
+	{
+		HBoxContainer *bg_row = memnew(HBoxContainer);
+		bg_row->add_theme_constant_override("separation", int(8 * EDSCALE));
+		hud_hearts_box->add_child(bg_row);
+		Label *bc_lbl = memnew(Label(CG_DB_TR("Color fondo:")));
+		bg_row->add_child(bc_lbl);
+		hud_hearts_bg_color_btn = memnew(ColorPickerButton);
+		hud_hearts_bg_color_btn->set_edit_alpha(false);
+		hud_hearts_bg_color_btn->set_custom_minimum_size(Size2(60 * EDSCALE, 26 * EDSCALE));
+		hud_hearts_bg_color_btn->connect("color_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+		bg_row->add_child(hud_hearts_bg_color_btn);
+		Label *bo_lbl = memnew(Label(CG_DB_TR("Opacidad:")));
+		bg_row->add_child(bo_lbl);
+		hud_hearts_bg_opacity_spin = memnew(SpinBox);
+		hud_hearts_bg_opacity_spin->set_min(0);
+		hud_hearts_bg_opacity_spin->set_max(100);
+		hud_hearts_bg_opacity_spin->set_suffix("%");
+		hud_hearts_bg_opacity_spin->set_value(60);
+		hud_hearts_bg_opacity_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+		bg_row->add_child(hud_hearts_bg_opacity_spin);
+	}
+
 	GridContainer *hgrid = memnew(GridContainer);
 	hgrid->set_columns(2);
 	hgrid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -20765,6 +20791,9 @@ void ClockGearsDatabaseDialog::_refresh_hud_selected_widget_props() {
 		if (hud_bar_bg_img_edit) hud_bar_bg_img_edit->set_text(String(w.get("bg_image_path", "")));
 		if (hud_bar_fill_img_edit) hud_bar_fill_img_edit->set_text(String(w.get("fill_image_path", "")));
 	} else if (wtype == "hearts") {
+		if (hud_hearts_show_bg_chk) hud_hearts_show_bg_chk->set_pressed(bool(w.get("show_background", false)));
+		if (hud_hearts_bg_color_btn) hud_hearts_bg_color_btn->set_pick_color(Color::html(String(w.get("bg_color", "#1a1a1a"))));
+		if (hud_hearts_bg_opacity_spin) hud_hearts_bg_opacity_spin->set_value(int(w.get("bg_opacity", 60)));
 		if (hud_hearts_hp_spin) hud_hearts_hp_spin->set_value(int(w.get("hp_per_heart", 20)));
 		int hsz = int(w.get("heart_size", 20));
 		int hsp = int(w.get("spacing", 4));
@@ -21037,6 +21066,9 @@ void ClockGearsDatabaseDialog::_on_hud_type_field_changed() {
 		if (hud_bar_bg_img_edit) w["bg_image_path"] = hud_bar_bg_img_edit->get_text();
 		if (hud_bar_fill_img_edit) w["fill_image_path"] = hud_bar_fill_img_edit->get_text();
 	} else if (wtype == "hearts") {
+		if (hud_hearts_show_bg_chk) w["show_background"] = hud_hearts_show_bg_chk->is_pressed();
+		if (hud_hearts_bg_color_btn) w["bg_color"] = "#" + hud_hearts_bg_color_btn->get_pick_color().to_html(false);
+		if (hud_hearts_bg_opacity_spin) w["bg_opacity"] = int(hud_hearts_bg_opacity_spin->get_value());
 		if (hud_hearts_hp_spin) w["hp_per_heart"] = int(hud_hearts_hp_spin->get_value());
 		if (hud_hearts_per_row_spin) w["max_hearts_per_row"] = int(hud_hearts_per_row_spin->get_value());
 		if (hud_hearts_max_rows_spin) w["max_rows"] = int(hud_hearts_max_rows_spin->get_value());

@@ -879,6 +879,9 @@ private:
 	SpinBox *hud_bar_font_size_spin = nullptr;
 
 	VBoxContainer *hud_hearts_box = nullptr;
+	CheckBox *hud_hearts_show_bg_chk = nullptr;
+	ColorPickerButton *hud_hearts_bg_color_btn = nullptr;
+	SpinBox *hud_hearts_bg_opacity_spin = nullptr;
 	SpinBox *hud_hearts_hp_spin = nullptr;
 	HSlider *hud_hearts_size_slider = nullptr;
 	SpinBox *hud_hearts_size_spin = nullptr;
@@ -1510,6 +1513,7 @@ public:
 	void set_hud_preview_resolution(int p_width, int p_height);
 	void set_hud_preview_sample_values(int p_hp, int p_gold, int p_item_qty);
 	ClockGearsHudOverlay *get_hud_live_preview() const { return hud_live_preview; }
+	CheckBox *get_hud_hearts_show_bg_checkbox() const { return hud_hearts_show_bg_chk; }
 	Dictionary get_hud_editor_ui_handles() const;
 
 	String import_menu_asset_for_ui_designer(const String &p_src_path, bool p_pixel_preset = true);

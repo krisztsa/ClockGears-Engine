@@ -602,12 +602,25 @@ void ClockGearsHudOverlay::_apply_widget_window_style(WidgetEntry &r_entry, floa
 	if (!r_entry.bg_panel || !r_entry.content_root || !r_entry.root) {
 		return;
 	}
+	if (r_entry.type == "hearts") {
+		bool show_bg = bool(r_entry.config.get("show_background", false));
+		if (!show_bg) {
+			r_entry.bg_panel->set_visible(false);
+			r_entry.content_root->set_position(Vector2(0, 0));
+			r_entry.content_root->set_size(r_entry.root->get_size());
+			return;
+		}
+	}
 	String sid = r_entry.window_style_id.strip_edges().to_lower();
 	if (r_entry.type != "frame" && (sid.is_empty() || sid == "none")) {
-		r_entry.bg_panel->set_visible(false);
-		r_entry.content_root->set_position(Vector2(0, 0));
-		r_entry.content_root->set_size(r_entry.root->get_size());
-		return;
+		if (r_entry.type == "hearts" && bool(r_entry.config.get("show_background", false))) {
+			sid = "hud";
+		} else {
+			r_entry.bg_panel->set_visible(false);
+			r_entry.content_root->set_position(Vector2(0, 0));
+			r_entry.content_root->set_size(r_entry.root->get_size());
+			return;
+		}
 	}
 
 	r_entry.bg_panel->set_visible(true);
@@ -620,6 +633,17 @@ void ClockGearsHudOverlay::_apply_widget_window_style(WidgetEntry &r_entry, floa
 		}
 	}
 	ClockGearsWindowStyleManager::apply_window_style(r_entry.bg_panel, "hud", surface_overrides);
+	if (r_entry.type == "hearts") {
+		// Fondo de corazones: color y opacidad propios del widget.
+		Color bgc = Color::html(String(r_entry.config.get("bg_color", "#1a1a1a")));
+		bgc.a = CLAMP(float(int(r_entry.config.get("bg_opacity", 60))) / 100.0f, 0.0f, 1.0f);
+		Ref<StyleBoxFlat> hsb;
+		hsb.instantiate();
+		hsb->set_bg_color(bgc);
+		hsb->set_corner_radius_all(int(6 * p_scale));
+		hsb->set_content_margin_all(4.0f * p_scale);
+		r_entry.bg_panel->add_theme_style_override("panel", hsb);
+	}
 	Ref<StyleBox> sb = r_entry.bg_panel->get_theme_stylebox("panel");
 	float pad_l = sb.is_valid() ? MAX(0.0f, sb->get_content_margin(SIDE_LEFT)) : (4.0f * p_scale);
 	float pad_t = sb.is_valid() ? MAX(0.0f, sb->get_content_margin(SIDE_TOP)) : (4.0f * p_scale);

@@ -177,6 +177,7 @@ private:
 	SpinBox *prop_h_spin = nullptr;
 	SpinBox *prop_layer_spin = nullptr;
 	CheckBox *prop_visible_chk = nullptr;
+	CheckBox *prop_show_bg_chk = nullptr;
 	OptionButton *prop_style_opt = nullptr;
 
 	// Texto / Imagen / Enlace / Acción botón

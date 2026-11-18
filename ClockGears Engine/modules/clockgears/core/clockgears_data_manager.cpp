@@ -4366,6 +4366,9 @@ static void _cg_normalize_hud_core_fields(const Dictionary &p_in, const Dictiona
 		r_out["spacing"] = CLAMP(int(p_in.get("spacing", p_def.get("spacing", 4))), 0, 64);
 		r_out["max_hearts_per_row"] = CLAMP(int(p_in.get("max_hearts_per_row", p_def.get("max_hearts_per_row", 10))), 1, 50);
 		r_out["max_rows"] = CLAMP(int(p_in.get("max_rows", p_def.get("max_rows", 2))), 1, 20);
+		r_out["show_background"] = p_in.has("show_background") ? bool(p_in["show_background"]) : false;
+		r_out["bg_color"] = String(p_in.get("bg_color", "#1a1a1a")).strip_edges();
+		r_out["bg_opacity"] = CLAMP(int(p_in.get("bg_opacity", 60)), 0, 100);
 	} else if (p_wtype == "currency") {
 		r_out["icon_path"] = String(p_in.get("icon_path", "")).strip_edges();
 		r_out["show_icon"] = p_in.has("show_icon") ? bool(p_in["show_icon"]) : true;
@@ -4496,6 +4499,9 @@ Dictionary ClockGearsDataManager::make_default_hud_widget(const String &p_type) 
 		w["spacing"] = 4;
 		w["max_hearts_per_row"] = 10;
 		w["max_rows"] = 2;
+		w["show_background"] = false;
+		w["bg_color"] = "#1a1a1a";
+		w["bg_opacity"] = 60;
 	} else if (wtype == "currency") {
 		w["name"] = "Monedas";
 		w["anchor"] = "top_right";

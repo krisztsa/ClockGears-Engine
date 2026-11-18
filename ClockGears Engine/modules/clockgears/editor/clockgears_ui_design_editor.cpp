@@ -909,6 +909,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_visible_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	g->add_child(prop_visible_chk);
 
+	add_lbl("Fondo:");
+	prop_show_bg_chk = memnew(CheckBox("Mostrar fondo"));
+	prop_show_bg_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	g->add_child(prop_show_bg_chk);
+
 	add_lbl("Estilo ventana:");
 	prop_style_opt = memnew(OptionButton);
 	prop_style_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1402,6 +1407,9 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	prop_h_spin->set_value(int(el.get("height", 36)));
 	prop_layer_spin->set_value(int(el.get("layer_order", 0)));
 	prop_visible_chk->set_pressed(bool(el.get("visible", true)));
+	if (prop_show_bg_chk) {
+		prop_show_bg_chk->set_pressed(bool(el.get("show_background", false)));
+	}
 	s_select_option_meta(prop_style_opt, String(el.get("window_style_id", "")));
 
 	bool has_text = (etype == "text" || etype == "button" || etype == "variable" || etype == "bar");
@@ -1715,6 +1723,9 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 	el["height"] = int(Math::round(prop_h_spin->get_value()));
 	el["layer_order"] = int(Math::round(prop_layer_spin->get_value()));
 	el["visible"] = prop_visible_chk->is_pressed();
+	if (prop_show_bg_chk) {
+		el["show_background"] = prop_show_bg_chk->is_pressed();
+	}
 	if (prop_style_opt && prop_style_opt->get_selected() >= 0) {
 		el["window_style_id"] = String(prop_style_opt->get_item_metadata(prop_style_opt->get_selected()));
 	}
