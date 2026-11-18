@@ -16,7 +16,7 @@ class ClockGearsPreferencesDialog : public AcceptDialog {
 private:
 	TabContainer *tabs = nullptr;
 
-	// Tab 1: Resolución
+	// Tab 1: Resolución y editor de mapa
 	OptionButton *preset_opt = nullptr;
 	SpinBox *width_spin = nullptr;
 	SpinBox *height_spin = nullptr;
@@ -27,6 +27,8 @@ private:
 	CheckBox *fullscreen_check = nullptr;
 	OptionButton *stretch_mode_opt = nullptr;
 	OptionButton *stretch_aspect_opt = nullptr;
+	CheckBox *dim_inactive_layers_check = nullptr;
+	SpinBox *inactive_layer_opacity_spin = nullptr;
 
 	// Tab 2: Exportación
 	LineEdit *windows_path_edit = nullptr;
@@ -38,6 +40,7 @@ private:
 
 	void _on_preset_selected(int p_idx);
 	void _on_win_preset_selected(int p_idx);
+	void _on_dim_inactive_toggled(bool p_pressed);
 	void _on_export_now_pressed();
 	void _on_dialog_confirmed();
 	void _load_settings();
@@ -48,6 +51,11 @@ protected:
 
 public:
 	void open_preferences();
+	bool is_dim_inactive_layers_checked() const;
+	void set_dim_inactive_layers_checked(bool p_enabled);
+	int get_inactive_layer_opacity_value() const;
+	void set_inactive_layer_opacity_value(int p_pct);
+	void apply_and_save_preferences();
 
 	ClockGearsPreferencesDialog();
 };

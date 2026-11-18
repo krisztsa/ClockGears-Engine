@@ -73,6 +73,15 @@ void ClockGearsMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_player_start_position", "cell", "dir"), &ClockGearsMap::set_player_start_position, DEFVAL(2));
 	ClassDB::bind_method(D_METHOD("ensure_default_layers"), &ClockGearsMap::ensure_default_layers);
 	ClassDB::bind_method(D_METHOD("create_default_layers"), &ClockGearsMap::create_default_layers);
+	ClassDB::bind_method(D_METHOD("get_custom_layer", "layer_id"), &ClockGearsMap::get_custom_layer);
+	ClassDB::bind_method(D_METHOD("get_or_create_custom_layer", "layer_id"), &ClockGearsMap::get_or_create_custom_layer);
+	ClassDB::bind_method(D_METHOD("sync_custom_layers_from_project", "create_all"), &ClockGearsMap::sync_custom_layers_from_project, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("set_custom_layer_tile_at", "layer_id", "cell", "atlas_coords", "source_id", "alt"), &ClockGearsMap::set_custom_layer_tile_at, DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("get_custom_layer_tile_at", "layer_id", "cell"), &ClockGearsMap::get_custom_layer_tile_at);
+	ClassDB::bind_method(D_METHOD("duplicate_custom_layer_tiles", "source_id", "dest_id"), &ClockGearsMap::duplicate_custom_layer_tiles);
+	ClassDB::bind_method(D_METHOD("remove_custom_layer_node", "layer_id"), &ClockGearsMap::remove_custom_layer_node);
+	ClassDB::bind_method(D_METHOD("apply_editor_layer_dimming", "force_editor_context"), &ClockGearsMap::apply_editor_layer_dimming, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_rendered_layers_ordered"), &ClockGearsMap::get_rendered_layers_ordered);
 	ClassDB::bind_method(D_METHOD("init_runtime_session"), &ClockGearsMap::init_runtime_session);
 	ClassDB::bind_method(D_METHOD("get_runtime_player"), &ClockGearsMap::get_runtime_player);
 	ClassDB::bind_method(D_METHOD("get_runtime_followers"), &ClockGearsMap::get_runtime_followers);
@@ -83,6 +92,9 @@ void ClockGearsMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_tileset_id"), &ClockGearsMap::get_tileset_id);
 	ClassDB::bind_method(D_METHOD("setup_tileset_from_database", "tileset_id"), &ClockGearsMap::setup_tileset_from_database);
 	ClassDB::bind_method(D_METHOD("get_layer", "layer_idx"), &ClockGearsMap::get_layer);
+	ClassDB::bind_method(D_METHOD("get_events_container"), &ClockGearsMap::get_events_container);
+	ClassDB::bind_method(D_METHOD("set_preview_only", "enabled"), &ClockGearsMap::set_preview_only);
+	ClassDB::bind_method(D_METHOD("is_preview_only"), &ClockGearsMap::is_preview_only);
 	ClassDB::bind_method(D_METHOD("is_tile_passable", "cell", "dir"), &ClockGearsMap::is_tile_passable, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("get_cell_collision_type", "cell"), &ClockGearsMap::get_cell_collision_type);
 	ClassDB::bind_method(D_METHOD("can_pass_tile_step", "from", "to", "dir"), &ClockGearsMap::can_pass_tile_step, DEFVAL(0));
@@ -127,6 +139,11 @@ void ClockGearsMap::_on_dm_data_changed(const String &p_category, int p_id) {
 	if (p_category == "tilesets" || p_category.is_empty()) {
 		invalidate_passability_cache();
 	}
+	if (p_category == "custom_layers" || p_category == "system" || p_category.is_empty()) {
+		sync_custom_layers_from_project(false);
+		invalidate_passability_cache();
+		apply_editor_layer_dimming(false);
+	}
 }
 
 void ClockGearsMap::_ensure_passability_signals() {
@@ -135,6 +152,12 @@ void ClockGearsMap::_ensure_passability_signals() {
 	for (int i = 0; i < 4; i++) {
 		if (layers[i] && !layers[i]->is_connected("changed", inv_cb)) {
 			layers[i]->connect("changed", inv_cb);
+		}
+	}
+	for (int i = 0; i < get_child_count(); i++) {
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+		if (tl && String(tl->get_name()).begins_with("Capa_Custom_") && !tl->is_connected("changed", inv_cb)) {
+			tl->connect("changed", inv_cb);
 		}
 	}
 	if (!layer_signals_connected) {
@@ -205,15 +228,41 @@ void ClockGearsMap::_notification(int p_what) {
 			set_meta("_edit_group_", true);
 			ensure_default_layers();
 			_bind_layer_pointers();
-			_ensure_passability_signals();
-			invalidate_passability_cache();
 			if (tileset_id > 0) {
 				setup_tileset_from_database(tileset_id);
 			}
+			sync_custom_layers_from_project(false);
+			_ensure_passability_signals();
+			invalidate_passability_cache();
 			if (p_what == NOTIFICATION_READY && !Engine::get_singleton()->is_editor_hint() && !preview_only) {
+				apply_editor_layer_dimming(false);
 				set_physics_process(true);
 				init_runtime_session();
+			} else {
+				apply_editor_layer_dimming(false);
 			}
+		} break;
+		case NOTIFICATION_EDITOR_PRE_SAVE: {
+			// Nunca persistir la atenuación visual del editor dentro de los archivos .tscn.
+			TileMapLayer *layers[4] = { layer_ground, layer_decoration, layer_objects, layer_overhead };
+			for (int i = 0; i < 4; i++) {
+				if (layers[i]) {
+					layers[i]->set_self_modulate(Color(1, 1, 1, 1));
+				}
+			}
+			for (int i = 0; i < get_child_count(); i++) {
+				TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+				if (tl && String(tl->get_name()).begins_with("Capa_Custom_")) {
+					tl->set_self_modulate(Color(1, 1, 1, 1));
+				}
+			}
+			if (events_container) {
+				events_container->set_self_modulate(Color(1, 1, 1, 1));
+				events_container->set_modulate(Color(1, 1, 1, 1));
+			}
+		} break;
+		case NOTIFICATION_EDITOR_POST_SAVE: {
+			apply_editor_layer_dimming(false);
 		} break;
 		case NOTIFICATION_PHYSICS_PROCESS: {
 			if (!Engine::get_singleton()->is_editor_hint() && !preview_only) {
@@ -494,7 +543,8 @@ void ClockGearsMap::_rebuild_passability_cache() const {
 		}
 	}
 
-	const TileMapLayer *layers[4] = { layer_overhead, layer_objects, layer_decoration, layer_ground };
+	Vector<TileMapLayer *> ordered_layers;
+	_collect_ordered_tile_layers(ordered_layers, true);
 	static const char *skeys[9] = { "A5", "B", "C", "D", "E", "A1", "A2", "A3", "A4" };
 
 	// Pre-indexar metadatos por Vector2i en hash local O(1) para evitar String/vformat por celda y capa
@@ -537,8 +587,8 @@ void ClockGearsMap::_rebuild_passability_cache() const {
 			bool display_decided = false;
 			bool passage_decided = false;
 
-			for (int i = 0; i < 4; i++) {
-				const TileMapLayer *tlayer = layers[i];
+			for (int i = 0; i < ordered_layers.size(); i++) {
+				const TileMapLayer *tlayer = ordered_layers[i];
 				if (!tlayer || tlayer->get_cell_source_id(cell) == -1) {
 					continue;
 				}
@@ -762,6 +812,459 @@ Node2D *ClockGearsMap::get_events_container() {
 	return events_container;
 }
 
+TileMapLayer *ClockGearsMap::get_custom_layer(const String &p_layer_id) const {
+	String trimmed = p_layer_id.strip_edges();
+	if (trimmed.is_empty()) {
+		return nullptr;
+	}
+	String safe_id = ClockGearsDataManager::sanitize_custom_layer_node_name(trimmed);
+	String target_name = "Capa_Custom_" + safe_id;
+	for (int i = 0; i < get_child_count(); i++) {
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+		if (!tl) {
+			continue;
+		}
+		if (tl->get_name() == target_name) {
+			return tl;
+		}
+		if (tl->has_meta("clockgears_custom_layer_id") && String(tl->get_meta("clockgears_custom_layer_id")) == trimmed) {
+			return tl;
+		}
+	}
+	return nullptr;
+}
+
+void ClockGearsMap::_apply_tileset_to_custom_layers(const Ref<TileSet> &p_ts) {
+	for (int i = 0; i < get_child_count(); i++) {
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+		if (tl && String(tl->get_name()).begins_with("Capa_Custom_")) {
+			if (tl->get_tile_set() != p_ts) {
+				tl->set_tile_set(p_ts);
+			}
+			tl->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			tl->update_internals();
+			tl->queue_redraw();
+		}
+	}
+}
+
+void ClockGearsMap::_reorder_children_for_draw_order() {
+	bool has_custom = false;
+	for (int i = 0; i < get_child_count(); i++) {
+		if (String(get_child(i)->get_name()).begins_with("Capa_Custom_")) {
+			has_custom = true;
+			break;
+		}
+	}
+	if (!has_custom) {
+		return;
+	}
+
+	HashMap<String, int> project_rank;
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		Array custom_layers = dm->get_custom_map_layers();
+		for (int i = 0; i < custom_layers.size(); i++) {
+			Dictionary d = custom_layers[i];
+			project_rank[String(d.get("id", ""))] = i;
+		}
+	}
+
+	struct ChildOrderItem {
+		Node *node = nullptr;
+		int z_ord = 0;
+		int kind_rank = 0;
+		int orig_idx = 0;
+	};
+	Vector<ChildOrderItem> items;
+	for (int i = 0; i < get_child_count(); i++) {
+		Node *ch = get_child(i);
+		ChildOrderItem it;
+		it.node = ch;
+		it.orig_idx = i;
+		if (CanvasItem *ci = Object::cast_to<CanvasItem>(ch)) {
+			it.z_ord = ci->get_z_index();
+		} else {
+			it.z_ord = 100000; // Nodos no visuales (camera/interpreter) al final sin afectar capas
+		}
+		String nname = String(ch->get_name());
+		if (nname.begins_with("Capa_Custom_")) {
+			String cid = ch->has_meta("clockgears_custom_layer_id") ? String(ch->get_meta("clockgears_custom_layer_id")) : nname.substr(12);
+			const int *r = project_rank.getptr(cid);
+			it.kind_rank = 100 + (r ? *r : i);
+		} else {
+			it.kind_rank = 0;
+		}
+		items.push_back(it);
+	}
+
+	// Orden ascendente para que Godot dibuje primero las capas inferiores y luego las superiores
+	for (int i = 1; i < items.size(); i++) {
+		ChildOrderItem key = items[i];
+		int j = i - 1;
+		while (j >= 0) {
+			bool gt = false;
+			if (items[j].z_ord != key.z_ord) {
+				gt = items[j].z_ord > key.z_ord;
+			} else if (items[j].kind_rank != key.kind_rank) {
+				gt = items[j].kind_rank > key.kind_rank;
+			} else {
+				gt = items[j].orig_idx > key.orig_idx;
+			}
+			if (!gt) {
+				break;
+			}
+			items.write[j + 1] = items[j];
+			j--;
+		}
+		items.write[j + 1] = key;
+	}
+
+	for (int i = 0; i < items.size(); i++) {
+		if (get_child(i) != items[i].node) {
+			move_child(items[i].node, i);
+		}
+	}
+}
+
+TileMapLayer *ClockGearsMap::get_or_create_custom_layer(const String &p_layer_id) {
+	String trimmed = p_layer_id.strip_edges();
+	if (trimmed.is_empty()) {
+		return nullptr;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary info;
+	if (dm) {
+		info = dm->get_custom_map_layer(trimmed);
+		if (info.is_empty()) {
+			return nullptr;
+		}
+	}
+	TileMapLayer *tl = get_custom_layer(trimmed);
+	if (!tl) {
+		ensure_default_layers();
+		String safe_id = ClockGearsDataManager::sanitize_custom_layer_node_name(trimmed);
+		tl = memnew(TileMapLayer);
+		tl->set_name("Capa_Custom_" + safe_id);
+		tl->set_position(Vector2(0, 0));
+		tl->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		tl->set_meta("_edit_lock_", true);
+		tl->set_meta("_edit_group_", true);
+		tl->set_meta("clockgears_custom_layer_id", trimmed);
+		add_child(tl);
+		tl->set_owner(this);
+
+		Ref<TileSet> ts;
+		TileMapLayer *base[4] = { layer_ground, layer_decoration, layer_objects, layer_overhead };
+		for (int i = 0; i < 4; i++) {
+			if (base[i] && base[i]->get_tile_set().is_valid()) {
+				ts = base[i]->get_tile_set();
+				break;
+			}
+		}
+		if (ts.is_valid()) {
+			tl->set_tile_set(ts);
+		}
+	}
+	if (!info.is_empty()) {
+		tl->set_z_index(int(info.get("order", 2)));
+		tl->set_visible(bool(info.get("visible", true)));
+		tl->set_meta("clockgears_custom_layer_name", String(info.get("name", trimmed)));
+	}
+	tl->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	_ensure_passability_signals();
+	_reorder_children_for_draw_order();
+	invalidate_passability_cache();
+	apply_editor_layer_dimming(false);
+	return tl;
+}
+
+void ClockGearsMap::sync_custom_layers_from_project(bool p_create_all) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	Array custom_layers = dm->get_custom_map_layers();
+	HashMap<String, Dictionary> by_id;
+	for (int i = 0; i < custom_layers.size(); i++) {
+		Dictionary d = custom_layers[i];
+		by_id[String(d.get("id", ""))] = d;
+	}
+
+	Ref<TileSet> shared_ts;
+	TileMapLayer *base[4] = { layer_ground, layer_decoration, layer_objects, layer_overhead };
+	for (int i = 0; i < 4; i++) {
+		if (base[i] && base[i]->get_tile_set().is_valid()) {
+			shared_ts = base[i]->get_tile_set();
+			break;
+		}
+	}
+
+	Vector<TileMapLayer *> to_remove;
+	bool any_custom_on_map = false;
+	for (int i = 0; i < get_child_count(); i++) {
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+		if (!tl) {
+			continue;
+		}
+		String nname = String(tl->get_name());
+		if (!nname.begins_with("Capa_Custom_")) {
+			continue;
+		}
+		String cid = tl->has_meta("clockgears_custom_layer_id") ? String(tl->get_meta("clockgears_custom_layer_id")) : nname.substr(12);
+		const Dictionary *info = by_id.getptr(cid);
+		if (info) {
+			any_custom_on_map = true;
+			tl->set_z_index(int(info->get("order", 2)));
+			tl->set_visible(bool(info->get("visible", true)));
+			tl->set_meta("clockgears_custom_layer_id", cid);
+			tl->set_meta("clockgears_custom_layer_name", String(info->get("name", cid)));
+			tl->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			if (tl->get_tile_set().is_null() && shared_ts.is_valid()) {
+				tl->set_tile_set(shared_ts);
+			}
+		} else if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint() && dm->get_system_config().has("currency")) {
+			to_remove.push_back(tl);
+		}
+	}
+	for (int i = 0; i < to_remove.size(); i++) {
+		Node *n = to_remove[i];
+		remove_child(n);
+		if (is_inside_tree()) {
+			n->queue_free();
+		} else {
+			memdelete(n);
+		}
+	}
+
+	if (p_create_all) {
+		for (int i = 0; i < custom_layers.size(); i++) {
+			Dictionary d = custom_layers[i];
+			get_or_create_custom_layer(String(d.get("id", "")));
+			any_custom_on_map = true;
+		}
+	}
+
+	if (any_custom_on_map) {
+		_ensure_passability_signals();
+		_reorder_children_for_draw_order();
+		invalidate_passability_cache();
+	}
+}
+
+void ClockGearsMap::set_custom_layer_tile_at(const String &p_layer_id, const Vector2i &p_cell, const Vector2i &p_atlas_coords, int p_source_id, int p_alt) {
+	TileMapLayer *layer = get_or_create_custom_layer(p_layer_id);
+	if (!layer) {
+		return;
+	}
+	if (p_atlas_coords.x < 0 || p_atlas_coords.y < 0 || p_source_id < 0) {
+		layer->erase_cell(p_cell);
+		invalidate_passability_cache();
+		return;
+	}
+	Ref<TileSet> ts = layer->get_tile_set();
+	if (ts.is_null() && layer_ground && layer_ground->get_tile_set().is_valid()) {
+		ts = layer_ground->get_tile_set();
+		layer->set_tile_set(ts);
+	}
+	if (ts.is_valid() && ts->has_source(p_source_id)) {
+		Ref<TileSetAtlasSource> atlas = ts->get_source(p_source_id);
+		if (atlas.is_valid() && !atlas->has_tile(p_atlas_coords)) {
+			atlas->create_tile(p_atlas_coords);
+		}
+	}
+	layer->set_cell(p_cell, p_source_id, p_atlas_coords, p_alt);
+	invalidate_passability_cache();
+}
+
+Vector2i ClockGearsMap::get_custom_layer_tile_at(const String &p_layer_id, const Vector2i &p_cell) const {
+	TileMapLayer *layer = get_custom_layer(p_layer_id);
+	if (!layer) {
+		return Vector2i(-1, -1);
+	}
+	return layer->get_cell_atlas_coords(p_cell);
+}
+
+void ClockGearsMap::duplicate_custom_layer_tiles(const String &p_source_id, const String &p_dest_id) {
+	TileMapLayer *src = get_custom_layer(p_source_id);
+	if (!src) {
+		return;
+	}
+	TileMapLayer *dst = get_or_create_custom_layer(p_dest_id);
+	if (!dst) {
+		return;
+	}
+	TypedArray<Vector2i> used = src->get_used_cells();
+	for (int i = 0; i < used.size(); i++) {
+		Vector2i c = used[i];
+		int sid = src->get_cell_source_id(c);
+		Vector2i ac = src->get_cell_atlas_coords(c);
+		int alt = src->get_cell_alternative_tile(c);
+		dst->set_cell(c, sid, ac, alt);
+	}
+	dst->update_internals();
+	dst->queue_redraw();
+	invalidate_passability_cache();
+}
+
+void ClockGearsMap::remove_custom_layer_node(const String &p_layer_id) {
+	TileMapLayer *tl = get_custom_layer(p_layer_id);
+	if (!tl) {
+		return;
+	}
+	remove_child(tl);
+	if (is_inside_tree()) {
+		tl->queue_free();
+	} else {
+		memdelete(tl);
+	}
+	invalidate_passability_cache();
+}
+
+void ClockGearsMap::apply_editor_layer_dimming(bool p_force_editor_context) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	bool is_editor_ctx = !runtime_player && ((Engine::get_singleton() && Engine::get_singleton()->is_editor_hint() && !preview_only) || p_force_editor_context);
+	bool should_dim = is_editor_ctx && dm && dm->is_editor_dim_inactive_layers_enabled();
+	float dim_alpha = should_dim ? CLAMP(float(dm->get_editor_inactive_layer_opacity_pct()), 10.0f, 100.0f) / 100.0f : 1.0f;
+
+	TileMapLayer *active_node = nullptr;
+	if (should_dim && dm) {
+		String active_custom = dm->get_editor_custom_layer();
+		if (!active_custom.is_empty()) {
+			active_node = get_custom_layer(active_custom);
+		} else {
+			int base_idx = dm->get_editor_layer();
+			if (base_idx >= 1 && base_idx <= 4) {
+				active_node = get_layer(base_idx - 1);
+			}
+		}
+	}
+
+	TileMapLayer *base_layers[4] = { layer_ground, layer_decoration, layer_objects, layer_overhead };
+	for (int i = 0; i < 4; i++) {
+		if (!base_layers[i]) {
+			continue;
+		}
+		float alpha = (should_dim && base_layers[i] != active_node) ? dim_alpha : 1.0f;
+		Color target(1, 1, 1, alpha);
+		if (base_layers[i]->get_self_modulate() != target) {
+			base_layers[i]->set_self_modulate(target);
+		}
+	}
+
+	for (int i = 0; i < get_child_count(); i++) {
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+		if (!tl || !String(tl->get_name()).begins_with("Capa_Custom_")) {
+			continue;
+		}
+		float alpha = (should_dim && tl != active_node) ? dim_alpha : 1.0f;
+		Color target(1, 1, 1, alpha);
+		if (tl->get_self_modulate() != target) {
+			tl->set_self_modulate(target);
+		}
+	}
+
+	if (events_container) {
+		if (events_container->get_self_modulate() != Color(1, 1, 1, 1)) {
+			events_container->set_self_modulate(Color(1, 1, 1, 1));
+		}
+		if (events_container->get_modulate() != Color(1, 1, 1, 1)) {
+			events_container->set_modulate(Color(1, 1, 1, 1));
+		}
+	}
+	if (runtime_player) {
+		runtime_player->set_self_modulate(Color(1, 1, 1, 1));
+		runtime_player->set_modulate(Color(1, 1, 1, 1));
+	}
+}
+
+void ClockGearsMap::_collect_ordered_tile_layers(Vector<TileMapLayer *> &r_layers, bool p_visible_only) const {
+	r_layers.clear();
+	TileMapLayer *base_layers[4] = { layer_ground, layer_decoration, layer_objects, layer_overhead };
+	for (int i = 0; i < 4; i++) {
+		TileMapLayer *tl = base_layers[i];
+		if (tl && (!p_visible_only || tl->is_visible())) {
+			r_layers.push_back(tl);
+		}
+	}
+	for (int i = 0; i < get_child_count(); i++) {
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(get_child(i));
+		if (tl && String(tl->get_name()).begins_with("Capa_Custom_")) {
+			if (!p_visible_only || tl->is_visible()) {
+				r_layers.push_back(tl);
+			}
+		}
+	}
+	// Orden descendente (z_index mayor primero; a igual z_index, mayor child index primero) para pasabilidad arriba-abajo
+	for (int i = 1; i < r_layers.size(); i++) {
+		TileMapLayer *key = r_layers[i];
+		int kz = key->get_z_index();
+		int ki = key->get_index();
+		int j = i - 1;
+		while (j >= 0) {
+			int jz = r_layers[j]->get_z_index();
+			int ji = r_layers[j]->get_index();
+			if (jz > kz || (jz == kz && ji > ki)) {
+				break;
+			}
+			r_layers.write[j + 1] = r_layers[j];
+			j--;
+		}
+		r_layers.write[j + 1] = key;
+	}
+}
+
+Array ClockGearsMap::get_rendered_layers_ordered() const {
+	Array out;
+	struct RenderEntry {
+		String name;
+		String custom_id;
+		int z_index = 0;
+		int child_idx = 0;
+		bool visible = true;
+		float self_modulate_alpha = 1.0f;
+	};
+	Vector<RenderEntry> list;
+	for (int i = 0; i < get_child_count(); i++) {
+		CanvasItem *ci = Object::cast_to<CanvasItem>(get_child(i));
+		if (!ci) {
+			continue;
+		}
+		TileMapLayer *tl = Object::cast_to<TileMapLayer>(ci);
+		bool is_events = (ci == events_container);
+		if (!tl && !is_events) {
+			continue;
+		}
+		RenderEntry e;
+		e.name = String(ci->get_name());
+		e.custom_id = ci->has_meta("clockgears_custom_layer_id") ? String(ci->get_meta("clockgears_custom_layer_id")) : String();
+		e.z_index = ci->get_z_index();
+		e.child_idx = ci->get_index();
+		e.visible = ci->is_visible();
+		e.self_modulate_alpha = ci->get_self_modulate().a;
+		list.push_back(e);
+	}
+	for (int i = 1; i < list.size(); i++) {
+		RenderEntry key = list[i];
+		int j = i - 1;
+		while (j >= 0 && (list[j].z_index > key.z_index || (list[j].z_index == key.z_index && list[j].child_idx > key.child_idx))) {
+			list.write[j + 1] = list[j];
+			j--;
+		}
+		list.write[j + 1] = key;
+	}
+	for (int i = 0; i < list.size(); i++) {
+		Dictionary d;
+		d["name"] = list[i].name;
+		d["custom_id"] = list[i].custom_id;
+		d["z_index"] = list[i].z_index;
+		d["child_idx"] = list[i].child_idx;
+		d["visible"] = list[i].visible;
+		d["self_modulate_alpha"] = list[i].self_modulate_alpha;
+		out.push_back(d);
+	}
+	return out;
+}
+
 Vector2 ClockGearsMap::snap_position(Vector2 p_pos) const {
 	if (!snap_to_grid) {
 		return p_pos; // Free transform / "Salir de la casilla"
@@ -869,6 +1372,7 @@ void ClockGearsMap::setup_tileset_from_database(int p_tileset_id) {
 				}
 			}
 		}
+		_apply_tileset_to_custom_layers(cached_ts);
 		return;
 	}
 
@@ -892,6 +1396,7 @@ void ClockGearsMap::setup_tileset_from_database(int p_tileset_id) {
 				layers[i]->queue_redraw();
 			}
 		}
+		_apply_tileset_to_custom_layers(Ref<TileSet>());
 		return;
 	}
 
@@ -1018,6 +1523,7 @@ void ClockGearsMap::setup_tileset_from_database(int p_tileset_id) {
 			layers[i]->queue_redraw();
 		}
 	}
+	_apply_tileset_to_custom_layers(ts);
 
 	print_line(vformat(String::utf8("[ClockGears StarTile] Tileset #%03d configurado: %d tiles con ★ (z_index=5 sobre jugador z=3, pasabilidad=true)."), p_tileset_id, star_count));
 }
@@ -1112,6 +1618,7 @@ bool ClockGearsMap::import_tileset_png(const String &p_path) {
 			layers[i]->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 		}
 	}
+	_apply_tileset_to_custom_layers(ts);
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (dm) {
@@ -1244,6 +1751,8 @@ void ClockGearsMap::init_runtime_session() {
 		return;
 	}
 	ensure_default_layers();
+	sync_custom_layers_from_project(false);
+	apply_editor_layer_dimming(false);
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (!dm) {

@@ -21,6 +21,7 @@
 #include "editor/clockgears_map_cell_selector.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
@@ -30,6 +31,7 @@
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
+#include "scene/resources/style_box_flat.h"
 
 // ============================================================================
 // ClockGearsGenerateEntityDialog
@@ -531,6 +533,655 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 }
 
 // ============================================================================
+// ClockGearsLayersDialog (Etapa 1 - 9B-Ext: Capas con Nombre y Orden Entero)
+// ============================================================================
+
+static Ref<StyleBoxFlat> _cg_layer_card_style(const Color &p_bg, const Color &p_border, int p_radius = 8, int p_margin_h = 10, int p_margin_v = 8) {
+	Ref<StyleBoxFlat> sb;
+	sb.instantiate();
+	sb->set_anti_aliased(true);
+	sb->set_bg_color(p_bg);
+	sb->set_border_width_all(1);
+	sb->set_border_color(p_border);
+	sb->set_corner_radius_all(p_radius);
+	sb->set_content_margin_individual(p_margin_h, p_margin_v, p_margin_h, p_margin_v);
+	return sb;
+}
+
+String ClockGearsLayersDialog::_describe_order_band(int p_order) {
+	if (p_order < 0) {
+		return CG_TR("Debajo del Suelo (Z < 0)");
+	}
+	if (p_order == 0) {
+		return CG_TR("Mismo plano que Capa 1: Suelo");
+	}
+	if (p_order == 1) {
+		return CG_TR("Mismo plano que Capa 2: Decoración");
+	}
+	if (p_order == 2) {
+		return CG_TR("Mismo plano que Capa 3: Objetos");
+	}
+	if (p_order == 3) {
+		return CG_TR("Nivel Jugador y Eventos (Z = 3)");
+	}
+	if (p_order == 4) {
+		return CG_TR("Mismo plano que Capa 4: Techo");
+	}
+	return CG_TR("Por encima de Capa 4: Techo (Z > 4)");
+}
+
+void ClockGearsLayersDialog::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("open_layers_dialog"), &ClockGearsLayersDialog::open_layers_dialog);
+	ClassDB::bind_method(D_METHOD("refresh_layers_list"), &ClockGearsLayersDialog::refresh_layers_list);
+	ClassDB::bind_method(D_METHOD("create_layer_from_ui", "name", "order"), &ClockGearsLayersDialog::create_layer_from_ui, DEFVAL(2));
+	ClassDB::bind_method(D_METHOD("select_layer_from_ui", "id"), &ClockGearsLayersDialog::select_layer_from_ui);
+	ClassDB::bind_method(D_METHOD("request_delete_layer", "id"), &ClockGearsLayersDialog::request_delete_layer);
+	ClassDB::bind_method(D_METHOD("confirm_pending_delete"), &ClockGearsLayersDialog::confirm_pending_delete);
+	ClassDB::bind_method(D_METHOD("get_row_count"), &ClockGearsLayersDialog::get_row_count);
+	ClassDB::bind_method(D_METHOD("get_ui_handles"), &ClockGearsLayersDialog::get_ui_handles);
+	ClassDB::bind_method(D_METHOD("check_layout_fits", "viewport_size"), &ClockGearsLayersDialog::check_layout_fits, DEFVAL(Vector2i(1366, 768)));
+}
+
+void ClockGearsLayersDialog::_notification(int p_what) {
+	if (p_what == NOTIFICATION_READY) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(this);
+		}
+		if (ClockGearsDataManager::get_singleton()) {
+			Callable cb = callable_mp(this, &ClockGearsLayersDialog::_on_dm_data_changed);
+			if (!ClockGearsDataManager::get_singleton()->is_connected("data_changed", cb)) {
+				ClockGearsDataManager::get_singleton()->connect("data_changed", cb);
+			}
+		}
+		refresh_layers_list();
+	} else if (p_what == NOTIFICATION_EXIT_TREE) {
+		if (ClockGearsDataManager::get_singleton()) {
+			Callable cb = callable_mp(this, &ClockGearsLayersDialog::_on_dm_data_changed);
+			if (ClockGearsDataManager::get_singleton()->is_connected("data_changed", cb)) {
+				ClockGearsDataManager::get_singleton()->disconnect("data_changed", cb);
+			}
+		}
+	}
+}
+
+void ClockGearsLayersDialog::_on_dm_data_changed(const String &p_category, int p_id) {
+	if (rebuilding_rows) {
+		return;
+	}
+	if ((p_category == "custom_layers" || p_category == "system" || p_category.is_empty()) && is_visible()) {
+		refresh_layers_list();
+	}
+}
+
+void ClockGearsLayersDialog::_on_fixed_layer_pressed(int p_base_layer) {
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		dm->set_editor_layer(p_base_layer);
+	}
+	refresh_layers_list();
+}
+
+void ClockGearsLayersDialog::_on_create_text_submitted(const String &p_text) {
+	_on_create_pressed();
+}
+
+void ClockGearsLayersDialog::_on_create_pressed() {
+	String nm = new_name_edit ? new_name_edit->get_text().strip_edges() : String();
+	if (nm.is_empty()) {
+		if (new_name_edit) {
+			new_name_edit->grab_focus();
+		}
+		return;
+	}
+	int ord = new_order_spin ? int(new_order_spin->get_value()) : 2;
+	create_layer_from_ui(nm, ord);
+}
+
+void ClockGearsLayersDialog::_on_row_select_pressed(const String &p_id) {
+	select_layer_from_ui(p_id);
+}
+
+void ClockGearsLayersDialog::_on_row_name_committed(const String &p_text, const String &p_id, LineEdit *p_edit) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	Dictionary cur = dm->get_custom_map_layer(p_id);
+	String effective_text = (p_text.is_empty() && p_edit) ? p_edit->get_text() : p_text;
+	String trimmed = effective_text.strip_edges();
+	if (trimmed.is_empty()) {
+		if (p_edit && !cur.is_empty()) {
+			p_edit->set_text(String(cur.get("name", "")));
+		}
+		return;
+	}
+	if (!cur.is_empty() && String(cur.get("name", "")) != trimmed) {
+		dm->rename_custom_map_layer(p_id, trimmed);
+		callable_mp(this, &ClockGearsLayersDialog::refresh_layers_list).call_deferred();
+	}
+}
+
+void ClockGearsLayersDialog::_on_row_order_changed(double p_val, const String &p_id) {
+	if (rebuilding_rows) {
+		return;
+	}
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		dm->set_custom_map_layer_order(p_id, int(Math::round(p_val)));
+		callable_mp(this, &ClockGearsLayersDialog::refresh_layers_list).call_deferred();
+	}
+}
+
+void ClockGearsLayersDialog::_on_row_visible_pressed(const String &p_id, bool p_next_vis) {
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		dm->set_custom_map_layer_visible(p_id, p_next_vis);
+	}
+	refresh_layers_list();
+}
+
+void ClockGearsLayersDialog::_on_row_locked_pressed(const String &p_id, bool p_next_locked) {
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		dm->set_custom_map_layer_locked(p_id, p_next_locked);
+	}
+	refresh_layers_list();
+}
+
+void ClockGearsLayersDialog::_on_row_duplicate_pressed(const String &p_id) {
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		Dictionary created = dm->duplicate_custom_map_layer(p_id);
+		if (!created.is_empty()) {
+			dm->set_editor_custom_layer(String(created.get("id", "")));
+		}
+	}
+	refresh_layers_list();
+}
+
+void ClockGearsLayersDialog::_on_row_delete_pressed(const String &p_id) {
+	request_delete_layer(p_id);
+}
+
+void ClockGearsLayersDialog::_on_delete_confirmed() {
+	confirm_pending_delete();
+}
+
+Dictionary ClockGearsLayersDialog::create_layer_from_ui(const String &p_name, int p_order) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String trimmed = p_name.strip_edges();
+	if (!dm || trimmed.is_empty()) {
+		return Dictionary();
+	}
+	if (new_name_edit) {
+		new_name_edit->set_text(trimmed);
+	}
+	if (new_order_spin) {
+		new_order_spin->set_value(CLAMP(p_order, -50, 50));
+	}
+	Dictionary created = dm->create_custom_map_layer(trimmed, p_order);
+	if (!created.is_empty()) {
+		dm->set_editor_custom_layer(String(created.get("id", "")));
+		if (new_name_edit) {
+			new_name_edit->set_text("");
+		}
+	}
+	refresh_layers_list();
+	return created;
+}
+
+bool ClockGearsLayersDialog::select_layer_from_ui(const String &p_id) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return false;
+	}
+	bool ok = dm->set_editor_custom_layer(p_id);
+	refresh_layers_list();
+	return ok;
+}
+
+bool ClockGearsLayersDialog::request_delete_layer(const String &p_id) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !delete_confirm_dialog) {
+		return false;
+	}
+	Dictionary layer = dm->get_custom_map_layer(p_id);
+	if (layer.is_empty()) {
+		return false;
+	}
+	pending_delete_id = p_id;
+	String lname = String(layer.get("name", p_id));
+	delete_confirm_dialog->set_text(vformat(
+			CG_TR("¿Eliminar la capa personalizada «%s»?\n\nSus tiles en los mapas se quitarán y esta acción no se puede deshacer."),
+			lname));
+	delete_confirm_dialog->popup_centered(Size2(420, 170) * EDSCALE);
+	return true;
+}
+
+bool ClockGearsLayersDialog::confirm_pending_delete() {
+	if (pending_delete_id.is_empty()) {
+		return false;
+	}
+	String del_id = pending_delete_id;
+	pending_delete_id = String();
+	if (delete_confirm_dialog && delete_confirm_dialog->is_visible()) {
+		delete_confirm_dialog->hide();
+	}
+	bool ok = false;
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		ok = dm->delete_custom_map_layer(del_id);
+	}
+	refresh_layers_list();
+	return ok;
+}
+
+int ClockGearsLayersDialog::get_row_count() const {
+	if (!rows_vbox) {
+		return 0;
+	}
+	int cnt = 0;
+	for (int i = 0; i < rows_vbox->get_child_count(); i++) {
+		if (rows_vbox->get_child(i)->has_meta("custom_layer_id")) {
+			cnt++;
+		}
+	}
+	return cnt;
+}
+
+Dictionary ClockGearsLayersDialog::get_ui_handles() const {
+	Dictionary d;
+	d["dialog"] = const_cast<ClockGearsLayersDialog *>(this);
+	d["active_label"] = active_layer_label;
+	d["count_label"] = count_label;
+	d["scale_box"] = scale_buttons_box;
+	d["create_name_edit"] = new_name_edit;
+	d["create_order_spin"] = new_order_spin;
+	d["create_btn"] = create_btn;
+	d["list_scroll"] = list_scroll;
+	d["rows_vbox"] = rows_vbox;
+	d["delete_confirm_dialog"] = delete_confirm_dialog;
+	Array sbtns;
+	for (int i = 0; i < fixed_layer_buttons.size(); i++) {
+		sbtns.push_back(fixed_layer_buttons[i]);
+	}
+	d["scale_buttons"] = sbtns;
+	return d;
+}
+
+void ClockGearsLayersDialog::_update_responsive_size(const Vector2i &p_viewport_override) {
+	Vector2i vp = p_viewport_override;
+	if (vp.x <= 0 || vp.y <= 0) {
+		if (Window *pw = (get_parent() ? get_parent()->get_window() : nullptr)) {
+			vp = pw->get_size();
+		} else {
+			vp = Vector2i(1366, 768);
+		}
+	}
+	int max_w = MAX(420, vp.x - 40);
+	int max_h = MAX(320, vp.y - 40);
+	int target_w = MIN(int(Math::round(820.0 * EDSCALE)), max_w);
+	int target_h = MIN(int(Math::round(620.0 * EDSCALE)), max_h);
+	set_min_size(Size2i(MIN(480, max_w), MIN(340, max_h)));
+	set_size(Size2i(target_w, target_h));
+}
+
+Dictionary ClockGearsLayersDialog::check_layout_fits(const Vector2i &p_viewport_size) {
+	refresh_layers_list();
+	_update_responsive_size(p_viewport_size);
+	Size2i dlg_sz = get_size();
+	Size2 min_sz = get_contents_minimum_size();
+	bool h_scroll_disabled = list_scroll && list_scroll->get_horizontal_scroll_mode() == ScrollContainer::SCROLL_MODE_DISABLED;
+	float rows_min_w = rows_vbox ? rows_vbox->get_combined_minimum_size().x : 0.0f;
+	float max_row_allowance = float(dlg_sz.x - 44);
+	bool rows_fit_width = rows_min_w <= max_row_allowance;
+	bool fits_viewport = (dlg_sz.x <= p_viewport_size.x) && (dlg_sz.y <= p_viewport_size.y) && (min_sz.x <= dlg_sz.x) && (min_sz.y <= dlg_sz.y) && h_scroll_disabled && rows_fit_width;
+
+	Dictionary res;
+	res["fits"] = fits_viewport;
+	res["viewport_size"] = p_viewport_size;
+	res["dialog_size"] = dlg_sz;
+	res["contents_min_size"] = min_sz;
+	res["rows_min_width"] = rows_min_w;
+	res["max_row_allowance"] = max_row_allowance;
+	res["horizontal_scroll_disabled"] = h_scroll_disabled;
+	res["rows_fit_width"] = rows_fit_width;
+	return res;
+}
+
+void ClockGearsLayersDialog::refresh_layers_list() {
+	if (!rows_vbox) {
+		return;
+	}
+	rebuilding_rows = true;
+
+	while (rows_vbox->get_child_count() > 0) {
+		Node *ch = rows_vbox->get_child(0);
+		rows_vbox->remove_child(ch);
+		memdelete(ch);
+	}
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Array raw_layers = dm ? dm->get_custom_map_layers() : Array();
+	String active_custom_id = dm ? dm->get_editor_custom_layer() : String();
+	int active_base_idx = dm ? dm->get_editor_layer() : 1;
+	String active_name = dm ? dm->get_active_editor_layer_display_name() : String("Capa 1: Suelo");
+
+	if (active_layer_label) {
+		active_layer_label->set_text(vformat(CG_TR("Capa activa actual: %s"), active_name));
+	}
+	if (count_label) {
+		count_label->set_text(vformat(CG_TR("Capas personalizadas: %d / %d"), raw_layers.size(), ClockGearsDataManager::MAX_CUSTOM_MAP_LAYERS));
+	}
+	if (create_btn) {
+		create_btn->set_disabled(raw_layers.size() >= ClockGearsDataManager::MAX_CUSTOM_MAP_LAYERS);
+	}
+
+	// Resaltar botón de capa base en la barra de escala si ninguna capa personalizada está activa
+	for (int i = 0; i < fixed_layer_buttons.size(); i++) {
+		Button *b = fixed_layer_buttons[i];
+		if (!b) {
+			continue;
+		}
+		int base_id = int(b->get_meta("fixed_base_layer", 0));
+		bool is_cur = active_custom_id.is_empty() && (base_id == active_base_idx);
+		b->set_pressed_no_signal(is_cur);
+	}
+
+	if (raw_layers.is_empty()) {
+		Label *empty_lbl = memnew(Label);
+		empty_lbl->set_text(CG_TR("Aún no has creado capas personalizadas.\nEscribe un nombre libre y un orden entero Z arriba para crear hasta 16 capas."));
+		empty_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		empty_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		empty_lbl->set_custom_minimum_size(Size2(360, 0) * EDSCALE);
+		empty_lbl->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
+		rows_vbox->add_child(empty_lbl);
+		rebuilding_rows = false;
+		return;
+	}
+
+	// Mostrar ordenadas de mayor Z (arriba) a menor Z (abajo), con orden de proyecto en empate
+	struct SortedCustom {
+		Dictionary data;
+		int order = 0;
+		int idx = 0;
+	};
+	Vector<SortedCustom> sorted;
+	for (int i = 0; i < raw_layers.size(); i++) {
+		if (raw_layers[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary d = raw_layers[i];
+		SortedCustom sc;
+		sc.data = d;
+		sc.order = int(d.get("order", 2));
+		sc.idx = i;
+		sorted.push_back(sc);
+	}
+	for (int i = 1; i < sorted.size(); i++) {
+		SortedCustom key = sorted[i];
+		int j = i - 1;
+		while (j >= 0 && (sorted[j].order < key.order || (sorted[j].order == key.order && sorted[j].idx < key.idx))) {
+			sorted.write[j + 1] = sorted[j];
+			j--;
+		}
+		sorted.write[j + 1] = key;
+	}
+
+	const int max_custom = ClockGearsDataManager::MAX_CUSTOM_MAP_LAYERS;
+	const bool can_duplicate = raw_layers.size() < max_custom;
+
+	for (int i = 0; i < sorted.size(); i++) {
+		Dictionary layer = sorted[i].data;
+		String lid = String(layer.get("id", ""));
+		String lname = String(layer.get("name", lid));
+		int lorder = int(layer.get("order", 2));
+		bool lvis = bool(layer.get("visible", true));
+		bool llck = bool(layer.get("locked", false));
+		bool is_active = (lid == active_custom_id);
+
+		PanelContainer *row_card = memnew(PanelContainer);
+		row_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		row_card->set_meta("custom_layer_id", lid);
+		Color bg = is_active ? Color(0.18f, 0.16f, 0.12f, 0.98f) : Color(0.11f, 0.12f, 0.15f, 0.96f);
+		Color border = is_active ? Color(0.92f, 0.68f, 0.28f, 0.95f) : Color(1.0f, 1.0f, 1.0f, 0.10f);
+		row_card->add_theme_style_override("panel", _cg_layer_card_style(bg, border, 8, 10, 8));
+		rows_vbox->add_child(row_card);
+
+		VBoxContainer *row_vb = memnew(VBoxContainer);
+		row_vb->add_theme_constant_override("separation", 6);
+		row_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		row_card->add_child(row_vb);
+
+		// Línea 1: botón Activa + Nombre UTF-8 editable + Posición en escala
+		HBoxContainer *line1 = memnew(HBoxContainer);
+		line1->add_theme_constant_override("separation", 8);
+		line1->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		row_vb->add_child(line1);
+
+		Button *sel_btn = memnew(Button);
+		sel_btn->set_name("SelectLayerBtn");
+		sel_btn->set_text(is_active ? String::utf8("★ Activa") : CG_TR("Usar"));
+		sel_btn->set_tooltip_text(CG_TR("Usar esta capa como capa actual para dibujar en el mapa"));
+		sel_btn->set_custom_minimum_size(Size2(86, 28) * EDSCALE);
+		sel_btn->set_focus_mode(Control::FOCUS_NONE);
+		sel_btn->add_theme_style_override("normal", _cg_layer_card_style(is_active ? Color(0.82f, 0.58f, 0.20f, 0.35f) : Color(1, 1, 1, 0.06f), is_active ? Color(0.95f, 0.72f, 0.30f, 0.95f) : Color(1, 1, 1, 0.18f), 6, 8, 4));
+		sel_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_select_pressed).bind(lid));
+		line1->add_child(sel_btn);
+
+		LineEdit *name_edit = memnew(LineEdit);
+		name_edit->set_name("LayerNameEdit");
+		name_edit->set_text(lname);
+		name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		name_edit->set_custom_minimum_size(Size2(140, 28) * EDSCALE);
+		name_edit->set_tooltip_text(CG_TR("Nombre libre en UTF-8 (pulsa Enter o sal del campo para renombrar)"));
+		name_edit->connect("text_submitted", callable_mp(this, &ClockGearsLayersDialog::_on_row_name_committed).bind(lid, name_edit));
+		name_edit->connect("focus_exited", callable_mp(this, &ClockGearsLayersDialog::_on_row_name_committed).bind(String(), lid, name_edit));
+		// Nota: focus_exited pasa 0 args; conectamos a lambda/wrapper via helper? ¡Mejor lambda o un pequeño ajuste en _on_row_name_committed leyendo p_edit->get_text()!
+		line1->add_child(name_edit);
+
+		Label *band_lbl = memnew(Label);
+		band_lbl->set_text(_describe_order_band(lorder));
+		band_lbl->add_theme_color_override("font_color", Color(0.75f, 0.79f, 0.86f));
+		line1->add_child(band_lbl);
+
+		// Línea 2: Orden Z + acciones (Visible / Bloqueada / Duplicar / Eliminar)
+		HBoxContainer *line2 = memnew(HBoxContainer);
+		line2->add_theme_constant_override("separation", 6);
+		line2->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		row_vb->add_child(line2);
+
+		Label *ord_lbl = memnew(Label(CG_TR("Orden Z:")));
+		line2->add_child(ord_lbl);
+
+		SpinBox *ord_spin = memnew(SpinBox);
+		ord_spin->set_name("LayerOrderSpin");
+		ord_spin->set_min(-50);
+		ord_spin->set_max(50);
+		ord_spin->set_step(1);
+		ord_spin->set_value(lorder);
+		ord_spin->set_custom_minimum_size(Size2(78, 26) * EDSCALE);
+		ord_spin->set_tooltip_text(CG_TR("Menor = se dibuja más abajo; mayor = se dibuja más arriba"));
+		ord_spin->connect("value_changed", callable_mp(this, &ClockGearsLayersDialog::_on_row_order_changed).bind(lid));
+		line2->add_child(ord_spin);
+
+		Control *spacer = memnew(Control);
+		spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		line2->add_child(spacer);
+
+		Button *vis_btn = memnew(Button);
+		vis_btn->set_name("LayerVisibleBtn");
+		vis_btn->set_text(lvis ? CG_TR("Visible") : CG_TR("Oculta"));
+		vis_btn->set_focus_mode(Control::FOCUS_NONE);
+		vis_btn->add_theme_style_override("normal", _cg_layer_card_style(lvis ? Color(0.16f, 0.34f, 0.22f, 0.55f) : Color(0.28f, 0.16f, 0.16f, 0.65f), Color(1, 1, 1, 0.18f), 6, 8, 4));
+		vis_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_visible_pressed).bind(lid, !lvis));
+		line2->add_child(vis_btn);
+
+		Button *lck_btn = memnew(Button);
+		lck_btn->set_name("LayerLockBtn");
+		lck_btn->set_text(llck ? CG_TR("Bloqueada") : CG_TR("Libre"));
+		lck_btn->set_focus_mode(Control::FOCUS_NONE);
+		lck_btn->add_theme_style_override("normal", _cg_layer_card_style(llck ? Color(0.45f, 0.25f, 0.14f, 0.70f) : Color(1, 1, 1, 0.06f), Color(1, 1, 1, 0.18f), 6, 8, 4));
+		lck_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_locked_pressed).bind(lid, !llck));
+		line2->add_child(lck_btn);
+
+		Button *dup_btn = memnew(Button);
+		dup_btn->set_name("LayerDuplicateBtn");
+		dup_btn->set_text(CG_TR("Duplicar"));
+		dup_btn->set_disabled(!can_duplicate);
+		dup_btn->set_focus_mode(Control::FOCUS_NONE);
+		dup_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(1, 1, 1, 0.06f), Color(1, 1, 1, 0.18f), 6, 8, 4));
+		dup_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_duplicate_pressed).bind(lid));
+		line2->add_child(dup_btn);
+
+		Button *del_btn = memnew(Button);
+		del_btn->set_name("LayerDeleteBtn");
+		del_btn->set_text(CG_TR("Eliminar"));
+		del_btn->set_focus_mode(Control::FOCUS_NONE);
+		del_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(0.42f, 0.14f, 0.14f, 0.55f), Color(0.9f, 0.35f, 0.35f, 0.55f), 6, 8, 4));
+		del_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_delete_pressed).bind(lid));
+		line2->add_child(del_btn);
+	}
+
+	rebuilding_rows = false;
+}
+
+void ClockGearsLayersDialog::open_layers_dialog() {
+	refresh_layers_list();
+	_update_responsive_size();
+	popup_centered(get_size());
+}
+
+ClockGearsLayersDialog::ClockGearsLayersDialog() {
+	set_title(CG_TR("Capas Personalizadas del Mapa - ClockGears Engine"));
+	set_ok_button_text(CG_TR("Cerrar"));
+	set_wrap_controls(false);
+	set_min_size(Size2(520, 380) * EDSCALE);
+
+	VBoxContainer *main_vb = memnew(VBoxContainer);
+	main_vb->add_theme_constant_override("separation", 10);
+	add_child(main_vb);
+
+	// Cabecera con capa activa actual y contador
+	PanelContainer *hdr_card = memnew(PanelContainer);
+	hdr_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.11f, 0.12f, 0.16f), Color(0.88f, 0.63f, 0.25f, 0.45f), 8, 10, 8));
+	main_vb->add_child(hdr_card);
+
+	HBoxContainer *hdr_hb = memnew(HBoxContainer);
+	hdr_hb->add_theme_constant_override("separation", 8);
+	hdr_card->add_child(hdr_hb);
+
+	active_layer_label = memnew(Label(CG_TR("Capa activa actual: Capa 1: Suelo")));
+	active_layer_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	active_layer_label->set_clip_text(true);
+	active_layer_label->add_theme_color_override("font_color", Color(0.95f, 0.85f, 0.55f));
+	hdr_hb->add_child(active_layer_label);
+
+	count_label = memnew(Label(CG_TR("Capas personalizadas: 0 / 16")));
+	count_label->add_theme_color_override("font_color", Color(0.75f, 0.80f, 0.88f));
+	hdr_hb->add_child(count_label);
+
+	// Tarjeta de escala de referencia (capas 1 a 4 + jugador y eventos)
+	PanelContainer *scale_card = memnew(PanelContainer);
+	scale_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.095f, 0.105f, 0.135f), Color(1, 1, 1, 0.10f), 8, 10, 8));
+	main_vb->add_child(scale_card);
+
+	VBoxContainer *scale_vb = memnew(VBoxContainer);
+	scale_vb->add_theme_constant_override("separation", 6);
+	scale_card->add_child(scale_vb);
+
+	Label *scale_title = memnew(Label(CG_TR("Escala Z de dibujo (menor = más abajo, mayor = más arriba • clic en 1–4 para usar esa capa):")));
+	scale_title->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	scale_title->set_custom_minimum_size(Size2(380, 0) * EDSCALE);
+	scale_title->add_theme_color_override("font_color", Color(0.88f, 0.88f, 0.92f));
+	scale_vb->add_child(scale_title);
+
+	scale_buttons_box = memnew(HFlowContainer);
+	scale_buttons_box->set_custom_minimum_size(Size2(380, 0) * EDSCALE);
+	scale_buttons_box->add_theme_constant_override("h_separation", 6);
+	scale_buttons_box->add_theme_constant_override("v_separation", 6);
+	scale_vb->add_child(scale_buttons_box);
+
+	struct ScaleChip {
+		int z_ord;
+		int base_idx;
+		const char *label;
+	};
+	static const ScaleChip chips[5] = {
+		{ 0, 1, "0: Capa 1 (Suelo)" },
+		{ 1, 2, "1: Capa 2 (Decoración)" },
+		{ 2, 3, "2: Capa 3 (Objetos)" },
+		{ 3, 0, "3: Jugador y Eventos" },
+		{ 4, 4, "4: Capa 4 (Techo ★=5)" },
+	};
+	for (int i = 0; i < 5; i++) {
+		Button *chip = memnew(Button);
+		chip->set_text(String::utf8(chips[i].label));
+		chip->set_focus_mode(Control::FOCUS_NONE);
+		chip->add_theme_style_override("normal", _cg_layer_card_style(Color(1, 1, 1, 0.05f), Color(1, 1, 1, 0.16f), 6, 8, 4));
+		if (chips[i].base_idx > 0) {
+			chip->set_toggle_mode(true);
+			chip->set_meta("fixed_base_layer", chips[i].base_idx);
+			chip->add_theme_style_override("pressed", _cg_layer_card_style(Color(0.85f, 0.60f, 0.20f, 0.30f), Color(0.95f, 0.72f, 0.30f, 0.95f), 6, 8, 4));
+			chip->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_fixed_layer_pressed).bind(chips[i].base_idx));
+			fixed_layer_buttons.push_back(chip);
+		} else {
+			chip->set_disabled(true);
+			chip->set_tooltip_text(CG_TR("Plano donde se dibujan el Jugador y los Eventos (Z = 3)"));
+		}
+		scale_buttons_box->add_child(chip);
+	}
+
+	// Tarjeta para crear nueva capa personalizada
+	PanelContainer *create_card = memnew(PanelContainer);
+	create_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.11f, 0.12f, 0.15f), Color(1, 1, 1, 0.12f), 8, 10, 8));
+	main_vb->add_child(create_card);
+
+	HBoxContainer *create_hb = memnew(HBoxContainer);
+	create_hb->add_theme_constant_override("separation", 8);
+	create_card->add_child(create_hb);
+
+	new_name_edit = memnew(LineEdit);
+	new_name_edit->set_placeholder(CG_TR("Nombre libre de la capa (ej.: Niebla, Puentes, Techo alto…)"));
+	new_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	new_name_edit->set_custom_minimum_size(Size2(150, 30) * EDSCALE);
+	new_name_edit->connect("text_submitted", callable_mp(this, &ClockGearsLayersDialog::_on_create_text_submitted));
+	create_hb->add_child(new_name_edit);
+
+	create_hb->add_child(memnew(Label(CG_TR("Orden Z:"))));
+
+	new_order_spin = memnew(SpinBox);
+	new_order_spin->set_min(-50);
+	new_order_spin->set_max(50);
+	new_order_spin->set_step(1);
+	new_order_spin->set_value(2);
+	new_order_spin->set_custom_minimum_size(Size2(76, 30) * EDSCALE);
+	create_hb->add_child(new_order_spin);
+
+	create_btn = memnew(Button(CG_TR("+ Crear Capa")));
+	create_btn->set_focus_mode(Control::FOCUS_NONE);
+	create_btn->set_custom_minimum_size(Size2(110, 30) * EDSCALE);
+	create_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(0.75f, 0.52f, 0.18f, 0.35f), Color(0.95f, 0.72f, 0.30f, 0.90f), 6, 10, 4));
+	create_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_create_pressed));
+	create_hb->add_child(create_btn);
+
+	// Lista desplazable verticalmente (nunca scroll horizontal)
+	list_scroll = memnew(ScrollContainer);
+	list_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	list_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	list_scroll->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
+	list_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	list_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	main_vb->add_child(list_scroll);
+
+	rows_vbox = memnew(VBoxContainer);
+	rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rows_vbox->add_theme_constant_override("separation", 8);
+	list_scroll->add_child(rows_vbox);
+
+	delete_confirm_dialog = memnew(ConfirmationDialog);
+	delete_confirm_dialog->set_title(CG_TR("Confirmar eliminación de capa"));
+	delete_confirm_dialog->set_ok_button_text(CG_TR("Eliminar"));
+	delete_confirm_dialog->set_cancel_button_text(CG_TR("Cancelar"));
+	delete_confirm_dialog->connect("confirmed", callable_mp(this, &ClockGearsLayersDialog::_on_delete_confirmed));
+	add_child(delete_confirm_dialog);
+}
+
+// ============================================================================
 // ClockGearsEditorPlugin
 // ============================================================================
 
@@ -543,6 +1194,8 @@ void ClockGearsEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("open_export"), &ClockGearsEditorPlugin::open_export);
 	ClassDB::bind_method(D_METHOD("open_preferences"), &ClockGearsEditorPlugin::open_preferences);
 	ClassDB::bind_method(D_METHOD("open_camera_dialog"), &ClockGearsEditorPlugin::open_camera_dialog);
+	ClassDB::bind_method(D_METHOD("open_layers_dialog"), &ClockGearsEditorPlugin::open_layers_dialog);
+	ClassDB::bind_method(D_METHOD("get_layers_dialog"), &ClockGearsEditorPlugin::get_layers_dialog);
 	ClassDB::bind_method(D_METHOD("validate_playtest_conditions"), &ClockGearsEditorPlugin::validate_playtest_conditions);
 	ClassDB::bind_method(D_METHOD("start_playtest"), &ClockGearsEditorPlugin::start_playtest);
 	ClassDB::bind_method(D_METHOD("open_event_editor_at_cell", "x", "y"), &ClockGearsEditorPlugin::open_event_editor_at_cell);
@@ -1661,6 +2314,12 @@ void ClockGearsEditorPlugin::open_camera_dialog() {
 	}
 }
 
+void ClockGearsEditorPlugin::open_layers_dialog() {
+	if (layers_dialog) {
+		layers_dialog->open_layers_dialog();
+	}
+}
+
 Dictionary ClockGearsEditorPlugin::validate_playtest_conditions() {
 	Dictionary result;
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -1980,6 +2639,7 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 	editor->set_clockgears_export_callback(callable_mp(this, &ClockGearsEditorPlugin::open_export));
 	editor->set_clockgears_preferences_callback(callable_mp(this, &ClockGearsEditorPlugin::open_preferences));
 	editor->set_clockgears_camera_callback(callable_mp(this, &ClockGearsEditorPlugin::open_camera_dialog));
+	editor->set_clockgears_layers_callback(callable_mp(this, &ClockGearsEditorPlugin::open_layers_dialog));
 
 	if (ClockGearsTheme::get_singleton()) {
 		ClockGearsTheme *th = ClockGearsTheme::get_singleton();
@@ -1988,6 +2648,7 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 		th->apply_to_window(export_dialog);
 		th->apply_to_window(preferences_dialog);
 		th->apply_to_window(camera_dialog);
+		th->apply_to_window(layers_dialog);
 		th->apply_to_window(new_project_dialog);
 		th->apply_to_window(resource_manager_dialog);
 		th->apply_to_window(generate_entity_dialog);
@@ -2026,6 +2687,12 @@ ClockGearsEditorPlugin::ClockGearsEditorPlugin() {
 
 	camera_dialog = memnew(ClockGearsCameraDialog);
 	EditorNode::get_singleton()->get_gui_base()->add_child(camera_dialog);
+
+	layers_dialog = memnew(ClockGearsLayersDialog);
+	EditorNode::get_singleton()->get_gui_base()->add_child(layers_dialog);
+	if (EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->set_clockgears_layers_callback(callable_mp(this, &ClockGearsEditorPlugin::open_layers_dialog));
+	}
 
 	new_project_dialog = memnew(ClockGearsNewProjectDialog);
 	EditorNode::get_singleton()->get_gui_base()->add_child(new_project_dialog);

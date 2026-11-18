@@ -62,6 +62,9 @@ private:
 	void _ensure_passability_signals();
 	void _on_dm_data_changed(const String &p_category, int p_id);
 	void _rebuild_passability_cache() const;
+	void _collect_ordered_tile_layers(Vector<TileMapLayer *> &r_layers, bool p_visible_only) const;
+	void _apply_tileset_to_custom_layers(const Ref<TileSet> &p_ts);
+	void _reorder_children_for_draw_order();
 
 protected:
 	void _notification(int p_what);
@@ -142,6 +145,17 @@ public:
 	void set_tile_at(int p_layer_idx, const Vector2i &p_cell, const Vector2i &p_atlas_coords);
 	Vector2i get_tile_at(int p_layer_idx, const Vector2i &p_cell);
 	void set_player_start_position(const Vector2i &p_cell, int p_dir = 2);
+
+	// Etapa 1 (9B-Ext): Capas personalizadas con nombre y orden entero + atenuación de editor
+	TileMapLayer *get_custom_layer(const String &p_layer_id) const;
+	TileMapLayer *get_or_create_custom_layer(const String &p_layer_id);
+	void sync_custom_layers_from_project(bool p_create_all = false);
+	void set_custom_layer_tile_at(const String &p_layer_id, const Vector2i &p_cell, const Vector2i &p_atlas_coords, int p_source_id = 0, int p_alt = 0);
+	Vector2i get_custom_layer_tile_at(const String &p_layer_id, const Vector2i &p_cell) const;
+	void duplicate_custom_layer_tiles(const String &p_source_id, const String &p_dest_id);
+	void remove_custom_layer_node(const String &p_layer_id);
+	void apply_editor_layer_dimming(bool p_force_editor_context = false);
+	Array get_rendered_layers_ordered() const;
 
 	void init_runtime_session();
 	void set_preview_only(bool p_enabled) { preview_only = p_enabled; }

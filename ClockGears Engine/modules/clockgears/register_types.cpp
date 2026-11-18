@@ -115,6 +115,9 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsCameraPreviewCanvas);
 		GDREGISTER_CLASS(ClockGearsCameraDialog);
 		GDREGISTER_CLASS(ClockGearsGenerateEntityDialog);
+		GDREGISTER_CLASS(ClockGearsLayersDialog);
+		GDREGISTER_CLASS(ClockGearsTopBar);
+		GDREGISTER_CLASS(ClockGearsPreferencesDialog);
 		GDREGISTER_CLASS(ClockGearsMapCellSelector);
 		GDREGISTER_CLASS(ClockGearsUiPaletteButton);
 		GDREGISTER_CLASS(ClockGearsUiCanvasOverlay);
@@ -208,11 +211,9 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_INTERNAL_CLASS(ClockGearsTopBar);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsSimplifiedExportDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsAutomationPanel);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsUIEditorPanel);
-		GDREGISTER_INTERNAL_CLASS(ClockGearsPreferencesDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsNewProjectDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsResourceManagerDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsExportPlugin);

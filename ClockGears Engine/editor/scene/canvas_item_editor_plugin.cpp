@@ -3844,11 +3844,18 @@ void CanvasItemEditor::_bind_methods() {
 
 	ClassDB::bind_method("_set_owner_for_node_and_children", &CanvasItemEditor::_set_owner_for_node_and_children);
 
+	ClassDB::bind_method(D_METHOD("is_clockgears_workspace"), &CanvasItemEditor::is_clockgears_workspace);
 	ClassDB::bind_method(D_METHOD("set_clockgears_layer", "layer"), &CanvasItemEditor::set_clockgears_current_layer);
 	ClassDB::bind_method(D_METHOD("get_clockgears_layer"), &CanvasItemEditor::get_clockgears_current_layer);
+	ClassDB::bind_method(D_METHOD("set_clockgears_custom_layer", "custom_id"), &CanvasItemEditor::set_clockgears_current_custom_layer);
+	ClassDB::bind_method(D_METHOD("get_clockgears_custom_layer"), &CanvasItemEditor::get_clockgears_current_custom_layer);
 	ClassDB::bind_method(D_METHOD("set_clockgears_draw_tool", "tool"), &CanvasItemEditor::set_clockgears_draw_tool);
 	ClassDB::bind_method(D_METHOD("get_clockgears_draw_tool"), &CanvasItemEditor::get_clockgears_draw_tool);
 	ClassDB::bind_method(D_METHOD("set_clockgears_selected_tile", "tile_id", "atlas_coords", "texture", "source_id"), &CanvasItemEditor::set_clockgears_selected_tile, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("has_clockgears_map_selection"), &CanvasItemEditor::has_clockgears_map_selection);
+	ClassDB::bind_method(D_METHOD("clockgears_copy_map_selection"), &CanvasItemEditor::clockgears_copy_map_selection);
+	ClassDB::bind_method(D_METHOD("clockgears_paste_map_selection"), &CanvasItemEditor::clockgears_paste_map_selection);
+	ClassDB::bind_method(D_METHOD("clockgears_delete_map_selection"), &CanvasItemEditor::clockgears_delete_map_selection);
 	ClassDB::bind_method(D_METHOD("simulate_viewport_gui_input", "event"), &CanvasItemEditor::simulate_gui_input);
 	ClassDB::bind_method(D_METHOD("simulate_mouse_press", "canvas_pos", "right_button"), &CanvasItemEditor::simulate_mouse_press, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("simulate_mouse_motion", "canvas_pos"), &CanvasItemEditor::simulate_mouse_motion);
@@ -4726,11 +4733,32 @@ void CanvasItemEditor::set_clockgears_selected_tile_block(const Vector2i &p_prim
 }
 
 void CanvasItemEditor::set_clockgears_current_layer(int p_layer) {
+	current_custom_layer_id = String();
 	if (p_layer == 6) {
 		clockgears_region_mode = true;
 	} else {
 		clockgears_region_mode = false;
 		current_layer = CLAMP(p_layer, 1, 4);
+	}
+	if (Object *dm = Engine::get_singleton()->get_singleton_object("ClockGearsDataManager")) {
+		if (!String(dm->call("get_editor_custom_layer")).is_empty() || int(dm->call("get_editor_layer")) != p_layer) {
+			dm->call("set_editor_layer", p_layer);
+		} else {
+			dm->call("sync_editor_layer_dimming_from_settings");
+		}
+	}
+	update_viewport();
+}
+
+void CanvasItemEditor::set_clockgears_current_custom_layer(const String &p_custom_id) {
+	clockgears_region_mode = false;
+	current_custom_layer_id = p_custom_id.strip_edges();
+	if (Object *dm = Engine::get_singleton()->get_singleton_object("ClockGearsDataManager")) {
+		if (!current_custom_layer_id.is_empty() && String(dm->call("get_editor_custom_layer")) != current_custom_layer_id) {
+			dm->call("set_editor_custom_layer", current_custom_layer_id);
+		} else {
+			dm->call("sync_editor_layer_dimming_from_settings");
+		}
 	}
 	update_viewport();
 }
@@ -4773,37 +4801,56 @@ TileMapLayer *CanvasItemEditor::_get_or_create_tile_map_layer(int p_layer_idx) {
 		return nullptr;
 	}
 
-	const char *cg_names[4] = { "Capa_Suelo", "Capa_Decoracion", "Capa_Objetos", "Capa_Techo" };
-	int clamped_idx = CLAMP(p_layer_idx, 1, 4);
-	String cg_layer_name = cg_names[clamped_idx - 1];
-	String fallback_name = vformat("Layer%d", clamped_idx);
 	TileMapLayer *target_layer = nullptr;
-
-	if (scene->has_method("get_layer")) {
-		target_layer = Object::cast_to<TileMapLayer>((Object *)scene->call("get_layer", clamped_idx - 1));
-	}
-
-	if (!target_layer) {
-		for (int i = 0; i < scene->get_child_count(); i++) {
-			TileMapLayer *tml = Object::cast_to<TileMapLayer>(scene->get_child(i));
-			if (tml && (tml->get_name() == cg_layer_name || tml->get_name() == fallback_name)) {
-				target_layer = tml;
-				break;
+	if (!current_custom_layer_id.is_empty()) {
+		Dictionary info = dm ? Dictionary(dm->call("get_custom_map_layer", current_custom_layer_id)) : Dictionary();
+		if (!info.is_empty()) {
+			if (!bool(info.get("visible", true)) || bool(info.get("locked", false))) {
+				return nullptr;
 			}
+			if (scene->has_method("get_or_create_custom_layer")) {
+				target_layer = Object::cast_to<TileMapLayer>((Object *)scene->call("get_or_create_custom_layer", current_custom_layer_id));
+			}
+			if (!target_layer) {
+				return nullptr;
+			}
+		} else {
+			current_custom_layer_id = String();
 		}
 	}
 
 	if (!target_layer) {
-		target_layer = memnew(TileMapLayer);
-		target_layer->set_name(cg_layer_name);
-		target_layer->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-		scene->add_child(target_layer);
-		target_layer->set_owner(scene);
-		target_layer->set_y_sort_enabled(clamped_idx >= 2);
-	} else {
-		target_layer->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
-		if (target_layer->get_owner() != scene) {
+		const char *cg_names[4] = { "Capa_Suelo", "Capa_Decoracion", "Capa_Objetos", "Capa_Techo" };
+		int clamped_idx = CLAMP(p_layer_idx, 1, 4);
+		String cg_layer_name = cg_names[clamped_idx - 1];
+		String fallback_name = vformat("Layer%d", clamped_idx);
+
+		if (scene->has_method("get_layer")) {
+			target_layer = Object::cast_to<TileMapLayer>((Object *)scene->call("get_layer", clamped_idx - 1));
+		}
+
+		if (!target_layer) {
+			for (int i = 0; i < scene->get_child_count(); i++) {
+				TileMapLayer *tml = Object::cast_to<TileMapLayer>(scene->get_child(i));
+				if (tml && (tml->get_name() == cg_layer_name || tml->get_name() == fallback_name)) {
+					target_layer = tml;
+					break;
+				}
+			}
+		}
+
+		if (!target_layer) {
+			target_layer = memnew(TileMapLayer);
+			target_layer->set_name(cg_layer_name);
+			target_layer->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			scene->add_child(target_layer);
 			target_layer->set_owner(scene);
+			target_layer->set_y_sort_enabled(clamped_idx >= 2);
+		} else {
+			target_layer->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			if (target_layer->get_owner() != scene) {
+				target_layer->set_owner(scene);
+			}
 		}
 	}
 
@@ -5151,12 +5198,12 @@ void CanvasItemEditor::_paint_tile_cell(const Point2i &p_cell, bool p_erase) {
 			for (int dy = 0; dy < bsz.y; dy++) {
 				for (int dx = 0; dx < bsz.x; dx++) {
 					Vector2i ac = current_selected_tile_coords_list[idx++];
-					TileMapLayer *target_layer = _is_tile_star_overhead(ac) ? _get_or_create_tile_map_layer(4) : layer;
+					TileMapLayer *target_layer = (current_custom_layer_id.is_empty() && _is_tile_star_overhead(ac)) ? _get_or_create_tile_map_layer(4) : layer;
 					_record_and_set_tile_cell(target_layer, p_cell + Point2i(dx, dy), current_selected_source_id, ac, 0);
 				}
 			}
 		} else {
-			TileMapLayer *target_layer = _is_tile_star_overhead(current_selected_tile_coords) ? _get_or_create_tile_map_layer(4) : layer;
+			TileMapLayer *target_layer = (current_custom_layer_id.is_empty() && _is_tile_star_overhead(current_selected_tile_coords)) ? _get_or_create_tile_map_layer(4) : layer;
 			_record_and_set_tile_cell(target_layer, p_cell, current_selected_source_id, current_selected_tile_coords, 0);
 		}
 	}
@@ -5231,10 +5278,10 @@ void CanvasItemEditor::_paint_tile_rect(const Point2i &p_from, const Point2i &p_
 				int bx = (tx - x0) % bsz.x;
 				int by = (ty - y0) % bsz.y;
 				Vector2i ac = current_selected_tile_coords_list[by * bsz.x + bx];
-				TileMapLayer *target_layer = _is_tile_star_overhead(ac) ? _get_or_create_tile_map_layer(4) : layer;
+				TileMapLayer *target_layer = (current_custom_layer_id.is_empty() && _is_tile_star_overhead(ac)) ? _get_or_create_tile_map_layer(4) : layer;
 				_record_and_set_tile_cell(target_layer, cell, current_selected_source_id, ac, 0);
 			} else {
-				TileMapLayer *target_layer = _is_tile_star_overhead(current_selected_tile_coords) ? _get_or_create_tile_map_layer(4) : layer;
+				TileMapLayer *target_layer = (current_custom_layer_id.is_empty() && _is_tile_star_overhead(current_selected_tile_coords)) ? _get_or_create_tile_map_layer(4) : layer;
 				_record_and_set_tile_cell(target_layer, cell, current_selected_source_id, current_selected_tile_coords, 0);
 			}
 		}
@@ -5286,7 +5333,7 @@ void CanvasItemEditor::_paint_tile_ellipse(const Point2i &p_from, const Point2i 
 				if (p_erase) {
 					_record_and_set_tile_cell(layer, cell, TileSet::INVALID_SOURCE, TileSetSource::INVALID_ATLAS_COORDS, 0);
 				} else {
-					TileMapLayer *target_layer = _is_tile_star_overhead(current_selected_tile_coords) ? _get_or_create_tile_map_layer(4) : layer;
+					TileMapLayer *target_layer = (current_custom_layer_id.is_empty() && _is_tile_star_overhead(current_selected_tile_coords)) ? _get_or_create_tile_map_layer(4) : layer;
 					_record_and_set_tile_cell(target_layer, cell, current_selected_source_id, current_selected_tile_coords, 0);
 				}
 			}
@@ -5347,7 +5394,7 @@ void CanvasItemEditor::_paint_tile_bucket(const Point2i &p_seed, bool p_erase) {
 		return;
 	}
 
-	TileMapLayer *target_layer = (!p_erase && _is_tile_star_overhead(new_coords)) ? _get_or_create_tile_map_layer(4) : layer;
+	TileMapLayer *target_layer = (!p_erase && current_custom_layer_id.is_empty() && _is_tile_star_overhead(new_coords)) ? _get_or_create_tile_map_layer(4) : layer;
 
 	Vector<Point2i> queue;
 	HashSet<Point2i> visited;
@@ -5427,7 +5474,21 @@ void CanvasItemEditor::clockgears_copy_map_selection() {
 	if (!clockgears_has_map_selection) {
 		return;
 	}
-	TileMapLayer *layer = _get_or_create_tile_map_layer(current_layer);
+	TileMapLayer *layer = nullptr;
+	if (!current_custom_layer_id.is_empty()) {
+		Node *scene = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_edited_scene() : nullptr;
+		if (!scene) {
+			Object *dm = Engine::get_singleton()->get_singleton_object("ClockGearsDataManager");
+			if (dm && dm->has_method("get_editor_map")) {
+				scene = Object::cast_to<Node>((Object *)dm->call("get_editor_map"));
+			}
+		}
+		if (scene && scene->has_method("get_custom_layer")) {
+			layer = Object::cast_to<TileMapLayer>((Object *)scene->call("get_custom_layer", current_custom_layer_id));
+		}
+	} else {
+		layer = _get_or_create_tile_map_layer(current_layer);
+	}
 	if (!layer) {
 		return;
 	}
@@ -5534,11 +5595,17 @@ void CanvasItemEditor::trigger_undo() {
 	if (EditorUndoRedoManager::get_singleton()) {
 		EditorUndoRedoManager::get_singleton()->undo();
 	}
+	if (Object *dm = Engine::get_singleton()->get_singleton_object("ClockGearsDataManager")) {
+		dm->call("sync_editor_layer_dimming_from_settings");
+	}
 }
 
 void CanvasItemEditor::trigger_redo() {
 	if (EditorUndoRedoManager::get_singleton()) {
 		EditorUndoRedoManager::get_singleton()->redo();
+	}
+	if (Object *dm = Engine::get_singleton()->get_singleton_object("ClockGearsDataManager")) {
+		dm->call("sync_editor_layer_dimming_from_settings");
 	}
 }
 

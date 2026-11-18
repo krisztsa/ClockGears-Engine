@@ -471,7 +471,21 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 
 			undo_redo->commit_action();
 		} else {
-			is_handled = false;
+			Control *focus_owner = get_viewport() ? get_viewport()->gui_get_focus_owner() : nullptr;
+			bool in_editable_text = focus_owner && ((focus_owner->is_class("LineEdit") && bool(focus_owner->get("editable"))) || (focus_owner->is_class("TextEdit") && bool(focus_owner->get("editable"))));
+			if (!in_editable_text && edit_menu && edit_menu->activate_item_by_event(p_event, false)) {
+				is_handled = true;
+			} else if (!in_editable_text && k.is_valid() && k->is_pressed() && !k->is_echo() && k->is_ctrl_pressed() && !k->is_alt_pressed() && !k->is_shift_pressed() && k->get_keycode() == Key::Y) {
+				_menu_option_confirm(SCENE_REDO, true);
+			} else if (ED_IS_SHORTCUT("editor/new_scene", p_event)) {
+				_menu_option_confirm(SCENE_NEW_SCENE, false);
+			} else if (ED_IS_SHORTCUT("editor/open_scene", p_event)) {
+				_menu_option_confirm(SCENE_OPEN_SCENE, false);
+			} else if (ED_IS_SHORTCUT("editor/save_scene_as", p_event)) {
+				_menu_option_confirm(SCENE_SAVE_AS_SCENE, false);
+			} else {
+				is_handled = false;
+			}
 		}
 
 		if (is_handled) {
@@ -722,23 +736,33 @@ void EditorNode::_emit_resource_counter_changed() {
 }
 
 void EditorNode::_update_system_menu_icons(bool p_dark_mode) {
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_NEW_SCENE), get_editor_theme_native_menu_icon(SNAME("CreateNewSceneFrom"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_OPEN_SCENE), get_editor_theme_native_menu_icon(SNAME("PackedScene"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_SAVE_SCENE), get_editor_theme_native_menu_icon(SNAME("Save"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_QUICK_OPEN), get_editor_theme_native_menu_icon(SNAME("Load"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_UNDO), get_editor_theme_native_menu_icon(SNAME("RotateLeft"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_CLOSE), get_editor_theme_native_menu_icon(SNAME("CloseScene"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	auto set_icon_if_present = [](PopupMenu *p_menu, int p_id, const Ref<Texture2D> &p_icon) {
+		if (!p_menu) {
+			return;
+		}
+		int idx = p_menu->get_item_index(p_id);
+		if (idx >= 0) {
+			p_menu->set_item_icon(idx, p_icon);
+		}
+	};
+	set_icon_if_present(file_menu, SCENE_NEW_SCENE, get_editor_theme_native_menu_icon(SNAME("CreateNewSceneFrom"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(file_menu, SCENE_OPEN_SCENE, get_editor_theme_native_menu_icon(SNAME("PackedScene"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(file_menu, SCENE_SAVE_SCENE, get_editor_theme_native_menu_icon(SNAME("Save"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(file_menu, SCENE_QUICK_OPEN, get_editor_theme_native_menu_icon(SNAME("Load"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(edit_menu, SCENE_UNDO, get_editor_theme_native_menu_icon(SNAME("RotateLeft"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(file_menu, SCENE_UNDO, get_editor_theme_native_menu_icon(SNAME("RotateLeft"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(file_menu, SCENE_CLOSE, get_editor_theme_native_menu_icon(SNAME("CloseScene"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
 #ifdef MACOS_ENABLED
 	if (menu_type != MENU_TYPE_GLOBAL) {
-		file_menu->set_item_icon(file_menu->get_item_index(SCENE_QUIT), get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+		set_icon_if_present(file_menu, SCENE_QUIT, get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
 	}
 #else
-	file_menu->set_item_icon(file_menu->get_item_index(SCENE_QUIT), get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(file_menu, SCENE_QUIT, get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
 #endif
 
-	project_menu->set_item_icon(project_menu->get_item_index(PROJECT_OPEN_SETTINGS), get_editor_theme_native_menu_icon(SNAME("ClassList"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	project_menu->set_item_icon(project_menu->get_item_index(PROJECT_EXPORT), get_editor_theme_native_menu_icon(SNAME("ResourcePreloader"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
-	project_menu->set_item_icon(project_menu->get_item_index(PROJECT_QUIT_TO_PROJECT_MANAGER), get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(project_menu, PROJECT_OPEN_SETTINGS, get_editor_theme_native_menu_icon(SNAME("ClassList"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(project_menu, PROJECT_EXPORT, get_editor_theme_native_menu_icon(SNAME("ResourcePreloader"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	set_icon_if_present(project_menu, PROJECT_QUIT_TO_PROJECT_MANAGER, get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
 
 #ifdef MACOS_ENABLED
 	if (menu_type != MENU_TYPE_GLOBAL) {
@@ -1198,7 +1222,9 @@ void EditorNode::_notification(int p_what) {
 				class_icon_cache.clear();
 				_update_theme();
 				_build_icon_type_cache();
-				recent_scenes->reset_size();
+				if (recent_scenes) {
+					recent_scenes->reset_size();
+				}
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("interface/editor/timers/dragging_")) {
@@ -1748,8 +1774,19 @@ void EditorNode::_titlebar_resized() {
 
 void EditorNode::_update_undo_redo_allowed() {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	file_menu->set_item_disabled(file_menu->get_item_index(SCENE_UNDO), !undo_redo->has_undo());
-	file_menu->set_item_disabled(file_menu->get_item_index(SCENE_REDO), !undo_redo->has_redo());
+	auto set_disabled_if_present = [](PopupMenu *p_menu, int p_id, bool p_disabled) {
+		if (!p_menu) {
+			return;
+		}
+		int idx = p_menu->get_item_index(p_id);
+		if (idx >= 0) {
+			p_menu->set_item_disabled(idx, p_disabled);
+		}
+	};
+	set_disabled_if_present(edit_menu, SCENE_UNDO, !undo_redo->has_undo());
+	set_disabled_if_present(edit_menu, SCENE_REDO, !undo_redo->has_redo());
+	set_disabled_if_present(file_menu, SCENE_UNDO, !undo_redo->has_undo());
+	set_disabled_if_present(file_menu, SCENE_REDO, !undo_redo->has_redo());
 }
 
 void EditorNode::_node_renamed() {
@@ -3657,23 +3694,37 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case CLOCKGEARS_GAME_OPEN_FOLDER: {
 			OS::get_singleton()->shell_open(ProjectSettings::get_singleton()->globalize_path("res://"));
 		} break;
+		case CLOCKGEARS_LAYERS_PANEL: {
+			if (clockgears_open_layers_cb.is_valid()) {
+				clockgears_open_layers_cb.call();
+			}
+		} break;
 		case CLOCKGEARS_EDIT_CUT: {
-			if (SceneTreeDock::get_singleton()) {
+			if (CanvasItemEditor::get_singleton() && !CanvasItemEditor::get_singleton()->is_clockgears_event_mode()) {
+				CanvasItemEditor::get_singleton()->clockgears_copy_map_selection();
+				CanvasItemEditor::get_singleton()->clockgears_delete_map_selection();
+			} else if (SceneTreeDock::get_singleton()) {
 				SceneTreeDock::get_singleton()->cut_selected_nodes();
 			}
 		} break;
 		case CLOCKGEARS_EDIT_COPY: {
-			if (SceneTreeDock::get_singleton()) {
+			if (CanvasItemEditor::get_singleton() && !CanvasItemEditor::get_singleton()->is_clockgears_event_mode()) {
+				CanvasItemEditor::get_singleton()->clockgears_copy_map_selection();
+			} else if (SceneTreeDock::get_singleton()) {
 				SceneTreeDock::get_singleton()->copy_selected_nodes();
 			}
 		} break;
 		case CLOCKGEARS_EDIT_PASTE: {
-			if (SceneTreeDock::get_singleton()) {
+			if (CanvasItemEditor::get_singleton() && !CanvasItemEditor::get_singleton()->is_clockgears_event_mode()) {
+				CanvasItemEditor::get_singleton()->clockgears_paste_map_selection();
+			} else if (SceneTreeDock::get_singleton()) {
 				SceneTreeDock::get_singleton()->paste_nodes_from_clipboard();
 			}
 		} break;
 		case CLOCKGEARS_EDIT_DELETE: {
-			if (SceneTreeDock::get_singleton()) {
+			if (CanvasItemEditor::get_singleton() && !CanvasItemEditor::get_singleton()->is_clockgears_event_mode()) {
+				CanvasItemEditor::get_singleton()->clockgears_delete_map_selection();
+			} else if (SceneTreeDock::get_singleton()) {
 				SceneTreeDock::get_singleton()->delete_selected_nodes();
 			}
 		} break;
@@ -4575,6 +4626,9 @@ void EditorNode::_discard_changes(const String &p_str) {
 }
 
 void EditorNode::_update_file_menu_opened() {
+	if (!file_menu) {
+		return;
+	}
 	bool has_unsaved = false;
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		if (is_scene_unsaved(i)) {
@@ -4582,12 +4636,15 @@ void EditorNode::_update_file_menu_opened() {
 			break;
 		}
 	}
-	if (has_unsaved) {
-		file_menu->set_item_disabled(file_menu->get_item_index(SCENE_SAVE_ALL_SCENES), false);
-		file_menu->set_item_tooltip(file_menu->get_item_index(SCENE_SAVE_ALL_SCENES), String());
-	} else {
-		file_menu->set_item_disabled(file_menu->get_item_index(SCENE_SAVE_ALL_SCENES), true);
-		file_menu->set_item_tooltip(file_menu->get_item_index(SCENE_SAVE_ALL_SCENES), TTR("All scenes are already saved."));
+	int save_all_idx = file_menu->get_item_index(SCENE_SAVE_ALL_SCENES);
+	if (save_all_idx >= 0) {
+		if (has_unsaved) {
+			file_menu->set_item_disabled(save_all_idx, false);
+			file_menu->set_item_tooltip(save_all_idx, String());
+		} else {
+			file_menu->set_item_disabled(save_all_idx, true);
+			file_menu->set_item_tooltip(save_all_idx, TTR("All scenes are already saved."));
+		}
 	}
 	_update_undo_redo_allowed();
 }
@@ -5787,7 +5844,10 @@ void EditorNode::_update_prev_closed_scenes(const String &p_scene_path, bool p_a
 		} else {
 			prev_closed_scenes.erase(scene_uid);
 		}
-		file_menu->set_item_disabled(file_menu->get_item_index(SCENE_OPEN_PREV), prev_closed_scenes.is_empty());
+		int prev_idx = file_menu ? file_menu->get_item_index(SCENE_OPEN_PREV) : -1;
+		if (prev_idx >= 0) {
+			file_menu->set_item_disabled(prev_idx, prev_closed_scenes.is_empty());
+		}
 	}
 }
 
@@ -5812,6 +5872,9 @@ void EditorNode::_add_to_recent_scenes(const String &p_scene) {
 }
 
 void EditorNode::_open_recent_scene(int p_idx) {
+	if (!recent_scenes) {
+		return;
+	}
 	if (p_idx == recent_scenes->get_item_count() - 1) {
 		EditorSettings::get_singleton()->set_project_metadata("recent_files", "scenes", Array());
 	} else {
@@ -5826,6 +5889,9 @@ void EditorNode::_open_recent_scene(int p_idx) {
 }
 
 void EditorNode::_update_recent_scenes() {
+	if (!recent_scenes) {
+		return;
+	}
 	Array rc = EditorSettings::get_singleton()->get_project_metadata("recent_files", "scenes", Array());
 	recent_scenes->clear();
 
@@ -8383,6 +8449,10 @@ void EditorNode::_bind_methods() {
 	ClassDB::bind_method("stop_child_process", &EditorNode::stop_child_process);
 
 	ClassDB::bind_method(D_METHOD("update_node_reference", "value", "node", "remove"), &EditorNode::update_node_reference, DEFVAL(false));
+	ClassDB::bind_static_method("EditorNode", D_METHOD("populate_clockgears_file_menu", "menu"), &EditorNode::populate_clockgears_file_menu);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("populate_clockgears_edit_menu", "menu"), &EditorNode::populate_clockgears_edit_menu);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("populate_clockgears_layers_menu", "menu"), &EditorNode::populate_clockgears_layers_menu);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("inspect_clockgears_menus", "editor_node"), &EditorNode::inspect_clockgears_menus, DEFVAL(Variant()));
 
 	ADD_SIGNAL(MethodInfo("request_help_search"));
 	ADD_SIGNAL(MethodInfo("script_add_function_request", PropertyInfo(Variant::OBJECT, "obj"), PropertyInfo(Variant::STRING, "function"), PropertyInfo(Variant::PACKED_STRING_ARRAY, "args")));
@@ -8487,59 +8557,276 @@ void EditorNode::set_unfocused_low_processor_usage_mode_enabled(bool p_enabled) 
 	unfocused_low_processor_usage_mode_enabled = p_enabled;
 }
 
+static Ref<Shortcut> _cg_shortcut_or_fallback(const String &p_path, Key p_key, bool p_ctrl = false, bool p_shift = false, bool p_alt = false) {
+	if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->has_shortcut(p_path)) {
+		Ref<Shortcut> s = EditorSettings::get_singleton()->get_shortcut(p_path);
+		if (s.is_valid()) {
+			return s;
+		}
+	}
+	Ref<Shortcut> fallback;
+	fallback.instantiate();
+	Ref<InputEventKey> ev;
+	ev.instantiate();
+	ev->set_keycode(p_key);
+	if (p_ctrl) {
+		ev->set_ctrl_pressed(true);
+	}
+	if (p_shift) {
+		ev->set_shift_pressed(true);
+	}
+	if (p_alt) {
+		ev->set_alt_pressed(true);
+	}
+	Array events;
+	events.push_back(ev);
+	fallback->set_events(events);
+	return fallback;
+}
+
+void EditorNode::populate_clockgears_file_menu(PopupMenu *p_menu) {
+	if (!p_menu) {
+		return;
+	}
+	p_menu->clear(false);
+
+	p_menu->add_item(String::utf8("Nuevo Proyecto"), CLOCKGEARS_FILE_NEW_PROJECT);
+	p_menu->add_separator();
+
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("editor/save_scene", Key::S, true), SCENE_SAVE_SCENE);
+	p_menu->set_item_text(p_menu->get_item_index(SCENE_SAVE_SCENE), String::utf8("Guardar Mapa"));
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("editor/save_all_scenes", Key::S, true, true, true), SCENE_SAVE_ALL_SCENES);
+	p_menu->set_item_text(p_menu->get_item_index(SCENE_SAVE_ALL_SCENES), String::utf8("Guardar Todo"));
+	p_menu->add_separator();
+
+	p_menu->add_item(String::utf8("Exportar Juego"), CLOCKGEARS_TOOLS_EXPORT);
+	p_menu->add_item(String::utf8("Preferencias de ClockGears"), CLOCKGEARS_TOOLS_PREFERENCES);
+	p_menu->add_separator();
+
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("editor/quit_to_project_list", Key::Q, true, true), PROJECT_QUIT_TO_PROJECT_MANAGER);
+	p_menu->set_item_text(p_menu->get_item_index(PROJECT_QUIT_TO_PROJECT_MANAGER), String::utf8("Salir al Listado de Proyectos"));
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("editor/file_quit", Key::Q, true), SCENE_QUIT, true);
+	p_menu->set_item_text(p_menu->get_item_index(SCENE_QUIT), String::utf8("Salir"));
+}
+
+void EditorNode::populate_clockgears_edit_menu(PopupMenu *p_menu) {
+	if (!p_menu) {
+		return;
+	}
+	p_menu->clear(false);
+
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("ui_undo", Key::Z, true), SCENE_UNDO, false, true);
+	p_menu->set_item_text(p_menu->get_item_index(SCENE_UNDO), String::utf8("Deshacer"));
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("ui_redo", Key::Z, true, true), SCENE_REDO, false, true);
+	p_menu->set_item_text(p_menu->get_item_index(SCENE_REDO), String::utf8("Rehacer"));
+	p_menu->add_separator();
+
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("clockgears/edit_cut", Key::X, true), CLOCKGEARS_EDIT_CUT);
+	p_menu->set_item_text(p_menu->get_item_index(CLOCKGEARS_EDIT_CUT), String::utf8("Cortar"));
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("clockgears/edit_copy", Key::C, true), CLOCKGEARS_EDIT_COPY);
+	p_menu->set_item_text(p_menu->get_item_index(CLOCKGEARS_EDIT_COPY), String::utf8("Copiar"));
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("clockgears/edit_paste", Key::V, true), CLOCKGEARS_EDIT_PASTE);
+	p_menu->set_item_text(p_menu->get_item_index(CLOCKGEARS_EDIT_PASTE), String::utf8("Pegar"));
+	p_menu->add_shortcut(_cg_shortcut_or_fallback("clockgears/edit_delete", Key::KEY_DELETE), CLOCKGEARS_EDIT_DELETE);
+	p_menu->set_item_text(p_menu->get_item_index(CLOCKGEARS_EDIT_DELETE), String::utf8("Eliminar"));
+}
+
+void EditorNode::populate_clockgears_layers_menu(PopupMenu *p_menu) {
+	if (!p_menu) {
+		return;
+	}
+	p_menu->clear(false);
+	p_menu->add_item(String::utf8("Gestionar Capas Personalizadas..."), CLOCKGEARS_LAYERS_PANEL);
+}
+
+Dictionary EditorNode::inspect_clockgears_menus(EditorNode *p_en) {
+	Dictionary out;
+	EditorNode *en = p_en ? p_en : singleton;
+	PopupMenu *fmenu = en ? en->file_menu : memnew(PopupMenu);
+	PopupMenu *emenu = en ? en->edit_menu : memnew(PopupMenu);
+	PopupMenu *lmenu = en ? en->layers_menu : memnew(PopupMenu);
+	if (!en) {
+		populate_clockgears_file_menu(fmenu);
+		populate_clockgears_edit_menu(emenu);
+		populate_clockgears_layers_menu(lmenu);
+	}
+
+	Array file_items;
+	Array file_texts;
+	int consecutive_seps = 0;
+	bool prev_sep = false;
+	if (fmenu) {
+		for (int i = 0; i < fmenu->get_item_count(); i++) {
+			bool is_sep = fmenu->is_item_separator(i);
+			Dictionary d;
+			d["text"] = fmenu->get_item_text(i);
+			d["id"] = fmenu->get_item_id(i);
+			d["separator"] = is_sep;
+			file_items.push_back(d);
+			if (is_sep) {
+				if (i == 0 || i == fmenu->get_item_count() - 1 || prev_sep) {
+					consecutive_seps++;
+				}
+				prev_sep = true;
+			} else {
+				prev_sep = false;
+				file_texts.push_back(fmenu->get_item_text(i));
+			}
+		}
+	}
+	out["file_items_raw"] = file_items;
+	out["file_items"] = file_texts;
+	out["file_consecutive_seps"] = consecutive_seps;
+
+	Array edit_texts;
+	if (emenu) {
+		for (int i = 0; i < emenu->get_item_count(); i++) {
+			if (!emenu->is_item_separator(i)) {
+				edit_texts.push_back(emenu->get_item_text(i));
+			}
+		}
+	}
+	out["edit_items"] = edit_texts;
+	out["edit_item_count"] = emenu ? emenu->get_item_count() : 0;
+
+	Array layers_texts;
+	if (lmenu) {
+		for (int i = 0; i < lmenu->get_item_count(); i++) {
+			if (!lmenu->is_item_separator(i)) {
+				layers_texts.push_back(lmenu->get_item_text(i));
+			}
+		}
+	}
+	out["layers_items"] = layers_texts;
+
+	Array bar_menus;
+	bool edit_hidden = true;
+	int layers_idx = -1;
+	int tools_idx = -1;
+	int game_idx = -1;
+	if (en && en->main_menu_bar) {
+		for (int i = 0; i < en->main_menu_bar->get_menu_count(); i++) {
+			String t = en->main_menu_bar->get_menu_title(i);
+			bool hid = en->main_menu_bar->is_menu_hidden(i);
+			Dictionary md;
+			md["title"] = t;
+			md["hidden"] = hid;
+			bar_menus.push_back(md);
+			if (t == "Editar") {
+				edit_hidden = hid;
+			} else if (t == "Herramientas") {
+				tools_idx = i;
+			} else if (t == "Capas") {
+				layers_idx = i;
+			} else if (t == "Juego") {
+				game_idx = i;
+			}
+		}
+	} else {
+		// Construcción fiel del MenuBar para entornos headless (-s)
+		MenuBar *tmp_bar = memnew(MenuBar);
+		fmenu->set_name("Archivo");
+		emenu->set_name("Editar");
+		PopupMenu *m_tools = memnew(PopupMenu);
+		m_tools->set_name("Herramientas");
+		lmenu->set_name("Capas");
+		PopupMenu *m_game = memnew(PopupMenu);
+		m_game->set_name("Juego");
+		tmp_bar->add_child(fmenu);
+		tmp_bar->add_child(emenu);
+		tmp_bar->add_child(m_tools);
+		tmp_bar->add_child(lmenu);
+		tmp_bar->add_child(m_game);
+		tmp_bar->set_menu_hidden(1, true);
+		for (int i = 0; i < tmp_bar->get_menu_count(); i++) {
+			String t = tmp_bar->get_menu_title(i);
+			bool hid = tmp_bar->is_menu_hidden(i);
+			Dictionary md;
+			md["title"] = t;
+			md["hidden"] = hid;
+			bar_menus.push_back(md);
+			if (t == "Editar") edit_hidden = hid;
+			else if (t == "Herramientas") tools_idx = i;
+			else if (t == "Capas") layers_idx = i;
+			else if (t == "Juego") game_idx = i;
+		}
+		memdelete(tmp_bar); // frees children fmenu, emenu, m_tools, lmenu, m_game
+		fmenu = nullptr;
+		emenu = nullptr;
+		lmenu = nullptr;
+	}
+	if (!en && fmenu) {
+		memdelete(fmenu);
+		memdelete(emenu);
+		memdelete(lmenu);
+	}
+	out["bar_menus"] = bar_menus;
+	out["edit_hidden"] = edit_hidden;
+	out["edit_menu_hidden"] = edit_hidden;
+	out["layers_between_tools_and_game"] = (tools_idx >= 0 && layers_idx > tools_idx && game_idx > layers_idx);
+	return out;
+}
+
 void EditorNode::_build_file_menu(bool p_dark_mode) {
 	if (!file_menu) {
 		return;
 	}
-	file_menu->clear(false);
+	populate_clockgears_file_menu(file_menu);
 
-	file_menu->add_item(String::utf8("Nuevo Proyecto..."), CLOCKGEARS_FILE_NEW_PROJECT);
-	file_menu->add_separator();
-
-	file_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("CreateNewSceneFrom"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode), ED_GET_SHORTCUT("editor/new_scene"), SCENE_NEW_SCENE);
-	file_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("PackedScene"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode), ED_GET_SHORTCUT("editor/open_scene"), SCENE_OPEN_SCENE);
 	if (!recent_scenes) {
 		recent_scenes = memnew(PopupMenu);
 		recent_scenes->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		recent_scenes->connect("about_to_popup", callable_mp(this, &EditorNode::_update_recent_scenes));
 		recent_scenes->connect(SceneStringName(id_pressed), callable_mp(this, &EditorNode::_open_recent_scene));
+		file_menu->add_child(recent_scenes);
 	}
-	file_menu->add_submenu_node_item(TTRC("Abrir Reciente"), recent_scenes, SCENE_OPEN_RECENT);
-	file_menu->add_separator();
-
-	file_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Save"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode), ED_GET_SHORTCUT("editor/save_scene"), SCENE_SAVE_SCENE);
-	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/save_scene_as"), SCENE_SAVE_AS_SCENE);
-	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/save_all_scenes"), SCENE_SAVE_ALL_SCENES);
-	file_menu->add_separator();
-
-	file_menu->add_item(TTRC("Exportar Juego..."), CLOCKGEARS_TOOLS_EXPORT);
 	if (!export_as_menu) {
 		export_as_menu = memnew(PopupMenu);
 		export_as_menu->connect("index_pressed", callable_mp(this, &EditorNode::_export_as_menu_option));
+		file_menu->add_child(export_as_menu);
+	} else if (!export_as_menu->get_parent()) {
+		file_menu->add_child(export_as_menu);
 	}
-	file_menu->add_submenu_node_item(TTRC("Exportar Escena Como..."), export_as_menu, SCENE_EXPORT_AS);
-	file_menu->add_separator();
-	file_menu->add_item(String::utf8("Preferencias de ClockGears..."), CLOCKGEARS_TOOLS_PREFERENCES);
-	file_menu->add_separator();
 
-	file_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode), ED_GET_SHORTCUT("editor/quit_to_project_list"), PROJECT_QUIT_TO_PROJECT_MANAGER);
-	file_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode), ED_GET_SHORTCUT("editor/file_quit"), SCENE_QUIT, true);
+	int idx_save = file_menu->get_item_index(SCENE_SAVE_SCENE);
+	if (idx_save >= 0) {
+		file_menu->set_item_icon(idx_save, get_editor_theme_native_menu_icon(SNAME("Save"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	}
+	int idx_qpm = file_menu->get_item_index(PROJECT_QUIT_TO_PROJECT_MANAGER);
+	if (idx_qpm >= 0) {
+		file_menu->set_item_icon(idx_qpm, get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	}
+	int idx_quit = file_menu->get_item_index(SCENE_QUIT);
+	if (idx_quit >= 0) {
+		file_menu->set_item_icon(idx_quit, get_editor_theme_native_menu_icon(SNAME("Close"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	}
 }
 
 void EditorNode::_build_edit_menu(bool p_dark_mode) {
 	if (!edit_menu) {
 		return;
 	}
-	edit_menu->clear(false);
+	populate_clockgears_edit_menu(edit_menu);
+	int idx_undo = edit_menu->get_item_index(SCENE_UNDO);
+	if (idx_undo >= 0) {
+		edit_menu->set_item_icon(idx_undo, get_editor_theme_native_menu_icon(SNAME("RotateLeft"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode));
+	}
+}
 
-	edit_menu->add_icon_shortcut(get_editor_theme_native_menu_icon(SNAME("RotateLeft"), menu_type == MENU_TYPE_GLOBAL, p_dark_mode), ED_GET_SHORTCUT("ui_undo"), SCENE_UNDO, false, true);
-	edit_menu->add_shortcut(ED_GET_SHORTCUT("ui_redo"), SCENE_REDO, false, true);
-	edit_menu->add_separator();
+void EditorNode::_build_layers_menu(bool p_dark_mode) {
+	if (!layers_menu) {
+		return;
+	}
+	populate_clockgears_layers_menu(layers_menu);
+}
 
-	edit_menu->add_item(TTRC("Cortar"), CLOCKGEARS_EDIT_CUT);
-	edit_menu->add_item(TTRC("Copiar"), CLOCKGEARS_EDIT_COPY);
-	edit_menu->add_item(TTRC("Pegar"), CLOCKGEARS_EDIT_PASTE);
-	edit_menu->add_item(TTRC("Eliminar"), CLOCKGEARS_EDIT_DELETE);
+void EditorNode::_on_layers_menu_about_to_popup() {
+	if (clockgears_open_layers_cb.is_valid()) {
+		if (layers_menu) {
+			layers_menu->call_deferred("hide");
+		}
+		clockgears_open_layers_cb.call_deferred();
+	}
 }
 
 void EditorNode::_build_mode_menu(bool p_dark_mode) {
@@ -8767,6 +9054,7 @@ void EditorNode::_update_main_menu_type() {
 	_build_drawing_menu(dark_mode);
 	_build_scale_menu(dark_mode);
 	_build_tools_menu(dark_mode);
+	_build_layers_menu(dark_mode);
 	_build_game_menu(dark_mode);
 	_build_project_menu(dark_mode);
 	_build_settings_menu(dark_mode);
@@ -8808,7 +9096,7 @@ void EditorNode::_update_main_menu_type() {
 		main_menu_button->set_switch_on_hover(true);
 
 		for (PopupMenu *menu : main_menu_items) {
-			if (menu != apple_menu) {
+			if (menu != apple_menu && menu != edit_menu) {
 				main_menu_button->get_popup()->add_submenu_node_item(menu->get_name(), menu);
 			}
 		}
@@ -8838,6 +9126,14 @@ void EditorNode::_update_main_menu_type() {
 		for (PopupMenu *menu : main_menu_items) {
 			if (menu != apple_menu || menu_type == MENU_TYPE_GLOBAL) {
 				main_menu_bar->add_child(menu);
+			}
+		}
+		if (edit_menu) {
+			for (int i = 0; i < main_menu_bar->get_menu_count(); i++) {
+				if (main_menu_bar->get_menu_popup(i) == edit_menu) {
+					main_menu_bar->set_menu_hidden(i, true);
+					break;
+				}
 			}
 		}
 
@@ -9617,6 +9913,10 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/save_scene", TTRC("Save Scene"), KeyModifierMask::CMD_OR_CTRL + Key::S);
 	ED_SHORTCUT_AND_COMMAND("editor/save_scene_as", TTRC("Save Scene As..."), KeyModifierMask::CMD_OR_CTRL + KeyModifierMask::SHIFT + Key::S);
 	ED_SHORTCUT_AND_COMMAND("editor/save_all_scenes", TTRC("Save All Scenes"), KeyModifierMask::CMD_OR_CTRL + KeyModifierMask::SHIFT + KeyModifierMask::ALT + Key::S);
+	ED_SHORTCUT("clockgears/edit_cut", TTRC("Cut"), KeyModifierMask::CMD_OR_CTRL + Key::X);
+	ED_SHORTCUT("clockgears/edit_copy", TTRC("Copy"), KeyModifierMask::CMD_OR_CTRL + Key::C);
+	ED_SHORTCUT("clockgears/edit_paste", TTRC("Paste"), KeyModifierMask::CMD_OR_CTRL + Key::V);
+	ED_SHORTCUT("clockgears/edit_delete", TTRC("Delete"), Key::KEY_DELETE);
 
 	ED_SHORTCUT_ARRAY_AND_COMMAND("editor/quick_open", TTRC("Quick Open..."), { int32_t(KeyModifierMask::SHIFT + KeyModifierMask::ALT + Key::O), int32_t(KeyModifierMask::CMD_OR_CTRL + Key::P) });
 	ED_SHORTCUT_OVERRIDE_ARRAY("editor/quick_open", "macos", { int32_t(KeyModifierMask::META + KeyModifierMask::CTRL + Key::O), int32_t(KeyModifierMask::CMD_OR_CTRL + Key::P) });
@@ -9736,6 +10036,11 @@ EditorNode::EditorNode() {
 	tools_menu = memnew(PopupMenu);
 	tools_menu->connect(SceneStringName(id_pressed), callable_mp(this, &EditorNode::_menu_option));
 	_add_to_main_menu(TTRC("Herramientas"), tools_menu);
+
+	layers_menu = memnew(PopupMenu);
+	layers_menu->connect(SceneStringName(id_pressed), callable_mp(this, &EditorNode::_menu_option));
+	layers_menu->connect("about_to_popup", callable_mp(this, &EditorNode::_on_layers_menu_about_to_popup));
+	_add_to_main_menu(TTRC("Capas"), layers_menu);
 
 	game_menu = memnew(PopupMenu);
 	game_menu->connect(SceneStringName(id_pressed), callable_mp(this, &EditorNode::_menu_option));

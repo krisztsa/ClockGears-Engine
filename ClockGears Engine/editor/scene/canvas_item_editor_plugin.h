@@ -443,6 +443,7 @@ private:
 	Vector2i current_selected_tile_block_size = Vector2i(1, 1);
 	Vector<Vector2i> current_selected_tile_coords_list;
 	int current_layer = 1;
+	String current_custom_layer_id;
 	int current_draw_tool = 0; // 0: Lápiz, 1: Rectángulo, 2: Elipse, 3: Cubo (Flood Fill), 4: Sombra, 5: Selección Rectangular
 	bool clockgears_region_mode = false;
 	int current_selected_region_id = 1;
@@ -524,6 +525,7 @@ public:
 	// Strips every Godot overlay from the 2D canvas so it behaves as the
 	// ClockGears map viewport: no toolbars, rulers, gizmos or scrollbars.
 	void set_clockgears_workspace(bool p_enabled);
+	bool is_clockgears_workspace() const { return clockgears_workspace; }
 	void set_view_zoom(real_t p_zoom) { _zoom_on_position(p_zoom); }
 	void set_clockgears_event_mode(bool p_enabled);
 	bool is_clockgears_event_mode() const { return clockgears_event_mode; }
@@ -536,6 +538,8 @@ public:
 	void set_clockgears_selected_tile_block(const Vector2i &p_primary_coords, const Vector2i &p_block_size, const Vector<Vector2i> &p_coords_list, const Ref<Texture2D> &p_texture, int p_source_id = 0);
 	void set_clockgears_current_layer(int p_layer);
 	int get_clockgears_current_layer() const { return current_layer; }
+	void set_clockgears_current_custom_layer(const String &p_custom_id);
+	String get_clockgears_current_custom_layer() const { return current_custom_layer_id; }
 	void set_clockgears_draw_tool(int p_tool);
 	int get_clockgears_draw_tool() const { return current_draw_tool; }
 	void set_clockgears_region_mode(bool p_enabled, int p_region_id = -1);
@@ -543,6 +547,7 @@ public:
 	void set_clockgears_selected_region(int p_region_id) { current_selected_region_id = CLAMP(p_region_id, 0, 255); update_viewport(); }
 	int get_clockgears_selected_region() const { return current_selected_region_id; }
 
+	bool has_clockgears_map_selection() const { return clockgears_has_map_selection; }
 	void clockgears_copy_map_selection();
 	void clockgears_paste_map_selection();
 	void clockgears_delete_map_selection();

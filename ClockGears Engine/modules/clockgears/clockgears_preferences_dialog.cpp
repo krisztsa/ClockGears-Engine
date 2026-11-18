@@ -1,9 +1,12 @@
 #include "clockgears_preferences_dialog.h"
+#include "core/clockgears_data_manager.h"
 #include "core/config/project_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/label.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/panel_container.h"
+#include "scene/main/window.h"
 #include "scene/resources/style_box_flat.h"
 
 static Ref<StyleBoxFlat> _pref_card_style() {
@@ -19,6 +22,11 @@ static Ref<StyleBoxFlat> _pref_card_style() {
 
 void ClockGearsPreferencesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("open_preferences"), &ClockGearsPreferencesDialog::open_preferences);
+	ClassDB::bind_method(D_METHOD("is_dim_inactive_layers_checked"), &ClockGearsPreferencesDialog::is_dim_inactive_layers_checked);
+	ClassDB::bind_method(D_METHOD("set_dim_inactive_layers_checked", "enabled"), &ClockGearsPreferencesDialog::set_dim_inactive_layers_checked);
+	ClassDB::bind_method(D_METHOD("get_inactive_layer_opacity_value"), &ClockGearsPreferencesDialog::get_inactive_layer_opacity_value);
+	ClassDB::bind_method(D_METHOD("set_inactive_layer_opacity_value", "pct"), &ClockGearsPreferencesDialog::set_inactive_layer_opacity_value);
+	ClassDB::bind_method(D_METHOD("apply_and_save_preferences"), &ClockGearsPreferencesDialog::apply_and_save_preferences);
 }
 
 void ClockGearsPreferencesDialog::_on_preset_selected(int p_idx) {
@@ -152,6 +160,16 @@ void ClockGearsPreferencesDialog::_load_settings() {
 	android_path_edit->set_text(ps->get_setting("clockgears/export/android_path", "builds/android/Game.apk"));
 	build_type_opt->select(ps->get_setting("clockgears/export/build_type", 1));
 	pck_check->set_pressed(ps->get_setting("clockgears/export/package_pck", true));
+
+	bool dim_enabled = bool(ps->get_setting("clockgears/editor/dim_inactive_layers", true));
+	int dim_pct = CLAMP(int(ps->get_setting("clockgears/editor/inactive_layer_opacity_pct", 40)), 10, 100);
+	if (dim_inactive_layers_check) {
+		dim_inactive_layers_check->set_pressed(dim_enabled);
+	}
+	if (inactive_layer_opacity_spin) {
+		inactive_layer_opacity_spin->set_value(dim_pct);
+		inactive_layer_opacity_spin->set_editable(dim_enabled);
+	}
 }
 
 void ClockGearsPreferencesDialog::_save_settings() {
@@ -187,8 +205,49 @@ void ClockGearsPreferencesDialog::_save_settings() {
 	ps->set_setting("clockgears/export/build_type", build_type_opt->get_selected());
 	ps->set_setting("clockgears/export/package_pck", pck_check->is_pressed());
 
+	if (dim_inactive_layers_check) {
+		ps->set_setting("clockgears/editor/dim_inactive_layers", dim_inactive_layers_check->is_pressed());
+	}
+	if (inactive_layer_opacity_spin) {
+		ps->set_setting("clockgears/editor/inactive_layer_opacity_pct", CLAMP(int(inactive_layer_opacity_spin->get_value()), 10, 100));
+	}
+
 	ps->save();
+	if (ClockGearsDataManager::get_singleton()) {
+		ClockGearsDataManager::get_singleton()->sync_editor_layer_dimming_from_settings();
+	}
 	print_line(vformat(CG_TR("[ClockGears Engine] Preferencias guardadas: %dx%d"), int(width_spin->get_value()), int(height_spin->get_value())));
+}
+
+void ClockGearsPreferencesDialog::_on_dim_inactive_toggled(bool p_pressed) {
+	if (inactive_layer_opacity_spin) {
+		inactive_layer_opacity_spin->set_editable(p_pressed);
+	}
+}
+
+bool ClockGearsPreferencesDialog::is_dim_inactive_layers_checked() const {
+	return dim_inactive_layers_check ? dim_inactive_layers_check->is_pressed() : true;
+}
+
+void ClockGearsPreferencesDialog::set_dim_inactive_layers_checked(bool p_enabled) {
+	if (dim_inactive_layers_check) {
+		dim_inactive_layers_check->set_pressed(p_enabled);
+		_on_dim_inactive_toggled(p_enabled);
+	}
+}
+
+int ClockGearsPreferencesDialog::get_inactive_layer_opacity_value() const {
+	return inactive_layer_opacity_spin ? CLAMP(int(inactive_layer_opacity_spin->get_value()), 10, 100) : 40;
+}
+
+void ClockGearsPreferencesDialog::set_inactive_layer_opacity_value(int p_pct) {
+	if (inactive_layer_opacity_spin) {
+		inactive_layer_opacity_spin->set_value(CLAMP(p_pct, 10, 100));
+	}
+}
+
+void ClockGearsPreferencesDialog::apply_and_save_preferences() {
+	_save_settings();
 }
 
 void ClockGearsPreferencesDialog::_on_dialog_confirmed() {
@@ -203,12 +262,20 @@ void ClockGearsPreferencesDialog::_on_export_now_pressed() {
 
 void ClockGearsPreferencesDialog::open_preferences() {
 	_load_settings();
-	popup_centered(Size2(640, 480) * EDSCALE);
+	Size2 target_sz = Size2(640, 500) * EDSCALE;
+	if (Window *pw = (get_parent() ? get_parent()->get_window() : nullptr)) {
+		Size2i wsz = pw->get_size();
+		if (wsz.x > 0 && wsz.y > 0) {
+			target_sz.x = MIN(target_sz.x, float(wsz.x) - 32.0f);
+			target_sz.y = MIN(target_sz.y, float(wsz.y) - 32.0f);
+		}
+	}
+	popup_centered(target_sz);
 }
 
 ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	set_title(CG_TR("Preferencias del Proyecto - ClockGears Engine"));
-	set_min_size(Size2(620, 440) * EDSCALE);
+	set_min_size(Size2(520, 380) * EDSCALE);
 	set_ok_button_text(CG_TR("Guardar y Aplicar"));
 
 	VBoxContainer *main_vb = memnew(VBoxContainer);
@@ -223,10 +290,16 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	// =============================================================
 	// Pestaña 1: Resolución
 	// =============================================================
+	ScrollContainer *res_scroll = memnew(ScrollContainer);
+	res_scroll->set_name(CG_TR("Resolución y Pantalla"));
+	res_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	res_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	tabs->add_child(res_scroll);
+
 	VBoxContainer *res_tab = memnew(VBoxContainer);
-	res_tab->set_name(CG_TR("Resolución y Pantalla"));
+	res_tab->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	res_tab->add_theme_constant_override("separation", 10);
-	tabs->add_child(res_tab);
+	res_scroll->add_child(res_tab);
 
 	PanelContainer *res_card = memnew(PanelContainer);
 	res_card->add_theme_style_override("panel", _pref_card_style());
@@ -320,7 +393,8 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	mode_title->add_theme_color_override("font_color", Color(0.95, 0.8, 0.35));
 	res_box->add_child(mode_title);
 
-	HBoxContainer *checks_hb = memnew(HBoxContainer);
+	VBoxContainer *checks_hb = memnew(VBoxContainer);
+	checks_hb->add_theme_constant_override("separation", 4);
 	integer_scale_check = memnew(CheckBox(CG_TR("Escala Entera (Integer Scaling - Pixel Perfect)")));
 	integer_scale_check->set_pressed(true);
 	checks_hb->add_child(integer_scale_check);
@@ -351,13 +425,50 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	modes_hb->add_child(stretch_aspect_opt);
 	res_box->add_child(modes_hb);
 
+	// Tarjeta de edición de capas en el editor
+	PanelContainer *layer_edit_card = memnew(PanelContainer);
+	layer_edit_card->add_theme_style_override("panel", _pref_card_style());
+	res_tab->add_child(layer_edit_card);
+
+	VBoxContainer *layer_edit_box = memnew(VBoxContainer);
+	layer_edit_box->add_theme_constant_override("separation", 8);
+	layer_edit_card->add_child(layer_edit_box);
+
+	Label *le_title = memnew(Label(CG_TR("Edición de Capas en el Mapa (Solo Editor):")));
+	le_title->add_theme_color_override("font_color", Color(0.95f, 0.8f, 0.35f));
+	layer_edit_box->add_child(le_title);
+
+	dim_inactive_layers_check = memnew(CheckBox(CG_TR("Atenuar capas inactivas al editar (capa actual, eventos y jugador quedan al 100 %)")));
+	dim_inactive_layers_check->set_pressed(true);
+	dim_inactive_layers_check->connect("toggled", callable_mp(this, &ClockGearsPreferencesDialog::_on_dim_inactive_toggled));
+	layer_edit_box->add_child(dim_inactive_layers_check);
+
+	HBoxContainer *dim_pct_hb = memnew(HBoxContainer);
+	dim_pct_hb->add_theme_constant_override("separation", 8);
+	dim_pct_hb->add_child(memnew(Label(CG_TR("Opacidad de las demás capas (10 a 100 %):"))));
+	inactive_layer_opacity_spin = memnew(SpinBox);
+	inactive_layer_opacity_spin->set_min(10);
+	inactive_layer_opacity_spin->set_max(100);
+	inactive_layer_opacity_spin->set_step(5);
+	inactive_layer_opacity_spin->set_value(40);
+	inactive_layer_opacity_spin->set_suffix(" %");
+	inactive_layer_opacity_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	dim_pct_hb->add_child(inactive_layer_opacity_spin);
+	layer_edit_box->add_child(dim_pct_hb);
+
 	// =============================================================
 	// Pestaña 2: Exportación Simplificada
 	// =============================================================
+	ScrollContainer *exp_scroll = memnew(ScrollContainer);
+	exp_scroll->set_name(CG_TR("Exportación Simplificada"));
+	exp_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	exp_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	tabs->add_child(exp_scroll);
+
 	VBoxContainer *exp_tab = memnew(VBoxContainer);
-	exp_tab->set_name(CG_TR("Exportación Simplificada"));
+	exp_tab->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	exp_tab->add_theme_constant_override("separation", 10);
-	tabs->add_child(exp_tab);
+	exp_scroll->add_child(exp_tab);
 
 	PanelContainer *exp_card = memnew(PanelContainer);
 	exp_card->add_theme_style_override("panel", _pref_card_style());

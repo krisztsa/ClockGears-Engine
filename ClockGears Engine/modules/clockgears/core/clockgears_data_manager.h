@@ -13,6 +13,7 @@
 
 class CanvasLayer;
 class ColorRect;
+class UndoRedo;
 
 enum ClockGearsDatabaseCategory {
 	CAT_ACTORS = 0,
@@ -49,6 +50,7 @@ class ClockGearsDataManager : public Object {
 
 public:
 	static constexpr int CURRENT_SCHEMA_VERSION = 3;
+	static constexpr int MAX_CUSTOM_MAP_LAYERS = 16;
 
 	static void normalize_record_defaults(int p_category, Dictionary &r_record);
 	static Dictionary get_normalized_record(int p_category, const Dictionary &p_record);
@@ -105,6 +107,18 @@ private:
 	ObjectID persistent_fade_rect_id;
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
+	ObjectID active_editor_map_id;
+	int active_editor_layer = 1;
+	String active_editor_custom_layer_id;
+	bool dim_inactive_layers = true;
+	int inactive_layer_opacity_pct = 40;
+	UndoRedo *headless_undo_redo = nullptr;
+	int headless_draw_tool = 0;
+	int headless_selected_source_id = 0;
+	Vector2i headless_selected_tile_coords = Vector2i(0, 0);
+	bool headless_has_selection = false;
+	Rect2i headless_selection_rect;
+	Dictionary headless_clipboard;
 	mutable HashMap<String, Ref<Texture2D>> entry_icon_cache;
 	mutable Vector<String> last_repaired_json_files;
 	uint64_t window_styles_generation = 1;
@@ -115,6 +129,12 @@ private:
 
 	void _invalidate_window_styles_cache();
 	void _ensure_window_styles_cache() const;
+	void _ensure_headless_undo_redo();
+	void _sync_editor_map_layers_and_topbar(bool p_rebuild_nodes = false);
+	bool _is_active_layer_editable_in_editor() const;
+	void _apply_headless_tile_undo_redo_cell(Node *p_map_node, int p_layer_idx, const String &p_custom_id, const Vector2i &p_cell, int p_source_id, const Vector2i &p_atlas_coords, int p_alt);
+	void _apply_headless_shadow_undo_redo_cell(Node *p_map_node, const Vector2i &p_cell, bool p_enabled);
+	Dictionary _make_unique_custom_layer_dict(const String &p_name, int p_order, const String &p_id_hint = String()) const;
 
 	Variant _normalize_json_numbers(const Variant &p_val) const;
 	bool _write_json_atomic(const String &p_file_path, const Variant &p_data) const;
@@ -434,18 +454,53 @@ public:
 	bool save_database(const String &p_path = "res://clockgears_data/database.json");
 	bool load_database(const String &p_path = "res://clockgears_data/database.json");
 
-	// Editor simulation helpers for automated tests
+	// Editor simulation helpers and Etapa 1 custom layers / dimming
+	static String sanitize_custom_layer_node_name(const String &p_id);
+	static Dictionary normalize_custom_map_layer(const Dictionary &p_raw, int p_idx = 0);
+	Array get_custom_map_layers() const;
+	void set_custom_map_layers(const Array &p_layers);
+	Dictionary get_custom_map_layer(const String &p_id) const;
+	Dictionary create_custom_map_layer(const String &p_name, int p_order = 2);
+	bool rename_custom_map_layer(const String &p_id, const String &p_new_name);
+	bool set_custom_map_layer_order(const String &p_id, int p_order);
+	bool set_custom_map_layer_visible(const String &p_id, bool p_visible);
+	bool set_custom_map_layer_locked(const String &p_id, bool p_locked);
+	Dictionary duplicate_custom_map_layer(const String &p_source_id, const String &p_new_name = String());
+	bool delete_custom_map_layer(const String &p_id);
+
+	void set_editor_dim_inactive_layers_enabled(bool p_enabled);
+	bool is_editor_dim_inactive_layers_enabled() const;
+	void set_editor_inactive_layer_opacity_pct(int p_pct);
+	int get_editor_inactive_layer_opacity_pct() const;
+	void sync_editor_layer_dimming_from_settings();
+
 	void set_editor_map(Node *p_map);
-	Node *get_editor_map() const { return active_editor_map; }
+	Node *get_editor_map() const;
 	void simulate_editor_mouse_press(const Vector2 &p_canvas_pos, bool p_right_button = false);
 	void simulate_editor_mouse_motion(const Vector2 &p_canvas_pos);
 	void simulate_editor_mouse_release(const Vector2 &p_canvas_pos, bool p_right_button = false);
 	void simulate_editor_click_cell(int p_cell_x, int p_cell_y, bool p_right_button = false);
 	void simulate_editor_drag_rect(int p_x0, int p_y0, int p_x1, int p_y1, bool p_right_button = false);
 	void set_editor_draw_tool(int p_tool);
+	int get_editor_draw_tool() const { return headless_draw_tool; }
 	void set_editor_layer(int p_layer);
+	int get_editor_layer() const { return active_editor_layer; }
+	bool set_editor_custom_layer(const String &p_id);
+	String get_editor_custom_layer() const { return active_editor_custom_layer_id; }
+	String get_active_editor_layer_display_name() const;
+	void set_editor_selected_tile(const Vector2i &p_coords, int p_source_id = 0);
+	Vector2i get_editor_selected_tile() const { return headless_selected_tile_coords; }
+	void set_editor_map_selection(const Rect2i &p_rect);
+	Rect2i get_editor_map_selection() const { return headless_selection_rect; }
+	bool has_editor_map_selection() const { return headless_has_selection; }
+	void trigger_editor_copy();
+	void trigger_editor_cut();
+	void trigger_editor_paste(const Vector2i &p_target_cell = Vector2i(-999999, -999999));
+	void trigger_editor_delete();
 	void trigger_editor_undo();
 	void trigger_editor_redo();
+	Dictionary get_main_menu_inspection_info() const;
+	bool simulate_editor_shortcut(const String &p_action_name);
 
 	ClockGearsDataManager();
 	~ClockGearsDataManager();

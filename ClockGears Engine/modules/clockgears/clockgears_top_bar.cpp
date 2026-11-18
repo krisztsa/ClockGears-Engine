@@ -4,6 +4,7 @@
 #include "clockgears_editor_plugin.h"
 #include "clockgears_event_editor_dialog.h"
 #include "clockgears_simplified_export_dialog.h"
+#include "core/clockgears_data_manager.h"
 #include "core/config/project_settings.h"
 #include "core/io/image.h"
 #include "core/os/os.h"
@@ -55,6 +56,8 @@ void ClockGearsTopBar::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_on_zoom_out_pressed"), &ClockGearsTopBar::_on_zoom_out_pressed);
 	ClassDB::bind_method(D_METHOD("_on_playtest_pressed"), &ClockGearsTopBar::_on_playtest_pressed);
 	ClassDB::bind_method(D_METHOD("_relayout_rows"), &ClockGearsTopBar::_relayout_rows);
+	ClassDB::bind_method(D_METHOD("sync_active_layer_display"), &ClockGearsTopBar::sync_active_layer_display);
+	ClassDB::bind_method(D_METHOD("get_active_layer_badge_button"), &ClockGearsTopBar::get_active_layer_badge_button);
 }
 
 Ref<Texture2D> ClockGearsTopBar::_make_svg_icon(const String &p_svg, int p_int_scale) const {
@@ -280,12 +283,25 @@ void ClockGearsTopBar::_notification(int p_what) {
 		if (EditorSettings::get_singleton() && !EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed))) {
 			EditorSettings::get_singleton()->connect("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed));
 		}
+		if (ClockGearsDataManager::get_singleton()) {
+			Callable cb = callable_mp(this, &ClockGearsTopBar::_on_dm_data_changed_topbar);
+			if (!ClockGearsDataManager::get_singleton()->is_connected("data_changed", cb)) {
+				ClockGearsDataManager::get_singleton()->connect("data_changed", cb);
+			}
+		}
+		sync_active_layer_display();
 		if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
 			_refresh_icon_scale();
 		}
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
 		if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed))) {
 			EditorSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed));
+		}
+		if (ClockGearsDataManager::get_singleton()) {
+			Callable cb = callable_mp(this, &ClockGearsTopBar::_on_dm_data_changed_topbar);
+			if (ClockGearsDataManager::get_singleton()->is_connected("data_changed", cb)) {
+				ClockGearsDataManager::get_singleton()->disconnect("data_changed", cb);
+			}
 		}
 	} else if (p_what == NOTIFICATION_RESIZED) {
 		const float w = get_size().x;
@@ -474,6 +490,51 @@ void ClockGearsTopBar::_on_layer_pressed(int p_layer) {
 	if (CanvasItemEditor::get_singleton()) {
 		CanvasItemEditor::get_singleton()->set_clockgears_current_layer(p_layer);
 	}
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		if (!dm->get_editor_custom_layer().is_empty() || dm->get_editor_layer() != p_layer) {
+			dm->set_editor_layer(p_layer);
+		}
+	}
+	sync_active_layer_display();
+}
+
+void ClockGearsTopBar::_on_active_layer_badge_pressed() {
+	if (ClockGearsEditorPlugin::get_singleton()) {
+		ClockGearsEditorPlugin::get_singleton()->open_layers_dialog();
+	}
+}
+
+void ClockGearsTopBar::_on_dm_data_changed_topbar(const String &p_category, int p_id) {
+	if (p_category == "custom_layers" || p_category == "system" || p_category.is_empty()) {
+		sync_active_layer_display();
+	}
+}
+
+void ClockGearsTopBar::sync_active_layer_display() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String full_name = dm ? dm->get_active_editor_layer_display_name() : String("Capa 1: Suelo");
+	String custom_id = dm ? dm->get_editor_custom_layer() : String();
+	int base_idx = dm ? dm->get_editor_layer() : 1;
+
+	if (custom_id.is_empty()) {
+		for (int i = 0; i < 6; i++) {
+			if (layer_buttons[i]) {
+				layer_buttons[i]->set_pressed_no_signal((i + 1) == base_idx);
+			}
+		}
+	} else {
+		for (int i = 0; i < 6; i++) {
+			if (layer_buttons[i]) {
+				layer_buttons[i]->set_pressed_no_signal(false);
+			}
+		}
+	}
+
+	if (active_layer_badge_btn) {
+		String trimmed = ClockGearsDataManager::truncate_with_ellipsis(full_name, 22);
+		active_layer_badge_btn->set_text(vformat(CG_TR("Capa: %s"), trimmed));
+		active_layer_badge_btn->set_tooltip_text(vformat(CG_TR("Capa activa actual: %s\nHaz clic para gestionar capas personalizadas (hasta 16)."), full_name));
+	}
 }
 
 void ClockGearsTopBar::_on_tool_pressed(int p_tool) {
@@ -561,9 +622,10 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	row2_box->add_theme_constant_override("separation", 4 * ui_scale);
 	rows_vbox->add_child(row2_box);
 
-	Ref<Theme> editor_theme = EditorNode::get_singleton()->get_editor_theme();
+	EditorNode *en = EditorNode::get_singleton();
+	Ref<Theme> editor_theme = en ? en->get_editor_theme() : Ref<Theme>();
 	const auto editor_icon = [&editor_theme](const StringName &p_name) -> Ref<Texture2D> {
-		return editor_theme->get_icon(p_name, SNAME("EditorIcons"));
+		return editor_theme.is_valid() ? editor_theme->get_icon(p_name, SNAME("EditorIcons")) : Ref<Texture2D>();
 	};
 	const auto make_group = [ui_scale, this]() -> HBoxContainer * {
 		HBoxContainer *g = memnew(HBoxContainer);
@@ -597,9 +659,9 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	// Fila 1 (en 2 filas) - Grupo 0: Archivo
 	// ------------------------------------------------------------------
 	HBoxContainer *grp_file = make_group();
-	track_png(_make_icon_button(grp_file, _get_png_icon("nuevo_mapa_icono", int_scale), CG_TR("Nuevo Mapa (Ctrl+N)"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_new_scene), editor_theme, int_scale), "nuevo_mapa_icono");
-	track_png(_make_icon_button(grp_file, _get_png_icon("abrir_mapa_icono", int_scale), CG_TR("Abrir Mapa (Ctrl+O)"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_open_scene), editor_theme, int_scale), "abrir_mapa_icono");
-	track_png(_make_icon_button(grp_file, _get_png_icon("guardar_proyecto_icono", int_scale), CG_TR("Guardar (Ctrl+S)"), callable_mp(EditorNode::get_singleton(), &EditorNode::clockgears_save_scene), editor_theme, int_scale), "guardar_proyecto_icono");
+	track_png(_make_icon_button(grp_file, _get_png_icon("nuevo_mapa_icono", int_scale), CG_TR("Nuevo Mapa (Ctrl+N)"), en ? callable_mp(en, &EditorNode::clockgears_new_scene) : Callable(), editor_theme, int_scale), "nuevo_mapa_icono");
+	track_png(_make_icon_button(grp_file, _get_png_icon("abrir_mapa_icono", int_scale), CG_TR("Abrir Mapa (Ctrl+O)"), en ? callable_mp(en, &EditorNode::clockgears_open_scene) : Callable(), editor_theme, int_scale), "abrir_mapa_icono");
+	track_png(_make_icon_button(grp_file, _get_png_icon("guardar_proyecto_icono", int_scale), CG_TR("Guardar (Ctrl+S)"), en ? callable_mp(en, &EditorNode::clockgears_save_scene) : Callable(), editor_theme, int_scale), "guardar_proyecto_icono");
 
 	folders_btn = memnew(MenuButton);
 	folders_btn->set_flat(false);
@@ -681,6 +743,38 @@ ClockGearsTopBar::ClockGearsTopBar() {
 		layer_buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_layer_pressed).bind(i + 1));
 	}
 	layer_buttons[0]->set_pressed(true);
+
+	active_layer_badge_btn = memnew(Button);
+	active_layer_badge_btn->set_focus_mode(Control::FOCUS_NONE);
+	active_layer_badge_btn->set_tooltip_text(CG_TR("Capa activa actual (clic para abrir Capas personalizadas)"));
+	{
+		Ref<StyleBoxFlat> badge_n;
+		badge_n.instantiate();
+		badge_n->set_anti_aliased(true);
+		badge_n->set_bg_color(Color(0.14f, 0.16f, 0.21f, 0.92f));
+		badge_n->set_border_width_all(1);
+		badge_n->set_border_color(Color(0.88f, 0.63f, 0.25f, 0.55f));
+		badge_n->set_corner_radius_all(6 * ui_scale);
+		badge_n->set_content_margin_individual(10 * ui_scale, 4 * ui_scale, 10 * ui_scale, 4 * ui_scale);
+
+		Ref<StyleBoxFlat> badge_h = badge_n->duplicate();
+		badge_h->set_bg_color(Color(0.20f, 0.23f, 0.30f, 0.96f));
+		badge_h->set_border_color(Color(0.95f, 0.72f, 0.30f, 0.92f));
+
+		Ref<StyleBoxEmpty> badge_focus;
+		badge_focus.instantiate();
+
+		active_layer_badge_btn->add_theme_style_override("normal", badge_n);
+		active_layer_badge_btn->add_theme_style_override("hover", badge_h);
+		active_layer_badge_btn->add_theme_style_override("pressed", badge_h);
+		active_layer_badge_btn->add_theme_style_override("focus", badge_focus);
+		active_layer_badge_btn->add_theme_color_override("font_color", Color(0.95f, 0.87f, 0.68f));
+		active_layer_badge_btn->add_theme_color_override("font_hover_color", Color(1.0f, 0.94f, 0.78f));
+	}
+	active_layer_badge_btn->set_custom_minimum_size(Size2(110 * ui_scale, 32 * int_scale + 8 * ui_scale));
+	active_layer_badge_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsTopBar::_on_active_layer_badge_pressed));
+	grp_layers->add_child(active_layer_badge_btn);
+	sync_active_layer_display();
 
 	// ------------------------------------------------------------------
 	// Fila 2 (en 2 filas) - Grupos 4 y 5: Herramientas (dibujo y mapa)

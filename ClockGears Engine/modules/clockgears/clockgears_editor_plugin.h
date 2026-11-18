@@ -77,6 +77,59 @@ public:
 	ClockGearsGenerateEntityDialog();
 };
 
+class HFlowContainer;
+
+class ClockGearsLayersDialog : public AcceptDialog {
+	GDCLASS(ClockGearsLayersDialog, AcceptDialog);
+
+private:
+	Label *active_layer_label = nullptr;
+	Label *count_label = nullptr;
+	HFlowContainer *scale_buttons_box = nullptr;
+	LineEdit *new_name_edit = nullptr;
+	SpinBox *new_order_spin = nullptr;
+	Button *create_btn = nullptr;
+	ScrollContainer *list_scroll = nullptr;
+	VBoxContainer *rows_vbox = nullptr;
+	ConfirmationDialog *delete_confirm_dialog = nullptr;
+	String pending_delete_id;
+	bool rebuilding_rows = false;
+
+	Vector<Button *> fixed_layer_buttons;
+
+	static String _describe_order_band(int p_order);
+	void _on_fixed_layer_pressed(int p_base_layer);
+	void _on_create_pressed();
+	void _on_create_text_submitted(const String &p_text);
+	void _on_row_select_pressed(const String &p_id);
+	void _on_row_name_committed(const String &p_text, const String &p_id, LineEdit *p_edit);
+	void _on_row_order_changed(double p_val, const String &p_id);
+	void _on_row_visible_pressed(const String &p_id, bool p_next_vis);
+	void _on_row_locked_pressed(const String &p_id, bool p_next_locked);
+	void _on_row_duplicate_pressed(const String &p_id);
+	void _on_row_delete_pressed(const String &p_id);
+	void _on_delete_confirmed();
+	void _on_dm_data_changed(const String &p_category, int p_id);
+	void _update_responsive_size(const Vector2i &p_viewport_override = Vector2i());
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+
+public:
+	void open_layers_dialog();
+	void refresh_layers_list();
+	Dictionary create_layer_from_ui(const String &p_name, int p_order = 2);
+	bool select_layer_from_ui(const String &p_id);
+	bool request_delete_layer(const String &p_id);
+	bool confirm_pending_delete();
+	int get_row_count() const;
+	Dictionary get_ui_handles() const;
+	Dictionary check_layout_fits(const Vector2i &p_viewport_size = Vector2i(1366, 768));
+
+	ClockGearsLayersDialog();
+};
+
 class ClockGearsExportPlugin : public EditorExportPlugin {
 	GDCLASS(ClockGearsExportPlugin, EditorExportPlugin);
 
@@ -101,6 +154,7 @@ private:
 	ClockGearsNewProjectDialog *new_project_dialog = nullptr;
 	ClockGearsResourceManagerDialog *resource_manager_dialog = nullptr;
 	ClockGearsGenerateEntityDialog *generate_entity_dialog = nullptr;
+	ClockGearsLayersDialog *layers_dialog = nullptr;
 	ConfirmationDialog *missing_folders_dialog = nullptr;
 	AcceptDialog *playtest_warning_dialog = nullptr;
 	ClockGearsAutomationPanel *automation_panel = nullptr;
@@ -179,6 +233,8 @@ public:
 	void open_export();
 	void open_preferences();
 	void open_camera_dialog();
+	void open_layers_dialog();
+	ClockGearsLayersDialog *get_layers_dialog() const { return layers_dialog; }
 	void open_quick_door_dialog(const Point2i &p_cell);
 	ClockGearsEvent *create_quick_door_event(const Point2i &p_cell, const String &p_map, int p_x, int p_y, const String &p_dir = "Abajo", const String &p_sprite_path = "", int p_hframes = 1);
 	ConfirmationDialog *get_quick_door_dialog() const { return dlg_quick_door; }

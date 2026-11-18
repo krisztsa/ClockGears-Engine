@@ -261,6 +261,7 @@ public:
 		CLOCKGEARS_EDIT_COPY,
 		CLOCKGEARS_EDIT_PASTE,
 		CLOCKGEARS_EDIT_DELETE,
+		CLOCKGEARS_LAYERS_PANEL,
 	};
 
 	struct ExecuteThreadArgs {
@@ -390,6 +391,7 @@ private:
 	PopupMenu *drawing_menu = nullptr;
 	PopupMenu *scale_menu = nullptr;
 	PopupMenu *tools_menu = nullptr;
+	PopupMenu *layers_menu = nullptr;
 	PopupMenu *game_menu = nullptr;
 	PopupMenu *project_menu = nullptr;
 	PopupMenu *debug_menu = nullptr;
@@ -564,6 +566,7 @@ private:
 	Callable clockgears_open_export_cb;
 	Callable clockgears_open_preferences_cb;
 	Callable clockgears_open_camera_cb;
+	Callable clockgears_open_layers_cb;
 	bool clockgears_locking_main_screen = false;
 	bool clockgears_main_screen_connected = false;
 	HSplitContainer *clockgears_body = nullptr;
@@ -798,6 +801,8 @@ private:
 	void _build_drawing_menu(bool p_dark_mode);
 	void _build_scale_menu(bool p_dark_mode);
 	void _build_tools_menu(bool p_dark_mode);
+	void _build_layers_menu(bool p_dark_mode);
+	void _on_layers_menu_about_to_popup();
 	void _build_game_menu(bool p_dark_mode);
 	void _build_project_menu(bool p_dark_mode);
 	void _build_settings_menu(bool p_dark_mode);
@@ -1071,6 +1076,16 @@ public:
 	void set_clockgears_export_callback(const Callable &p_cb) { clockgears_open_export_cb = p_cb; }
 	void set_clockgears_preferences_callback(const Callable &p_cb) { clockgears_open_preferences_cb = p_cb; }
 	void set_clockgears_camera_callback(const Callable &p_cb) { clockgears_open_camera_cb = p_cb; }
+	void set_clockgears_layers_callback(const Callable &p_cb) { clockgears_open_layers_cb = p_cb; }
+	PopupMenu *get_clockgears_file_menu() const { return file_menu; }
+	PopupMenu *get_clockgears_edit_menu() const { return edit_menu; }
+	PopupMenu *get_clockgears_layers_menu() const { return layers_menu; }
+	MenuBar *get_clockgears_main_menu_bar() const { return main_menu_bar; }
+	MenuButton *get_clockgears_main_menu_button() const { return main_menu_button; }
+	static void populate_clockgears_file_menu(PopupMenu *p_menu);
+	static void populate_clockgears_edit_menu(PopupMenu *p_menu);
+	static void populate_clockgears_layers_menu(PopupMenu *p_menu);
+	static Dictionary inspect_clockgears_menus(EditorNode *p_en = nullptr);
 	VBoxContainer *get_clockgears_workspace_root() const { return main_vbox; }
 	HSplitContainer *get_clockgears_body() const { return clockgears_body; }
 	VBoxContainer *get_clockgears_center_container() const { return center_vb; }
