@@ -10,7 +10,7 @@ Su objetivo es que puedas crear un RPG completo sin programar los sistemas desde
 
 ✅ ¿Ya se puede usar?
 
-Sí. En su estado actual (Alpha 0.0.2), el motor ya permite hacer RPG sencillos de principio a fin: diseñar los mapas, programar la historia con eventos, definir personajes, objetos y enemigos, combatir por turnos, probar el juego con F5 y exportarlo. Al ser una versión Alpha, todavía hay cosas por pulir y funciones por llegar (consulta la hoja de ruta), así que conviene guardar copias de tus proyectos.
+Sí. En su estado actual (Alpha 0.0.3), el motor ya permite hacer RPG y ARPG sencillos de principio a fin: diseñar los mapas, programar la historia con eventos, definir personajes, objetos y enemigos, combatir por turnos, probar el juego con F5 y exportarlo. Al ser una versión Alpha, todavía hay cosas por pulir y funciones por llegar (consulta la hoja de ruta), así que conviene guardar copias de tus proyectos.
 
 ✨ Qué incluye
 🗺️ Mapas y editor
