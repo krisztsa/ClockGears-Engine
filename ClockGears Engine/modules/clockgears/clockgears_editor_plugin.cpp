@@ -22,9 +22,11 @@
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/margin_container.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/split_container.h"
 #include "scene/main/viewport.h"
+#include "servers/display/display_server.h"
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
@@ -353,7 +355,19 @@ void ClockGearsGenerateEntityDialog::open_for_cell(int p_x, int p_y) {
 		entity_tabs->set_current_tab(current_tab_idx);
 	}
 	_populate_list_for_tab(current_tab_idx);
-	popup_centered(Size2i(int(760 * EDSCALE), int(480 * EDSCALE)));
+	Size2i desired(int(640 * EDSCALE), int(380 * EDSCALE));
+	if (DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		Rect2i usable = DisplayServer::get_singleton()->screen_get_usable_rect(scr);
+		if (usable.size.x <= 0 || usable.size.y <= 0) {
+			usable = Rect2i(Point2i(), DisplayServer::get_singleton()->screen_get_size(scr));
+		}
+		if (usable.size.x > 0 && usable.size.y > 0) {
+			desired.x = MIN(desired.x, MAX(420, usable.size.x - 24));
+			desired.y = MIN(desired.y, MAX(260, usable.size.y - 48));
+		}
+	}
+	popup_centered(desired);
 }
 
 void ClockGearsGenerateEntityDialog::select_tab(int p_tab) {
@@ -397,20 +411,20 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	set_title(CG_TR("Generar entidad - ClockGears Engine"));
 	set_ok_button_text(CG_TR("Generar"));
 	set_cancel_button_text(CG_TR("Cancelar"));
-	set_min_size(Size2i(int(620 * EDSCALE), int(400 * EDSCALE)));
+	set_min_size(Size2i(int(480 * EDSCALE), int(280 * EDSCALE)));
 
 	MarginContainer *margin = memnew(MarginContainer);
 	margin->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	margin->add_theme_constant_override("margin_left", int(14 * EDSCALE));
-	margin->add_theme_constant_override("margin_right", int(14 * EDSCALE));
-	margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
-	margin->add_theme_constant_override("margin_bottom", int(10 * EDSCALE));
+	margin->add_theme_constant_override("margin_left", int(10 * EDSCALE));
+	margin->add_theme_constant_override("margin_right", int(10 * EDSCALE));
+	margin->add_theme_constant_override("margin_top", int(8 * EDSCALE));
+	margin->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
 	add_child(margin);
 
 	VBoxContainer *root_vbox = memnew(VBoxContainer);
 	root_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	root_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	root_vbox->add_theme_constant_override("separation", int(12 * EDSCALE));
+	root_vbox->add_theme_constant_override("separation", int(8 * EDSCALE));
 	margin->add_child(root_vbox);
 
 	entity_tabs = memnew(TabBar);
@@ -425,18 +439,26 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	entity_tabs->connect("tab_changed", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_tab_changed));
 	root_vbox->add_child(entity_tabs);
 
+	ScrollContainer *body_scroll = memnew(ScrollContainer);
+	body_scroll->set_name("BodyScroll");
+	body_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	body_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	body_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	body_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	root_vbox->add_child(body_scroll);
+
 	HBoxContainer *split_hb = memnew(HBoxContainer);
 	split_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	split_hb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	split_hb->add_theme_constant_override("separation", int(16 * EDSCALE));
-	root_vbox->add_child(split_hb);
+	split_hb->add_theme_constant_override("separation", int(12 * EDSCALE));
+	body_scroll->add_child(split_hb);
 
 	VBoxContainer *left_col = memnew(VBoxContainer);
 	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	left_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->set_stretch_ratio(1.0f);
-	left_col->set_custom_minimum_size(Size2(int(240 * EDSCALE), int(240 * EDSCALE)));
-	left_col->add_theme_constant_override("separation", int(6 * EDSCALE));
+	left_col->set_stretch_ratio(1.05f);
+	left_col->set_custom_minimum_size(Size2(int(200 * EDSCALE), int(150 * EDSCALE)));
+	left_col->add_theme_constant_override("separation", int(4 * EDSCALE));
 	split_hb->add_child(left_col);
 
 	list_header_label = memnew(Label(CG_TR("NPC (0)")));
@@ -447,7 +469,8 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	entity_list = memnew(ItemList);
 	entity_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	entity_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	entity_list->set_fixed_icon_size(Size2i(int(28 * EDSCALE), int(28 * EDSCALE)));
+	entity_list->set_fixed_icon_size(Size2i(int(20 * EDSCALE), int(20 * EDSCALE)));
+	entity_list->add_theme_constant_override("v_separation", int(2 * EDSCALE));
 	entity_list->set_allow_rmb_select(false);
 	entity_list->connect("item_selected", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_entity_selected));
 	entity_list->connect("item_activated", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_entity_activated));
@@ -462,9 +485,9 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	VBoxContainer *right_col = memnew(VBoxContainer);
 	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->set_stretch_ratio(1.1f);
-	right_col->set_custom_minimum_size(Size2(int(260 * EDSCALE), int(240 * EDSCALE)));
-	right_col->add_theme_constant_override("separation", int(8 * EDSCALE));
+	right_col->set_stretch_ratio(0.95f);
+	right_col->set_custom_minimum_size(Size2(int(200 * EDSCALE), int(150 * EDSCALE)));
+	right_col->add_theme_constant_override("separation", int(6 * EDSCALE));
 	split_hb->add_child(right_col);
 
 	Label *lbl_prev = memnew(Label(CG_TR("Vista previa del sprite")));
@@ -473,16 +496,16 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	right_col->add_child(memnew(HSeparator));
 
 	preview_frame_panel = memnew(PanelContainer);
-	preview_frame_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	preview_frame_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	preview_frame_panel->set_custom_minimum_size(Size2(int(220 * EDSCALE), int(180 * EDSCALE)));
+	preview_frame_panel->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	preview_frame_panel->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	preview_frame_panel->set_custom_minimum_size(Size2(int(140 * EDSCALE), int(116 * EDSCALE)));
 	right_col->add_child(preview_frame_panel);
 
 	MarginContainer *prev_margin = memnew(MarginContainer);
-	prev_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
-	prev_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	prev_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
-	prev_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_left", int(6 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_right", int(6 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_top", int(6 * EDSCALE));
+	prev_margin->add_theme_constant_override("margin_bottom", int(6 * EDSCALE));
 	preview_frame_panel->add_child(prev_margin);
 
 	preview_texture_rect = memnew(TextureRect);
