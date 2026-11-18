@@ -46,14 +46,15 @@ void ClockGearsFormulaLineEdit::_update_visual_state() {
 	add_theme_style_override("normal", sb_normal);
 	add_theme_style_override("focus", sb_focus);
 
+	const bool is_brass = (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
 	if (formula_valid) {
-		add_theme_color_override("font_color", ClockGearsTheme::color_text_primary());
+		add_theme_color_override("font_color", is_brass ? ClockGearsTheme::color_brass_text_primary() : ClockGearsTheme::color_text_primary());
 		set_tooltip_text(String::utf8("Fórmula válida (Variables: a.atk, b.def, v[n], s[n]; Funciones: max, min, abs, floor, ceil, round, rand)"));
 		if (ClockGearsIcons::get_singleton()) {
 			set_right_icon(ClockGearsIcons::get_singleton()->get_icon("ok", CG_WSCALE));
 		}
 	} else {
-		add_theme_color_override("font_color", ClockGearsTheme::color_error());
+		add_theme_color_override("font_color", is_brass ? Color::html("#ff9e96") : ClockGearsTheme::color_error());
 		set_tooltip_text(vformat(String::utf8("Error de sintaxis: %s"), last_error_message));
 		if (ClockGearsIcons::get_singleton()) {
 			set_right_icon(ClockGearsIcons::get_singleton()->get_icon("error", CG_WSCALE));

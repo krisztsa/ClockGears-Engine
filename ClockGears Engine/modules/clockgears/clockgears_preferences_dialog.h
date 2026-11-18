@@ -29,6 +29,7 @@ private:
 	OptionButton *stretch_aspect_opt = nullptr;
 	CheckBox *dim_inactive_layers_check = nullptr;
 	SpinBox *inactive_layer_opacity_spin = nullptr;
+	OptionButton *editor_theme_opt = nullptr;
 
 	// Tab 2: Exportación
 	LineEdit *windows_path_edit = nullptr;
@@ -41,6 +42,7 @@ private:
 	void _on_preset_selected(int p_idx);
 	void _on_win_preset_selected(int p_idx);
 	void _on_dim_inactive_toggled(bool p_pressed);
+	void _on_editor_theme_selected(int p_idx);
 	void _on_export_now_pressed();
 	void _on_dialog_confirmed();
 	void _load_settings();
@@ -55,6 +57,9 @@ public:
 	void set_dim_inactive_layers_checked(bool p_enabled);
 	int get_inactive_layer_opacity_value() const;
 	void set_inactive_layer_opacity_value(int p_pct);
+	String get_selected_editor_theme_id() const;
+	bool select_editor_theme_by_id(const String &p_theme_id);
+	OptionButton *get_editor_theme_option_button() const { return editor_theme_opt; }
 	void apply_and_save_preferences();
 
 	ClockGearsPreferencesDialog();

@@ -89,6 +89,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsPixelCamera2D);
 		GDREGISTER_CLASS(ClockGearsDataManager);
 		GDREGISTER_CLASS(ClockGearsIcons);
+		GDREGISTER_CLASS(ClockGearsBrassStyleBox);
 		GDREGISTER_CLASS(ClockGearsTheme);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsFormulaLineEdit);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsSwitchVarPickerDialog);

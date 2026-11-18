@@ -3,10 +3,49 @@
 #include "core/math/color.h"
 #include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/templates/vector.h"
 #include "scene/gui/control.h"
 #include "scene/main/window.h"
+#include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/resources/theme.h"
+
+class ClockGearsBrassStyleBox : public StyleBoxFlat {
+	GDCLASS(ClockGearsBrassStyleBox, StyleBoxFlat);
+
+public:
+	enum GradientMode {
+		GRADIENT_NONE = 0,
+		GRADIENT_PANEL = 1,
+		GRADIENT_HEADER = 2,
+		GRADIENT_BUTTON = 3,
+		GRADIENT_BUTTON_HOVER = 4,
+	};
+
+private:
+	int gradient_mode = GRADIENT_NONE;
+	bool is_sunken = false;
+	bool is_gear_separator = false;
+	float top_highlight_alpha = 0.0f;
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_gradient_mode(int p_mode) { gradient_mode = p_mode; emit_changed(); }
+	int get_gradient_mode() const { return gradient_mode; }
+
+	void set_sunken_style(bool p_sunken) { is_sunken = p_sunken; emit_changed(); }
+	bool is_sunken_style() const { return is_sunken; }
+
+	void set_gear_separator_style(bool p_sep) { is_gear_separator = p_sep; emit_changed(); }
+	bool is_gear_separator_style() const { return is_gear_separator; }
+
+	void set_top_highlight_alpha(float p_alpha) { top_highlight_alpha = p_alpha; emit_changed(); }
+	float get_top_highlight_alpha() const { return top_highlight_alpha; }
+
+	virtual void draw(RID p_canvas_item, const Rect2 &p_rect) const override;
+};
 
 class ClockGearsTheme : public Object {
 	GDCLASS(ClockGearsTheme, Object);
@@ -21,15 +60,42 @@ public:
 	static Color color_error() { return Color::html("#e5534b"); }
 	static Color color_success() { return Color::html("#4cc38a"); }
 
+	// Paleta oficial ClockGears Latón (Etapa 2 - 9B-Ext)
+	static Color color_brass_bg() { return Color::html("#171512"); }
+	static Color color_brass_panel() { return Color::html("#201c17"); }
+	static Color color_brass_header() { return Color::html("#28221a"); }
+	static Color color_brass_input() { return Color::html("#13110e"); }
+	static Color color_brass_border() { return Color::html("#c9923e"); }
+	static Color color_brass_accent() { return Color::html("#f5bc54"); }
+	static Color color_brass_text_primary() { return Color::html("#f6ecd9"); }
+	static Color color_brass_text_secondary() { return Color::html("#ccbca0"); }
+	static Color color_brass_text_disabled() { return Color::html("#a8987c"); }
+
+	static constexpr int BRASS_TRANSITION_MS = 120;
+
 private:
 	static ClockGearsTheme *singleton;
 	Ref<Theme> dark_theme;
 	Ref<Theme> light_theme;
+	Ref<Theme> brass_theme;
 	bool dark_has_editor_base = false;
 	bool light_has_editor_base = false;
+	bool brass_has_editor_base = false;
 	bool use_light_mode = false;
+	String active_theme_id = "dark";
+	bool simulate_brass_load_failure = false;
+
+	Vector<ObjectID> registered_roots;
+	mutable Ref<ImageTexture> cached_gradient_textures[5];
+	mutable Ref<ImageTexture> cached_gear_texture;
+	mutable int gradient_generation_count = 0;
+	mutable int gear_generation_count = 0;
 
 	Ref<Theme> _build_theme(bool p_light, float p_scale, bool *r_has_editor_base = nullptr) const;
+	Ref<Theme> _build_brass_theme(float p_scale, bool *r_has_editor_base = nullptr) const;
+
+	void _on_brass_control_hover_entered(ObjectID p_id);
+	void _on_brass_tab_changed(int p_tab, ObjectID p_id);
 
 protected:
 	static void _bind_methods();
@@ -38,12 +104,38 @@ public:
 	static ClockGearsTheme *get_singleton() { return singleton; }
 
 	Ref<Theme> get_theme(bool p_light_mode = false);
+	Ref<Theme> get_brass_theme();
+	Ref<Theme> get_theme_by_id(const String &p_theme_id);
+	Ref<Theme> get_active_theme();
 	Ref<Theme> get_game_pixel_theme(int p_integer_scale = 1);
+
 	void set_light_mode(bool p_light);
 	bool is_light_mode() const { return use_light_mode; }
 
+	PackedStringArray get_available_theme_ids() const;
+	String get_theme_display_name(const String &p_theme_id) const;
+	String get_active_theme_id() const { return active_theme_id; }
+	bool set_active_theme_id(const String &p_theme_id);
+	void sync_from_project_settings();
+
+	void set_simulate_brass_load_failure(bool p_fail);
+	bool is_simulating_brass_load_failure() const { return simulate_brass_load_failure; }
+
+	Ref<ImageTexture> get_cached_brass_gradient_texture(int p_mode) const;
+	Ref<ImageTexture> get_cached_brass_gear_texture() const;
+	int get_cached_gradient_generation_count() const { return gradient_generation_count; }
+	int get_cached_gear_generation_count() const { return gear_generation_count; }
+
+	void register_themed_root(Node *p_root);
+	void apply_theme_to_node_tree(Node *p_root);
+	void refresh_all_themed_roots();
+
 	void apply_to_control(Control *p_control);
 	void apply_to_window(Window *p_window);
+
+	static float compute_contrast_ratio(const Color &p_fg, const Color &p_bg);
+	Dictionary inspect_theme_metrics(const String &p_theme_id = "");
+	Dictionary check_tree_legibility_and_layout(Node *p_root, const Vector2i &p_viewport_size = Vector2i(1366, 768));
 
 	static Ref<StyleBoxFlat> make_card_stylebox(float p_scale = 1.0f);
 	static Ref<StyleBoxFlat> make_input_stylebox(bool p_has_error, bool p_focused, float p_scale = 1.0f);

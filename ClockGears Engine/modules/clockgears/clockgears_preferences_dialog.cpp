@@ -1,6 +1,7 @@
 #include "clockgears_preferences_dialog.h"
 #include "core/clockgears_data_manager.h"
 #include "core/config/project_settings.h"
+#include "editor/clockgears_theme.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/label.h"
 #include "scene/gui/scroll_container.h"
@@ -26,6 +27,9 @@ void ClockGearsPreferencesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_dim_inactive_layers_checked", "enabled"), &ClockGearsPreferencesDialog::set_dim_inactive_layers_checked);
 	ClassDB::bind_method(D_METHOD("get_inactive_layer_opacity_value"), &ClockGearsPreferencesDialog::get_inactive_layer_opacity_value);
 	ClassDB::bind_method(D_METHOD("set_inactive_layer_opacity_value", "pct"), &ClockGearsPreferencesDialog::set_inactive_layer_opacity_value);
+	ClassDB::bind_method(D_METHOD("get_selected_editor_theme_id"), &ClockGearsPreferencesDialog::get_selected_editor_theme_id);
+	ClassDB::bind_method(D_METHOD("select_editor_theme_by_id", "theme_id"), &ClockGearsPreferencesDialog::select_editor_theme_by_id);
+	ClassDB::bind_method(D_METHOD("get_editor_theme_option_button"), &ClockGearsPreferencesDialog::get_editor_theme_option_button);
 	ClassDB::bind_method(D_METHOD("apply_and_save_preferences"), &ClockGearsPreferencesDialog::apply_and_save_preferences);
 }
 
@@ -170,6 +174,18 @@ void ClockGearsPreferencesDialog::_load_settings() {
 		inactive_layer_opacity_spin->set_value(dim_pct);
 		inactive_layer_opacity_spin->set_editable(dim_enabled);
 	}
+
+	String cur_theme = ClockGearsTheme::get_singleton() ? ClockGearsTheme::get_singleton()->get_active_theme_id() : String(ps->get_setting("clockgears/editor/theme_id", "dark"));
+	if (editor_theme_opt) {
+		int found_idx = 0;
+		for (int i = 0; i < editor_theme_opt->get_item_count(); i++) {
+			if (String(editor_theme_opt->get_item_metadata(i)) == cur_theme) {
+				found_idx = i;
+				break;
+			}
+		}
+		editor_theme_opt->select(found_idx);
+	}
 }
 
 void ClockGearsPreferencesDialog::_save_settings() {
@@ -211,6 +227,13 @@ void ClockGearsPreferencesDialog::_save_settings() {
 	if (inactive_layer_opacity_spin) {
 		ps->set_setting("clockgears/editor/inactive_layer_opacity_pct", CLAMP(int(inactive_layer_opacity_spin->get_value()), 10, 100));
 	}
+	if (editor_theme_opt) {
+		String th_id = get_selected_editor_theme_id();
+		ps->set_setting("clockgears/editor/theme_id", th_id);
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->set_active_theme_id(th_id);
+		}
+	}
 
 	ps->save();
 	if (ClockGearsDataManager::get_singleton()) {
@@ -223,6 +246,55 @@ void ClockGearsPreferencesDialog::_on_dim_inactive_toggled(bool p_pressed) {
 	if (inactive_layer_opacity_spin) {
 		inactive_layer_opacity_spin->set_editable(p_pressed);
 	}
+}
+
+void ClockGearsPreferencesDialog::_on_editor_theme_selected(int p_idx) {
+	if (!editor_theme_opt || p_idx < 0 || p_idx >= editor_theme_opt->get_item_count()) {
+		return;
+	}
+	String th_id = String(editor_theme_opt->get_item_metadata(p_idx));
+	if (ClockGearsTheme::get_singleton()) {
+		if (!ClockGearsTheme::get_singleton()->set_active_theme_id(th_id)) {
+			// Si el tema falla al cargar, vuelve al actual ("dark") sin error
+			for (int i = 0; i < editor_theme_opt->get_item_count(); i++) {
+				if (String(editor_theme_opt->get_item_metadata(i)) == ClockGearsTheme::get_singleton()->get_active_theme_id()) {
+					editor_theme_opt->select(i);
+					break;
+				}
+			}
+		}
+	}
+}
+
+String ClockGearsPreferencesDialog::get_selected_editor_theme_id() const {
+	if (!editor_theme_opt) {
+		return "dark";
+	}
+	int sel = editor_theme_opt->get_selected();
+	if (sel >= 0 && sel < editor_theme_opt->get_item_count()) {
+		String id = String(editor_theme_opt->get_item_metadata(sel));
+		if (!id.is_empty()) {
+			return id;
+		}
+	}
+	return "dark";
+}
+
+bool ClockGearsPreferencesDialog::select_editor_theme_by_id(const String &p_theme_id) {
+	bool ok = true;
+	if (ClockGearsTheme::get_singleton()) {
+		ok = ClockGearsTheme::get_singleton()->set_active_theme_id(p_theme_id);
+	}
+	String effective_id = ClockGearsTheme::get_singleton() ? ClockGearsTheme::get_singleton()->get_active_theme_id() : (ok ? p_theme_id : String("dark"));
+	if (editor_theme_opt) {
+		for (int i = 0; i < editor_theme_opt->get_item_count(); i++) {
+			if (String(editor_theme_opt->get_item_metadata(i)) == effective_id) {
+				editor_theme_opt->select(i);
+				break;
+			}
+		}
+	}
+	return ok;
 }
 
 bool ClockGearsPreferencesDialog::is_dim_inactive_layers_checked() const {
@@ -455,6 +527,24 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	inactive_layer_opacity_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	dim_pct_hb->add_child(inactive_layer_opacity_spin);
 	layer_edit_box->add_child(dim_pct_hb);
+
+	layer_edit_box->add_child(memnew(HSeparator));
+
+	HBoxContainer *theme_hb = memnew(HBoxContainer);
+	theme_hb->add_theme_constant_override("separation", 8);
+	theme_hb->add_child(memnew(Label(CG_TR("Tema Visual del Editor (Cambio en caliente):"))));
+	editor_theme_opt = memnew(OptionButton);
+	editor_theme_opt->add_item(CG_TR("ClockGears Oscuro (Por defecto)"));
+	editor_theme_opt->set_item_metadata(0, "dark");
+	editor_theme_opt->add_item(CG_TR("ClockGears Claro"));
+	editor_theme_opt->set_item_metadata(1, "light");
+	editor_theme_opt->add_item(CG_TR("ClockGears Latón"));
+	editor_theme_opt->set_item_metadata(2, "brass");
+	editor_theme_opt->select(0);
+	editor_theme_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	editor_theme_opt->connect(SceneStringName(item_selected), callable_mp(this, &ClockGearsPreferencesDialog::_on_editor_theme_selected));
+	theme_hb->add_child(editor_theme_opt);
+	layer_edit_box->add_child(theme_hb);
 
 	// =============================================================
 	// Pestaña 2: Exportación Simplificada

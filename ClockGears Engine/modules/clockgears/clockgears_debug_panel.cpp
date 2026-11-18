@@ -3,6 +3,7 @@
 #include "clockgears_map.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_pixel_art.h"
+#include "editor/clockgears_theme.h"
 #include "runtime/clockgears_entity_ai.h"
 #include "runtime/clockgears_runtime.h"
 #include "core/config/engine.h"
@@ -884,6 +885,11 @@ ClockGearsDebugOverlay::ClockGearsDebugOverlay() {
 	_populate_vars_tree();
 	_populate_arpg_equip_tab();
 	_ensure_drop_signal_connected();
+
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->sync_from_project_settings();
+		ClockGearsTheme::get_singleton()->apply_to_control(floating_window);
+	}
 }
 
 ClockGearsDebugOverlay::~ClockGearsDebugOverlay() {

@@ -1043,11 +1043,17 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 	}
 
 	rebuilding_rows = false;
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 }
 
 void ClockGearsLayersDialog::open_layers_dialog() {
 	refresh_layers_list();
 	_update_responsive_size();
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 	popup_centered(get_size());
 }
 
@@ -1423,6 +1429,9 @@ void ClockGearsEditorPlugin::open_event_editor_at_cell(int p_x, int p_y) {
 		found_ev->set_owner(scene);
 	}
 
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(event_editor_dialog);
+	}
 	event_editor_dialog->edit_event(found_ev);
 }
 
@@ -2285,30 +2294,45 @@ ClockGearsEvent *ClockGearsEditorPlugin::generate_entity_at_cell(int p_tab, int 
 
 void ClockGearsEditorPlugin::open_resource_manager() {
 	if (resource_manager_dialog) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(resource_manager_dialog);
+		}
 		resource_manager_dialog->open_manager();
 	}
 }
 
 void ClockGearsEditorPlugin::open_new_project() {
 	if (new_project_dialog) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(new_project_dialog);
+		}
 		new_project_dialog->open_dialog();
 	}
 }
 
 void ClockGearsEditorPlugin::open_export() {
 	if (export_dialog) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(export_dialog);
+		}
 		export_dialog->popup_simplified_export();
 	}
 }
 
 void ClockGearsEditorPlugin::open_preferences() {
 	if (preferences_dialog) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(preferences_dialog);
+		}
 		preferences_dialog->open_preferences();
 	}
 }
 
 void ClockGearsEditorPlugin::open_camera_dialog() {
 	if (camera_dialog) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(camera_dialog);
+		}
 		camera_dialog->open_camera_dialog();
 	}
 }
@@ -2642,6 +2666,7 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 
 	if (ClockGearsTheme::get_singleton()) {
 		ClockGearsTheme *th = ClockGearsTheme::get_singleton();
+		th->sync_from_project_settings();
 		th->apply_to_window(database_dialog);
 		th->apply_to_window(event_editor_dialog);
 		th->apply_to_window(export_dialog);
@@ -2657,6 +2682,7 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 		th->apply_to_window(quick_events_menu);
 		th->apply_to_control(top_bar);
 		th->apply_to_control(map_panel);
+		th->refresh_all_themed_roots();
 	}
 
 	workspace_built = true;
