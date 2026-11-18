@@ -786,7 +786,15 @@ int ClockGearsLayersDialog::get_row_count() const {
 Dictionary ClockGearsLayersDialog::get_ui_handles() const {
 	Dictionary d;
 	d["dialog"] = const_cast<ClockGearsLayersDialog *>(this);
-	d["active_label"] = active_layer_label;
+	Button *ind = EditorNode::get_active_clockgears_layer_indicator();
+	if (!ind) {
+		HBoxContainer *row = EditorNode::create_clockgears_top_bar_row();
+		d["title_bar_row"] = row;
+		ind = EditorNode::get_active_clockgears_layer_indicator();
+	} else if (ind->get_parent()) {
+		d["title_bar_row"] = ind->get_parent()->get_parent();
+	}
+	d["active_indicator"] = ind;
 	d["count_label"] = count_label;
 	d["scale_box"] = scale_buttons_box;
 	d["create_name_edit"] = new_name_edit;
@@ -859,11 +867,8 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 	Array raw_layers = dm ? dm->get_custom_map_layers() : Array();
 	String active_custom_id = dm ? dm->get_editor_custom_layer() : String();
 	int active_base_idx = dm ? dm->get_editor_layer() : 1;
-	String active_name = dm ? dm->get_active_editor_layer_display_name() : String("Capa 1: Suelo");
 
-	if (active_layer_label) {
-		active_layer_label->set_text(vformat(CG_TR("Capa activa actual: %s"), active_name));
-	}
+	EditorNode::sync_clockgears_active_layer_indicator_all();
 	if (count_label) {
 		count_label->set_text(vformat(CG_TR("Capas personalizadas: %d / %d"), raw_layers.size(), ClockGearsDataManager::MAX_CUSTOM_MAP_LAYERS));
 	}
@@ -1056,7 +1061,7 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 	main_vb->add_theme_constant_override("separation", 10);
 	add_child(main_vb);
 
-	// Cabecera con capa activa actual y contador
+	// Cabecera con contador de capas personalizadas (el indicador de capa actual está únicamente arriba en la barra superior)
 	PanelContainer *hdr_card = memnew(PanelContainer);
 	hdr_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.11f, 0.12f, 0.16f), Color(0.88f, 0.63f, 0.25f, 0.45f), 8, 10, 8));
 	main_vb->add_child(hdr_card);
@@ -1064,12 +1069,6 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 	HBoxContainer *hdr_hb = memnew(HBoxContainer);
 	hdr_hb->add_theme_constant_override("separation", 8);
 	hdr_card->add_child(hdr_hb);
-
-	active_layer_label = memnew(Label(CG_TR("Capa activa actual: Capa 1: Suelo")));
-	active_layer_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	active_layer_label->set_clip_text(true);
-	active_layer_label->add_theme_color_override("font_color", Color(0.95f, 0.85f, 0.55f));
-	hdr_hb->add_child(active_layer_label);
 
 	count_label = memnew(Label(CG_TR("Capas personalizadas: 0 / 16")));
 	count_label->add_theme_color_override("font_color", Color(0.75f, 0.80f, 0.88f));

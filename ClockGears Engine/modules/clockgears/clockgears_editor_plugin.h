@@ -83,7 +83,6 @@ class ClockGearsLayersDialog : public AcceptDialog {
 	GDCLASS(ClockGearsLayersDialog, AcceptDialog);
 
 private:
-	Label *active_layer_label = nullptr;
 	Label *count_label = nullptr;
 	HFlowContainer *scale_buttons_box = nullptr;
 	LineEdit *new_name_edit = nullptr;

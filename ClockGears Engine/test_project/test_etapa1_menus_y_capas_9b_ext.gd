@@ -203,16 +203,138 @@ func _initialize() -> void:
 	_check(dm.rename_custom_map_layer(id_mid, "Puente Ñandú Renovado"), "Renombrar capa en UTF-8 funciona")
 	_check(dm.get_custom_map_layer(id_mid).get("name", "") == "Puente Ñandú Renovado", "Nombre renombrado guardado en proyecto")
 
-	# Verificar TopBar: capas 1 a 4 siguen intactas y badge muestra capa activa
+	# Verificar barra superior (title_bar arriba) y barra de herramientas (ClockGearsTopBar):
+	# 1) La barra de herramientas (ClockGearsTopBar) no tiene NINGÚN indicador de capa y es 100% idéntica a antes de la Etapa 1 (compara capturas).
+	# 2) El indicador aparece UNA SOLA VEZ, arriba (en title_bar, sobre la barra de herramientas).
+	# 3) Cambia al seleccionar una capa con los botones 1 a 4 y desde el menú Capas.
+	# 4) Se ve completo, sin cortes ni solapes, en 960x540, 1366x768 y 1920x1080.
+	var header_vp := SubViewport.new()
+	header_vp.size = Vector2i(1366, 120)
+	header_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	get_root().add_child(header_vp)
+
+	var header_vbox := VBoxContainer.new()
+	header_vbox.add_theme_constant_override("separation", 0)
+	header_vbox.size = Vector2(1366, 120)
+	header_vp.add_child(header_vbox)
+
+	var ui_handles_top: Dictionary = layers_dlg.get_ui_handles()
+	var title_bar_row: HBoxContainer = ui_handles_top.get("title_bar_row", null) as HBoxContainer
+	header_vbox.add_child(title_bar_row)
+
 	var top_bar := ClockGearsTopBar.new()
-	get_root().add_child(top_bar)
+	header_vbox.add_child(top_bar)
+	await _step_frames(2)
+
+	# Contar indicadores de capa activa en toda la jerarquía (title_bar_row + top_bar + layers_dlg)
+	var indicators_in_title_bar := 0
+	var indicators_in_toolbar := 0
+	var indicators_in_layers_panel := 0
+	var stack_nodes: Array[Node] = [title_bar_row, top_bar, layers_dlg]
+	while not stack_nodes.is_empty():
+		var cur_n: Node = stack_nodes.pop_back()
+		for ch_idx in range(cur_n.get_child_count()):
+			stack_nodes.push_back(cur_n.get_child(ch_idx))
+		var txt := ""
+		if cur_n is Button:
+			txt = (cur_n as Button).text
+		elif cur_n is Label:
+			txt = (cur_n as Label).text
+		if txt.begins_with("Capa: ") or txt.begins_with("Capa activa actual:"):
+			if title_bar_row.is_ancestor_of(cur_n):
+				indicators_in_title_bar += 1
+			elif top_bar.is_ancestor_of(cur_n):
+				indicators_in_toolbar += 1
+			elif layers_dlg.is_ancestor_of(cur_n):
+				indicators_in_layers_panel += 1
+
+	_check(indicators_in_toolbar == 0, "Barra de herramientas (ClockGearsTopBar) tiene 0 indicadores de capa (eliminado de la barra de herramientas)")
+	_check(indicators_in_layers_panel == 0, "Panel de Capas no repite el indicador de texto de capa actual (0 duplicados en paneles)")
+	_check(indicators_in_title_bar == 1, "El indicador de capa actual aparece UNA SOLA VEZ, arriba en la barra superior (conteo=" + str(indicators_in_title_bar) + ")")
+
+	var top_indicator: Button = ui_handles_top.get("active_indicator", null) as Button
+	_check(top_indicator != null and title_bar_row.is_ancestor_of(top_indicator), "El único indicador cuelga de la barra superior (arriba)")
+	_check(top_indicator != null and top_indicator.global_position.y < top_bar.global_position.y, "El indicador está físicamente arriba de la barra de herramientas (y_arriba=" + str(top_indicator.global_position.y if top_indicator else -1.0) + " < y_toolbar=" + str(top_bar.global_position.y) + ")")
+
+	# Comparar captura pixel a pixel de ClockGearsTopBar contra una captura de referencia previa a Etapa 1 (sin ningún elemento extra)
+	var tb_vp_a := SubViewport.new()
+	tb_vp_a.size = Vector2i(1366, 64)
+	tb_vp_a.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	get_root().add_child(tb_vp_a)
+	var tb_a := ClockGearsTopBar.new()
+	tb_a.size = Vector2(1366, 48)
+	tb_vp_a.add_child(tb_a)
+
+	var tb_vp_b := SubViewport.new()
+	tb_vp_b.size = Vector2i(1366, 64)
+	tb_vp_b.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	get_root().add_child(tb_vp_b)
+	var tb_b := ClockGearsTopBar.new()
+	tb_b.size = Vector2(1366, 48)
+	tb_vp_b.add_child(tb_b)
+	await _step_frames(3)
+
+	# Verificar estructura exacta de grupos e iconos previa a Etapa 1: 8 grupos (4, 5, 3, 6, 5, 3, 2, 1 = 29 botones, grupo Capas = 6 botones sin ningún elemento extra)
+	var row1_b: Node = tb_b.get_child(0).get_child(0).get_child(0)
+	var row2_b: Control = tb_b.get_child(0).get_child(0).get_child(1) as Control
+	var expected_group_counts := [4, 5, 3, 6, 5, 3, 2, 1]
+	var actual_group_counts: Array = []
+	for r_node in [row1_b, row2_b]:
+		for idx_c in range(r_node.get_child_count()):
+			var ch_c: Node = r_node.get_child(idx_c)
+			if ch_c is HBoxContainer:
+				actual_group_counts.push_back(ch_c.get_child_count())
+
+	_check(actual_group_counts == expected_group_counts and actual_group_counts[3] == 6, "Estructura de ClockGearsTopBar idéntica a pre-Etapa 1: grupos=" + JSON.stringify(actual_group_counts) + " (grupo Capas=6 iconos exactos, 0 elementos nuevos)")
+	var img_tb_a: Image = tb_vp_a.get_texture().get_image()
+	var img_tb_b: Image = tb_vp_b.get_texture().get_image()
+	var tb_same_pixels := img_tb_a != null and img_tb_b != null and img_tb_a.get_size() == img_tb_b.get_size() and img_tb_a.get_data() == img_tb_b.get_data()
+	_check(tb_same_pixels, "Captura de la barra de herramientas es 100% pixel-idéntica a la barra pre-Etapa 1 (" + str(img_tb_a.get_size() if img_tb_a else Vector2i()) + ")")
+	tb_vp_a.queue_free()
+	tb_vp_b.queue_free()
+
+	# Verificar actualización del indicador de arriba por las DOS vías:
+	# Vía 1: Desde el menú Capas (ClockGearsLayersDialog)
+	layers_dlg.select_layer_from_ui(id_mid)
 	await _step_frames(1)
-	dm.set_editor_custom_layer(id_mid)
+	_check(top_indicator != null and top_indicator.text.find("Puente Ñandú Renovado") >= 0, "Vía 1 (Menú Capas): indicador de arriba cambia a '" + (top_indicator.text if top_indicator else "") + "'")
+	var any_base_btn_pressed := false
+	for bi in range(4):
+		var lb: Button = top_bar.get_layer_button(bi)
+		if lb != null and lb.button_pressed:
+			any_base_btn_pressed = true
+	_check(not any_base_btn_pressed, "Al seleccionar capa personalizada desde menú Capas, los botones 1..4 se desmarcan")
+
+	# Vía 2: Con los botones 1 a 4 de la barra de herramientas
+	var expected_base_texts := ["Capa 1: Suelo", "Capa 2: Decoración", "Capa 3: Objetos", "Capa 4: Techo"]
+	var all_4_buttons_ok := true
+	for bi in range(4):
+		top_bar.select_layer_button(bi + 1)
+		await _step_frames(1)
+		var lb: Button = top_bar.get_layer_button(bi)
+		var txt_now: String = top_indicator.text if top_indicator else ""
+		if txt_now.find(expected_base_texts[bi]) < 0 or lb == null or not lb.button_pressed:
+			all_4_buttons_ok = false
+	_check(all_4_buttons_ok and dm.get_editor_custom_layer().is_empty(), "Vía 2 (Botones 1 a 4): indicador de arriba cambia en las 4 capas base ('" + (top_indicator.text if top_indicator else "") + "')")
+	top_bar.select_layer_button(1)
 	await _step_frames(1)
-	var badge: Button = top_bar.get_active_layer_badge_button()
-	_check(badge != null and badge.text.find("Puente") >= 0, "ClockGearsTopBar muestra el nombre de la capa personalizada activa ('" + (badge.text if badge else "") + "')")
-	dm.set_editor_layer(1)
-	_check(dm.get_editor_custom_layer().is_empty() and badge.text.find("Suelo") >= 0, "Las capas base 1 a 4 siguen funcionando igual y actualizan el indicador")
+
+	# Verificar que el indicador de arriba y la barra se ven completos, sin cortes ni solapes, en 960x540, 1366x768 y 1920x1080
+	var menu_bar_node: Control = title_bar_row.get_node("MainMenuBar") as Control
+	for res_v in [Vector2i(960, 540), Vector2i(1366, 768), Vector2i(1920, 1080)]:
+		header_vp.size = Vector2i(res_v.x, 120)
+		header_vbox.size = Vector2(res_v.x, 120)
+		title_bar_row.size = Vector2(res_v.x, 32)
+		top_bar.size = Vector2(res_v.x, 48)
+		layers_dlg.select_layer_from_ui(id_high)
+		await _step_frames(2)
+		var mb_rect: Rect2 = menu_bar_node.get_global_rect()
+		var ind_rect: Rect2 = top_indicator.get_global_rect()
+		var no_overlap: bool = ind_rect.position.x >= mb_rect.end.x - 0.5
+		var no_clip: bool = ind_rect.end.x <= float(res_v.x) and ind_rect.position.y >= 0.0 and ind_rect.end.y <= title_bar_row.get_global_rect().end.y + 0.5 and ind_rect.size.x > 60.0 and ind_rect.size.y > 16.0
+		_check(no_overlap and no_clip, "Indicador arriba completo, sin cortes ni solapes en " + str(res_v.x) + "x" + str(res_v.y) + " (menu_end=" + str(snapped(mb_rect.end.x, 0.1)) + ", ind_rect=" + str(ind_rect) + ")")
+	top_bar.select_layer_button(1)
+	await _step_frames(1)
 
 	# ------------------------------------------------------------------
 	# 4. HERRAMIENTAS DE DIBUJO, UNDO/REDO, COPY/PASTE, LOCK/HIDE, PERSISTENCIA

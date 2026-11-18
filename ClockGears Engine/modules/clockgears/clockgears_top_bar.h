@@ -43,7 +43,6 @@ class ClockGearsTopBar : public PanelContainer {
 	Button *map_mode_btn = nullptr;
 	Button *event_mode_btn = nullptr;
 	Button *layer_buttons[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-	Button *active_layer_badge_btn = nullptr;
 	Button *tool_buttons[8] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 	Button *playtest_btn = nullptr;
 	Button *undo_btn = nullptr;
@@ -81,7 +80,6 @@ class ClockGearsTopBar : public PanelContainer {
 	void _on_zoom_in_pressed();
 	void _on_zoom_out_pressed();
 	void _on_playtest_pressed();
-	void _on_active_layer_badge_pressed();
 	void _on_dm_data_changed_topbar(const String &p_category, int p_id);
 
 protected:
@@ -95,7 +93,8 @@ public:
 	static ClockGearsTopBar *get_singleton() { return singleton; }
 	void set_map_mode();
 	void sync_active_layer_display();
-	Button *get_active_layer_badge_button() const { return active_layer_badge_btn; }
+	void select_layer_button(int p_layer);
+	Button *get_layer_button(int p_idx) const { return (p_idx >= 0 && p_idx < 6) ? layer_buttons[p_idx] : nullptr; }
 	void set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEventEditorDialog *p_ev, ClockGearsSimplifiedExportDialog *p_exp);
 
 	ClockGearsTopBar();

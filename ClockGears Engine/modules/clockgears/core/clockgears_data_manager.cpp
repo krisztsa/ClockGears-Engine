@@ -7868,6 +7868,7 @@ void ClockGearsDataManager::_sync_editor_map_layers_and_topbar(bool p_rebuild_no
 			emap->apply_editor_layer_dimming(true);
 		}
 	}
+	EditorNode::sync_clockgears_active_layer_indicator_all();
 	if (ClockGearsTopBar::get_singleton()) {
 		ClockGearsTopBar::get_singleton()->sync_active_layer_display();
 	}

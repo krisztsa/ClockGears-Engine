@@ -567,6 +567,8 @@ private:
 	Callable clockgears_open_preferences_cb;
 	Callable clockgears_open_camera_cb;
 	Callable clockgears_open_layers_cb;
+	Control *clockgears_active_layer_wrap = nullptr;
+	Button *clockgears_active_layer_indicator = nullptr;
 	bool clockgears_locking_main_screen = false;
 	bool clockgears_main_screen_connected = false;
 	HSplitContainer *clockgears_body = nullptr;
@@ -803,6 +805,7 @@ private:
 	void _build_tools_menu(bool p_dark_mode);
 	void _build_layers_menu(bool p_dark_mode);
 	void _on_layers_menu_about_to_popup();
+	void _on_clockgears_active_layer_indicator_pressed();
 	void _build_game_menu(bool p_dark_mode);
 	void _build_project_menu(bool p_dark_mode);
 	void _build_settings_menu(bool p_dark_mode);
@@ -1082,6 +1085,12 @@ public:
 	PopupMenu *get_clockgears_layers_menu() const { return layers_menu; }
 	MenuBar *get_clockgears_main_menu_bar() const { return main_menu_bar; }
 	MenuButton *get_clockgears_main_menu_button() const { return main_menu_button; }
+	Button *get_clockgears_active_layer_indicator() const { return clockgears_active_layer_indicator; }
+	void sync_clockgears_active_layer_indicator();
+	static void style_and_populate_clockgears_active_layer_indicator(Button *p_btn);
+	static void sync_clockgears_active_layer_indicator_all();
+	static Button *get_active_clockgears_layer_indicator();
+	static HBoxContainer *create_clockgears_top_bar_row();
 	static void populate_clockgears_file_menu(PopupMenu *p_menu);
 	static void populate_clockgears_edit_menu(PopupMenu *p_menu);
 	static void populate_clockgears_layers_menu(PopupMenu *p_menu);

@@ -163,6 +163,7 @@
 #include "scene/gui/control.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
+#include "scene/gui/margin_container.h"
 #include "scene/gui/menu_bar.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/panel.h"
@@ -179,6 +180,7 @@
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
+#include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 #include "servers/audio/audio_server.h"
 #include "servers/audio/audio_server_enums.h"
@@ -8449,6 +8451,12 @@ void EditorNode::_bind_methods() {
 	ClassDB::bind_method("stop_child_process", &EditorNode::stop_child_process);
 
 	ClassDB::bind_method(D_METHOD("update_node_reference", "value", "node", "remove"), &EditorNode::update_node_reference, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_clockgears_active_layer_indicator"), &EditorNode::get_clockgears_active_layer_indicator);
+	ClassDB::bind_method(D_METHOD("sync_clockgears_active_layer_indicator"), &EditorNode::sync_clockgears_active_layer_indicator);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("style_and_populate_clockgears_active_layer_indicator", "button"), &EditorNode::style_and_populate_clockgears_active_layer_indicator);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("sync_clockgears_active_layer_indicator_all"), &EditorNode::sync_clockgears_active_layer_indicator_all);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("get_active_clockgears_layer_indicator"), &EditorNode::get_active_clockgears_layer_indicator);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("create_clockgears_top_bar_row"), &EditorNode::create_clockgears_top_bar_row);
 	ClassDB::bind_static_method("EditorNode", D_METHOD("populate_clockgears_file_menu", "menu"), &EditorNode::populate_clockgears_file_menu);
 	ClassDB::bind_static_method("EditorNode", D_METHOD("populate_clockgears_edit_menu", "menu"), &EditorNode::populate_clockgears_edit_menu);
 	ClassDB::bind_static_method("EditorNode", D_METHOD("populate_clockgears_layers_menu", "menu"), &EditorNode::populate_clockgears_layers_menu);
@@ -8637,6 +8645,143 @@ void EditorNode::populate_clockgears_layers_menu(PopupMenu *p_menu) {
 	}
 	p_menu->clear(false);
 	p_menu->add_item(String::utf8("Gestionar Capas Personalizadas..."), CLOCKGEARS_LAYERS_PANEL);
+}
+
+static ObjectID _cg_preview_indicator_id;
+
+static String _cg_truncate_layer_label(const String &p_text, int p_max_chars) {
+	if (p_max_chars <= 0 || p_text.length() <= p_max_chars) {
+		return p_text;
+	}
+	if (p_max_chars == 1) {
+		return String::utf8("…");
+	}
+	return p_text.substr(0, p_max_chars - 1) + String::utf8("…");
+}
+
+void EditorNode::style_and_populate_clockgears_active_layer_indicator(Button *p_btn) {
+	if (!p_btn) {
+		return;
+	}
+	p_btn->set_focus_mode(Control::FOCUS_NONE);
+	p_btn->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	if (!p_btn->has_meta("_cg_styled")) {
+		p_btn->set_meta("_cg_styled", true);
+		const float sc = MAX(1.0f, EDSCALE);
+		Ref<StyleBoxFlat> badge_n;
+		badge_n.instantiate();
+		badge_n->set_anti_aliased(true);
+		badge_n->set_bg_color(Color(0.14f, 0.16f, 0.21f, 0.92f));
+		badge_n->set_border_width_all(1);
+		badge_n->set_border_color(Color(0.88f, 0.63f, 0.25f, 0.55f));
+		badge_n->set_corner_radius_all(int(Math::round(6.0f * sc)));
+		badge_n->set_content_margin_individual(10.0f * sc, 2.0f * sc, 10.0f * sc, 2.0f * sc);
+
+		Ref<StyleBoxFlat> badge_h = badge_n->duplicate();
+		badge_h->set_bg_color(Color(0.20f, 0.23f, 0.30f, 0.96f));
+		badge_h->set_border_color(Color(0.95f, 0.72f, 0.30f, 0.92f));
+
+		Ref<StyleBoxEmpty> badge_focus;
+		badge_focus.instantiate();
+
+		p_btn->add_theme_style_override("normal", badge_n);
+		p_btn->add_theme_style_override("hover", badge_h);
+		p_btn->add_theme_style_override("pressed", badge_h);
+		p_btn->add_theme_style_override("focus", badge_focus);
+		p_btn->add_theme_color_override("font_color", Color(0.95f, 0.87f, 0.68f));
+		p_btn->add_theme_color_override("font_hover_color", Color(1.0f, 0.94f, 0.78f));
+	}
+
+	Object *dm = Engine::get_singleton() ? Engine::get_singleton()->get_singleton_object("ClockGearsDataManager") : nullptr;
+	String full_name = (dm && dm->has_method("get_active_editor_layer_display_name")) ? String(dm->call("get_active_editor_layer_display_name")) : String::utf8("Capa 1: Suelo");
+	String trimmed = _cg_truncate_layer_label(full_name, 22);
+	p_btn->set_text(vformat(String::utf8("Capa: %s"), trimmed));
+	p_btn->set_tooltip_text(vformat(String::utf8("Capa activa actual: %s"), full_name));
+}
+
+void EditorNode::sync_clockgears_active_layer_indicator() {
+	if (clockgears_active_layer_indicator) {
+		style_and_populate_clockgears_active_layer_indicator(clockgears_active_layer_indicator);
+	}
+}
+
+void EditorNode::sync_clockgears_active_layer_indicator_all() {
+	if (singleton && singleton->clockgears_active_layer_indicator) {
+		style_and_populate_clockgears_active_layer_indicator(singleton->clockgears_active_layer_indicator);
+	}
+	if (_cg_preview_indicator_id.is_valid()) {
+		Button *b = Object::cast_to<Button>(ObjectDB::get_instance(_cg_preview_indicator_id));
+		if (b) {
+			style_and_populate_clockgears_active_layer_indicator(b);
+		} else {
+			_cg_preview_indicator_id = ObjectID();
+		}
+	}
+}
+
+Button *EditorNode::get_active_clockgears_layer_indicator() {
+	if (singleton && singleton->clockgears_active_layer_indicator) {
+		return singleton->clockgears_active_layer_indicator;
+	}
+	if (_cg_preview_indicator_id.is_valid()) {
+		return Object::cast_to<Button>(ObjectDB::get_instance(_cg_preview_indicator_id));
+	}
+	return nullptr;
+}
+
+HBoxContainer *EditorNode::create_clockgears_top_bar_row() {
+	HBoxContainer *row = memnew(HBoxContainer);
+	row->set_name("ClockGearsTitleBarRow");
+	row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	row->add_theme_constant_override("separation", 0);
+
+	MenuBar *mbar = memnew(MenuBar);
+	mbar->set_name("MainMenuBar");
+	mbar->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	mbar->set_switch_on_hover(true);
+
+	const char *menu_names[9] = { "Archivo", "Editar", "Modo", "Dibujo", "Escala", "Herramientas", "Capas", "Juego", "Ayuda" };
+	for (int i = 0; i < 9; i++) {
+		PopupMenu *pm = memnew(PopupMenu);
+		pm->set_name(String::utf8(menu_names[i]));
+		if (i == 0) {
+			populate_clockgears_file_menu(pm);
+		} else if (i == 1) {
+			populate_clockgears_edit_menu(pm);
+		} else if (i == 6) {
+			populate_clockgears_layers_menu(pm);
+		}
+		mbar->add_child(pm);
+	}
+	mbar->set_menu_hidden(1, true);
+	row->add_child(mbar);
+
+	MarginContainer *mc = memnew(MarginContainer);
+	mc->set_name("ClockGearsActiveLayerWrap");
+	mc->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	mc->add_theme_constant_override("margin_left", int(Math::round(10.0 * MAX(1.0f, EDSCALE))));
+	mc->add_theme_constant_override("margin_right", int(Math::round(4.0 * MAX(1.0f, EDSCALE))));
+	mc->add_theme_constant_override("margin_top", 0);
+	mc->add_theme_constant_override("margin_bottom", 0);
+
+	Button *ind = memnew(Button);
+	ind->set_name("ClockGearsActiveLayerIndicator");
+	style_and_populate_clockgears_active_layer_indicator(ind);
+	_cg_preview_indicator_id = ind->get_instance_id();
+	mc->add_child(ind);
+	row->add_child(mc);
+
+	Control *right_sp = memnew(Control);
+	right_sp->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	right_sp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	row->add_child(right_sp);
+	return row;
+}
+
+void EditorNode::_on_clockgears_active_layer_indicator_pressed() {
+	if (clockgears_open_layers_cb.is_valid()) {
+		clockgears_open_layers_cb.call();
+	}
 }
 
 Dictionary EditorNode::inspect_clockgears_menus(EditorNode *p_en) {
@@ -9140,6 +9285,29 @@ void EditorNode::_update_main_menu_type() {
 		title_bar->add_child(main_menu_bar);
 		title_bar->move_child(main_menu_bar, left_menu_spacer ? left_menu_spacer->get_index() + 1 : 0);
 	}
+
+	if (!clockgears_active_layer_wrap) {
+		MarginContainer *mc = memnew(MarginContainer);
+		mc->set_name("ClockGearsActiveLayerWrap");
+		mc->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		mc->add_theme_constant_override("margin_left", int(Math::round(10.0 * EDSCALE)));
+		mc->add_theme_constant_override("margin_right", int(Math::round(4.0 * EDSCALE)));
+		mc->add_theme_constant_override("margin_top", 0);
+		mc->add_theme_constant_override("margin_bottom", 0);
+
+		clockgears_active_layer_indicator = memnew(Button);
+		clockgears_active_layer_indicator->set_name("ClockGearsActiveLayerIndicator");
+		style_and_populate_clockgears_active_layer_indicator(clockgears_active_layer_indicator);
+		clockgears_active_layer_indicator->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_on_clockgears_active_layer_indicator_pressed));
+		mc->add_child(clockgears_active_layer_indicator);
+		clockgears_active_layer_wrap = mc;
+		title_bar->add_child(clockgears_active_layer_wrap);
+	}
+	if (clockgears_active_layer_wrap && clockgears_active_layer_wrap->get_parent() == title_bar) {
+		int anchor_idx = main_menu_bar ? main_menu_bar->get_index() : (main_menu_button ? main_menu_button->get_index() : 0);
+		title_bar->move_child(clockgears_active_layer_wrap, MIN(anchor_idx + 1, title_bar->get_child_count() - 1));
+	}
+	sync_clockgears_active_layer_indicator();
 
 	// Show/hide project title.
 	if (project_title) {
