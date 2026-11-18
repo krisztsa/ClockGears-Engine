@@ -238,8 +238,195 @@ bool ClockGearsDataManager::_write_json_atomic(const String &p_file_path, const 
 	return true;
 }
 
-bool ClockGearsDataManager::_read_json_with_backup(const String &p_file_path, Variant &r_data) const {
+static int _unicode_to_win1252_byte(char32_t p_ch) {
+	if (p_ch <= 0xFF) {
+		return int(p_ch);
+	}
+	switch (p_ch) {
+		case 0x20AC: return 0x80; // €
+		case 0x201A: return 0x82; // ‚
+		case 0x0192: return 0x83; // ƒ
+		case 0x201E: return 0x84; // „
+		case 0x2026: return 0x85; // …
+		case 0x2020: return 0x86; // †
+		case 0x2021: return 0x87; // ‡
+		case 0x02C6: return 0x88; // ˆ
+		case 0x2030: return 0x89; // ‰
+		case 0x0160: return 0x8A; // Š
+		case 0x2039: return 0x8B; // ‹
+		case 0x0152: return 0x8C; // Œ
+		case 0x017D: return 0x8E; // Ž
+		case 0x2018: return 0x91; // ‘
+		case 0x2019: return 0x92; // ’
+		case 0x201C: return 0x93; // “
+		case 0x201D: return 0x94; // ”
+		case 0x2022: return 0x95; // •
+		case 0x2013: return 0x96; // –
+		case 0x2014: return 0x97; // —
+		case 0x02DC: return 0x98; // ˜
+		case 0x2122: return 0x99; // ™
+		case 0x0161: return 0x9A; // š
+		case 0x203A: return 0x9B; // ›
+		case 0x0153: return 0x9C; // œ
+		case 0x017E: return 0x9E; // ž
+		case 0x0178: return 0x9F; // Ÿ
+		default: return -1;
+	}
+}
+
+bool ClockGearsDataManager::is_likely_latin1_mojibake(const String &p_text) {
+	const int n = p_text.length();
+	for (int i = 0; i < n; i++) {
+		char32_t c = p_text[i];
+		if ((c == 0x00C3 || c == 0x00C2) && i + 1 < n) {
+			int b1 = _unicode_to_win1252_byte(p_text[i + 1]);
+			if (b1 >= 0x80 && b1 <= 0xBF) {
+				return true;
+			}
+		}
+		if (c == 0x00E2 && i + 2 < n) {
+			int b1 = _unicode_to_win1252_byte(p_text[i + 1]);
+			int b2 = _unicode_to_win1252_byte(p_text[i + 2]);
+			if (b1 >= 0x80 && b1 <= 0xBF && b2 >= 0x80 && b2 <= 0xBF) {
+				return true;
+			}
+		}
+		if (c == 0x00F0 && i + 3 < n) {
+			int b1 = _unicode_to_win1252_byte(p_text[i + 1]);
+			int b2 = _unicode_to_win1252_byte(p_text[i + 2]);
+			int b3 = _unicode_to_win1252_byte(p_text[i + 3]);
+			if (b1 >= 0x80 && b1 <= 0xBF && b2 >= 0x80 && b2 <= 0xBF && b3 >= 0x80 && b3 <= 0xBF) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+String ClockGearsDataManager::repair_mojibake_string(const String &p_text, bool *r_repaired) {
+	if (r_repaired) {
+		*r_repaired = false;
+	}
+	if (p_text.is_empty() || !is_likely_latin1_mojibake(p_text)) {
+		return p_text;
+	}
+
+	String cur = p_text;
+	bool any_changed = false;
+	for (int pass = 0; pass < 2; pass++) {
+		if (!is_likely_latin1_mojibake(cur)) {
+			break;
+		}
+		String out;
+		bool changed = false;
+		const int n = cur.length();
+		for (int i = 0; i < n; i++) {
+			int b0 = _unicode_to_win1252_byte(cur[i]);
+			if (b0 >= 0xC2 && b0 <= 0xDF && i + 1 < n) {
+				int b1 = _unicode_to_win1252_byte(cur[i + 1]);
+				if (b1 >= 0x80 && b1 <= 0xBF) {
+					char32_t cp = char32_t(((b0 & 0x1F) << 6) | (b1 & 0x3F));
+					if (cp >= 0x0080 && cp != 0xFFFD) {
+						out += String::chr(cp);
+						i += 1;
+						changed = true;
+						continue;
+					}
+				}
+			} else if (b0 >= 0xE0 && b0 <= 0xEF && i + 2 < n) {
+				int b1 = _unicode_to_win1252_byte(cur[i + 1]);
+				int b2 = _unicode_to_win1252_byte(cur[i + 2]);
+				if (b1 >= 0x80 && b1 <= 0xBF && b2 >= 0x80 && b2 <= 0xBF) {
+					char32_t cp = char32_t(((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F));
+					if (cp >= 0x0800 && !(cp >= 0xD800 && cp <= 0xDFFF) && cp != 0xFFFD) {
+						out += String::chr(cp);
+						i += 2;
+						changed = true;
+						continue;
+					}
+				}
+			} else if (b0 >= 0xF0 && b0 <= 0xF4 && i + 3 < n) {
+				int b1 = _unicode_to_win1252_byte(cur[i + 1]);
+				int b2 = _unicode_to_win1252_byte(cur[i + 2]);
+				int b3 = _unicode_to_win1252_byte(cur[i + 3]);
+				if (b1 >= 0x80 && b1 <= 0xBF && b2 >= 0x80 && b2 <= 0xBF && b3 >= 0x80 && b3 <= 0xBF) {
+					char32_t cp = char32_t(((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F));
+					if (cp >= 0x10000 && cp <= 0x10FFFF) {
+						out += String::chr(cp);
+						i += 3;
+						changed = true;
+						continue;
+					}
+				}
+			}
+			out += cur[i];
+		}
+		if (!changed) {
+			break;
+		}
+		cur = out;
+		any_changed = true;
+	}
+	if (r_repaired) {
+		*r_repaired = any_changed;
+	}
+	return cur;
+}
+
+Variant ClockGearsDataManager::repair_mojibake_variant(const Variant &p_val, int &r_repaired_strings) {
+	switch (p_val.get_type()) {
+		case Variant::STRING: {
+			bool rep = false;
+			String fixed = repair_mojibake_string(String(p_val), &rep);
+			if (rep) {
+				r_repaired_strings++;
+			}
+			return fixed;
+		}
+		case Variant::ARRAY: {
+			Array in_arr = p_val;
+			Array out_arr;
+			out_arr.resize(in_arr.size());
+			for (int i = 0; i < in_arr.size(); i++) {
+				out_arr[i] = repair_mojibake_variant(in_arr[i], r_repaired_strings);
+			}
+			return out_arr;
+		}
+		case Variant::DICTIONARY: {
+			Dictionary in_dict = p_val;
+			Dictionary out_dict;
+			for (const Variant &key : in_dict.keys()) {
+				Variant fixed_k = repair_mojibake_variant(key, r_repaired_strings);
+				Variant fixed_v = repair_mojibake_variant(in_dict[key], r_repaired_strings);
+				out_dict[fixed_k] = fixed_v;
+			}
+			return out_dict;
+		}
+		default:
+			return p_val;
+	}
+}
+
+String ClockGearsDataManager::truncate_with_ellipsis(const String &p_text, int p_max_chars) {
+	if (p_max_chars <= 0 || p_text.length() <= p_max_chars) {
+		return p_text;
+	}
+	// Godot String indexa por codepoints UTF-32 (caracteres reales, nunca por bytes UTF-8).
+	return p_text.substr(0, p_max_chars) + String::utf8("…");
+}
+
+PackedStringArray ClockGearsDataManager::get_last_repaired_json_files() const {
+	PackedStringArray out;
+	for (int i = 0; i < last_repaired_json_files.size(); i++) {
+		out.push_back(last_repaired_json_files[i]);
+	}
+	return out;
+}
+
+bool ClockGearsDataManager::_read_json_with_backup(const String &p_file_path, Variant &r_data, bool p_repair_mojibake) const {
 	String bak_path = p_file_path + ".bak";
+	String loaded_from;
+	Variant parsed_data;
 
 	if (FileAccess::exists(p_file_path)) {
 		Ref<FileAccess> f = FileAccess::open(p_file_path, FileAccess::READ);
@@ -248,28 +435,55 @@ bool ClockGearsDataManager::_read_json_with_backup(const String &p_file_path, Va
 			Ref<JSON> json;
 			json.instantiate();
 			if (json->parse(text) == OK) {
-				r_data = _normalize_json_numbers(json->get_data());
-				return true;
+				parsed_data = _normalize_json_numbers(json->get_data());
+				loaded_from = p_file_path;
+			} else {
+				WARN_PRINT(vformat(String::utf8("ClockGearsDataManager: Archivo '%s' corrupto (línea %d: %s). Intentando recuperar desde '%s'..."), p_file_path, json->get_error_line(), json->get_error_message(), bak_path));
 			}
-			WARN_PRINT(vformat(String::utf8("ClockGearsDataManager: Archivo '%s' corrupto (línea %d: %s). Intentando recuperar desde '%s'..."), p_file_path, json->get_error_line(), json->get_error_message(), bak_path));
 		}
 	}
 
-	if (FileAccess::exists(bak_path)) {
+	if (loaded_from.is_empty() && FileAccess::exists(bak_path)) {
 		Ref<FileAccess> f_bak = FileAccess::open(bak_path, FileAccess::READ);
 		if (f_bak.is_valid()) {
 			String text = f_bak->get_as_text();
 			Ref<JSON> json;
 			json.instantiate();
 			if (json->parse(text) == OK) {
-				r_data = _normalize_json_numbers(json->get_data());
+				parsed_data = _normalize_json_numbers(json->get_data());
+				loaded_from = bak_path;
 				WARN_PRINT(vformat("ClockGearsDataManager: Recuperado exitosamente desde respaldo '%s'.", bak_path));
-				return true;
 			}
 		}
 	}
 
-	return false;
+	if (loaded_from.is_empty()) {
+		return false;
+	}
+
+	if (p_repair_mojibake) {
+		int repaired_strings = 0;
+		Variant repaired_data = repair_mojibake_variant(parsed_data, repaired_strings);
+		if (repaired_strings > 0) {
+			String orig_bak = loaded_from + ".pre_utf8_fix.bak";
+			if (!FileAccess::exists(orig_bak)) {
+				PackedByteArray raw_bytes = FileAccess::get_file_as_bytes(loaded_from);
+				Ref<FileAccess> fb = FileAccess::open(orig_bak, FileAccess::WRITE);
+				if (fb.is_valid()) {
+					fb->store_buffer(raw_bytes);
+					fb->flush();
+				}
+			}
+			_write_json_atomic(p_file_path, repaired_data);
+			if (!last_repaired_json_files.has(p_file_path)) {
+				last_repaired_json_files.push_back(p_file_path);
+			}
+			parsed_data = repaired_data;
+		}
+	}
+
+	r_data = parsed_data;
+	return true;
 }
 
 PackedStringArray ClockGearsDataManager::get_arpg_ai_types() {
@@ -1609,6 +1823,7 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 }
 
 bool ClockGearsDataManager::load_all(const String &p_dir_path) {
+	last_repaired_json_files.clear();
 	String index_path = p_dir_path.path_join("database.json");
 	if (!FileAccess::exists(index_path) && !FileAccess::exists(index_path + ".bak")) {
 		init_empty();
@@ -7120,6 +7335,9 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("export_runtime_state"), &ClockGearsDataManager::export_runtime_state);
 	ClassDB::bind_method(D_METHOD("import_runtime_state", "state"), &ClockGearsDataManager::import_runtime_state);
 	ClassDB::bind_method(D_METHOD("format_text", "text"), &ClockGearsDataManager::format_text);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("repair_mojibake_text", "text"), &ClockGearsDataManager::repair_mojibake_text);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("truncate_with_ellipsis", "text", "max_chars"), &ClockGearsDataManager::truncate_with_ellipsis);
+	ClassDB::bind_method(D_METHOD("get_last_repaired_json_files"), &ClockGearsDataManager::get_last_repaired_json_files);
 
 	ClassDB::bind_method(D_METHOD("set_editor_map", "map"), &ClockGearsDataManager::set_editor_map);
 	ClassDB::bind_method(D_METHOD("get_editor_map"), &ClockGearsDataManager::get_editor_map);

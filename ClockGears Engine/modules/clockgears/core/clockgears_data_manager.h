@@ -105,10 +105,11 @@ private:
 	bool dirty = false;
 	Node *active_editor_map = nullptr;
 	mutable HashMap<String, Ref<Texture2D>> entry_icon_cache;
+	mutable Vector<String> last_repaired_json_files;
 
 	Variant _normalize_json_numbers(const Variant &p_val) const;
 	bool _write_json_atomic(const String &p_file_path, const Variant &p_data) const;
-	bool _read_json_with_backup(const String &p_file_path, Variant &r_data) const;
+	bool _read_json_with_backup(const String &p_file_path, Variant &r_data, bool p_repair_mojibake = true) const;
 	void _normalize_system_and_vocabulary_config();
 	void _migrate_schema_if_needed(int p_from_version);
 	int _clean_cross_references_on_delete(int p_category, int p_deleted_id);
@@ -339,6 +340,15 @@ public:
 	void set_gold(int p_gold);
 	void change_gold(int p_amount);
 	void reset_runtime_state();
+
+	// Utilidades UTF-8 y reparación automática de mojibake en JSON (9B-2 Punto 5)
+	static bool is_likely_latin1_mojibake(const String &p_text);
+	static String repair_mojibake_string(const String &p_text, bool *r_repaired = nullptr);
+	static String repair_mojibake_text(const String &p_text) { return repair_mojibake_string(p_text, nullptr); }
+	static Variant repair_mojibake_variant(const Variant &p_val, int &r_repaired_strings);
+	static String truncate_with_ellipsis(const String &p_text, int p_max_chars);
+	PackedStringArray get_last_repaired_json_files() const;
+	void clear_last_repaired_json_files() { last_repaired_json_files.clear(); }
 
 	// Fundido persistente entre mapas y cola de comandos post-transferencia (9B Punto 4)
 	float get_runtime_fade_alpha() const { return runtime_fade_alpha; }

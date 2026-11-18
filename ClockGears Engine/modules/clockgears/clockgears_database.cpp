@@ -18624,9 +18624,7 @@ static String s_cred_item_summary(int p_index, const Dictionary &p_item) {
 		return vformat("%d. [Espacio] %d px", p_index + 1, int(p_item.get("height", 32.0)));
 	}
 	String txt = String(p_item.get("text", "")).strip_edges().replace("\n", " ");
-	if (txt.length() > 42) {
-		txt = txt.substr(0, 42) + "...";
-	}
+	txt = ClockGearsDataManager::truncate_with_ellipsis(txt, 42);
 	return vformat("%d. [Texto] %s", p_index + 1, txt.is_empty() ? CG_DB_TR("(vacío)") : txt);
 }
 

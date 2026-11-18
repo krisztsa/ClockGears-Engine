@@ -343,7 +343,7 @@ void ClockGearsDebugWorldCanvas::_notification(int p_what) {
 				draw_rect(tr_rect, tr_border, false, 2.0f);
 
 				// Cartel con ID y Nombre sobre el evento
-				String ev_label = vformat("EV #%d: %s", ev->get_event_id(), ev->get_event_name());
+				String ev_label = vformat("EV #%d: %s", ev->get_event_id(), ClockGearsDataManager::truncate_with_ellipsis(ev->get_event_name(), 24));
 				if (font.is_valid()) {
 					int fsz = 10;
 					Size2 ssz = font->get_string_size(ev_label, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz);
