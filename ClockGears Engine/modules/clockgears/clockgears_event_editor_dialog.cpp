@@ -57,6 +57,7 @@ void ClockGearsEventEditorDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("edit_event", "event"), &ClockGearsEventEditorDialog::edit_event);
 	ClassDB::bind_method(D_METHOD("edit_database_event", "category_key", "record_id", "record_name", "pages", "on_saved"), &ClockGearsEventEditorDialog::edit_database_event, DEFVAL(Callable()));
 	ClassDB::bind_method(D_METHOD("adjust_and_popup"), &ClockGearsEventEditorDialog::adjust_and_popup);
+	ClassDB::bind_static_method("ClockGearsEventEditorDialog", D_METHOD("compute_usable_fullscreen_rect", "usable_rect", "title_bar_h", "side_pad"), &ClockGearsEventEditorDialog::compute_usable_fullscreen_rect, DEFVAL(32), DEFVAL(4));
 	ClassDB::bind_method(D_METHOD("get_cancel_button"), &ClockGearsEventEditorDialog::get_cancel_button);
 	ClassDB::bind_method(D_METHOD("get_apply_button"), &ClockGearsEventEditorDialog::get_apply_button);
 	ClassDB::bind_method(D_METHOD("get_teleport_selector"), &ClockGearsEventEditorDialog::get_teleport_selector);
@@ -4451,7 +4452,7 @@ void ClockGearsEventEditorDialog::_on_actor_picker_confirmed() {
 
 ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	set_title(CG_TR("Editor de Eventos - ClockGears Engine"));
-	set_min_size(Size2(740, 420) * EDSCALE);
+	set_min_size(Size2(560, 300) * EDSCALE);
 	set_ok_button_text(CG_TR("Aceptar"));
 	btn_cancel = add_cancel_button(CG_TR("Cancelar"));
 	if (btn_cancel) {
@@ -5609,8 +5610,19 @@ void ClockGearsEventEditorDialog::_on_custom_action(const String &p_action) {
 	}
 }
 
-void ClockGearsEventEditorDialog::_adjust_and_popup() {
+Rect2i ClockGearsEventEditorDialog::compute_usable_fullscreen_rect(const Rect2i &p_usable_rect, int p_title_bar_h, int p_side_pad) {
+	int pad = MAX(0, p_side_pad);
+	int top_bar = MAX(0, p_title_bar_h);
+	int x = p_usable_rect.position.x + pad;
+	int y = p_usable_rect.position.y + top_bar;
+	int w = MAX(420, p_usable_rect.size.x - pad * 2);
+	int h = MAX(260, p_usable_rect.size.y - top_bar - 6);
+	return Rect2i(x, y, w, h);
+}
+
+void ClockGearsEventEditorDialog::_fit_to_usable_rect() {
 	Rect2i usable_rect(0, 0, 1920, 1080);
+	int title_bar_h = int(32 * EDSCALE);
 	if (DisplayServer::get_singleton()) {
 		int scr = DisplayServer::get_singleton()->window_get_current_screen();
 		usable_rect = DisplayServer::get_singleton()->screen_get_usable_rect(scr);
@@ -5621,39 +5633,50 @@ void ClockGearsEventEditorDialog::_adjust_and_popup() {
 		usable_rect = Rect2i(Point2i(), parent_win->get_size());
 	}
 
-	Size2i usable_sz = usable_rect.size;
-	if (usable_sz.x <= 0) {
-		usable_sz.x = 1920;
-	}
-	if (usable_sz.y <= 0) {
-		usable_sz.y = 1080;
+	if (usable_rect.size.x <= 0) usable_rect.size.x = 1920;
+	if (usable_rect.size.y <= 0) usable_rect.size.y = 1080;
+
+	if (is_visible()) {
+		Size2i decor = get_size_with_decorations() - get_size();
+		if (decor.y > 0 && decor.y < 120) {
+			title_bar_h = decor.y;
+		}
 	}
 
-	// Reducir min_size si la pantalla util es baja para que encaje en el area util sin salirse
-	Size2i min_sz = Size2i(int(740 * EDSCALE), int(380 * EDSCALE));
-	if (min_sz.x > usable_sz.x - 16) {
-		min_sz.x = MAX(360, usable_sz.x - 16);
-	}
-	if (min_sz.y > usable_sz.y - 32) {
-		min_sz.y = MAX(260, usable_sz.y - 32);
-	}
+	Rect2i target = compute_usable_fullscreen_rect(usable_rect, title_bar_h, 4);
+	Size2i min_sz = Size2i(MIN(int(560 * EDSCALE), target.size.x), MIN(int(300 * EDSCALE), target.size.y));
 	set_min_size(min_sz);
+	set_position(target.position);
+	set_size(target.size);
+}
 
-	// Tamano deseado: 920x620 ajustado por escala
-	Size2i target_sz = Size2i(int(920 * EDSCALE), int(620 * EDSCALE));
-	// Descontar margen de aire (24px horizontal, 48px vertical para bordes y barra de tareas)
-	Size2i max_allowed = usable_sz - Size2i(24, 48);
-	target_sz = target_sz.min(max_allowed).max(min_sz);
+void ClockGearsEventEditorDialog::_on_parent_window_resized() {
+	if (is_visible()) {
+		_fit_to_usable_rect();
+	}
+}
 
-	popup_centered(target_sz);
+void ClockGearsEventEditorDialog::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE) {
+		if (Window *pw = get_parent_visible_window()) {
+			Callable cb = callable_mp(this, &ClockGearsEventEditorDialog::_on_parent_window_resized);
+			if (!pw->is_connected("size_changed", cb)) {
+				pw->connect("size_changed", cb);
+			}
+		}
+	} else if (p_what == NOTIFICATION_WM_SIZE_CHANGED) {
+		if (is_visible() && columns_scroll) {
+			columns_scroll->update_minimum_size();
+		}
+	}
+}
 
-	// Asegurar que la ventana quede dentro del rectangulo util de la pantalla
-	Point2i cur_pos = get_position();
-	int max_x = MAX(usable_rect.position.x + 8, usable_rect.position.x + usable_rect.size.x - target_sz.x - 8);
-	int max_y = MAX(usable_rect.position.y + 8, usable_rect.position.y + usable_rect.size.y - target_sz.y - 8);
-	cur_pos.x = CLAMP(cur_pos.x, usable_rect.position.x + 8, max_x);
-	cur_pos.y = CLAMP(cur_pos.y, usable_rect.position.y + 8, max_y);
-	set_position(cur_pos);
+void ClockGearsEventEditorDialog::_adjust_and_popup() {
+	_fit_to_usable_rect();
+	Rect2i r(get_position(), get_size());
+	popup(r);
+	// Reajustar con las decoraciones reales tras abrir la ventana
+	callable_mp(this, &ClockGearsEventEditorDialog::_fit_to_usable_rect).call_deferred();
 }
 
 void ClockGearsEventEditorDialog::_on_dialog_canceled() {

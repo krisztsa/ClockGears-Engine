@@ -546,12 +546,16 @@ private:
 	void _on_confirm_change_hud_visibility();
 	void _on_custom_action(const String &p_action);
 	void _apply_event_changes();
+	void _fit_to_usable_rect();
 	void _adjust_and_popup();
+	void _on_parent_window_resized();
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
+	static Rect2i compute_usable_fullscreen_rect(const Rect2i &p_usable_rect, int p_title_bar_h = 32, int p_side_pad = 4);
 	void edit_event(ClockGearsEvent *p_event);
 	void edit_database_event(const String &p_category_key, int p_record_id, const String &p_record_name, const Array &p_pages, const Callable &p_on_saved = Callable());
 	void adjust_and_popup() { _adjust_and_popup(); }

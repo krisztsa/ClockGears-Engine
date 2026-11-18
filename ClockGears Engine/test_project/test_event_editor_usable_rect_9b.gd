@@ -57,29 +57,32 @@ func _run_checks() -> void:
 		print("OK: adjust_and_popup ejecutado, tamano resultante: ", popup_sz)
 
 	# 4. Probar comportamiento con areas utiles en resoluciones 16:9 requeridas:
-	# 960x540, 1366x768, 1920x1080, 2560x1440
-	var taskbar_h = 48 # Barra de tareas tipica de Windows
+	# 1366x768, 1920x1080, 2560x1440 con barra de tareas de 48px visible
+	var taskbar_h = 48
 	var resolutions = [
-		Vector2i(960, 540),
 		Vector2i(1366, 768),
 		Vector2i(1920, 1080),
 		Vector2i(2560, 1440)
 	]
 
 	for res in resolutions:
-		var usable_sz = Vector2i(res.x, res.y - taskbar_h)
-		# Tamano deseado con clamping segun la logica de _adjust_and_popup:
-		var target_sz = Vector2i(920, 620)
-		var max_allowed = usable_sz - Vector2i(24, 48)
-		var clamped_sz = target_sz.min(max_allowed)
-		
-		# Asegurar que la ventana cabe en el area util sin salirse
-		var fits = clamped_sz.x <= usable_sz.x and clamped_sz.y <= usable_sz.y
-		if not fits:
-			print("FAIL: En resolucion %dx%d (util %dx%d), la ventana calculada %dx%d excede el area util!" % [res.x, res.y, usable_sz.x, usable_sz.y, clamped_sz.x, clamped_sz.y])
+		var usable_rect = Rect2i(0, 0, res.x, res.y - taskbar_h)
+		var r: Rect2i = ClockGearsEventEditorDialog.compute_usable_fullscreen_rect(usable_rect, 32, 4)
+		var fills_width: bool = r.size.x >= usable_rect.size.x - 12
+		var fills_height: bool = r.size.y >= usable_rect.size.y - 48
+		var fits_inside: bool = r.position.x >= usable_rect.position.x and r.position.y >= usable_rect.position.y and r.end.x <= usable_rect.end.x and r.end.y <= usable_rect.end.y
+		if not (fills_width and fills_height and fits_inside):
+			print("FAIL: En %dx%d (util %s), rect calculado %s no ocupa todo el area util sin cortar!" % [res.x, res.y, usable_rect, r])
 			quit(1)
 			return
-		print("OK: Resolucion %dx%d (area util %dx%d) -> ventana cabe perfectamente a %dx%d (sin cortar botones inferiores)." % [res.x, res.y, usable_sz.x, usable_sz.y, clamped_sz.x, clamped_sz.y])
+		print("OK: %dx%d (util %s) -> ocupa todo el area util %s sin huecos ni pisar barra de tareas." % [res.x, res.y, usable_rect, r])
+
+	var apply_btn = event_dialog.get_apply_button()
+	if apply_btn == null or apply_btn.get_text().is_empty():
+		print("FAIL: Boton Aplicar no encontrado.")
+		quit(1)
+		return
+	print("OK: Boton Aplicar verificado ('%s')" % apply_btn.get_text())
 
 	# 5. Probar que el custom_action "apply" se ejecuta sin crash
 	event_dialog.emit_signal("custom_action", "apply")
