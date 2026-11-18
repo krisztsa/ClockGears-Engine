@@ -880,6 +880,7 @@ private:
 
 	VBoxContainer *hud_hearts_box = nullptr;
 	CheckBox *hud_hearts_show_bg_chk = nullptr;
+	CheckBox *hud_hearts_auto_size_chk = nullptr;
 	ColorPickerButton *hud_hearts_bg_color_btn = nullptr;
 	SpinBox *hud_hearts_bg_opacity_spin = nullptr;
 	SpinBox *hud_hearts_hp_spin = nullptr;

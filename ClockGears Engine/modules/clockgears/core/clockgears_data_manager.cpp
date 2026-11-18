@@ -4369,6 +4369,8 @@ static void _cg_normalize_hud_core_fields(const Dictionary &p_in, const Dictiona
 		r_out["show_background"] = p_in.has("show_background") ? bool(p_in["show_background"]) : false;
 		r_out["bg_color"] = String(p_in.get("bg_color", "#1a1a1a")).strip_edges();
 		r_out["bg_opacity"] = CLAMP(int(p_in.get("bg_opacity", 60)), 0, 100);
+		// Datos antiguos sin la clave conservan el modo manual (ancho/alto guardados).
+		r_out["auto_size"] = p_in.has("auto_size") ? bool(p_in["auto_size"]) : false;
 	} else if (p_wtype == "currency") {
 		r_out["icon_path"] = String(p_in.get("icon_path", "")).strip_edges();
 		r_out["show_icon"] = p_in.has("show_icon") ? bool(p_in["show_icon"]) : true;
@@ -4502,6 +4504,7 @@ Dictionary ClockGearsDataManager::make_default_hud_widget(const String &p_type) 
 		w["show_background"] = false;
 		w["bg_color"] = "#1a1a1a";
 		w["bg_opacity"] = 60;
+		w["auto_size"] = true;
 	} else if (wtype == "currency") {
 		w["name"] = "Monedas";
 		w["anchor"] = "top_right";

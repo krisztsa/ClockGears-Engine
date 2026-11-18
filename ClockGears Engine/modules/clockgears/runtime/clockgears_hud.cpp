@@ -657,6 +657,50 @@ void ClockGearsHudOverlay::_apply_widget_window_style(WidgetEntry &r_entry, floa
 	r_entry.content_root->set_size(Vector2(cw, ch));
 }
 
+void ClockGearsHudOverlay::_compute_hearts_layout(const WidgetEntry &p_entry, int &r_per_row, int &r_total, int &r_w, int &r_h) const {
+	const Dictionary &cfg = p_entry.config;
+	int hp_per_heart = MAX(1, int(cfg.get("hp_per_heart", 20)));
+	int per_row = MAX(1, int(cfg.get("max_hearts_per_row", 10)));
+	int max_rows = MAX(1, int(cfg.get("max_rows", 2)));
+	int hsz = CLAMP(int(cfg.get("heart_size", 20)), 8, 128);
+	int sp = CLAMP(int(cfg.get("spacing", 4)), 0, 64);
+
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	int aid = _resolve_leader_actor_id(dm);
+	Dictionary st = dm ? dm->get_actor_runtime_state(aid) : Dictionary();
+	int max_hp = st.is_empty() ? 100 : MAX(1, int(st.get("max_hp", 100)));
+	int needed = int(Math::ceil(double(max_hp) / double(hp_per_heart)));
+	int total = CLAMP(needed, 1, per_row * max_rows);
+
+	bool auto_size = bool(cfg.get("auto_size", false));
+	int pad = bool(cfg.get("show_background", false)) ? 8 : 0;
+	if (auto_size) {
+		// Nunca más ancho que la pantalla lógica: si no caben, se reduce la cantidad por fila.
+		int fit_cols = MAX(1, (int(LOGICAL_WIDTH) - pad + sp) / (hsz + sp));
+		per_row = MIN(per_row, fit_cols);
+	}
+	int cols = MIN(total, per_row);
+	int rows = (total + per_row - 1) / per_row;
+	r_per_row = per_row;
+	r_total = total;
+	r_w = CLAMP(cols * hsz + MAX(0, cols - 1) * sp + pad, 16, int(LOGICAL_WIDTH));
+	r_h = CLAMP(rows * hsz + MAX(0, rows - 1) * sp + pad, 16, int(LOGICAL_HEIGHT));
+}
+
+bool ClockGearsHudOverlay::_apply_hearts_auto_size(WidgetEntry &r_entry) {
+	if (r_entry.type != "hearts" || !bool(r_entry.config.get("auto_size", false))) {
+		return false;
+	}
+	int per_row = 1, total = 1, w = 16, h = 16;
+	_compute_hearts_layout(r_entry, per_row, total, w, h);
+	if (w == r_entry.width && h == r_entry.height) {
+		return false;
+	}
+	r_entry.width = w;
+	r_entry.height = h;
+	return true;
+}
+
 Size2 ClockGearsHudOverlay::_resolve_effective_viewport_size() const {
 	if (viewport_size_override.x >= 64.0f && viewport_size_override.y >= 64.0f) {
 		return viewport_size_override;
@@ -695,6 +739,7 @@ void ClockGearsHudOverlay::_relayout_widgets(bool p_refresh_styles) {
 		if (!w.root) {
 			continue;
 		}
+		_apply_hearts_auto_size(w);
 		Vector2 af = s_anchor_factors(w.anchor);
 		float base_x = af.x * (LOGICAL_WIDTH - float(w.width)) + float(w.offset_x);
 		float base_y = af.y * (LOGICAL_HEIGHT - float(w.height)) + float(w.offset_y);
@@ -871,6 +916,22 @@ void ClockGearsHudOverlay::_update_widget_data(WidgetEntry &r_entry, const Strin
 		int needed = int(Math::ceil(double(max_hp) / double(hp_per_heart)));
 		int max_visible = per_row * max_rows;
 		int total_hearts = CLAMP(needed, 1, max_visible);
+		if (bool(r_entry.config.get("auto_size", false))) {
+			int aw = 16, ah = 16;
+			_compute_hearts_layout(r_entry, per_row, total_hearts, aw, ah);
+			max_rows = MAX(max_rows, (total_hearts + per_row - 1) / per_row);
+			if (p_reason != "resize" && (aw != r_entry.width || ah != r_entry.height)) {
+				// El HP máximo cambió: el widget se redimensiona y se recoloca.
+				_relayout_widgets(true);
+				if (p_count_update) {
+					r_entry.update_count++;
+					total_update_count++;
+				}
+				r_entry.last_snapshot["reason"] = p_reason;
+				r_entry.last_snapshot["update_count"] = r_entry.update_count;
+				return;
+			}
+		}
 
 		Ref<Texture2D> full_tex = ClockGearsWindowStyleManager::load_texture_safe(String(r_entry.config.get("full_image_path", "")));
 		if (full_tex.is_null()) {
@@ -908,6 +969,11 @@ void ClockGearsHudOverlay::_update_widget_data(WidgetEntry &r_entry, const Strin
 
 		float hsz = MAX(6.0f, Math::round(float(hsz_base) * s));
 		float sp = Math::round(float(sp_base) * s);
+		if (bool(r_entry.config.get("auto_size", false))) {
+			// Sin redondeo acumulado: el contenido coincide exactamente con el tamaño calculado.
+			hsz = MAX(6.0f, float(hsz_base) * s);
+			sp = float(sp_base) * s;
+		}
 		int full_count = 0;
 		int half_count = 0;
 		int empty_count = 0;

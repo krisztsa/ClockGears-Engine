@@ -101,6 +101,9 @@ private:
 	void _rebuild_widgets(const String &p_reason);
 	void _build_widget_entry(WidgetEntry &r_entry, int p_index);
 	void _apply_widget_window_style(WidgetEntry &r_entry, float p_scale);
+	// Tamaño automático de corazones: calcula columnas efectivas y tamaño lógico del widget.
+	void _compute_hearts_layout(const WidgetEntry &p_entry, int &r_per_row, int &r_total, int &r_w, int &r_h) const;
+	bool _apply_hearts_auto_size(WidgetEntry &r_entry);
 	void _update_widget_data(WidgetEntry &r_entry, const String &p_reason, bool p_count_update);
 	void _update_widget_visibility(WidgetEntry &r_entry);
 	void _relayout_widgets(bool p_refresh_styles);

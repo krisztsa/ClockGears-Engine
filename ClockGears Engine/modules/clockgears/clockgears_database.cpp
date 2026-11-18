@@ -20236,6 +20236,10 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	hud_hearts_show_bg_chk = memnew(CheckBox(CG_DB_TR("Mostrar fondo")));
 	hud_hearts_show_bg_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
 	hud_hearts_box->add_child(hud_hearts_show_bg_chk);
+	hud_hearts_auto_size_chk = memnew(CheckBox(CG_DB_TR("Tamaño automático")));
+	hud_hearts_auto_size_chk->set_tooltip_text(CG_DB_TR("El widget se ajusta a corazones × tamaño × separación. Desactívalo para usar Ancho y Alto manuales."));
+	hud_hearts_auto_size_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_type_field_changed).unbind(1));
+	hud_hearts_box->add_child(hud_hearts_auto_size_chk);
 	{
 		HBoxContainer *bg_row = memnew(HBoxContainer);
 		bg_row->add_theme_constant_override("separation", int(8 * EDSCALE));
@@ -20717,6 +20721,10 @@ void ClockGearsDatabaseDialog::_refresh_hud_selected_widget_props() {
 	if (hud_offset_x_spin) hud_offset_x_spin->set_value(int(w.get("offset_x", 0)));
 	if (hud_offset_y_spin) hud_offset_y_spin->set_value(int(w.get("offset_y", 0)));
 	if (hud_width_slider) hud_width_slider->set_value(int(w.get("width", 160)));
+	if (hud_width_slider) hud_width_slider->set_editable(true);
+	if (hud_width_spin) hud_width_spin->set_editable(true);
+	if (hud_height_slider) hud_height_slider->set_editable(true);
+	if (hud_height_spin) hud_height_spin->set_editable(true);
 	if (hud_width_spin) hud_width_spin->set_value(int(w.get("width", 160)));
 	if (hud_height_slider) hud_height_slider->set_value(int(w.get("height", 36)));
 	if (hud_height_spin) hud_height_spin->set_value(int(w.get("height", 36)));
@@ -20792,6 +20800,14 @@ void ClockGearsDatabaseDialog::_refresh_hud_selected_widget_props() {
 		if (hud_bar_fill_img_edit) hud_bar_fill_img_edit->set_text(String(w.get("fill_image_path", "")));
 	} else if (wtype == "hearts") {
 		if (hud_hearts_show_bg_chk) hud_hearts_show_bg_chk->set_pressed(bool(w.get("show_background", false)));
+		if (hud_hearts_auto_size_chk) {
+			bool auto_sz = bool(w.get("auto_size", false));
+			hud_hearts_auto_size_chk->set_pressed(auto_sz);
+			if (hud_width_slider) hud_width_slider->set_editable(!auto_sz);
+			if (hud_width_spin) hud_width_spin->set_editable(!auto_sz);
+			if (hud_height_slider) hud_height_slider->set_editable(!auto_sz);
+			if (hud_height_spin) hud_height_spin->set_editable(!auto_sz);
+		}
 		if (hud_hearts_bg_color_btn) hud_hearts_bg_color_btn->set_pick_color(Color::html(String(w.get("bg_color", "#1a1a1a"))));
 		if (hud_hearts_bg_opacity_spin) hud_hearts_bg_opacity_spin->set_value(int(w.get("bg_opacity", 60)));
 		if (hud_hearts_hp_spin) hud_hearts_hp_spin->set_value(int(w.get("hp_per_heart", 20)));
@@ -21067,6 +21083,14 @@ void ClockGearsDatabaseDialog::_on_hud_type_field_changed() {
 		if (hud_bar_fill_img_edit) w["fill_image_path"] = hud_bar_fill_img_edit->get_text();
 	} else if (wtype == "hearts") {
 		if (hud_hearts_show_bg_chk) w["show_background"] = hud_hearts_show_bg_chk->is_pressed();
+		if (hud_hearts_auto_size_chk) {
+			bool auto_sz = hud_hearts_auto_size_chk->is_pressed();
+			w["auto_size"] = auto_sz;
+			if (hud_width_slider) hud_width_slider->set_editable(!auto_sz);
+			if (hud_width_spin) hud_width_spin->set_editable(!auto_sz);
+			if (hud_height_slider) hud_height_slider->set_editable(!auto_sz);
+			if (hud_height_spin) hud_height_spin->set_editable(!auto_sz);
+		}
 		if (hud_hearts_bg_color_btn) w["bg_color"] = "#" + hud_hearts_bg_color_btn->get_pick_color().to_html(false);
 		if (hud_hearts_bg_opacity_spin) w["bg_opacity"] = int(hud_hearts_bg_opacity_spin->get_value());
 		if (hud_hearts_hp_spin) w["hp_per_heart"] = int(hud_hearts_hp_spin->get_value());
