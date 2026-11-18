@@ -639,8 +639,23 @@ private:
 	Dictionary system_config;
 	Dictionary menu_title_config;
 
+	// Estado común de vista previa y diseño responsivo del capítulo Menús (9B-2 Punto 6)
+	Vector2i menus_common_preview_res = Vector2i(960, 540);
+	OptionButton *menu_preview_res_opt = nullptr;
+	Label *menu_prev_title_lbl = nullptr;
+	OptionButton *gm_preview_res_opt = nullptr;
+	Label *gm_prev_title_lbl = nullptr;
+	OptionButton *cred_preview_res_opt = nullptr;
+	Label *cred_prev_title_lbl = nullptr;
+	Label *hud_prev_title_lbl = nullptr;
+	OptionButton *go_preview_res_opt = nullptr;
+	Label *go_prev_title_lbl = nullptr;
+
 	// Menús -> Menú principal (9B Tanda 1 UI)
 	VBoxContainer *main_menu_editor_panel = nullptr;
+	BoxContainer *menu_main_split = nullptr;
+	VBoxContainer *menu_left_col = nullptr;
+	VBoxContainer *menu_right_col = nullptr;
 	VBoxContainer *menu_entries_list_vbox = nullptr;
 	OptionButton *menu_bg_type_opt = nullptr;
 	ColorPickerButton *menu_bg_color_btn = nullptr;
@@ -675,6 +690,8 @@ private:
 
 	VBoxContainer *window_styles_editor_panel = nullptr;
 	BoxContainer *ws_main_split = nullptr;
+	VBoxContainer *ws_left_col = nullptr;
+	VBoxContainer *ws_right_col = nullptr;
 	LineEdit *ws_name_edit = nullptr;
 	Label *ws_builtin_badge = nullptr;
 	TabBar *ws_btn_state_tabs = nullptr;
@@ -736,6 +753,8 @@ private:
 	String gm_active_bg_screen = "menu";
 	VBoxContainer *game_menu_editor_panel = nullptr;
 	BoxContainer *gm_main_split = nullptr;
+	VBoxContainer *gm_left_col = nullptr;
+	PanelContainer *gm_prev_card = nullptr;
 	VBoxContainer *gm_entries_list_vbox = nullptr;
 	TabBar *gm_bg_screen_tabs = nullptr;
 	OptionButton *gm_bg_type_opt = nullptr;
@@ -769,6 +788,8 @@ private:
 	int cred_selected_item_idx = -1;
 	VBoxContainer *credits_editor_panel = nullptr;
 	BoxContainer *cred_main_split = nullptr;
+	VBoxContainer *cred_left_col = nullptr;
+	PanelContainer *cred_prev_card = nullptr;
 	OptionButton *cred_add_type_opt = nullptr;
 	Button *cred_add_btn = nullptr;
 	Button *cred_del_btn = nullptr;
@@ -830,6 +851,8 @@ private:
 	bool hud_preview_has_saved_rt = false;
 	VBoxContainer *hud_editor_panel = nullptr;
 	BoxContainer *hud_main_split = nullptr;
+	VBoxContainer *hud_left_col = nullptr;
+	VBoxContainer *hud_right_col = nullptr;
 	OptionButton *hud_add_type_opt = nullptr;
 	Button *hud_add_btn = nullptr;
 	Button *hud_del_btn = nullptr;
@@ -966,6 +989,9 @@ private:
 	// Menús -> Game Over (9B Punto 8)
 	Dictionary game_over_config_draft;
 	VBoxContainer *game_over_editor_panel = nullptr;
+	BoxContainer *go_main_split = nullptr;
+	VBoxContainer *go_left_col = nullptr;
+	VBoxContainer *go_right_col = nullptr;
 	OptionButton *go_bg_type_opt = nullptr;
 	ColorPickerButton *go_bg_color_btn = nullptr;
 	LineEdit *go_bg_img_edit = nullptr;
@@ -1500,7 +1526,18 @@ public:
 	TabContainer *get_main_editor_tabs() const { return main_editor_tabs; }
 	bool select_main_tab_by_name(const String &p_name);
 	Dictionary check_all_tabs_layout(const Vector2i &p_window_size);
+	PanelContainer *_make_collapsible_menu_card(Control *p_parent, const String &p_title, VBoxContainer *&r_body, bool p_expanded = true);
+	void _on_menu_section_toggled(bool p_expanded, Node *p_body, Button *p_btn, const String &p_title);
+	static void _apply_responsive_menu_split(BoxContainer *p_split, Control *p_settings_col, Control *p_preview_col, bool p_vertical);
+	void _populate_common_preview_res_option(OptionButton *p_opt);
+	void _sync_common_preview_res_options();
+	void _on_common_preview_res_option_selected(int p_idx, OptionButton *p_src);
+	void _on_16_9_holder_resized(Control *p_holder, Control *p_aspect);
+	Control *_build_16_9_viewport_preview(Control *p_parent, SubViewport *&r_vp, Label *&r_hdr_lbl, OptionButton *&r_res_opt, Button *p_test_btn = nullptr);
+
 	void adapt_to_window_size(const Vector2i &p_window_size);
+	void set_menus_preview_resolution(int p_width, int p_height);
+	Vector2i get_menus_preview_resolution() const { return menus_common_preview_res; }
 	bool is_realtime_combat_section_visible() const;
 	void set_system_combat_mode(int p_mode);
 	Dictionary get_system_config_copy() const;

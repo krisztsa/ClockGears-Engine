@@ -13,10 +13,11 @@
 #include "core/input/input_event.h"
 #include "core/object/callable_mp.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/aspect_ratio_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/separator.h"
-#include "scene/gui/subviewport_container.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
 
 namespace {
 class UiCanvasHudGridBackdrop : public Control {
@@ -463,6 +464,8 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_current_screen"), &ClockGearsUiDesignEditor::get_current_screen);
 	ClassDB::bind_method(D_METHOD("set_canvas_zoom", "zoom"), &ClockGearsUiDesignEditor::set_canvas_zoom);
 	ClassDB::bind_method(D_METHOD("get_canvas_zoom"), &ClockGearsUiDesignEditor::get_canvas_zoom);
+	ClassDB::bind_method(D_METHOD("set_preview_resolution", "width", "height", "sync_owner_db"), &ClockGearsUiDesignEditor::set_preview_resolution, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_preview_resolution"), &ClockGearsUiDesignEditor::get_preview_resolution);
 	ClassDB::bind_method(D_METHOD("add_element_at", "type", "canvas_pos"), &ClockGearsUiDesignEditor::add_element_at, DEFVAL(Vector2i(-1, -1)));
 	ClassDB::bind_method(D_METHOD("select_element", "elem_id"), &ClockGearsUiDesignEditor::select_element);
 	ClassDB::bind_method(D_METHOD("get_selected_element_id"), &ClockGearsUiDesignEditor::get_selected_element_id);
@@ -485,12 +488,88 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 	if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_VISIBILITY_CHANGED) {
 		if (is_visible()) {
 			refresh_from_data_manager();
+			callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
 		}
 	} else if (p_what == NOTIFICATION_RESIZED) {
 		int w = int(get_size().x);
+		if (get_window() && get_window()->get_size().x > 0) {
+			w = int(get_window()->get_size().x);
+		}
 		if (w > 200) {
 			_rebalance_responsive_layout(w);
 		}
+		_update_canvas_fit_scale();
+	}
+}
+
+Button *ClockGearsUiDesignEditor::_attach_collapsible_header(VBoxContainer *p_card_vb, const String &p_title, Control *p_body, bool p_expanded) {
+	Button *hdr = memnew(Button(String::utf8(p_expanded ? "▾ " : "▸ ") + p_title));
+	hdr->set_toggle_mode(true);
+	hdr->set_pressed(p_expanded);
+	hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hdr->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	hdr->set_clip_text(true);
+	hdr->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
+	hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+	hdr->add_theme_color_override("font_pressed_color", ClockGearsTheme::color_accent_amber());
+	hdr->add_theme_color_override("font_hover_color", Color(1.0f, 0.85f, 0.45f));
+	s_make_rounded_action_btn(hdr);
+	p_card_vb->add_child(hdr);
+	if (p_body) {
+		p_body->set_visible(p_expanded);
+		hdr->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_collapsible_section_toggled).bind(p_body, hdr, p_title));
+	}
+	return hdr;
+}
+
+void ClockGearsUiDesignEditor::_on_collapsible_section_toggled(bool p_expanded, Control *p_body, Button *p_btn, const String &p_title) {
+	if (p_body) {
+		p_body->set_visible(p_expanded);
+	}
+	if (p_btn) {
+		p_btn->set_text(String::utf8(p_expanded ? "▾ " : "▸ ") + p_title);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_preview_res_selected(int p_idx) {
+	if (updating_ui || !preview_res_opt || p_idx < 0) {
+		return;
+	}
+	Vector2i res = preview_res_opt->get_item_metadata(p_idx);
+	if (res.x >= 320 && res.y >= 180) {
+		set_preview_resolution(res.x, res.y, true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
+	if (!canvas_stage || !canvas_fit_holder) {
+		return;
+	}
+	Size2 stage_sz(float(preview_resolution.x * canvas_zoom), float(preview_resolution.y * canvas_zoom));
+	if (canvas_zoom <= 1 && canvas_aspect && canvas_scroll) {
+		float avail_w = canvas_scroll->get_size().x;
+		if (avail_w >= 32.0f) {
+			float max_h = 440.0f * EDSCALE;
+			float target_w = MAX(160.0f * EDSCALE, MIN(avail_w, max_h * (16.0f / 9.0f)));
+			float target_h = Math::round(target_w * (9.0f / 16.0f));
+			Size2 target_sz(Math::round(target_w), target_h);
+			if (canvas_aspect->get_custom_minimum_size().distance_to(target_sz) > 1.5f) {
+				canvas_aspect->set_custom_minimum_size(target_sz);
+				canvas_aspect->set_size(target_sz);
+			}
+		}
+	}
+	Size2 holder_sz = canvas_fit_holder->get_size();
+	if (holder_sz.x < 16.0f || holder_sz.y < 16.0f) {
+		return;
+	}
+	if (canvas_zoom <= 1) {
+		float s = MIN(holder_sz.x / MAX(1.0f, stage_sz.x), holder_sz.y / MAX(1.0f, stage_sz.y));
+		canvas_stage->set_scale(Vector2(s, s));
+		canvas_stage->set_position((holder_sz - stage_sz * s) * 0.5f);
+	} else {
+		canvas_stage->set_scale(Vector2(1.0f, 1.0f));
+		canvas_stage->set_position(Vector2(0, 0));
 	}
 }
 
@@ -515,7 +594,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	top_bar->add_child(memnew(Label(String::utf8("Pantalla:"))));
 	screen_opt = memnew(OptionButton);
-	screen_opt->set_custom_minimum_size(Size2(220 * EDSCALE, row_h));
+	screen_opt->set_custom_minimum_size(Size2(160 * EDSCALE, row_h));
 	Array screens = ClockGearsDataManager::get_ui_design_screens();
 	for (int i = 0; i < screens.size(); i++) {
 		Dictionary sd = screens[i];
@@ -524,6 +603,22 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	}
 	screen_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_screen_selected));
 	top_bar->add_child(screen_opt);
+
+	HBoxContainer *res_hb = memnew(HBoxContainer);
+	res_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	top_flow->add_child(res_hb);
+	res_hb->add_child(memnew(Label(String::utf8("Vista previa:"))));
+	preview_res_opt = memnew(OptionButton);
+	preview_res_opt->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
+	preview_res_opt->add_item("960 x 540 (Base)", 0);
+	preview_res_opt->set_item_metadata(0, Vector2i(960, 540));
+	preview_res_opt->add_item("1366 x 768 (HD)", 1);
+	preview_res_opt->set_item_metadata(1, Vector2i(1366, 768));
+	preview_res_opt->add_item("1920 x 1080 (Full HD)", 2);
+	preview_res_opt->set_item_metadata(2, Vector2i(1920, 1080));
+	preview_res_opt->select(0);
+	preview_res_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_preview_res_selected));
+	res_hb->add_child(preview_res_opt);
 
 	HBoxContainer *zoom_hb = memnew(HBoxContainer);
 	zoom_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
@@ -589,7 +684,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	layout_root->add_child(wide_hbox);
 
 	wide_left_col = memnew(VBoxContainer);
-	wide_left_col->set_custom_minimum_size(Size2(204 * EDSCALE, 0));
+	wide_left_col->set_custom_minimum_size(Size2(188 * EDSCALE, 0));
 	wide_left_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
 	wide_hbox->add_child(wide_left_col);
@@ -601,7 +696,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_hbox->add_child(wide_center_col);
 
 	wide_right_col = memnew(VBoxContainer);
-	wide_right_col->set_custom_minimum_size(Size2(300 * EDSCALE, 0));
+	wide_right_col->set_custom_minimum_size(Size2(270 * EDSCALE, 0));
 	wide_right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
 	wide_hbox->add_child(wide_right_col);
@@ -613,34 +708,28 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	compact_vbox->hide();
 	layout_root->add_child(compact_vbox);
 
-	compact_top_hbox = memnew(HBoxContainer);
-	compact_top_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	compact_top_hbox->add_theme_constant_override("separation", int(10 * EDSCALE));
-	compact_vbox->add_child(compact_top_hbox);
-
-	compact_bottom_hbox = memnew(HBoxContainer);
-	compact_bottom_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	compact_bottom_hbox->add_theme_constant_override("separation", int(10 * EDSCALE));
-	compact_vbox->add_child(compact_bottom_hbox);
-
-	// --- Tarjeta 1: Paleta lateral ---
+	// --- Tarjeta 1: Paleta lateral (plegable) ---
 	palette_card = memnew(PanelContainer);
+	palette_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	palette_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	wide_left_col->add_child(palette_card);
 
 	VBoxContainer *pal_vb = memnew(VBoxContainer);
+	pal_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	pal_vb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	palette_card->add_child(pal_vb);
 
-	Label *pal_hdr = memnew(Label("Elementos (arrastrar)"));
-	pal_hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	pal_vb->add_child(pal_hdr);
+	VBoxContainer *pal_body = memnew(VBoxContainer);
+	pal_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	_attach_collapsible_header(pal_vb, "Elementos (arrastrar)", pal_body, true);
+	pal_vb->add_child(pal_body);
 
 	palette_grid = memnew(GridContainer);
 	palette_grid->set_columns(1);
 	palette_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	palette_grid->add_theme_constant_override("h_separation", int(6 * EDSCALE));
 	palette_grid->add_theme_constant_override("v_separation", int(4 * EDSCALE));
-	pal_vb->add_child(palette_grid);
+	pal_body->add_child(palette_grid);
 
 	struct PaletteDef {
 		const char *type;
@@ -677,24 +766,38 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	can_vb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	canvas_card->add_child(can_vb);
 
-	Label *can_hdr = memnew(Label(String::utf8("Lienzo 960x540 (vista idéntica al juego)")));
+	Label *can_hdr = memnew(Label(String::utf8("Lienzo 16:9 escalado (vista idéntica al juego)")));
 	can_hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
 	can_vb->add_child(can_hdr);
 
 	canvas_scroll = memnew(ScrollContainer);
 	canvas_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	canvas_scroll->set_custom_minimum_size(Size2(BASE_W, BASE_H));
+	canvas_scroll->set_custom_minimum_size(Size2(160 * EDSCALE, 90 * EDSCALE));
 	canvas_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	canvas_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	can_vb->add_child(canvas_scroll);
+
+	canvas_aspect = memnew(AspectRatioContainer);
+	canvas_aspect->set_ratio(16.0f / 9.0f);
+	canvas_aspect->set_stretch_mode(AspectRatioContainer::STRETCH_FIT);
+	canvas_aspect->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	canvas_aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
+	canvas_scroll->add_child(canvas_aspect);
+	canvas_scroll->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale));
+
+	canvas_fit_holder = memnew(Control);
+	canvas_fit_holder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	canvas_fit_holder->set_clip_contents(true);
+	canvas_fit_holder->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale));
+	canvas_aspect->add_child(canvas_fit_holder);
 
 	canvas_stage = memnew(Control);
 	canvas_stage->set_name("UiDesignerCanvasStage");
 	canvas_stage->set_custom_minimum_size(Size2(BASE_W, BASE_H));
 	canvas_stage->set_size(Size2(BASE_W, BASE_H));
 	canvas_stage->set_clip_contents(true);
-	canvas_scroll->add_child(canvas_stage);
+	canvas_fit_holder->add_child(canvas_stage);
 
 	canvas_bg_color = memnew(ColorRect);
 	canvas_bg_color->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
@@ -723,19 +826,21 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	default_title_preview->hide();
 	canvas_stage->add_child(default_title_preview);
 
-	default_gmenu_svc = memnew(SubViewportContainer);
-	default_gmenu_svc->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	default_gmenu_svc->set_stretch(true);
-	default_gmenu_svc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	default_gmenu_svc->hide();
-	canvas_stage->add_child(default_gmenu_svc);
-
 	default_gmenu_vp = memnew(SubViewport);
 	default_gmenu_vp->set_size(Size2i(BASE_W, BASE_H));
 	default_gmenu_vp->set_disable_3d(true);
 	default_gmenu_vp->set_transparent_background(true);
-	default_gmenu_vp->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
-	default_gmenu_svc->add_child(default_gmenu_vp);
+	default_gmenu_vp->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
+	canvas_stage->add_child(default_gmenu_vp);
+
+	default_gmenu_disp = memnew(TextureRect);
+	default_gmenu_disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	default_gmenu_disp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	default_gmenu_disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	default_gmenu_disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
+	default_gmenu_disp->set_texture(default_gmenu_vp->get_texture());
+	default_gmenu_disp->hide();
+	canvas_stage->add_child(default_gmenu_disp);
 
 	default_gmenu_preview = memnew(ClockGearsGameMenu);
 	default_gmenu_preview->set_preview_mode(true);
@@ -765,7 +870,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_overlay->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	canvas_stage->add_child(canvas_overlay);
 
-	// --- Tarjeta 3: Lista de capas con ojo y orden ---
+	// --- Tarjeta 3: Lista de capas con ojo y orden (plegable) ---
 	layers_card = memnew(PanelContainer);
 	layers_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	layers_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -778,13 +883,18 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	lay_vb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	layers_card->add_child(lay_vb);
 
-	Label *lay_hdr = memnew(Label("Capas"));
-	lay_hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	lay_vb->add_child(lay_hdr);
+	VBoxContainer *lay_body = memnew(VBoxContainer);
+	lay_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lay_body->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	lay_body->add_theme_constant_override("separation", int(6 * EDSCALE));
+	_attach_collapsible_header(lay_vb, "Capas", lay_body, true);
+	lay_vb->add_child(lay_body);
 
-	HBoxContainer *lay_btns = memnew(HBoxContainer);
-	lay_btns->add_theme_constant_override("separation", int(4 * EDSCALE));
-	lay_vb->add_child(lay_btns);
+	HFlowContainer *lay_btns = memnew(HFlowContainer);
+	lay_btns->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	lay_btns->add_theme_constant_override("h_separation", int(4 * EDSCALE));
+	lay_btns->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	lay_body->add_child(lay_btns);
 
 	layer_up_btn = memnew(Button(String::utf8("Subir")));
 	s_make_rounded_action_btn(layer_up_btn);
@@ -806,14 +916,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	lay_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	lay_scroll->set_custom_minimum_size(Size2(0, 150 * EDSCALE));
 	lay_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	lay_vb->add_child(lay_scroll);
+	lay_body->add_child(lay_scroll);
 
 	layers_list_vbox = memnew(VBoxContainer);
 	layers_list_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	layers_list_vbox->add_theme_constant_override("separation", int(4 * EDSCALE));
 	lay_scroll->add_child(layers_list_vbox);
 
-	// --- Tarjeta 4: Panel de propiedades ---
+	// --- Tarjeta 4: Panel de propiedades (plegable) ---
 	props_card = memnew(PanelContainer);
 	props_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -826,21 +936,24 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	props_outer->add_theme_constant_override("separation", int(6 * EDSCALE));
 	props_card->add_child(props_outer);
 
-	Label *props_hdr = memnew(Label("Propiedades"));
-	props_hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	props_outer->add_child(props_hdr);
+	VBoxContainer *props_body = memnew(VBoxContainer);
+	props_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	props_body->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	props_body->add_theme_constant_override("separation", int(6 * EDSCALE));
+	_attach_collapsible_header(props_outer, "Propiedades", props_body, true);
+	props_outer->add_child(props_body);
 
 	props_sel_lbl = memnew(Label(String::utf8("Selecciona un elemento en el lienzo o las capas.")));
 	props_sel_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	props_sel_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
-	props_outer->add_child(props_sel_lbl);
+	props_body->add_child(props_sel_lbl);
 
 	ScrollContainer *props_scroll = memnew(ScrollContainer);
 	props_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	props_scroll->set_custom_minimum_size(Size2(250 * EDSCALE, 340 * EDSCALE));
+	props_scroll->set_custom_minimum_size(Size2(160 * EDSCALE, 220 * EDSCALE));
 	props_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	props_outer->add_child(props_scroll);
+	props_body->add_child(props_scroll);
 
 	props_fields_box = memnew(VBoxContainer);
 	props_fields_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1044,19 +1157,23 @@ int ClockGearsUiDesignEditor::_anchor_index_by_key(const String &p_key) {
 
 void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 	last_adapt_width = p_avail_w;
-	bool want_compact = (p_avail_w > 0 && p_avail_w < 1460);
+	bool want_compact = (p_avail_w > 0 && p_avail_w < int(1400 * EDSCALE));
 	compact_two_row_layout = want_compact;
 
 	if (want_compact) {
 		wide_hbox->hide();
 		compact_vbox->show();
-		s_reparent_ctrl(palette_card, compact_top_hbox);
-		s_reparent_ctrl(canvas_card, compact_top_hbox);
-		s_reparent_ctrl(layers_card, compact_bottom_hbox);
-		s_reparent_ctrl(props_card, compact_bottom_hbox);
-		palette_card->set_custom_minimum_size(Size2(168 * EDSCALE, 0));
-		layers_card->set_custom_minimum_size(Size2(340 * EDSCALE, 0));
-		props_card->set_custom_minimum_size(Size2(520 * EDSCALE, 0));
+		// Vista previa arriba, herramientas plegables abajo (sin columnas apretadas)
+		s_reparent_ctrl(canvas_card, compact_vbox);
+		s_reparent_ctrl(palette_card, compact_vbox);
+		s_reparent_ctrl(layers_card, compact_vbox);
+		s_reparent_ctrl(props_card, compact_vbox);
+		palette_card->set_custom_minimum_size(Size2(0, 0));
+		layers_card->set_custom_minimum_size(Size2(0, 0));
+		props_card->set_custom_minimum_size(Size2(0, 0));
+		if (palette_grid) {
+			palette_grid->set_columns(3);
+		}
 	} else {
 		compact_vbox->hide();
 		wide_hbox->show();
@@ -1067,11 +1184,35 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		palette_card->set_custom_minimum_size(Size2(0, 0));
 		layers_card->set_custom_minimum_size(Size2(0, 0));
 		props_card->set_custom_minimum_size(Size2(0, 0));
+		if (palette_grid) {
+			palette_grid->set_columns(1);
+		}
 	}
+	callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
 }
 
 void ClockGearsUiDesignEditor::adapt_to_width(int p_window_width) {
 	_rebalance_responsive_layout(p_window_width);
+}
+
+void ClockGearsUiDesignEditor::set_preview_resolution(int p_width, int p_height, bool p_sync_owner_db) {
+	preview_resolution = Vector2i(MAX(320, p_width), MAX(180, p_height));
+	if (preview_res_opt) {
+		bool prev = updating_ui;
+		updating_ui = true;
+		for (int i = 0; i < preview_res_opt->get_item_count(); i++) {
+			Vector2i v = preview_res_opt->get_item_metadata(i);
+			if (v == preview_resolution) {
+				preview_res_opt->select(i);
+				break;
+			}
+		}
+		updating_ui = prev;
+	}
+	_refresh_canvas_stage();
+	if (p_sync_owner_db && owner_db && owner_db->get_menus_preview_resolution() != preview_resolution) {
+		owner_db->set_menus_preview_resolution(preview_resolution.x, preview_resolution.y);
+	}
 }
 
 void ClockGearsUiDesignEditor::refresh_from_data_manager() {
@@ -1108,9 +1249,11 @@ void ClockGearsUiDesignEditor::_refresh_background_and_default_preview(bool p_ha
 		ClockGearsTitleScreen::apply_screen_background(canvas_bg_color, canvas_bg_tex, bg, "#12151e");
 	}
 
-	Size2 stage_sz(float(BASE_W * canvas_zoom), float(BASE_H * canvas_zoom));
+	Size2 stage_sz(float(preview_resolution.x * canvas_zoom), float(preview_resolution.y * canvas_zoom));
 	default_title_preview->hide();
-	default_gmenu_svc->hide();
+	if (default_gmenu_disp) {
+		default_gmenu_disp->hide();
+	}
 	default_gmenu_preview->hide();
 	default_credits_preview->hide();
 
@@ -1121,9 +1264,12 @@ void ClockGearsUiDesignEditor::_refresh_background_and_default_preview(bool p_ha
 			default_title_preview->show();
 		} else if (current_screen_id.begins_with("game_menu_")) {
 			String sub = current_screen_id.trim_prefix("game_menu_");
-			default_gmenu_svc->set_size(stage_sz);
-			default_gmenu_svc->set_stretch_shrink(MAX(1, canvas_zoom));
-			default_gmenu_svc->show();
+			if (default_gmenu_vp) {
+				default_gmenu_vp->set_size(Size2i(stage_sz));
+			}
+			if (default_gmenu_disp) {
+				default_gmenu_disp->show();
+			}
 			default_gmenu_preview->open_menu();
 			default_gmenu_preview->open_subscreen(sub);
 			default_gmenu_preview->show();
@@ -1140,21 +1286,31 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 	if (!dm || !design_layer || !canvas_stage) {
 		return;
 	}
-	Size2 stage_sz(float(BASE_W * canvas_zoom), float(BASE_H * canvas_zoom));
+	Size2 stage_sz(float(preview_resolution.x * canvas_zoom), float(preview_resolution.y * canvas_zoom));
 	canvas_stage->set_custom_minimum_size(stage_sz);
 	canvas_stage->set_size(stage_sz);
 	if (canvas_scroll) {
 		if (canvas_zoom <= 1) {
 			canvas_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 			canvas_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+			if (canvas_aspect) {
+				canvas_aspect->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+			}
+			if (canvas_fit_holder) {
+				canvas_fit_holder->set_custom_minimum_size(Size2(0, 0));
+			}
 		} else {
 			canvas_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 			canvas_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+			if (canvas_fit_holder) {
+				canvas_fit_holder->set_custom_minimum_size(stage_sz);
+			}
 		}
 	}
 	if (zoom_info_lbl) {
-		zoom_info_lbl->set_text(itos(BASE_W * canvas_zoom) + "x" + itos(BASE_H * canvas_zoom));
+		zoom_info_lbl->set_text(itos(int(stage_sz.x)) + "x" + itos(int(stage_sz.y)));
 	}
+	callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
 
 	Dictionary design = dm->get_ui_screen_design(current_screen_id);
 	bool has_custom = dm->has_custom_ui_design(current_screen_id);
@@ -1969,6 +2125,7 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 		pal[palette_buttons[i]->get_element_type()] = palette_buttons[i];
 	}
 	out["palette_btns"] = pal;
+	out["preview_res_opt"] = preview_res_opt;
 	out["compact_mode"] = compact_two_row_layout;
 	return out;
 }

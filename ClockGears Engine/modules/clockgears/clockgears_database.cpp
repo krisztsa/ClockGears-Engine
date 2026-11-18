@@ -480,6 +480,8 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("select_main_tab_by_name", "name"), &ClockGearsDatabaseDialog::select_main_tab_by_name);
 	ClassDB::bind_method(D_METHOD("check_all_tabs_layout", "window_size"), &ClockGearsDatabaseDialog::check_all_tabs_layout);
 	ClassDB::bind_method(D_METHOD("adapt_to_window_size", "window_size"), &ClockGearsDatabaseDialog::adapt_to_window_size);
+	ClassDB::bind_method(D_METHOD("set_menus_preview_resolution", "width", "height"), &ClockGearsDatabaseDialog::set_menus_preview_resolution);
+	ClassDB::bind_method(D_METHOD("get_menus_preview_resolution"), &ClockGearsDatabaseDialog::get_menus_preview_resolution);
 	ClassDB::bind_method(D_METHOD("is_realtime_combat_section_visible"), &ClockGearsDatabaseDialog::is_realtime_combat_section_visible);
 	ClassDB::bind_method(D_METHOD("set_system_combat_mode", "mode"), &ClockGearsDatabaseDialog::set_system_combat_mode);
 	ClassDB::bind_method(D_METHOD("get_system_config_copy"), &ClockGearsDatabaseDialog::get_system_config_copy);
@@ -1342,6 +1344,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		if (is_game_over) {
 			_refresh_game_over_editor_ui();
 		}
+	}
+	if (is_main_menu || is_window_styles || is_game_menu || is_credits || is_hud || is_ui_designer || is_game_over) {
+		adapt_to_window_size(get_size());
 	}
 	if (main_editor_tabs) {
 		main_editor_tabs->set_tabs_visible(is_actor_or_enemy);
@@ -15528,6 +15533,242 @@ void ClockGearsDatabaseDialog::_add_realtime_slider_spin_row(GridContainer *p_gr
 	r_spin->connect("value_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_system_field_changed).unbind(1));
 }
 
+void ClockGearsDatabaseDialog::_on_menu_section_toggled(bool p_expanded, Node *p_body, Button *p_btn, const String &p_title) {
+	if (Control *body_ctrl = Object::cast_to<Control>(p_body)) {
+		body_ctrl->set_visible(p_expanded);
+	}
+	if (p_btn) {
+		p_btn->set_text(String::utf8(p_expanded ? "▾ " : "▸ ") + p_title);
+	}
+}
+
+PanelContainer *ClockGearsDatabaseDialog::_make_collapsible_menu_card(Control *p_parent, const String &p_title, VBoxContainer *&r_body, bool p_expanded) {
+	PanelContainer *card = memnew(PanelContainer);
+	card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+	if (p_parent) {
+		p_parent->add_child(card);
+	}
+
+	VBoxContainer *outer = memnew(VBoxContainer);
+	outer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	outer->add_theme_constant_override("separation", int(6 * EDSCALE));
+	card->add_child(outer);
+
+	Button *hdr = memnew(Button(String::utf8(p_expanded ? "▾ " : "▸ ") + p_title));
+	hdr->set_toggle_mode(true);
+	hdr->set_pressed(p_expanded);
+	hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hdr->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+	hdr->set_clip_text(true);
+	hdr->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
+	hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+	hdr->add_theme_color_override("font_pressed_color", ClockGearsTheme::color_accent_amber());
+	hdr->add_theme_color_override("font_hover_color", Color(1.0f, 0.85f, 0.45f));
+	{
+		Ref<StyleBoxFlat> sb = memnew(StyleBoxFlat);
+		sb->set_bg_color(Color(0.16f, 0.18f, 0.24f, 0.85f));
+		sb->set_corner_radius_all(int(6 * EDSCALE));
+		sb->set_content_margin_individual(int(8 * EDSCALE), int(4 * EDSCALE), int(8 * EDSCALE), int(4 * EDSCALE));
+		hdr->add_theme_style_override("normal", sb);
+		hdr->add_theme_style_override("pressed", sb);
+		Ref<StyleBoxFlat> hov = sb->duplicate();
+		hov->set_bg_color(Color(0.22f, 0.25f, 0.32f, 0.95f));
+		hdr->add_theme_style_override("hover", hov);
+	}
+	outer->add_child(hdr);
+
+	r_body = memnew(VBoxContainer);
+	r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
+	r_body->set_visible(p_expanded);
+	outer->add_child(r_body);
+
+	hdr->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_menu_section_toggled).bind(r_body, hdr, p_title));
+	return card;
+}
+
+void ClockGearsDatabaseDialog::_apply_responsive_menu_split(BoxContainer *p_split, Control *p_settings_col, Control *p_preview_col, bool p_vertical) {
+	if (!p_split) {
+		return;
+	}
+	p_split->set_vertical(p_vertical);
+	if (p_settings_col && p_preview_col && p_settings_col->get_parent() == p_split && p_preview_col->get_parent() == p_split) {
+		if (p_vertical) {
+			p_split->move_child(p_preview_col, 0);
+			p_split->move_child(p_settings_col, 1);
+			p_preview_col->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
+		} else {
+			p_split->move_child(p_settings_col, 0);
+			p_split->move_child(p_preview_col, 1);
+			p_preview_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		}
+	}
+}
+
+void ClockGearsDatabaseDialog::_populate_common_preview_res_option(OptionButton *p_opt) {
+	if (!p_opt) {
+		return;
+	}
+	p_opt->clear();
+	p_opt->add_item("960 x 540 (Base)", 0);
+	p_opt->set_item_metadata(0, Vector2i(960, 540));
+	p_opt->add_item("1366 x 768 (HD)", 1);
+	p_opt->set_item_metadata(1, Vector2i(1366, 768));
+	p_opt->add_item("1920 x 1080 (Full HD)", 2);
+	p_opt->set_item_metadata(2, Vector2i(1920, 1080));
+	p_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_common_preview_res_option_selected).bind(p_opt));
+}
+
+void ClockGearsDatabaseDialog::_sync_common_preview_res_options() {
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	OptionButton *opts[5] = { menu_preview_res_opt, gm_preview_res_opt, cred_preview_res_opt, hud_preview_res_opt, go_preview_res_opt };
+	for (int k = 0; k < 5; k++) {
+		if (!opts[k]) {
+			continue;
+		}
+		for (int i = 0; i < opts[k]->get_item_count(); i++) {
+			if (Vector2i(opts[k]->get_item_metadata(i)) == menus_common_preview_res) {
+				opts[k]->select(i);
+				break;
+			}
+		}
+	}
+	if (ws_preview_size_opt) {
+		for (int i = 0; i < ws_preview_size_opt->get_item_count(); i++) {
+			if (ws_preview_size_opt->get_item_id(i) == menus_common_preview_res.x) {
+				ws_preview_size_opt->select(i);
+				break;
+			}
+		}
+	}
+	String hdr_txt = vformat(CG_DB_TR("Vista previa (%dx%d)"), menus_common_preview_res.x, menus_common_preview_res.y);
+	if (menu_prev_title_lbl) menu_prev_title_lbl->set_text(hdr_txt);
+	if (gm_prev_title_lbl) gm_prev_title_lbl->set_text(hdr_txt);
+	if (cred_prev_title_lbl) cred_prev_title_lbl->set_text(hdr_txt);
+	if (hud_prev_title_lbl) hud_prev_title_lbl->set_text(hdr_txt);
+	if (go_prev_title_lbl) go_prev_title_lbl->set_text(hdr_txt);
+	updating_ui = prev_upd;
+}
+
+void ClockGearsDatabaseDialog::_on_common_preview_res_option_selected(int p_idx, OptionButton *p_src) {
+	if (updating_ui || !p_src || p_idx < 0) {
+		return;
+	}
+	Vector2i res = p_src->get_item_metadata(p_idx);
+	if (res.x >= 320 && res.y >= 180) {
+		set_menus_preview_resolution(res.x, res.y);
+	}
+}
+
+void ClockGearsDatabaseDialog::_on_16_9_holder_resized(Control *p_holder, Control *p_aspect) {
+	if (!p_holder || !p_aspect) {
+		return;
+	}
+	float avail_w = p_holder->get_size().x;
+	if (avail_w < 32.0f) {
+		return;
+	}
+	float max_h = 380.0f * EDSCALE;
+	float target_w = MIN(avail_w, max_h * (16.0f / 9.0f));
+	target_w = MAX(160.0f * EDSCALE, target_w);
+	float target_h = Math::round(target_w * (9.0f / 16.0f));
+	Size2 target_sz(Math::round(target_w), target_h);
+	if (p_aspect->get_custom_minimum_size().distance_to(target_sz) > 1.5f) {
+		p_aspect->set_custom_minimum_size(target_sz);
+		p_aspect->set_size(target_sz);
+	}
+}
+
+Control *ClockGearsDatabaseDialog::_build_16_9_viewport_preview(Control *p_parent, SubViewport *&r_vp, Label *&r_hdr_lbl, OptionButton *&r_res_opt, Button *p_test_btn) {
+	const float row_h = 28.0f * EDSCALE;
+	HFlowContainer *prev_hdr = memnew(HFlowContainer);
+	prev_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prev_hdr->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	prev_hdr->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	p_parent->add_child(prev_hdr);
+
+	r_hdr_lbl = memnew(Label(vformat(CG_DB_TR("Vista previa (%dx%d)"), menus_common_preview_res.x, menus_common_preview_res.y)));
+	r_hdr_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	r_hdr_lbl->set_clip_text(true);
+	r_hdr_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+	prev_hdr->add_child(r_hdr_lbl);
+
+	r_res_opt = memnew(OptionButton);
+	r_res_opt->set_custom_minimum_size(Size2(130 * EDSCALE, row_h));
+	_populate_common_preview_res_option(r_res_opt);
+	prev_hdr->add_child(r_res_opt);
+
+	if (p_test_btn) {
+		prev_hdr->add_child(p_test_btn);
+	}
+
+	VBoxContainer *holder = memnew(VBoxContainer);
+	holder->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	p_parent->add_child(holder);
+
+	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
+	aspect->set_ratio(16.0f / 9.0f);
+	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_FIT);
+	aspect->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
+	holder->add_child(aspect);
+
+	holder->connect("resized", callable_mp(this, &ClockGearsDatabaseDialog::_on_16_9_holder_resized).bind(holder, aspect));
+	callable_mp(this, &ClockGearsDatabaseDialog::_on_16_9_holder_resized).call_deferred(holder, aspect);
+
+	r_vp = memnew(SubViewport);
+	r_vp->set_size(menus_common_preview_res);
+	r_vp->set_disable_3d(true);
+	r_vp->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
+	aspect->add_child(r_vp);
+
+	TextureRect *disp = memnew(TextureRect);
+	disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
+	disp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	disp->set_texture(r_vp->get_texture());
+	aspect->add_child(disp);
+	return aspect;
+}
+
+void ClockGearsDatabaseDialog::set_menus_preview_resolution(int p_width, int p_height) {
+	int w = MAX(320, p_width);
+	int h = MAX(180, p_height);
+	menus_common_preview_res = Vector2i(w, h);
+	_sync_common_preview_res_options();
+
+	if (menu_preview_viewport) {
+		menu_preview_viewport->set_size(menus_common_preview_res);
+		_update_main_menu_live_preview();
+	}
+	if (gm_preview_viewport) {
+		gm_preview_viewport->set_size(menus_common_preview_res);
+		_update_game_menu_live_preview();
+	}
+	if (cred_preview_viewport) {
+		cred_preview_viewport->set_size(menus_common_preview_res);
+		_update_credits_live_preview();
+	}
+	if (hud_preview_viewport) {
+		hud_preview_viewport->set_size(menus_common_preview_res);
+		if (hud_live_preview) {
+			hud_live_preview->set_viewport_size_override(Size2(w, h));
+			hud_live_preview->refresh_all_widgets("preview_resolution");
+		}
+	}
+	if (go_preview_viewport) {
+		go_preview_viewport->set_size(menus_common_preview_res);
+		_update_game_over_live_preview();
+	}
+	_update_window_style_live_preview();
+	if (ui_design_editor_panel && ui_design_editor_panel->get_preview_resolution() != menus_common_preview_res) {
+		ui_design_editor_panel->set_preview_resolution(w, h, false);
+	}
+}
+
 void ClockGearsDatabaseDialog::adapt_to_window_size(const Vector2i &p_window_size) {
 	if (p_window_size.x <= 0 || p_window_size.y <= 0) {
 		return;
@@ -15543,18 +15784,13 @@ void ClockGearsDatabaseDialog::adapt_to_window_size(const Vector2i &p_window_siz
 			}
 		}
 	}
-	if (ws_main_split) {
-		ws_main_split->set_vertical(p_window_size.x < 1100);
-	}
-	if (gm_main_split) {
-		gm_main_split->set_vertical(p_window_size.x < 1100);
-	}
-	if (cred_main_split) {
-		cred_main_split->set_vertical(p_window_size.x < 1100);
-	}
-	if (hud_main_split) {
-		hud_main_split->set_vertical(p_window_size.x < 1100);
-	}
+	const bool use_vertical = (p_window_size.x < int(1400 * EDSCALE));
+	_apply_responsive_menu_split(menu_main_split, menu_left_col, menu_right_col, use_vertical);
+	_apply_responsive_menu_split(ws_main_split, ws_left_col, ws_right_col, use_vertical);
+	_apply_responsive_menu_split(gm_main_split, gm_left_col, gm_prev_card, use_vertical);
+	_apply_responsive_menu_split(cred_main_split, cred_left_col, cred_prev_card, use_vertical);
+	_apply_responsive_menu_split(hud_main_split, hud_left_col, hud_right_col, use_vertical);
+	_apply_responsive_menu_split(go_main_split, go_left_col, go_right_col, use_vertical);
 	if (ui_design_editor_panel) {
 		ui_design_editor_panel->adapt_to_width(p_window_size.x);
 	}
@@ -15658,33 +15894,21 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	main_menu_editor_panel->hide();
 	col2_box->add_child(main_menu_editor_panel);
 
-	HBoxContainer *split = memnew(HBoxContainer);
-	split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	split->add_theme_constant_override("separation", int(14 * EDSCALE));
-	main_menu_editor_panel->add_child(split);
+	menu_main_split = memnew(BoxContainer);
+	menu_main_split->set_vertical(false);
+	menu_main_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	menu_main_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	menu_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
+	main_menu_editor_panel->add_child(menu_main_split);
 
-	VBoxContainer *left_col = memnew(VBoxContainer);
-	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->set_stretch_ratio(1.15f);
-	left_col->add_theme_constant_override("separation", int(12 * EDSCALE));
-	split->add_child(left_col);
+	menu_left_col = memnew(VBoxContainer);
+	menu_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	menu_left_col->set_stretch_ratio(1.15f);
+	menu_left_col->add_theme_constant_override("separation", int(12 * EDSCALE));
+	menu_main_split->add_child(menu_left_col);
 
 	auto make_card = [&](const String &p_title, VBoxContainer *&r_body) {
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-		left_col->add_child(card);
-
-		r_body = memnew(VBoxContainer);
-		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
-		card->add_child(r_body);
-
-		Label *sec = memnew(Label(p_title));
-		sec->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-		r_body->add_child(sec);
-		r_body->add_child(memnew(HSeparator));
+		_make_collapsible_menu_card(menu_left_col, p_title, r_body, true);
 	};
 
 	// 1) Entradas del menú
@@ -15737,9 +15961,10 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	bg_grid->add_child(menu_bg_color_btn);
 
 	add_grid_label(bg_grid, CG_DB_TR("Imagen:"));
-	HBoxContainer *bg_img_row = memnew(HBoxContainer);
+	HFlowContainer *bg_img_row = memnew(HFlowContainer);
 	bg_img_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	bg_img_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	bg_img_row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	bg_img_row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	bg_grid->add_child(bg_img_row);
 
 	menu_bg_image_edit = memnew(LineEdit);
@@ -15807,9 +16032,10 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	tm_grid->add_child(menu_title_text_edit);
 
 	add_grid_label(tm_grid, CG_DB_TR("Imagen:"));
-	HBoxContainer *t_img_row = memnew(HBoxContainer);
+	HFlowContainer *t_img_row = memnew(HFlowContainer);
 	t_img_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	t_img_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	t_img_row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	t_img_row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	tm_grid->add_child(t_img_row);
 
 	menu_title_image_edit = memnew(LineEdit);
@@ -15839,9 +16065,10 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	tm_grid->add_child(menu_title_filter_opt);
 
 	add_grid_label(tm_grid, CG_DB_TR("Música (BGM):"));
-	HBoxContainer *bgm_row = memnew(HBoxContainer);
+	HFlowContainer *bgm_row = memnew(HFlowContainer);
 	bgm_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	bgm_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	bgm_row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	bgm_row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	tm_grid->add_child(bgm_row);
 
 	menu_bgm_edit = memnew(LineEdit);
@@ -15862,55 +16089,28 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	bgm_row->add_child(menu_bgm_clear_btn);
 
 	// Columna derecha: Vista previa en vivo + Probar
-	VBoxContainer *right_col = memnew(VBoxContainer);
-	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->set_stretch_ratio(1.0f);
-	right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	split->add_child(right_col);
+	menu_right_col = memnew(VBoxContainer);
+	menu_right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	menu_right_col->set_stretch_ratio(1.0f);
+	menu_right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	menu_main_split->add_child(menu_right_col);
 
 	PanelContainer *prev_card = memnew(PanelContainer);
 	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-	right_col->add_child(prev_card);
+	menu_right_col->add_child(prev_card);
 
 	VBoxContainer *prev_vb = memnew(VBoxContainer);
 	prev_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
 	prev_card->add_child(prev_vb);
 
-	HBoxContainer *prev_hdr = memnew(HBoxContainer);
-	prev_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
-	prev_vb->add_child(prev_hdr);
-
-	Label *prev_lbl = memnew(Label(CG_DB_TR("Vista previa en vivo (960x540)")));
-	prev_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	prev_hdr->add_child(prev_lbl);
-
 	menu_test_btn = memnew(Button(CG_DB_TR("Probar")));
-	menu_test_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	menu_test_btn->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
 	menu_test_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::open_title_menu_test_popup));
-	prev_hdr->add_child(menu_test_btn);
 
-	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
-	aspect->set_ratio(16.0f / 9.0f);
-	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
-	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
-	prev_vb->add_child(aspect);
-
-	SubViewportContainer *svc = memnew(SubViewportContainer);
-	svc->set_stretch(true);
-	svc->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	svc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	aspect->add_child(svc);
-
-	menu_preview_viewport = memnew(SubViewport);
-	menu_preview_viewport->set_size(Size2i(960, 540));
-	menu_preview_viewport->set_disable_3d(true);
-	menu_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
-	svc->add_child(menu_preview_viewport);
+	_build_16_9_viewport_preview(prev_vb, menu_preview_viewport, menu_prev_title_lbl, menu_preview_res_opt, menu_test_btn);
+	_sync_common_preview_res_options();
 
 	menu_live_preview = memnew(ClockGearsTitleScreen);
 	menu_live_preview->set_preview_mode(true);
@@ -15970,10 +16170,11 @@ void ClockGearsDatabaseDialog::_rebuild_main_menu_entries_rows() {
 		String etxt = String(e.get("text", s_menu_entry_default_label(eid)));
 		bool enabled = bool(e.get("enabled", true));
 
-		HBoxContainer *row = memnew(HBoxContainer);
+		HFlowContainer *row = memnew(HFlowContainer);
 		row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		row->set_meta("cg_entry_id", eid);
-		row->add_theme_constant_override("separation", int(6 * EDSCALE));
+		row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+		row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 		menu_entries_list_vbox->add_child(row);
 
 		CheckBox *chk = memnew(CheckBox(CG_DB_TR("Activa")));
@@ -15985,13 +16186,13 @@ void ClockGearsDatabaseDialog::_rebuild_main_menu_entries_rows() {
 		LineEdit *edit = memnew(LineEdit);
 		edit->set_text(etxt);
 		edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		edit->set_custom_minimum_size(Size2(120 * EDSCALE, row_h));
+		edit->set_custom_minimum_size(Size2(96 * EDSCALE, row_h));
 		edit->set_meta("cg_entry_id", eid);
 		edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_menu_entry_text_changed).bind(eid));
 		row->add_child(edit);
 
 		Label *tag = memnew(Label(vformat("[%s]", s_menu_entry_default_label(eid))));
-		tag->set_custom_minimum_size(Size2(92 * EDSCALE, 0));
+		tag->set_custom_minimum_size(Size2(74 * EDSCALE, 0));
 		tag->set_clip_text(true);
 		tag->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
 		row->add_child(tag);
@@ -16580,33 +16781,23 @@ void ClockGearsDatabaseDialog::_setup_window_styles_editor_ui() {
 	ws_main_split->add_theme_constant_override("separation", int(12 * EDSCALE));
 	window_styles_editor_panel->add_child(ws_main_split);
 
-	VBoxContainer *left_col = memnew(VBoxContainer);
-	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->set_stretch_ratio(1.25f);
-	left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	ws_main_split->add_child(left_col);
+	ws_left_col = memnew(VBoxContainer);
+	ws_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ws_left_col->set_stretch_ratio(1.25f);
+	ws_left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	ws_main_split->add_child(ws_left_col);
 
-	VBoxContainer *right_col = memnew(VBoxContainer);
-	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->set_stretch_ratio(1.0f);
-	right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	ws_main_split->add_child(right_col);
+	ws_right_col = memnew(VBoxContainer);
+	ws_right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ws_right_col->set_stretch_ratio(1.0f);
+	ws_right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	ws_main_split->add_child(ws_right_col);
+
+	VBoxContainer *left_col = ws_left_col;
+	VBoxContainer *right_col = ws_right_col;
 
 	auto make_ws_card = [&](VBoxContainer *p_col, const String &p_title, VBoxContainer *&r_body) {
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-		p_col->add_child(card);
-
-		r_body = memnew(VBoxContainer);
-		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
-		card->add_child(r_body);
-
-		Label *sec = memnew(Label(p_title));
-		sec->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-		r_body->add_child(sec);
-		r_body->add_child(memnew(HSeparator));
+		_make_collapsible_menu_card(p_col, p_title, r_body, true);
 	};
 
 	// 1) Estilo seleccionado (Nombre + Ventana)
@@ -16646,6 +16837,7 @@ void ClockGearsDatabaseDialog::_setup_window_styles_editor_ui() {
 
 	ws_btn_state_tabs = memnew(TabBar);
 	ws_btn_state_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ws_btn_state_tabs->set_clip_tabs(true);
 	ws_btn_state_tabs->set_tab_alignment(TabBar::ALIGNMENT_LEFT);
 	ws_btn_state_tabs->add_tab(CG_DB_TR("Normal"));
 	ws_btn_state_tabs->add_tab(CG_DB_TR("Resaltado"));
@@ -17613,6 +17805,19 @@ void ClockGearsDatabaseDialog::_on_ws_image_file_selected(const String &p_path) 
 }
 
 void ClockGearsDatabaseDialog::_on_ws_preview_size_selected(int p_idx) {
+	if (!updating_ui && ws_preview_size_opt && p_idx >= 0) {
+		int ref_w = ws_preview_size_opt->get_item_id(p_idx);
+		if (ref_w == 960) {
+			set_menus_preview_resolution(960, 540);
+			return;
+		} else if (ref_w == 1366) {
+			set_menus_preview_resolution(1366, 768);
+			return;
+		} else if (ref_w == 1920) {
+			set_menus_preview_resolution(1920, 1080);
+			return;
+		}
+	}
 	_update_window_style_live_preview();
 }
 
@@ -17789,27 +17994,14 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	gm_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
 	game_menu_editor_panel->add_child(gm_main_split);
 
-	VBoxContainer *left_col = memnew(VBoxContainer);
-	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->set_stretch_ratio(1.1f);
-	left_col->add_theme_constant_override("separation", int(12 * EDSCALE));
-	gm_main_split->add_child(left_col);
+	gm_left_col = memnew(VBoxContainer);
+	gm_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_left_col->set_stretch_ratio(1.1f);
+	gm_left_col->add_theme_constant_override("separation", int(12 * EDSCALE));
+	gm_main_split->add_child(gm_left_col);
 
 	auto make_card = [&](const String &p_title, VBoxContainer *&r_body) {
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-		left_col->add_child(card);
-
-		r_body = memnew(VBoxContainer);
-		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
-		card->add_child(r_body);
-
-		Label *sec = memnew(Label(p_title));
-		sec->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-		r_body->add_child(sec);
-		r_body->add_child(memnew(HSeparator));
+		_make_collapsible_menu_card(gm_left_col, p_title, r_body, true);
 	};
 
 	// 1) Entradas del menú del juego
@@ -17832,6 +18024,7 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 
 	gm_bg_screen_tabs = memnew(TabBar);
 	gm_bg_screen_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_bg_screen_tabs->set_clip_tabs(true);
 	gm_bg_screen_tabs->add_tab(CG_DB_TR("Menú"));
 	gm_bg_screen_tabs->add_tab(CG_DB_TR("Objetos"));
 	gm_bg_screen_tabs->add_tab(CG_DB_TR("Equipo"));
@@ -17871,23 +18064,24 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	bg_grid->add_child(gm_bg_color_btn);
 
 	add_grid_label(bg_grid, CG_DB_TR("Imagen:"));
-	HBoxContainer *bg_img_hb = memnew(HBoxContainer);
+	HFlowContainer *bg_img_hb = memnew(HFlowContainer);
 	bg_img_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	bg_img_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	bg_img_hb->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	bg_img_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	gm_bg_image_edit = memnew(LineEdit);
 	gm_bg_image_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	gm_bg_image_edit->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	gm_bg_image_edit->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
 	gm_bg_image_edit->set_placeholder("res://img/menus/...");
 	gm_bg_image_edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_image_text_changed));
 	bg_img_hb->add_child(gm_bg_image_edit);
 
 	gm_bg_import_btn = memnew(Button(CG_DB_TR("Importar")));
-	gm_bg_import_btn->set_custom_minimum_size(Size2(88 * EDSCALE, row_h));
+	gm_bg_import_btn->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
 	gm_bg_import_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_import_bg_pressed));
 	bg_img_hb->add_child(gm_bg_import_btn);
 
 	gm_bg_clear_btn = memnew(Button(CG_DB_TR("Limpiar")));
-	gm_bg_clear_btn->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
+	gm_bg_clear_btn->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
 	gm_bg_clear_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_clear_bg_pressed));
 	bg_img_hb->add_child(gm_bg_clear_btn);
 	bg_grid->add_child(bg_img_hb);
@@ -17943,8 +18137,10 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	prev_grid->add_child(gm_item_prev_pos_opt);
 
 	add_grid_label(prev_grid, CG_DB_TR("Mostrar elementos:"));
-	HBoxContainer *elem_hb = memnew(HBoxContainer);
-	elem_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	HFlowContainer *elem_hb = memnew(HFlowContainer);
+	elem_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	elem_hb->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	elem_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	gm_item_prev_show_icon_chk = memnew(CheckBox);
 	gm_item_prev_show_icon_chk->set_text(CG_DB_TR("Icono"));
 	gm_item_prev_show_icon_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
@@ -17972,8 +18168,10 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	prev_grid->add_child(gm_item_prev_scale_opt);
 
 	add_grid_label(prev_grid, String::utf8("Rotación por arrastre:"));
-	HBoxContainer *rot_hb = memnew(HBoxContainer);
-	rot_hb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	HFlowContainer *rot_hb = memnew(HFlowContainer);
+	rot_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rot_hb->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	rot_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	gm_item_prev_rot_chk = memnew(CheckBox);
 	gm_item_prev_rot_chk->set_text(CG_DB_TR("Permitir"));
 	gm_item_prev_rot_chk->connect("toggled", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_item_prev_field_changed));
@@ -18006,51 +18204,25 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	prev_grid->add_child(gm_item_desc_style_opt);
 
 	// Columna derecha: Vista previa en vivo + Probar
-	PanelContainer *prev_card = memnew(PanelContainer);
-	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_card->set_stretch_ratio(1.0f);
-	prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-	gm_main_split->add_child(prev_card);
+	gm_prev_card = memnew(PanelContainer);
+	gm_prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	gm_prev_card->set_stretch_ratio(1.0f);
+	gm_prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+	gm_main_split->add_child(gm_prev_card);
 
 	VBoxContainer *prev_vb = memnew(VBoxContainer);
 	prev_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
-	prev_card->add_child(prev_vb);
-
-	HBoxContainer *prev_hdr = memnew(HBoxContainer);
-	prev_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
-	prev_vb->add_child(prev_hdr);
-
-	Label *prev_lbl = memnew(Label(CG_DB_TR("Vista previa en vivo (960x540)")));
-	prev_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	prev_hdr->add_child(prev_lbl);
+	gm_prev_card->add_child(prev_vb);
 
 	gm_test_btn = memnew(Button(CG_DB_TR("Probar")));
-	gm_test_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	gm_test_btn->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
 	gm_test_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::open_game_menu_test_popup));
-	prev_hdr->add_child(gm_test_btn);
 
-	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
-	aspect->set_ratio(16.0f / 9.0f);
-	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
-	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
-	prev_vb->add_child(aspect);
-
-	SubViewportContainer *svc = memnew(SubViewportContainer);
-	svc->set_stretch(true);
-	svc->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	svc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	aspect->add_child(svc);
-
-	gm_preview_viewport = memnew(SubViewport);
-	gm_preview_viewport->set_size(Size2i(960, 540));
-	gm_preview_viewport->set_disable_3d(true);
-	gm_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
-	svc->add_child(gm_preview_viewport);
+	_build_16_9_viewport_preview(prev_vb, gm_preview_viewport, gm_prev_title_lbl, gm_preview_res_opt, gm_test_btn);
+	_sync_common_preview_res_options();
 
 	gm_live_preview = memnew(ClockGearsGameMenu);
 	gm_live_preview->set_preview_mode(true);
@@ -18118,10 +18290,11 @@ void ClockGearsDatabaseDialog::_rebuild_game_menu_entries_rows() {
 		String etxt = String(e.get("text", _gm_entry_default_label(eid)));
 		bool enabled = bool(e.get("enabled", true));
 
-		HBoxContainer *row = memnew(HBoxContainer);
+		HFlowContainer *row = memnew(HFlowContainer);
 		row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		row->set_meta("cg_entry_id", eid);
-		row->add_theme_constant_override("separation", int(6 * EDSCALE));
+		row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+		row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 		gm_entries_list_vbox->add_child(row);
 
 		CheckBox *chk = memnew(CheckBox(CG_DB_TR("Activa")));
@@ -18133,13 +18306,13 @@ void ClockGearsDatabaseDialog::_rebuild_game_menu_entries_rows() {
 		LineEdit *edit = memnew(LineEdit);
 		edit->set_text(etxt);
 		edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		edit->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+		edit->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
 		edit->set_meta("cg_entry_id", eid);
 		edit->connect("text_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_entry_text_changed).bind(eid));
 		row->add_child(edit);
 
 		Label *tag = memnew(Label(vformat("[%s]", _gm_entry_default_label(eid))));
-		tag->set_custom_minimum_size(Size2(92 * EDSCALE, 0));
+		tag->set_custom_minimum_size(Size2(72 * EDSCALE, 0));
 		tag->set_clip_text(true);
 		tag->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
 		row->add_child(tag);
@@ -18653,31 +18826,19 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 	cred_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
 	credits_editor_panel->add_child(cred_main_split);
 
-	VBoxContainer *left_col = memnew(VBoxContainer);
-	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->set_stretch_ratio(1.15f);
-	left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	cred_main_split->add_child(left_col);
+	cred_left_col = memnew(VBoxContainer);
+	cred_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_left_col->set_stretch_ratio(1.15f);
+	cred_left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	cred_main_split->add_child(cred_left_col);
 
 	auto make_card = [&](const String &p_title, VBoxContainer *&r_body) {
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-		left_col->add_child(card);
-
-		r_body = memnew(VBoxContainer);
-		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		r_body->add_theme_constant_override("separation", int(8 * EDSCALE));
-		card->add_child(r_body);
-
-		Label *hdr = memnew(Label(p_title));
-		hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-		r_body->add_child(hdr);
+		_make_collapsible_menu_card(cred_left_col, p_title, r_body, true);
 	};
 
 	auto add_grid_label = [&](GridContainer *p_grid, const String &p_txt) {
 		Label *lbl = memnew(Label(p_txt));
-		lbl->set_custom_minimum_size(Size2(118 * EDSCALE, 0));
+		lbl->set_custom_minimum_size(Size2(104 * EDSCALE, 0));
 		p_grid->add_child(lbl);
 	};
 
@@ -18685,9 +18846,10 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 	VBoxContainer *items_body = nullptr;
 	make_card(CG_DB_TR("Secciones y líneas"), items_body);
 
-	HBoxContainer *toolbar = memnew(HBoxContainer);
+	HFlowContainer *toolbar = memnew(HFlowContainer);
 	toolbar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	toolbar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	toolbar->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	toolbar->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	items_body->add_child(toolbar);
 
 	cred_add_type_opt = memnew(OptionButton);
@@ -18927,9 +19089,10 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 	gen_grid->add_child(cred_bg_color_btn);
 
 	add_grid_label(gen_grid, CG_DB_TR("Imagen de fondo:"));
-	HBoxContainer *bg_img_row = memnew(HBoxContainer);
+	HFlowContainer *bg_img_row = memnew(HFlowContainer);
 	bg_img_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	bg_img_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	bg_img_row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	bg_img_row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	gen_grid->add_child(bg_img_row);
 
 	cred_bg_image_edit = memnew(LineEdit);
@@ -18969,9 +19132,10 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 	gen_grid->add_child(cred_bg_filter_opt);
 
 	add_grid_label(gen_grid, CG_DB_TR("Música opcional:"));
-	HBoxContainer *bgm_row = memnew(HBoxContainer);
+	HFlowContainer *bgm_row = memnew(HFlowContainer);
 	bgm_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	bgm_row->add_theme_constant_override("separation", int(6 * EDSCALE));
+	bgm_row->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	bgm_row->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	gen_grid->add_child(bgm_row);
 
 	cred_bgm_edit = memnew(LineEdit);
@@ -19060,51 +19224,25 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 	}
 
 	// Columna derecha: Vista previa en vivo + Probar
-	PanelContainer *prev_card = memnew(PanelContainer);
-	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_card->set_stretch_ratio(1.0f);
-	prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-	cred_main_split->add_child(prev_card);
+	cred_prev_card = memnew(PanelContainer);
+	cred_prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	cred_prev_card->set_stretch_ratio(1.0f);
+	cred_prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+	cred_main_split->add_child(cred_prev_card);
 
 	VBoxContainer *prev_vb = memnew(VBoxContainer);
 	prev_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	prev_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
-	prev_card->add_child(prev_vb);
-
-	HBoxContainer *prev_hdr = memnew(HBoxContainer);
-	prev_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
-	prev_vb->add_child(prev_hdr);
-
-	Label *prev_lbl = memnew(Label(CG_DB_TR("Vista previa en vivo (960x540)")));
-	prev_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	prev_hdr->add_child(prev_lbl);
+	cred_prev_card->add_child(prev_vb);
 
 	cred_test_btn = memnew(Button(CG_DB_TR("Probar")));
-	cred_test_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	cred_test_btn->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
 	cred_test_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::open_credits_test_popup));
-	prev_hdr->add_child(cred_test_btn);
 
-	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
-	aspect->set_ratio(16.0f / 9.0f);
-	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
-	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
-	prev_vb->add_child(aspect);
-
-	SubViewportContainer *svc = memnew(SubViewportContainer);
-	svc->set_stretch(true);
-	svc->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	svc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	aspect->add_child(svc);
-
-	cred_preview_viewport = memnew(SubViewport);
-	cred_preview_viewport->set_size(Size2i(960, 540));
-	cred_preview_viewport->set_disable_3d(true);
-	cred_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
-	svc->add_child(cred_preview_viewport);
+	_build_16_9_viewport_preview(prev_vb, cred_preview_viewport, cred_prev_title_lbl, cred_preview_res_opt, cred_test_btn);
+	_sync_common_preview_res_options();
 
 	cred_live_preview = memnew(ClockGearsCreditsPlayer);
 	cred_live_preview->set_preview_mode(true);
@@ -19843,32 +19981,21 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	hud_main_split->add_theme_constant_override("separation", int(14 * EDSCALE));
 	hud_editor_panel->add_child(hud_main_split);
 
-	VBoxContainer *left_col = memnew(VBoxContainer);
-	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->set_stretch_ratio(1.1f);
-	left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	hud_main_split->add_child(left_col);
+	hud_left_col = memnew(VBoxContainer);
+	hud_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_left_col->set_stretch_ratio(1.1f);
+	hud_left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	hud_main_split->add_child(hud_left_col);
+
+	VBoxContainer *left_col = hud_left_col;
 
 	auto make_card = [&](VBoxContainer *p_parent, const String &p_hdr_txt, VBoxContainer *&r_body) {
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
-		p_parent->add_child(card);
-
-		r_body = memnew(VBoxContainer);
-		r_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		r_body->add_theme_constant_override("separation", int(7 * EDSCALE));
-		card->add_child(r_body);
-
-		Label *hdr = memnew(Label(p_hdr_txt));
-		hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-		r_body->add_child(hdr);
-		return card;
+		return _make_collapsible_menu_card(p_parent, p_hdr_txt, r_body, true);
 	};
 
 	auto add_grid_label = [&](GridContainer *p_grid, const String &p_txt) {
 		Label *lbl = memnew(Label(p_txt));
-		lbl->set_custom_minimum_size(Size2(114 * EDSCALE, 0));
+		lbl->set_custom_minimum_size(Size2(104 * EDSCALE, 0));
 		p_grid->add_child(lbl);
 	};
 
@@ -19942,9 +20069,10 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	VBoxContainer *list_body = nullptr;
 	make_card(left_col, CG_DB_TR("Widgets del HUD"), list_body);
 
-	HBoxContainer *toolbar = memnew(HBoxContainer);
+	HFlowContainer *toolbar = memnew(HFlowContainer);
 	toolbar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	toolbar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	toolbar->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	toolbar->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	list_body->add_child(toolbar);
 
 	hud_add_type_opt = memnew(OptionButton);
@@ -20502,54 +20630,31 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	add_slider_spin(imgrid, CG_DB_TR("Opacidad:"), 0, 100, 1, " %", "opacity", hud_img_opacity_slider, hud_img_opacity_spin, true);
 
 	// Columna derecha: Vista previa 16:9 sobre mapa de ejemplo + Datos de ejemplo
-	VBoxContainer *right_col = memnew(VBoxContainer);
-	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->set_stretch_ratio(1.05f);
-	right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	hud_main_split->add_child(right_col);
+	hud_right_col = memnew(VBoxContainer);
+	hud_right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	hud_right_col->set_stretch_ratio(1.05f);
+	hud_right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	hud_main_split->add_child(hud_right_col);
+
+	VBoxContainer *right_col = hud_right_col;
 
 	VBoxContainer *prev_vb = nullptr;
 	make_card(right_col, CG_DB_TR("Vista previa en vivo (16:9)"), prev_vb);
 
-	HBoxContainer *res_hb = memnew(HBoxContainer);
-	res_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
-	prev_vb->add_child(res_hb);
+	AspectRatioContainer *aspect = Object::cast_to<AspectRatioContainer>(_build_16_9_viewport_preview(prev_vb, hud_preview_viewport, hud_prev_title_lbl, hud_preview_res_opt));
+	_sync_common_preview_res_options();
 
-	res_hb->add_child(memnew(Label(CG_DB_TR("Tamaño:"))));
-	hud_preview_res_opt = memnew(OptionButton);
-	hud_preview_res_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	hud_preview_res_opt->set_custom_minimum_size(Size2(140 * EDSCALE, row_h));
-	hud_preview_res_opt->add_item("960 x 540 (Base)", 0);
-	hud_preview_res_opt->set_item_metadata(0, Vector2i(960, 540));
-	hud_preview_res_opt->add_item("1366 x 768 (HD)", 1);
-	hud_preview_res_opt->set_item_metadata(1, Vector2i(1366, 768));
-	hud_preview_res_opt->add_item("1920 x 1080 (Full HD)", 2);
-	hud_preview_res_opt->set_item_metadata(2, Vector2i(1920, 1080));
-	hud_preview_res_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_preview_res_selected));
-	res_hb->add_child(hud_preview_res_opt);
-
-	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
-	aspect->set_ratio(16.0f / 9.0f);
-	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
-	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	aspect->set_custom_minimum_size(Size2(300 * EDSCALE, 170 * EDSCALE));
-	prev_vb->add_child(aspect);
-
-	hud_preview_viewport = memnew(SubViewport);
-	hud_preview_viewport->set_size(Size2i(960, 540));
-	hud_preview_viewport->set_disable_3d(true);
-	hud_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
-	aspect->add_child(hud_preview_viewport);
-
-	TextureRect *preview_disp = memnew(TextureRect);
-	preview_disp->set_name("HudPreviewDisplay");
-	preview_disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	preview_disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	preview_disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
-	preview_disp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	preview_disp->set_texture(hud_preview_viewport->get_texture());
-	aspect->add_child(preview_disp);
+	TextureRect *preview_disp = nullptr;
+	for (int ci = 0; aspect && ci < aspect->get_child_count(); ci++) {
+		if (TextureRect *tr = Object::cast_to<TextureRect>(aspect->get_child(ci))) {
+			preview_disp = tr;
+			break;
+		}
+	}
+	if (preview_disp) {
+		preview_disp->set_name("HudPreviewDisplay");
+	}
 
 	// Capa transparente encima de la vista previa: selección y arrastre de widgets en modo libre.
 	hud_preview_drag_overlay = memnew(Control);
@@ -21504,27 +21609,7 @@ bool ClockGearsDatabaseDialog::set_hud_widget_field(int p_index, const String &p
 }
 
 void ClockGearsDatabaseDialog::set_hud_preview_resolution(int p_width, int p_height) {
-	int w = MAX(320, p_width);
-	int h = MAX(180, p_height);
-	if (hud_preview_res_opt) {
-		bool prev_upd = updating_ui;
-		updating_ui = true;
-		for (int i = 0; i < hud_preview_res_opt->get_item_count(); i++) {
-			Vector2i v = hud_preview_res_opt->get_item_metadata(i);
-			if (v.x == w && v.y == h) {
-				hud_preview_res_opt->select(i);
-				break;
-			}
-		}
-		updating_ui = prev_upd;
-	}
-	if (hud_preview_viewport) {
-		hud_preview_viewport->set_size(Size2i(w, h));
-	}
-	if (hud_live_preview) {
-		hud_live_preview->set_viewport_size_override(Size2(w, h));
-		hud_live_preview->refresh_all_widgets("preview_resolution");
-	}
+	set_menus_preview_resolution(p_width, p_height);
 }
 
 void ClockGearsDatabaseDialog::set_hud_preview_sample_values(int p_hp, int p_gold, int p_item_qty) {
@@ -21669,48 +21754,38 @@ void ClockGearsDatabaseDialog::_setup_game_over_editor_ui() {
 	game_over_editor_panel->hide();
 	col2_box->add_child(game_over_editor_panel);
 
-	HBoxContainer *split = memnew(HBoxContainer);
-	split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	split->add_theme_constant_override("separation", int(12 * EDSCALE));
-	game_over_editor_panel->add_child(split);
+	go_main_split = memnew(BoxContainer);
+	go_main_split->set_vertical(false);
+	go_main_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	go_main_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	go_main_split->add_theme_constant_override("separation", int(12 * EDSCALE));
+	game_over_editor_panel->add_child(go_main_split);
 
-	ScrollContainer *left_sc = memnew(ScrollContainer);
-	left_sc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_sc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	left_sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	split->add_child(left_sc);
+	go_left_col = memnew(VBoxContainer);
+	go_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	go_left_col->set_stretch_ratio(1.1f);
+	go_left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	go_main_split->add_child(go_left_col);
 
-	VBoxContainer *left_col = memnew(VBoxContainer);
-	left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	left_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	left_sc->add_child(left_col);
+	go_right_col = memnew(VBoxContainer);
+	go_right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	go_right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	go_right_col->set_stretch_ratio(1.0f);
+	go_right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
+	go_main_split->add_child(go_right_col);
 
-	VBoxContainer *right_col = memnew(VBoxContainer);
-	right_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	right_col->add_theme_constant_override("separation", int(10 * EDSCALE));
-	split->add_child(right_col);
+	VBoxContainer *left_col = go_left_col;
+	VBoxContainer *right_col = go_right_col;
 
 	int row_h = int(28 * EDSCALE);
 
 	auto make_card = [&](Control *p_parent, const String &p_title, VBoxContainer *&r_body) {
-		PanelContainer *pc = memnew(PanelContainer);
-		pc->set_theme_type_variation("ClockGearsCard");
-		pc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		p_parent->add_child(pc);
-		VBoxContainer *vb = memnew(VBoxContainer);
-		vb->add_theme_constant_override("separation", int(8 * EDSCALE));
-		pc->add_child(vb);
-		Label *hdr = memnew(Label(p_title));
-		hdr->add_theme_font_size_override("font_size", int(14 * EDSCALE));
-		vb->add_child(hdr);
-		r_body = vb;
+		_make_collapsible_menu_card(p_parent, p_title, r_body, true);
 	};
 
 	auto add_grid_label = [&](GridContainer *p_grid, const String &p_txt) {
 		Label *l = memnew(Label(p_txt));
-		l->set_custom_minimum_size(Size2(130 * EDSCALE, 0));
+		l->set_custom_minimum_size(Size2(110 * EDSCALE, 0));
 		p_grid->add_child(l);
 	};
 
@@ -21742,9 +21817,10 @@ void ClockGearsDatabaseDialog::_setup_game_over_editor_ui() {
 	bg_grid->add_child(go_bg_color_btn);
 
 	add_grid_label(bg_grid, CG_DB_TR("Imagen de fondo:"));
-	HBoxContainer *img_hb = memnew(HBoxContainer);
+	HFlowContainer *img_hb = memnew(HFlowContainer);
 	img_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	img_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	img_hb->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	img_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	bg_grid->add_child(img_hb);
 	go_bg_img_edit = memnew(LineEdit);
 	go_bg_img_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -21814,9 +21890,10 @@ void ClockGearsDatabaseDialog::_setup_game_over_editor_ui() {
 	cgrid->add_child(go_title_size_spin);
 
 	add_grid_label(cgrid, CG_DB_TR("Música opcional:"));
-	HBoxContainer *bgm_hb = memnew(HBoxContainer);
+	HFlowContainer *bgm_hb = memnew(HFlowContainer);
 	bgm_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	bgm_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	bgm_hb->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	bgm_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	cgrid->add_child(bgm_hb);
 	go_bgm_edit = memnew(LineEdit);
 	go_bgm_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -21864,26 +21941,9 @@ void ClockGearsDatabaseDialog::_setup_game_over_editor_ui() {
 
 	// Columna derecha: Vista previa 16:9
 	VBoxContainer *prev_body = nullptr;
-	make_card(right_col, CG_DB_TR("Vista previa (16:9)"), prev_body);
-	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
-	aspect->set_ratio(16.0f / 9.0f);
-	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_WIDTH_CONTROLS_HEIGHT);
-	aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
-	prev_body->add_child(aspect);
-
-	go_preview_viewport = memnew(SubViewport);
-	go_preview_viewport->set_size(Size2i(960, 540));
-	go_preview_viewport->set_disable_3d(true);
-	go_preview_viewport->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
-	aspect->add_child(go_preview_viewport);
-
-	TextureRect *disp = memnew(TextureRect);
-	disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
-	disp->set_texture(go_preview_viewport->get_texture());
-	aspect->add_child(disp);
+	make_card(right_col, CG_DB_TR("Vista previa en vivo (16:9)"), prev_body);
+	_build_16_9_viewport_preview(prev_body, go_preview_viewport, go_prev_title_lbl, go_preview_res_opt);
+	_sync_common_preview_res_options();
 
 	go_live_preview = memnew(ClockGearsGameOverScreen);
 	go_live_preview->set_preview_mode(true);

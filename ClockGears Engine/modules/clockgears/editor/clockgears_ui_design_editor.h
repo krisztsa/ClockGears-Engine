@@ -16,6 +16,7 @@
 #include "scene/gui/spin_box.h"
 #include "scene/gui/texture_rect.h"
 
+class AspectRatioContainer;
 class ClockGearsCreditsPlayer;
 class ClockGearsDatabaseDialog;
 class ClockGearsGameMenu;
@@ -24,7 +25,6 @@ class ClockGearsTitleScreen;
 class ClockGearsUiDesignEditor;
 class ClockGearsUiDesignLayer;
 class SubViewport;
-class SubViewportContainer;
 
 // ============================================================================
 // UiDesignPaletteButton — Elemento arrastrable de la paleta al lienzo 960x540
@@ -111,6 +111,7 @@ private:
 	String current_screen_id = "title";
 	String selected_elem_id;
 	int canvas_zoom = 1;
+	Vector2i preview_resolution = Vector2i(960, 540);
 	bool updating_ui = false;
 	bool compact_two_row_layout = false;
 	int last_adapt_width = 1920;
@@ -118,6 +119,7 @@ private:
 	// Cabecera / barra superior
 	HBoxContainer *top_bar = nullptr;
 	OptionButton *screen_opt = nullptr;
+	OptionButton *preview_res_opt = nullptr;
 	Button *zoom_btns[3] = { nullptr, nullptr, nullptr };
 	Label *zoom_info_lbl = nullptr;
 	Button *undo_btn = nullptr;
@@ -146,15 +148,17 @@ private:
 	GridContainer *palette_grid = nullptr;
 	Vector<ClockGearsUiPaletteButton *> palette_buttons;
 
-	// Lienzo 960x540 con ClockGearsUiDesignLayer
+	// Lienzo 16:9 escalable con ClockGearsUiDesignLayer
 	ScrollContainer *canvas_scroll = nullptr;
+	AspectRatioContainer *canvas_aspect = nullptr;
+	Control *canvas_fit_holder = nullptr;
 	Control *canvas_stage = nullptr;
 	ColorRect *canvas_bg_color = nullptr;
 	TextureRect *canvas_bg_tex = nullptr;
 	Control *canvas_hud_grid_bg = nullptr;
 	ClockGearsTitleScreen *default_title_preview = nullptr;
-	SubViewportContainer *default_gmenu_svc = nullptr;
 	SubViewport *default_gmenu_vp = nullptr;
+	TextureRect *default_gmenu_disp = nullptr;
 	ClockGearsGameMenu *default_gmenu_preview = nullptr;
 	ClockGearsCreditsPlayer *default_credits_preview = nullptr;
 	ClockGearsUiDesignLayer *design_layer = nullptr;
@@ -209,6 +213,10 @@ private:
 
 	void _build_ui();
 	void _rebalance_responsive_layout(int p_avail_w);
+	void _update_canvas_fit_scale();
+	Button *_attach_collapsible_header(VBoxContainer *p_card_vb, const String &p_title, Control *p_body, bool p_expanded = true);
+	void _on_collapsible_section_toggled(bool p_expanded, Control *p_body, Button *p_btn, const String &p_title);
+	void _on_preview_res_selected(int p_idx);
 	void _refresh_canvas_stage();
 	void _refresh_background_and_default_preview(bool p_has_custom);
 	void _refresh_layers_list();
@@ -260,6 +268,8 @@ public:
 
 	void set_canvas_zoom(int p_zoom);
 	int get_canvas_zoom() const { return canvas_zoom; }
+	void set_preview_resolution(int p_width, int p_height, bool p_sync_owner_db = true);
+	Vector2i get_preview_resolution() const { return preview_resolution; }
 
 	String add_element_at(const String &p_type, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
 	bool select_element(const String &p_elem_id);
