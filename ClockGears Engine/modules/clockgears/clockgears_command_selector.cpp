@@ -48,7 +48,7 @@ Button *ClockGearsCommandSelector::_create_cmd_button(GridContainer *p_parent, c
 
 void ClockGearsCommandSelector::_on_btn_clicked(int p_cmd_id) {
 	hide();
-	emit_signal("command_selected", p_cmd_id);
+	call_deferred("emit_signal", "command_selected", p_cmd_id);
 }
 
 void ClockGearsCommandSelector::popup_catalog() {

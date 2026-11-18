@@ -1014,12 +1014,16 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 			if (dlg_wait) dlg_wait->popup_centered(Size2(320, 140) * EDSCALE);
 			break;
 		case CMD_TRANSFER_PLAYER:
+			editing_command_index = -1;
 			if (tele_selector) {
 				tele_selector->populate_maps();
 			} else {
 				_populate_teleport_maps();
 			}
-			if (dlg_teleport) dlg_teleport->popup_centered(Size2(640, 480) * EDSCALE);
+			if (dlg_teleport) {
+				dlg_teleport->popup_centered(Size2(640, 480) * EDSCALE);
+				dlg_teleport->move_to_foreground();
+			}
 			break;
 		case CMD_SET_MOVE_ROUTE:
 			if (dlg_move_route) dlg_move_route->popup_centered(Size2(380, 200) * EDSCALE);
@@ -1624,7 +1628,7 @@ void ClockGearsEventEditorDialog::_on_tele_map_opt_selected(int p_idx) {
 }
 
 void ClockGearsEventEditorDialog::_on_confirm_teleport() {
-	if (!target_event) return;
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
 	Dictionary cmd;
 	cmd["type"] = "teleport";
 	if (tele_selector) {
@@ -2365,6 +2369,7 @@ Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() const {
 	out["command_tree"] = command_tree;
 	out["dlg_show_credits"] = dlg_show_credits;
 	out["dlg_show_game_over"] = dlg_show_game_over;
+	out["dlg_teleport"] = dlg_teleport;
 	out["dlg_open_menu"] = dlg_open_menu;
 	out["dlg_change_menu_access"] = dlg_change_menu_access;
 	out["menu_access_opt"] = menu_access_opt;
