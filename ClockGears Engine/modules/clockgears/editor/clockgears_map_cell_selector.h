@@ -30,12 +30,14 @@ private:
 	Control *overlay_control = nullptr;
 
 	ClockGearsMap *loaded_map_instance = nullptr;
+	String loaded_map_path;
 	int map_tiles_w = 25;
 	int map_tiles_h = 20;
 	int selected_cell_x = 0;
 	int selected_cell_y = 0;
 	bool is_updating_coords = false;
 
+	void _populate_maps_internal(bool p_load_preview);
 	void _on_map_selected(int p_idx);
 	void _on_dir_selected(int p_idx);
 	void _on_spin_changed(double p_val);
@@ -44,6 +46,7 @@ private:
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
 	void populate_maps();

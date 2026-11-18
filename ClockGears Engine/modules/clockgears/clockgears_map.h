@@ -56,6 +56,7 @@ private:
 	mutable int cached_pass_h = 0;
 	mutable bool passability_cache_dirty = true;
 	bool layer_signals_connected = false;
+	bool preview_only = false;
 
 	void _bind_layer_pointers();
 	void _ensure_passability_signals();
@@ -143,6 +144,8 @@ public:
 	void set_player_start_position(const Vector2i &p_cell, int p_dir = 2);
 
 	void init_runtime_session();
+	void set_preview_only(bool p_enabled) { preview_only = p_enabled; }
+	bool is_preview_only() const { return preview_only; }
 	ClockGearsPlayer *get_runtime_player() const { return runtime_player; }
 	ClockGearsFollowerManager *get_runtime_followers() const { return runtime_followers; }
 	ClockGearsPixelCamera2D *get_runtime_camera() const { return runtime_camera; }

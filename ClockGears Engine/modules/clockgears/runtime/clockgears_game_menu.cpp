@@ -702,7 +702,16 @@ void ClockGearsGameMenu::_build_ui() {
 	_apply_unified_styles();
 }
 
-void ClockGearsGameMenu::_apply_unified_styles() {
+void ClockGearsGameMenu::_apply_unified_styles(bool p_force) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	uint64_t cur_gen = dm ? dm->get_window_styles_generation() : 0;
+	double cur_scale = 1.0;
+	if (root_control) {
+		cur_scale = double(ClockGearsWindowStyleManager::compute_viewport_scale(root_control));
+	}
+	if (!p_force && !preview_config_override_active && applied_styles_generation == cur_gen && cur_gen != 0 && Math::is_equal_approx(applied_styles_scale, cur_scale)) {
+		return;
+	}
 	ClockGearsWindowStyleManager::apply_window_style(main_cmd_panel, "game_menu");
 	ClockGearsWindowStyleManager::apply_window_style(currency_time_card, "game_menu");
 	ClockGearsWindowStyleManager::apply_window_style(party_panel, "game_menu");
@@ -756,6 +765,8 @@ void ClockGearsGameMenu::_apply_unified_styles() {
 		options_box->apply_button_theme();
 	}
 	last_applied_style_type = "game_menu";
+	applied_styles_generation = cur_gen;
+	applied_styles_scale = cur_scale;
 }
 
 void ClockGearsGameMenu::_update_responsive_layout() {
@@ -785,11 +796,14 @@ void ClockGearsGameMenu::_update_responsive_layout() {
 
 void ClockGearsGameMenu::_notification(int p_what) {
 	if (p_what == NOTIFICATION_READY) {
-		set_process(true);
+		set_process(menu_open && !preview_mode);
 		_apply_unified_styles();
 		_update_responsive_layout();
 	} else if (p_what == NOTIFICATION_WM_SIZE_CHANGED) {
 		_update_responsive_layout();
+		if (is_visible()) {
+			_apply_unified_styles();
+		}
 	} else if (p_what == NOTIFICATION_PROCESS) {
 		if (menu_open && !preview_mode && current_subscreen == "main") {
 			playtime_refresh_accum += get_process_delta_time();
@@ -887,6 +901,7 @@ bool ClockGearsGameMenu::open_menu() {
 	menu_open = true;
 	last_returned_to_title = false;
 	set_visible(true);
+	set_process(!preview_mode);
 	_apply_unified_styles();
 	open_subscreen("main");
 	_update_responsive_layout();
@@ -905,6 +920,7 @@ bool ClockGearsGameMenu::open_menu_from_event(const String &p_initial_subscreen,
 	menu_open = true;
 	last_returned_to_title = false;
 	set_visible(true);
+	set_process(!preview_mode);
 	_apply_unified_styles();
 	String target = p_initial_subscreen.strip_edges().to_lower();
 	open_subscreen(target.is_empty() ? String("main") : target);
@@ -914,7 +930,7 @@ bool ClockGearsGameMenu::open_menu_from_event(const String &p_initial_subscreen,
 }
 
 void ClockGearsGameMenu::refresh_window_styles() {
-	_apply_unified_styles();
+	_apply_unified_styles(true);
 	if (menu_open) {
 		_refresh_main_view();
 		if (current_subscreen == "save") {
@@ -940,6 +956,7 @@ void ClockGearsGameMenu::close_menu() {
 	direct_subscreen_close_on_back = false;
 	current_subscreen = "main";
 	set_visible(false);
+	set_process(false);
 	emit_signal("menu_closed");
 }
 

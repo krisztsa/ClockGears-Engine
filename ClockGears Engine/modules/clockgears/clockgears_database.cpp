@@ -1303,14 +1303,23 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (system_panel) {
 		system_panel->set_visible(is_system);
 	}
+	if (is_main_menu) {
+		_setup_main_menu_editor_ui();
+	}
 	if (main_menu_editor_panel) {
 		main_menu_editor_panel->set_visible(is_main_menu);
 		if (is_main_menu) {
 			_refresh_main_menu_editor_ui();
 		}
 	}
+	if (is_window_styles) {
+		_setup_window_styles_editor_ui();
+	}
 	if (window_styles_editor_panel) {
 		window_styles_editor_panel->set_visible(is_window_styles);
+	}
+	if (is_game_menu) {
+		_setup_game_menu_editor_ui();
 	}
 	if (game_menu_editor_panel) {
 		game_menu_editor_panel->set_visible(is_game_menu);
@@ -1318,11 +1327,17 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 			_refresh_game_menu_editor_ui();
 		}
 	}
+	if (is_credits) {
+		_setup_credits_editor_ui();
+	}
 	if (credits_editor_panel) {
 		credits_editor_panel->set_visible(is_credits);
 		if (is_credits) {
 			_refresh_credits_editor_ui();
 		}
+	}
+	if (is_hud) {
+		_setup_hud_editor_ui();
 	}
 	if (hud_editor_panel) {
 		hud_editor_panel->set_visible(is_hud);
@@ -1332,12 +1347,18 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 			_restore_hud_preview_runtime_state();
 		}
 	}
+	if (is_ui_designer) {
+		_setup_ui_design_editor_ui();
+	}
 	if (ui_design_editor_panel) {
 		ui_design_editor_panel->set_visible(is_ui_designer);
 		if (is_ui_designer) {
 			ui_design_editor_panel->refresh_from_data_manager();
 			ui_design_editor_panel->adapt_to_width(int(get_size().x));
 		}
+	}
+	if (is_game_over) {
+		_setup_game_over_editor_ui();
 	}
 	if (game_over_editor_panel) {
 		game_over_editor_panel->set_visible(is_game_over);
@@ -5880,8 +5901,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	event_tab_pages_tree->set_column_title(2, CG_DB_TR("Comandos"));
 	event_tab_vbox->add_child(event_tab_pages_tree);
 
-	record_event_editor = memnew(ClockGearsEventEditorDialog);
-	add_child(record_event_editor);
+	// `record_event_editor` se crea de forma perezosa la primera vez que se edita un evento en DB.
 
 	_setup_body_zones_tab_ui();
 	_setup_movement_tab_ui();
@@ -7356,13 +7376,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	btn_remove_party_member->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_remove_party_member_pressed));
 	party_ctrl_row->add_child(btn_remove_party_member);
 
-	_setup_main_menu_editor_ui();
-	_setup_window_styles_editor_ui();
-	_setup_game_menu_editor_ui();
-	_setup_credits_editor_ui();
-	_setup_hud_editor_ui();
-	_setup_ui_design_editor_ui();
-	_setup_game_over_editor_ui();
+	// Los editores de Menús se construyen de forma perezosa la primera vez que se abre su sección.
 
 	// Vista previa de colocación de tropas debajo de los miembros (todo el ancho disponible hasta 960px, proporción 16:9, sin hueco arriba)
 	troop_placement_col3_box = memnew(VBoxContainer);
@@ -12581,7 +12595,15 @@ void ClockGearsDatabaseDialog::_on_record_event_saved(const Array &p_pages) {
 	_mark_database_dirty();
 }
 
+void ClockGearsDatabaseDialog::_ensure_record_event_editor() {
+	if (!record_event_editor) {
+		record_event_editor = memnew(ClockGearsEventEditorDialog);
+		add_child(record_event_editor);
+	}
+}
+
 bool ClockGearsDatabaseDialog::open_record_event_editor() {
+	_ensure_record_event_editor();
 	if (!s_has_event_tab_category(current_category) || !record_event_editor || !record_list) {
 		return false;
 	}
@@ -16121,7 +16143,15 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	menu_asset_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
 	menu_asset_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_menu_asset_file_selected));
 	add_child(menu_asset_file_dialog);
+	if (menus_common_preview_res != Vector2i(960, 540)) {
+		set_menus_preview_resolution(menus_common_preview_res.x, menus_common_preview_res.y);
+	}
+}
 
+void ClockGearsDatabaseDialog::_ensure_menu_test_window() {
+	if (menu_test_window && menu_test_screen) {
+		return;
+	}
 	menu_test_window = memnew(Window);
 	menu_test_window->set_title(CG_DB_TR("Probar menú principal (960x540)"));
 	menu_test_window->set_visible(false);
@@ -16588,6 +16618,7 @@ void ClockGearsDatabaseDialog::set_title_menu_bgm(const String &p_path) {
 }
 
 Window *ClockGearsDatabaseDialog::open_title_menu_test_popup() {
+	_ensure_menu_test_window();
 	if (!menu_test_window || !menu_test_screen) {
 		return nullptr;
 	}
@@ -17861,7 +17892,8 @@ void ClockGearsDatabaseDialog::select_window_style(int p_index) {
 	}
 }
 
-Dictionary ClockGearsDatabaseDialog::get_window_styles_ui_handles() const {
+Dictionary ClockGearsDatabaseDialog::get_window_styles_ui_handles() {
+	_setup_window_styles_editor_ui();
 	Dictionary out;
 	out["panel"] = window_styles_editor_panel;
 	out["main_split"] = ws_main_split;
@@ -17918,7 +17950,8 @@ Dictionary ClockGearsDatabaseDialog::get_window_styles_ui_handles() const {
 	return out;
 }
 
-Dictionary ClockGearsDatabaseDialog::get_window_style_preview_info() const {
+Dictionary ClockGearsDatabaseDialog::get_window_style_preview_info() {
+	_setup_window_styles_editor_ui();
 	Dictionary out;
 	if (ws_preview_window) {
 		Ref<StyleBox> sb = ws_preview_window->get_theme_stylebox("panel");
@@ -18235,7 +18268,12 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 	gm_asset_file_dialog->add_filter("*.png, *.webp, *.jpg, *.jpeg ; " + CG_DB_TR("Imágenes"));
 	gm_asset_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_gm_bg_file_selected));
 	add_child(gm_asset_file_dialog);
+}
 
+void ClockGearsDatabaseDialog::_ensure_gm_test_window() {
+	if (gm_test_window && gm_test_menu) {
+		return;
+	}
 	gm_test_window = memnew(Window);
 	gm_test_window->set_title(CG_DB_TR("Probar menú del juego (960x540)"));
 	gm_test_window->set_visible(false);
@@ -18734,6 +18772,7 @@ void ClockGearsDatabaseDialog::set_game_menu_screen_background(const String &p_s
 }
 
 Window *ClockGearsDatabaseDialog::open_game_menu_test_popup() {
+	_ensure_gm_test_window();
 	if (!gm_test_window || !gm_test_menu) {
 		return nullptr;
 	}
@@ -18752,7 +18791,8 @@ Window *ClockGearsDatabaseDialog::open_game_menu_test_popup() {
 	return gm_test_window;
 }
 
-Dictionary ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles() const {
+Dictionary ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles() {
+	_setup_game_menu_editor_ui();
 	Dictionary out;
 	out["panel"] = game_menu_editor_panel;
 	out["main_split"] = gm_main_split;
@@ -19258,7 +19298,12 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 	cred_asset_file_dialog->set_file_mode(FileDialog::FILE_MODE_OPEN_FILE);
 	cred_asset_file_dialog->connect("file_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_cred_asset_file_selected));
 	add_child(cred_asset_file_dialog);
+}
 
+void ClockGearsDatabaseDialog::_ensure_cred_test_window() {
+	if (cred_test_window && cred_test_player) {
+		return;
+	}
 	cred_test_window = memnew(Window);
 	cred_test_window->set_title(CG_DB_TR("Probar créditos (960x540)"));
 	cred_test_window->set_visible(false);
@@ -19826,6 +19871,7 @@ Dictionary ClockGearsDatabaseDialog::get_credits_draft_copy() const {
 }
 
 Window *ClockGearsDatabaseDialog::open_credits_test_popup() {
+	_ensure_cred_test_window();
 	if (!cred_test_window || !cred_test_player) {
 		return nullptr;
 	}
@@ -19842,7 +19888,8 @@ Window *ClockGearsDatabaseDialog::open_credits_test_popup() {
 	return cred_test_window;
 }
 
-Dictionary ClockGearsDatabaseDialog::get_credits_editor_ui_handles() const {
+Dictionary ClockGearsDatabaseDialog::get_credits_editor_ui_handles() {
+	_setup_credits_editor_ui();
 	Dictionary out;
 	out["panel"] = credits_editor_panel;
 	out["main_split"] = cred_main_split;
@@ -21622,7 +21669,8 @@ void ClockGearsDatabaseDialog::set_hud_preview_sample_values(int p_hp, int p_gol
 	_update_hud_live_preview();
 }
 
-Dictionary ClockGearsDatabaseDialog::get_hud_editor_ui_handles() const {
+Dictionary ClockGearsDatabaseDialog::get_hud_editor_ui_handles() {
+	_setup_hud_editor_ui();
 	Dictionary out;
 	out["panel"] = hud_editor_panel;
 	out["main_split"] = hud_main_split;
@@ -21712,6 +21760,9 @@ void ClockGearsDatabaseDialog::_setup_ui_design_editor_ui() {
 	ui_design_editor_panel->hide();
 	ui_design_editor_panel->connect("design_modified", callable_mp(this, &ClockGearsDatabaseDialog::_on_ui_designer_modified));
 	col2_box->add_child(ui_design_editor_panel);
+	if (menus_common_preview_res != Vector2i(960, 540)) {
+		ui_design_editor_panel->set_preview_resolution(menus_common_preview_res.x, menus_common_preview_res.y, false);
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_ui_designer_modified() {
@@ -21726,7 +21777,8 @@ String ClockGearsDatabaseDialog::import_menu_asset_for_ui_designer(const String 
 	return _import_menu_asset_file(p_src_path, "img/ui", p_pixel_preset);
 }
 
-Dictionary ClockGearsDatabaseDialog::get_ui_designer_ui_handles() const {
+Dictionary ClockGearsDatabaseDialog::get_ui_designer_ui_handles() {
+	_setup_ui_design_editor_ui();
 	if (ui_design_editor_panel) {
 		return ui_design_editor_panel->get_ui_handles();
 	}
@@ -22093,7 +22145,8 @@ void ClockGearsDatabaseDialog::_on_game_over_asset_selected(const String &p_path
 	_on_game_over_field_changed();
 }
 
-Dictionary ClockGearsDatabaseDialog::get_game_over_editor_ui_handles() const {
+Dictionary ClockGearsDatabaseDialog::get_game_over_editor_ui_handles() {
+	_setup_game_over_editor_ui();
 	Dictionary out;
 	out["panel"] = game_over_editor_panel;
 	out["bg_type_opt"] = go_bg_type_opt;

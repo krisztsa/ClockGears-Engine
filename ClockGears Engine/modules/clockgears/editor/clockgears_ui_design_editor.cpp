@@ -374,7 +374,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					drag_changed = true;
 				}
 				dm->update_ui_element(owner_editor->get_current_screen(), drag_elem_id, next_elem, false);
-				owner_editor->refresh_from_data_manager();
+				owner_editor->refresh_geometry_fast(true);
 			}
 			accept_event();
 			return;
@@ -818,44 +818,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_hud_grid_bg->hide();
 	canvas_stage->add_child(canvas_hud_grid_bg);
 
-	// Previews por defecto (solo visibles cuando !has_custom_ui_design)
-	default_title_preview = memnew(ClockGearsTitleScreen);
-	default_title_preview->set_preview_mode(true);
-	default_title_preview->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	default_title_preview->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	default_title_preview->hide();
-	canvas_stage->add_child(default_title_preview);
-
-	default_gmenu_vp = memnew(SubViewport);
-	default_gmenu_vp->set_size(Size2i(BASE_W, BASE_H));
-	default_gmenu_vp->set_disable_3d(true);
-	default_gmenu_vp->set_transparent_background(true);
-	default_gmenu_vp->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
-	canvas_stage->add_child(default_gmenu_vp);
-
-	default_gmenu_disp = memnew(TextureRect);
-	default_gmenu_disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	default_gmenu_disp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	default_gmenu_disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	default_gmenu_disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
-	default_gmenu_disp->set_texture(default_gmenu_vp->get_texture());
-	default_gmenu_disp->hide();
-	canvas_stage->add_child(default_gmenu_disp);
-
-	default_gmenu_preview = memnew(ClockGearsGameMenu);
-	default_gmenu_preview->set_preview_mode(true);
-	default_gmenu_preview->set_editor_test_popup_mode(true);
-	default_gmenu_preview->hide();
-	default_gmenu_vp->add_child(default_gmenu_preview);
-
-	default_credits_preview = memnew(ClockGearsCreditsPlayer);
-	default_credits_preview->set_preview_mode(true);
-	default_credits_preview->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	default_credits_preview->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	default_credits_preview->hide();
-	canvas_stage->add_child(default_credits_preview);
-
-	// Mismo renderizador del juego (ClockGearsUiDesignLayer)
+	// Mismo renderizador del juego (ClockGearsUiDesignLayer); las vistas previas por defecto se crean bajo demanda.
 	design_layer = memnew(ClockGearsUiDesignLayer);
 	design_layer->set_preview_mode(true);
 	design_layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
@@ -1223,6 +1186,88 @@ void ClockGearsUiDesignEditor::refresh_from_data_manager() {
 	_refresh_undo_redo_buttons();
 }
 
+void ClockGearsUiDesignEditor::refresh_geometry_fast(bool p_refresh_props) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !design_layer) {
+		return;
+	}
+	bool has_custom = dm->has_custom_ui_design(current_screen_id);
+	if (current_screen_id == "hud" || has_custom) {
+		Dictionary design = dm->get_ui_screen_design(current_screen_id);
+		design_layer->apply_screen_design(current_screen_id, design);
+		if (!design_layer->is_visible()) {
+			design_layer->show();
+		}
+	}
+	if (canvas_overlay) {
+		canvas_overlay->queue_redraw();
+	}
+	if (p_refresh_props) {
+		_refresh_properties_panel();
+	}
+}
+
+ClockGearsTitleScreen *ClockGearsUiDesignEditor::_ensure_default_title_preview() {
+	if (!default_title_preview && canvas_stage) {
+		default_title_preview = memnew(ClockGearsTitleScreen);
+		default_title_preview->set_preview_mode(true);
+		default_title_preview->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		default_title_preview->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		default_title_preview->hide();
+		canvas_stage->add_child(default_title_preview);
+		if (design_layer) {
+			canvas_stage->move_child(default_title_preview, design_layer->get_index());
+		}
+	}
+	return default_title_preview;
+}
+
+ClockGearsGameMenu *ClockGearsUiDesignEditor::_ensure_default_gmenu_preview() {
+	if (!default_gmenu_vp && canvas_stage) {
+		default_gmenu_vp = memnew(SubViewport);
+		default_gmenu_vp->set_size(Size2i(BASE_W, BASE_H));
+		default_gmenu_vp->set_disable_3d(true);
+		default_gmenu_vp->set_transparent_background(true);
+		default_gmenu_vp->set_update_mode(SubViewport::UPDATE_WHEN_PARENT_VISIBLE);
+		canvas_stage->add_child(default_gmenu_vp);
+
+		default_gmenu_disp = memnew(TextureRect);
+		default_gmenu_disp->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		default_gmenu_disp->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		default_gmenu_disp->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+		default_gmenu_disp->set_stretch_mode(TextureRect::STRETCH_SCALE);
+		default_gmenu_disp->set_texture(default_gmenu_vp->get_texture());
+		default_gmenu_disp->hide();
+		canvas_stage->add_child(default_gmenu_disp);
+		if (design_layer) {
+			canvas_stage->move_child(default_gmenu_disp, design_layer->get_index());
+		}
+	}
+	if (!default_gmenu_preview && default_gmenu_vp) {
+		default_gmenu_preview = memnew(ClockGearsGameMenu);
+		default_gmenu_preview->set_preview_mode(true);
+		default_gmenu_preview->set_editor_test_popup_mode(true);
+		default_gmenu_preview->hide();
+		default_gmenu_vp->add_child(default_gmenu_preview);
+	}
+	return default_gmenu_preview;
+}
+
+ClockGearsCreditsPlayer *ClockGearsUiDesignEditor::_ensure_default_credits_preview() {
+	if (!default_credits_preview && canvas_stage) {
+		default_credits_preview = memnew(ClockGearsCreditsPlayer);
+		default_credits_preview->set_preview_mode(true);
+		default_credits_preview->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		default_credits_preview->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		default_credits_preview->hide();
+		canvas_stage->add_child(default_credits_preview);
+		if (design_layer) {
+			canvas_stage->move_child(default_credits_preview, design_layer->get_index());
+		}
+	}
+	return default_credits_preview;
+}
+
 void ClockGearsUiDesignEditor::_refresh_background_and_default_preview(bool p_has_custom) {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (!dm) {
@@ -1250,33 +1295,45 @@ void ClockGearsUiDesignEditor::_refresh_background_and_default_preview(bool p_ha
 	}
 
 	Size2 stage_sz(float(preview_resolution.x * canvas_zoom), float(preview_resolution.y * canvas_zoom));
-	default_title_preview->hide();
+	if (default_title_preview) {
+		default_title_preview->hide();
+	}
 	if (default_gmenu_disp) {
 		default_gmenu_disp->hide();
 	}
-	default_gmenu_preview->hide();
-	default_credits_preview->hide();
+	if (default_gmenu_preview) {
+		default_gmenu_preview->hide();
+	}
+	if (default_credits_preview) {
+		default_credits_preview->hide();
+	}
 
 	if (!p_has_custom && !is_hud) {
 		if (current_screen_id == "title") {
-			default_title_preview->set_size(stage_sz);
-			default_title_preview->apply_title_config_preview(dm->get_title_menu_config(), dm->get_system_config());
-			default_title_preview->show();
+			if (ClockGearsTitleScreen *tp = _ensure_default_title_preview()) {
+				tp->set_size(stage_sz);
+				tp->apply_title_config_preview(dm->get_title_menu_config(), dm->get_system_config());
+				tp->show();
+			}
 		} else if (current_screen_id.begins_with("game_menu_")) {
 			String sub = current_screen_id.trim_prefix("game_menu_");
-			if (default_gmenu_vp) {
-				default_gmenu_vp->set_size(Size2i(stage_sz));
+			if (ClockGearsGameMenu *gp = _ensure_default_gmenu_preview()) {
+				if (default_gmenu_vp) {
+					default_gmenu_vp->set_size(Size2i(stage_sz));
+				}
+				if (default_gmenu_disp) {
+					default_gmenu_disp->show();
+				}
+				gp->open_menu();
+				gp->open_subscreen(sub);
+				gp->show();
 			}
-			if (default_gmenu_disp) {
-				default_gmenu_disp->show();
-			}
-			default_gmenu_preview->open_menu();
-			default_gmenu_preview->open_subscreen(sub);
-			default_gmenu_preview->show();
 		} else if (current_screen_id == "credits") {
-			default_credits_preview->set_size(stage_sz);
-			default_credits_preview->apply_credits_config_preview(dm->get_credits_config());
-			default_credits_preview->show();
+			if (ClockGearsCreditsPlayer *cp = _ensure_default_credits_preview()) {
+				cp->set_size(stage_sz);
+				cp->apply_credits_config_preview(dm->get_credits_config());
+				cp->show();
+			}
 		}
 	}
 }
@@ -1872,6 +1929,15 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 		return;
 	}
 	String etype = String(el.get("type", "text"));
+	String old_name = String(el.get("name", ""));
+	int old_layer = int(el.get("layer_order", 0));
+	bool old_vis = bool(el.get("visible", true));
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	bool only_geom = (old_name == prop_name_edit->get_text() &&
+			old_layer == int(Math::round(prop_layer_spin->get_value())) &&
+			old_vis == prop_visible_chk->is_pressed() &&
+			was_custom &&
+			(!prop_show_bg_chk || bool(el.get("show_background", true)) == prop_show_bg_chk->is_pressed()));
 	el["name"] = prop_name_edit->get_text();
 	el["offset_x"] = int(Math::round(prop_ox_spin->get_value()));
 	el["offset_y"] = int(Math::round(prop_oy_spin->get_value()));
@@ -1883,30 +1949,48 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 		el["show_background"] = prop_show_bg_chk->is_pressed();
 	}
 	if (prop_style_opt && prop_style_opt->get_selected() >= 0) {
-		el["window_style_id"] = String(prop_style_opt->get_item_metadata(prop_style_opt->get_selected()));
+		String next_ws = String(prop_style_opt->get_item_metadata(prop_style_opt->get_selected()));
+		if (String(el.get("window_style_id", "")) != next_ws) {
+			only_geom = false;
+		}
+		el["window_style_id"] = next_ws;
 	}
 	if (prop_text_row->is_visible()) {
 		if (etype == "bar") {
+			if (String(el.get("label_text", "")) != prop_text_edit->get_text()) only_geom = false;
 			el["label_text"] = prop_text_edit->get_text();
 		} else {
+			if (String(el.get("text", "")) != prop_text_edit->get_text()) only_geom = false;
 			el["text"] = prop_text_edit->get_text();
 		}
 	}
 	if (prop_image_row->is_visible()) {
 		String ikey = (etype == "currency" || etype == "item") ? "icon_path" : "image_path";
-		el[ikey] = prop_image_edit->get_text().strip_edges();
+		String next_img = prop_image_edit->get_text().strip_edges();
+		if (String(el.get(ikey, "")) != next_img) only_geom = false;
+		el[ikey] = next_img;
 	}
 	if (prop_var_row->is_visible()) {
-		el["variable_name"] = prop_var_edit->get_text().strip_edges();
+		String next_var = prop_var_edit->get_text().strip_edges();
+		if (String(el.get("variable_name", "")) != next_var) only_geom = false;
+		el["variable_name"] = next_var;
 		if (etype == "text" && String(el.get("data_binding", "none")) == "variable") {
 			el["text_mode"] = "variable";
 		}
 	}
 	if (etype == "button" && prop_action_row->is_visible()) {
-		el["focus_order"] = int(Math::round(prop_focus_spin->get_value()));
+		int next_fo = int(Math::round(prop_focus_spin->get_value()));
+		if (int(el.get("focus_order", 0)) != next_fo) only_geom = false;
+		el["focus_order"] = next_fo;
 	}
 	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
-	_notify_data_mutated(true);
+	if (only_geom) {
+		refresh_geometry_fast(false);
+		_refresh_undo_redo_buttons();
+		emit_signal("design_modified");
+	} else {
+		_notify_data_mutated(true);
+	}
 }
 
 void ClockGearsUiDesignEditor::_on_prop_binding_changed(int p_idx) {

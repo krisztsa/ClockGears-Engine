@@ -543,6 +543,7 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 		_on_add_command_pressed();
 		return;
 	}
+	_ensure_command_subdialogs();
 	Dictionary d = cmds[idx];
 	if (ClockGearsChoiceUtils::is_when_choice(d) || ClockGearsChoiceUtils::is_when_cancel(d) || ClockGearsChoiceUtils::is_branch_end(d)) {
 		int b_start = ClockGearsChoiceUtils::find_block_start(cmds, idx);
@@ -973,6 +974,7 @@ void ClockGearsEventEditorDialog::_on_move_command_down() {
 }
 
 void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
+	_ensure_command_subdialogs();
 	switch (p_cmd_id) {
 		case CMD_SHOW_MESSAGE:
 			if (dlg_msg) {
@@ -2363,7 +2365,8 @@ void ClockGearsEventEditorDialog::_on_confirm_change_hud_visibility() {
 	_append_command_to_active_page(cmd);
 }
 
-Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() const {
+Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() {
+	_ensure_command_subdialogs();
 	Dictionary out;
 	out["command_selector"] = cmd_catalog_dialog;
 	out["command_tree"] = command_tree;
@@ -4944,12 +4947,18 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	cmd_catalog_dialog->connect("command_selected", callable_mp(this, &ClockGearsEventEditorDialog::_on_command_id_selected));
 	add_child(cmd_catalog_dialog);
 
-	// Setup parameter sub-dialogs
-	_setup_command_subdialogs();
-	_setup_database_picker_dialogs();
-
+	// Parameter sub-dialogs & DB pickers se crean de forma perezosa la primera vez que se insertan o editan comandos.
 	connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_dialog_confirmed));
 	connect("canceled", callable_mp(this, &ClockGearsEventEditorDialog::_on_dialog_canceled));
+}
+
+void ClockGearsEventEditorDialog::_ensure_command_subdialogs() {
+	if (command_subdialogs_built) {
+		return;
+	}
+	command_subdialogs_built = true;
+	_setup_command_subdialogs();
+	_setup_database_picker_dialogs();
 }
 
 void ClockGearsEventEditorDialog::_populate_initial_dir_options(int p_select_dir) {
@@ -5455,6 +5464,7 @@ void ClockGearsEventEditorDialog::_on_remove_command_pressed() {
 	if (ClockGearsChoiceUtils::is_choices_start(d)) {
 		if (ClockGearsChoiceUtils::block_has_content(cmds, idx)) {
 			pending_delete_choice_idx = idx;
+			_ensure_command_subdialogs();
 			if (dlg_confirm_delete_choice_block) {
 				dlg_confirm_delete_choice_block->popup_centered();
 			}
@@ -5471,6 +5481,7 @@ void ClockGearsEventEditorDialog::_on_remove_command_pressed() {
 		if (b_start >= 0) {
 			if (ClockGearsChoiceUtils::block_has_content(cmds, b_start)) {
 				pending_delete_choice_idx = b_start;
+				_ensure_command_subdialogs();
 				if (dlg_confirm_delete_choice_block) {
 					dlg_confirm_delete_choice_block->popup_centered();
 				}

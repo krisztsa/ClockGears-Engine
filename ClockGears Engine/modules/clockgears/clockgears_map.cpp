@@ -210,13 +210,13 @@ void ClockGearsMap::_notification(int p_what) {
 			if (tileset_id > 0) {
 				setup_tileset_from_database(tileset_id);
 			}
-			if (p_what == NOTIFICATION_READY && !Engine::get_singleton()->is_editor_hint()) {
+			if (p_what == NOTIFICATION_READY && !Engine::get_singleton()->is_editor_hint() && !preview_only) {
 				set_physics_process(true);
 				init_runtime_session();
 			}
 		} break;
 		case NOTIFICATION_PHYSICS_PROCESS: {
-			if (!Engine::get_singleton()->is_editor_hint()) {
+			if (!Engine::get_singleton()->is_editor_hint() && !preview_only) {
 				if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
 					dm->advance_runtime_clock(get_physics_process_delta_time());
 				}
@@ -856,6 +856,22 @@ void ClockGearsMap::setup_tileset_from_database(int p_tileset_id) {
 		dm->load_all("res://clockgears_data");
 	}
 
+	String ts_cache_key = vformat("%d_%d", p_tileset_id, grid_resolution);
+	Ref<TileSet> cached_ts = dm->get_cached_tileset(ts_cache_key);
+	if (cached_ts.is_valid()) {
+		for (int i = 0; i < 4; i++) {
+			if (layers[i]) {
+				if (layers[i]->get_tile_set() != cached_ts) {
+					layers[i]->set_tile_set(cached_ts);
+					layers[i]->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+					layers[i]->update_internals();
+					layers[i]->queue_redraw();
+				}
+			}
+		}
+		return;
+	}
+
 	Array ts_arr = dm->get_category_array(CAT_TILESETS);
 	Dictionary ts_dict;
 	for (int i = 0; i < ts_arr.size(); i++) {
@@ -991,6 +1007,8 @@ void ClockGearsMap::setup_tileset_from_database(int p_tileset_id) {
 			ts->add_source(atlas, tab);
 		}
 	}
+
+	dm->set_cached_tileset(ts_cache_key, ts);
 
 	for (int i = 0; i < 4; i++) {
 		if (layers[i]) {

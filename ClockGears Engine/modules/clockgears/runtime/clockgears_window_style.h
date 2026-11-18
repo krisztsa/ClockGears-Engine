@@ -95,6 +95,7 @@ public:
 	static void apply_buttons_in_container(Node *p_container, const String &p_window_type_id, const Dictionary &p_overrides = Dictionary());
 
 	static Dictionary inspect_control_style(const Control *p_control);
+	static void clear_caches();
 
 	ClockGearsWindowStyleManager();
 	~ClockGearsWindowStyleManager();

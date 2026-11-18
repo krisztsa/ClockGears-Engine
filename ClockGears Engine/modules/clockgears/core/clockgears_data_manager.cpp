@@ -25,6 +25,7 @@
 #include "scene/main/window.h"
 #include "scene/resources/canvas_item_material.h"
 #include "scene/resources/material.h"
+#include "modules/tilemap/tile_set.h"
 #include "servers/display/display_server.h"
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
@@ -162,6 +163,9 @@ void ClockGearsDataManager::init_empty() {
 	runtime_playtime_sec = 0.0;
 	runtime_gold = 0;
 	runtime_game_menu_disabled = false;
+	built_tileset_cache.clear();
+	entry_icon_cache.clear();
+	_invalidate_window_styles_cache();
 	dirty = false;
 }
 
@@ -1190,6 +1194,9 @@ Array ClockGearsDataManager::get_category_array(int p_category) const {
 void ClockGearsDataManager::set_category_array(int p_category, const Array &p_array) {
 	ERR_FAIL_INDEX(p_category, CAT_MAX);
 	category_data[p_category] = p_array.duplicate(true);
+	if (p_category == CAT_TILESETS) {
+		built_tileset_cache.clear();
+	}
 	ClockGearsSystemCatalog *cat_sys = ClockGearsSystemCatalog::get_singleton();
 	if (p_category == CAT_TYPES && cat_sys) {
 		if (category_data[CAT_TYPES].is_empty()) {
@@ -1308,6 +1315,9 @@ bool ClockGearsDataManager::update_record(int p_category, int p_id, const Dictio
 				}
 				normalize_record_defaults(p_category, updated);
 				arr[i] = updated;
+				if (p_category == CAT_TILESETS) {
+					built_tileset_cache.clear();
+				}
 				dirty = true;
 				emit_signal("data_changed", get_category_key(p_category), p_id);
 				return true;
@@ -1330,6 +1340,9 @@ bool ClockGearsDataManager::delete_record_by_id(int p_category, int p_id) {
 					ClockGearsIdRegistry::get_singleton()->retire_id(get_category_key(p_category), p_id);
 				}
 				_clean_cross_references_on_delete(p_category, p_id);
+				if (p_category == CAT_TILESETS) {
+					built_tileset_cache.clear();
+				}
 				dirty = true;
 				emit_signal("data_changed", get_category_key(p_category), p_id);
 				return true;
@@ -1824,6 +1837,9 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 
 bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	last_repaired_json_files.clear();
+	built_tileset_cache.clear();
+	entry_icon_cache.clear();
+	_invalidate_window_styles_cache();
 	String index_path = p_dir_path.path_join("database.json");
 	if (!FileAccess::exists(index_path) && !FileAccess::exists(index_path + ".bak")) {
 		init_empty();
@@ -4585,11 +4601,13 @@ void ClockGearsDataManager::set_runtime_window_style_override(const String &p_wi
 	} else {
 		runtime_window_style_overrides[wt] = sid;
 	}
+	_invalidate_window_styles_cache();
 	emit_signal("runtime_state_changed", "window_style", wt);
 }
 
 void ClockGearsDataManager::clear_runtime_window_style_overrides() {
 	runtime_window_style_overrides.clear();
+	_invalidate_window_styles_cache();
 	emit_signal("runtime_state_changed", "window_style", String());
 }
 
@@ -6409,25 +6427,63 @@ Dictionary ClockGearsDataManager::normalize_window_styles_config(const Dictionar
 	return out;
 }
 
+void ClockGearsDataManager::_invalidate_window_styles_cache() {
+	cached_ws_norm.clear();
+	cached_ws_by_id.clear();
+	cached_ws_norm_gen = 0;
+	window_styles_generation++;
+}
+
+void ClockGearsDataManager::_ensure_window_styles_cache() const {
+	if (cached_ws_norm_gen == window_styles_generation && !cached_ws_norm.is_empty()) {
+		return;
+	}
+	cached_ws_norm = normalize_window_styles_config(window_styles_config);
+	cached_ws_by_id.clear();
+	Array styles = cached_ws_norm.get("styles", Array());
+	for (int i = 0; i < styles.size(); i++) {
+		if (styles[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary s = styles[i];
+		String id = String(s.get("id", "")).strip_edges().to_lower();
+		if (!id.is_empty()) {
+			cached_ws_by_id[id] = s;
+		}
+	}
+	cached_ws_norm_gen = window_styles_generation;
+}
+
+Ref<TileSet> ClockGearsDataManager::get_cached_tileset(const String &p_key) const {
+	if (const Ref<TileSet> *found = built_tileset_cache.getptr(p_key)) {
+		return *found;
+	}
+	return Ref<TileSet>();
+}
+
+void ClockGearsDataManager::set_cached_tileset(const String &p_key, const Ref<TileSet> &p_tileset) const {
+	if (p_tileset.is_valid()) {
+		built_tileset_cache[p_key] = p_tileset;
+	}
+}
+
 void ClockGearsDataManager::set_window_styles_config(const Dictionary &p_cfg) {
 	window_styles_config = normalize_window_styles_config(p_cfg);
+	_invalidate_window_styles_cache();
 	dirty = true;
 	emit_signal("data_changed", "window_styles", 0);
 }
 
 Array ClockGearsDataManager::get_window_styles() const {
-	Dictionary norm = normalize_window_styles_config(window_styles_config);
-	return Array(norm.get("styles", Array())).duplicate(true);
+	_ensure_window_styles_cache();
+	return Array(cached_ws_norm.get("styles", Array())).duplicate(true);
 }
 
 Dictionary ClockGearsDataManager::get_window_style(const String &p_style_id) const {
+	_ensure_window_styles_cache();
 	String target = p_style_id.strip_edges().to_lower();
-	Array styles = get_window_styles();
-	for (int i = 0; i < styles.size(); i++) {
-		Dictionary s = styles[i];
-		if (String(s.get("id", "")) == target) {
-			return s.duplicate(true);
-		}
+	if (const Dictionary *found = cached_ws_by_id.getptr(target)) {
+		return found->duplicate(true);
 	}
 	return Dictionary();
 }
@@ -6552,24 +6608,25 @@ bool ClockGearsDataManager::delete_window_style(const String &p_style_id) {
 }
 
 String ClockGearsDataManager::get_default_window_style_id() const {
-	Dictionary norm = normalize_window_styles_config(window_styles_config);
-	return String(norm.get("default_style_id", "rounded"));
+	_ensure_window_styles_cache();
+	return String(cached_ws_norm.get("default_style_id", "rounded"));
 }
 
 bool ClockGearsDataManager::set_default_window_style_id(const String &p_style_id) {
 	String target = p_style_id.strip_edges().to_lower();
-	if (get_window_style(target).is_empty()) {
+	_ensure_window_styles_cache();
+	if (!cached_ws_by_id.has(target)) {
 		return false;
 	}
-	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Dictionary cfg = cached_ws_norm.duplicate(true);
 	cfg["default_style_id"] = target;
 	set_window_styles_config(cfg);
 	return true;
 }
 
 String ClockGearsDataManager::get_window_type_assignment(const String &p_window_type_id) const {
-	Dictionary norm = normalize_window_styles_config(window_styles_config);
-	Dictionary assign = norm.get("assignments", Dictionary());
+	_ensure_window_styles_cache();
+	Dictionary assign = cached_ws_norm.get("assignments", Dictionary());
 	return String(assign.get(p_window_type_id.strip_edges().to_lower(), ""));
 }
 
@@ -6579,10 +6636,11 @@ bool ClockGearsDataManager::set_window_type_assignment(const String &p_window_ty
 		return false;
 	}
 	String sid = p_style_id.strip_edges().to_lower();
-	if (!sid.is_empty() && get_window_style(sid).is_empty()) {
+	_ensure_window_styles_cache();
+	if (!sid.is_empty() && !cached_ws_by_id.has(sid)) {
 		return false;
 	}
-	Dictionary cfg = normalize_window_styles_config(window_styles_config);
+	Dictionary cfg = cached_ws_norm.duplicate(true);
 	Dictionary assign = cfg.get("assignments", Dictionary());
 	assign[wt] = sid;
 	cfg["assignments"] = assign;
@@ -6591,36 +6649,36 @@ bool ClockGearsDataManager::set_window_type_assignment(const String &p_window_ty
 }
 
 String ClockGearsDataManager::resolve_window_style_id(const String &p_window_type_id) const {
+	_ensure_window_styles_cache();
 	String wt = p_window_type_id.strip_edges().to_lower();
 	if (runtime_window_style_overrides.has(wt)) {
 		String ov = String(runtime_window_style_overrides[wt]).strip_edges().to_lower();
-		if (!ov.is_empty() && !get_window_style(ov).is_empty()) {
+		if (!ov.is_empty() && cached_ws_by_id.has(ov)) {
 			return ov;
 		}
 	}
-	Dictionary cfg = normalize_window_styles_config(window_styles_config);
-	Dictionary assign = cfg.get("assignments", Dictionary());
+	Dictionary assign = cached_ws_norm.get("assignments", Dictionary());
 	String assigned = String(assign.get(wt, "")).strip_edges().to_lower();
-	if (!assigned.is_empty() && !get_window_style(assigned).is_empty()) {
+	if (!assigned.is_empty() && cached_ws_by_id.has(assigned)) {
 		return assigned;
 	}
-	String def_id = String(cfg.get("default_style_id", "rounded")).strip_edges().to_lower();
-	if (!def_id.is_empty() && !get_window_style(def_id).is_empty()) {
+	String def_id = String(cached_ws_norm.get("default_style_id", "rounded")).strip_edges().to_lower();
+	if (!def_id.is_empty() && cached_ws_by_id.has(def_id)) {
 		return def_id;
 	}
 	return "rounded";
 }
 
 Dictionary ClockGearsDataManager::resolve_window_style(const String &p_window_type_id) const {
+	_ensure_window_styles_cache();
 	String resolved_id = resolve_window_style_id(p_window_type_id);
-	Dictionary s = get_window_style(resolved_id);
-	if (s.is_empty()) {
-		s = get_window_style("rounded");
+	if (const Dictionary *found = cached_ws_by_id.getptr(resolved_id)) {
+		return *found;
 	}
-	if (s.is_empty()) {
-		s = s_make_builtin_style_rounded();
+	if (const Dictionary *rb = cached_ws_by_id.getptr("rounded")) {
+		return *rb;
 	}
-	return s;
+	return s_make_builtin_style_rounded();
 }
 
 String ClockGearsDataManager::get_effective_game_title() const {
@@ -7462,6 +7520,10 @@ ClockGearsDataManager::ClockGearsDataManager() {
 }
 
 ClockGearsDataManager::~ClockGearsDataManager() {
+	built_tileset_cache.clear();
+	entry_icon_cache.clear();
+	cached_ws_norm.clear();
+	cached_ws_by_id.clear();
 	if (singleton == this) {
 		singleton = nullptr;
 	}

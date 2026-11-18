@@ -2549,48 +2549,73 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 	screen_flash_rect->set_size(init_vsz);
 	ui_layer->add_child(screen_flash_rect);
 
-	// 3. Ventana de Mensajes Completa Pixel-Art (Fase 7A: ClockGearsMessageWindow)
-	if (!message_window) {
-		message_window = memnew(ClockGearsMessageWindow);
-		message_window->connect("message_completed", callable_mp(this, &ClockGearsEventInterpreter::_on_message_window_completed));
-		message_window->connect("choice_selected", callable_mp(this, &ClockGearsEventInterpreter::_on_message_window_choice_selected));
-		message_window->connect("number_entered", callable_mp(this, &ClockGearsEventInterpreter::_on_message_window_number_entered));
-		ui_layer->add_child(message_window);
-	}
-
 	// 4. Gestor de Imágenes de Pantalla (Anexo A1.3: hasta 100 imágenes simultáneas)
 	if (!picture_manager) {
 		picture_manager = memnew(ClockGearsPictureManager);
 		picture_manager->set_name("ClockGearsPictureManager");
 		ui_layer->add_child(picture_manager);
 	}
+}
 
-	// 5. Reproductor de Cinemáticas (Anexo A1.2: Timeline, Letterbox, Skip consistente)
-	if (!cutscene_player) {
+ClockGearsMessageWindow *ClockGearsEventInterpreter::_ensure_message_window() {
+	if (!ui_layer) {
+		_build_runtime_ui();
+	}
+	if (!message_window && ui_layer) {
+		message_window = memnew(ClockGearsMessageWindow);
+		message_window->connect("message_completed", callable_mp(this, &ClockGearsEventInterpreter::_on_message_window_completed));
+		message_window->connect("choice_selected", callable_mp(this, &ClockGearsEventInterpreter::_on_message_window_choice_selected));
+		message_window->connect("number_entered", callable_mp(this, &ClockGearsEventInterpreter::_on_message_window_number_entered));
+		ui_layer->add_child(message_window);
+	}
+	return message_window;
+}
+
+ClockGearsCutscenePlayer *ClockGearsEventInterpreter::_ensure_cutscene_player() {
+	if (!ui_layer) {
+		_build_runtime_ui();
+	}
+	if (!cutscene_player && ui_layer) {
 		cutscene_player = memnew(ClockGearsCutscenePlayer);
 		cutscene_player->set_name("ClockGearsCutscenePlayer");
 		ui_layer->add_child(cutscene_player);
 	}
+	return cutscene_player;
+}
 
-	// 6. Menú del Juego en Runtime (9B Tanda 3)
+ClockGearsGameMenu *ClockGearsEventInterpreter::_ensure_game_menu() {
+	if (!ui_layer) {
+		_build_runtime_ui();
+	}
 	if (!game_menu) {
 		game_menu = memnew(ClockGearsGameMenu);
 		game_menu->connect("menu_opened", callable_mp(this, &ClockGearsEventInterpreter::_on_game_menu_opened));
 		game_menu->connect("menu_closed", callable_mp(this, &ClockGearsEventInterpreter::_on_game_menu_closed));
 		add_child(game_menu);
+		game_menu->setup_game_menu(this, current_map, player);
 	}
+	return game_menu;
+}
 
-	// 7. Reproductor de Créditos en Runtime (9B Tanda 4)
-	if (!credits_player) {
+ClockGearsCreditsPlayer *ClockGearsEventInterpreter::_ensure_credits_player() {
+	if (!ui_layer) {
+		_build_runtime_ui();
+	}
+	if (!credits_player && ui_layer) {
 		credits_player = memnew(ClockGearsCreditsPlayer);
 		credits_player->set_name("ClockGearsCreditsPlayer");
 		credits_player->set_visible(false);
 		credits_player->connect("credits_finished", callable_mp(this, &ClockGearsEventInterpreter::_on_credits_player_finished));
 		ui_layer->add_child(credits_player);
 	}
+	return credits_player;
+}
 
-	// 8. Pantalla de Game Over en Runtime (9B Punto 8)
-	if (!game_over_screen) {
+ClockGearsGameOverScreen *ClockGearsEventInterpreter::_ensure_game_over_screen() {
+	if (!ui_layer) {
+		_build_runtime_ui();
+	}
+	if (!game_over_screen && ui_layer) {
 		game_over_screen = memnew(ClockGearsGameOverScreen);
 		game_over_screen->set_name("ClockGearsGameOverScreen");
 		game_over_screen->set_visible(false);
@@ -2598,6 +2623,7 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 		game_over_screen->connect("return_to_title_requested", callable_mp(this, &ClockGearsEventInterpreter::_on_game_over_return_to_title_requested));
 		ui_layer->add_child(game_over_screen);
 	}
+	return game_over_screen;
 }
 
 bool ClockGearsEventInterpreter::is_blocking_player() const {
@@ -2781,8 +2807,8 @@ void ClockGearsEventInterpreter::show_game_over(const Dictionary &p_cfg_override
 	if (credits_player && credits_player->is_playing()) {
 		credits_player->stop_credits(true);
 	}
-	if (game_over_screen) {
-		game_over_screen->show_game_over(p_cfg_override);
+	if (ClockGearsGameOverScreen *go = _ensure_game_over_screen()) {
+		go->show_game_over(p_cfg_override);
 	}
 	state = STATE_GAME_OVER;
 	_sync_hud_context_visibility();
@@ -2913,8 +2939,8 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		int pos = int(p_cmd.get("position", p_cmd.get("pos", 0)));
 		int bg = int(p_cmd.get("frame", p_cmd.get("bg", 0)));
 		_build_runtime_ui();
-		if (message_window) {
-			message_window->show_message(raw_txt, speaker, face, pos, bg);
+		if (ClockGearsMessageWindow *mw = _ensure_message_window()) {
+			mw->show_message(raw_txt, speaker, face, pos, bg);
 		}
 		emit_signal("message_shown", raw_txt);
 		state = STATE_WAITING_MESSAGE;
@@ -2953,8 +2979,8 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 			cancel_opt = int(p_cmd.get("cancel", 0));
 		}
 		_build_runtime_ui();
-		if (message_window) {
-			message_window->show_choices(clean_opts, cancel_opt, 0);
+		if (ClockGearsMessageWindow *mw = _ensure_message_window()) {
+			mw->show_choices(clean_opts, cancel_opt, 0);
 		}
 		state = STATE_WAITING_CHOICE;
 		return false;
@@ -2964,8 +2990,8 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		int var_id = int(p_cmd.get("variable", p_cmd.get("var_id", 1)));
 		int digits = int(p_cmd.get("digits", 3));
 		_build_runtime_ui();
-		if (message_window) {
-			message_window->show_number_input(var_id, digits);
+		if (ClockGearsMessageWindow *mw = _ensure_message_window()) {
+			mw->show_number_input(var_id, digits);
 		}
 		state = STATE_WAITING_NUMBER;
 		return false;
@@ -3479,7 +3505,7 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 	// --- Cinemáticas (Anexo A1.2) ---
 	if (type == "cutscene" || type == "play_cutscene") {
 		_build_runtime_ui();
-		if (cutscene_player) {
+		if (ClockGearsCutscenePlayer *cp = _ensure_cutscene_player()) {
 			Ref<ClockGearsCutscene> cs;
 			if (p_cmd.has("cutscene_dict")) {
 				cs.instantiate();
@@ -3491,7 +3517,7 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 				}
 			}
 			if (cs.is_valid()) {
-				cutscene_player->play(cs);
+				cp->play(cs);
 			}
 		}
 		return true;
@@ -3520,7 +3546,7 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 
 		ClockGearsBattleScene *bs = memnew(ClockGearsBattleScene);
 		active_battle_scene = bs;
-		bs->setup_battle(troop, can_escape, battle_can_lose_flag, bgm, message_window);
+		bs->setup_battle(troop, can_escape, battle_can_lose_flag, bgm, _ensure_message_window());
 		bs->connect("battle_finished", callable_mp(this, &ClockGearsEventInterpreter::_on_battle_scene_finished));
 		add_child(bs);
 
@@ -3537,12 +3563,12 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		if (game_menu && game_menu->is_menu_open()) {
 			game_menu->close_menu();
 		}
-		if (credits_player) {
+		if (ClockGearsCreditsPlayer *cp = _ensure_credits_player()) {
 			Dictionary cfg_ov = p_cmd.has("credits_config") && p_cmd["credits_config"].get_type() == Variant::DICTIONARY
 					? Dictionary(p_cmd["credits_config"])
 					: Dictionary();
-			credits_player->start_credits(cfg_ov);
-			if (credits_player->is_playing()) {
+			cp->start_credits(cfg_ov);
+			if (cp->is_playing()) {
 				state = STATE_WAITING_CREDITS;
 				return false;
 			}
@@ -3562,9 +3588,9 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 	// --- Abrir Menú del Juego (9B Tanda 4) ---
 	if (type == "open_menu" || code == CG_CMD_OPEN_MENU) {
 		_build_runtime_ui();
-		if (game_menu) {
-			game_menu->open_menu_from_event("main", false);
-			if (game_menu->is_menu_open()) {
+		if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
+			gm->open_menu_from_event("main", false);
+			if (gm->is_menu_open()) {
 				state = STATE_WAITING_MENU;
 				return false;
 			}
@@ -3575,9 +3601,9 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 	// --- Abrir Pantalla de Guardado (9B Tanda 4) ---
 	if (type == "open_save" || code == CG_CMD_OPEN_SAVE) {
 		_build_runtime_ui();
-		if (game_menu) {
-			game_menu->open_menu_from_event("save", true);
-			if (game_menu->is_menu_open()) {
+		if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
+			gm->open_menu_from_event("save", true);
+			if (gm->is_menu_open()) {
 				state = STATE_WAITING_MENU;
 				return false;
 			}
@@ -3657,9 +3683,9 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		bool ask_confirm = bool(p_cmd.get("confirm", false));
 		if (ask_confirm) {
 			_build_runtime_ui();
-			if (game_menu) {
-				game_menu->open_menu_from_event("to_title", true);
-				if (game_menu->is_menu_open()) {
+			if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
+				gm->open_menu_from_event("to_title", true);
+				if (gm->is_menu_open()) {
 					state = STATE_WAITING_MENU;
 					return false;
 				}
@@ -3995,8 +4021,40 @@ void ClockGearsEventInterpreter::_notification(int p_what) {
 	}
 	if (p_what == NOTIFICATION_READY) {
 		set_physics_process(true);
+		set_process_unhandled_input(true);
 	} else if (p_what == NOTIFICATION_PHYSICS_PROCESS) {
 		step_frame();
+	}
+}
+
+void ClockGearsEventInterpreter::unhandled_input(const Ref<InputEvent> &p_event) {
+	if (game_menu || !p_event.is_valid() || (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint())) {
+		return;
+	}
+	bool want_menu = false;
+	Ref<InputEventKey> k = p_event;
+	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+		Key kc = k->get_keycode();
+		if (kc == Key::ESCAPE || kc == Key::M) {
+			want_menu = true;
+		}
+	}
+	if (!want_menu) {
+		InputMap *im = InputMap::get_singleton();
+		if (im && ((im->has_action("ui_cancel") && p_event->is_action_pressed("ui_cancel")) ||
+						   (im->has_action("game_menu") && p_event->is_action_pressed("game_menu")) ||
+						   (im->has_action("ui_menu") && p_event->is_action_pressed("ui_menu")))) {
+			want_menu = true;
+		}
+	}
+	if (want_menu) {
+		if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
+			if (gm->open_menu()) {
+				if (Viewport *vp = get_viewport()) {
+					vp->set_input_as_handled();
+				}
+			}
+		}
 	}
 }
 

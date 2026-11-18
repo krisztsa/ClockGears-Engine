@@ -430,6 +430,8 @@ private:
 	void _on_command_id_selected(int p_cmd_id);
 
 	// Database Pickers
+	bool command_subdialogs_built = false;
+	void _ensure_command_subdialogs();
 	void _setup_database_picker_dialogs();
 	void _open_item_picker(LineEdit *p_target);
 	void _refresh_item_picker_list();
@@ -562,11 +564,11 @@ public:
 	ScrollContainer *get_columns_scroll() const { return columns_scroll; }
 	Button *get_cancel_button() const { return btn_cancel; }
 	Button *get_apply_button() const { return btn_apply; }
-	class ClockGearsMapCellSelector *get_teleport_selector() const { return tele_selector; }
+	class ClockGearsMapCellSelector *get_teleport_selector() { _ensure_command_subdialogs(); return tele_selector; }
 	bool is_sprite_selector_visible() const;
 	Array get_working_pages() const { return working_pages.duplicate(true); }
 	void trigger_command_id(int p_cmd_id) { _on_command_id_selected(p_cmd_id); }
-	Dictionary get_menu_command_ui_handles() const;
+	Dictionary get_menu_command_ui_handles();
 	String format_command_preview(const Dictionary &p_cmd) const { return _format_command_text(p_cmd); }
 
 	ClockGearsEventEditorDialog();

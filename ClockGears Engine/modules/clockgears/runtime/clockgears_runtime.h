@@ -423,6 +423,11 @@ private:
 	int cam_zoom_frames_left = 0;
 
 	void _build_runtime_ui();
+	ClockGearsMessageWindow *_ensure_message_window();
+	ClockGearsCutscenePlayer *_ensure_cutscene_player();
+	ClockGearsGameMenu *_ensure_game_menu();
+	ClockGearsCreditsPlayer *_ensure_credits_player();
+	ClockGearsGameOverScreen *_ensure_game_over_screen();
 	void _hide_message_ui();
 	void _on_message_window_completed();
 	void _on_message_window_choice_selected(int p_idx);
@@ -445,6 +450,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void setup_interpreter(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsFollowerManager *p_followers);
@@ -458,10 +464,10 @@ public:
 	int get_state() const { return int(state); }
 	int get_last_choice_index() const { return last_choice_index; }
 	ClockGearsPictureManager *get_picture_manager() const { return picture_manager; }
-	ClockGearsCutscenePlayer *get_cutscene_player() const { return cutscene_player; }
-	ClockGearsGameMenu *get_game_menu() const { return game_menu; }
-	ClockGearsCreditsPlayer *get_credits_player() const { return credits_player; }
-	ClockGearsGameOverScreen *get_game_over_screen() const { return game_over_screen; }
+	ClockGearsCutscenePlayer *get_cutscene_player() { return _ensure_cutscene_player(); }
+	ClockGearsGameMenu *get_game_menu() { return _ensure_game_menu(); }
+	ClockGearsCreditsPlayer *get_credits_player() { return _ensure_credits_player(); }
+	ClockGearsGameOverScreen *get_game_over_screen() { return _ensure_game_over_screen(); }
 	void show_game_over(const Dictionary &p_cfg_override = Dictionary());
 	CanvasLayer *get_hud_layer() const { return hud_layer; }
 	ClockGearsHudOverlay *get_hud_overlay() const { return hud_overlay; }
@@ -469,7 +475,7 @@ public:
 	ColorRect *get_screen_tint_rect() const { return screen_tint_rect; }
 	CanvasLayer *get_screen_tint_layer() const { return screen_tint_layer; }
 	CanvasLayer *get_ui_layer() const { return ui_layer; }
-	ClockGearsMessageWindow *get_message_window() const { return message_window; }
+	ClockGearsMessageWindow *get_message_window() { return _ensure_message_window(); }
 	Dictionary get_fade_state();
 
 	void start_screen_shake(float p_power, float p_speed, float p_duration, bool p_wait = false);

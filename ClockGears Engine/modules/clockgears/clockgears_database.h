@@ -1397,6 +1397,10 @@ private:
 	// Menús -> Créditos helpers (9B Tanda 4 UI)
 	void _setup_credits_editor_ui();
 	void _refresh_credits_editor_ui();
+	void _ensure_record_event_editor();
+	void _ensure_menu_test_window();
+	void _ensure_gm_test_window();
+	void _ensure_cred_test_window();
 
 	// Menús -> Game Over helpers (9B Punto 8)
 	void _setup_game_over_editor_ui();
@@ -1549,24 +1553,24 @@ public:
 	void set_title_menu_background(const String &p_type, const String &p_color_or_path, const String &p_scale_mode = "fit", const String &p_filter = "nearest");
 	void set_title_menu_title_config(const String &p_type, const String &p_text_or_path, const String &p_filter = "nearest");
 	void set_title_menu_bgm(const String &p_path);
-	ClockGearsTitleScreen *get_title_menu_live_preview() const { return menu_live_preview; }
+	ClockGearsTitleScreen *get_title_menu_live_preview() { _setup_main_menu_editor_ui(); return menu_live_preview; }
 	Window *open_title_menu_test_popup();
-	Window *get_title_menu_test_popup() const { return menu_test_window; }
+	Window *get_title_menu_test_popup() { _ensure_menu_test_window(); return menu_test_window; }
 
 	Dictionary get_window_styles_draft_copy() const;
 	void select_window_style(int p_index);
-	Dictionary get_window_styles_ui_handles() const;
-	Dictionary get_window_style_preview_info() const;
+	Dictionary get_window_styles_ui_handles();
+	Dictionary get_window_style_preview_info();
 
 	Dictionary get_game_menu_draft_copy() const;
 	void set_game_menu_entry_state(const String &p_id, bool p_enabled, const String &p_text);
 	bool move_game_menu_entry(const String &p_id, int p_delta);
 	void select_game_menu_preview_screen(const String &p_screen_id);
 	void set_game_menu_screen_background(const String &p_screen_id, const String &p_type, const String &p_color_or_path, const String &p_scale_mode = "fit", const String &p_filter = "nearest");
-	ClockGearsGameMenu *get_game_menu_live_preview() const { return gm_live_preview; }
+	ClockGearsGameMenu *get_game_menu_live_preview() { _setup_game_menu_editor_ui(); return gm_live_preview; }
 	Window *open_game_menu_test_popup();
-	Window *get_game_menu_test_popup() const { return gm_test_window; }
-	Dictionary get_game_menu_editor_ui_handles() const;
+	Window *get_game_menu_test_popup() { _ensure_gm_test_window(); return gm_test_window; }
+	Dictionary get_game_menu_editor_ui_handles();
 
 	Dictionary get_credits_draft_copy() const;
 	int add_credits_item(const String &p_type, const Dictionary &p_fields = Dictionary());
@@ -1575,11 +1579,11 @@ public:
 	int duplicate_credits_item(int p_index);
 	void select_credits_item(int p_index);
 	bool set_credits_item_field(int p_index, const String &p_key, const Variant &p_val);
-	ClockGearsCreditsPlayer *get_credits_live_preview() const { return cred_live_preview; }
+	ClockGearsCreditsPlayer *get_credits_live_preview() { _setup_credits_editor_ui(); return cred_live_preview; }
 	Window *open_credits_test_popup();
-	Window *get_credits_test_popup() const { return cred_test_window; }
-	ClockGearsCreditsPlayer *get_credits_test_player() const { return cred_test_player; }
-	Dictionary get_credits_editor_ui_handles() const;
+	Window *get_credits_test_popup() { _ensure_cred_test_window(); return cred_test_window; }
+	ClockGearsCreditsPlayer *get_credits_test_player() { _ensure_cred_test_window(); return cred_test_player; }
+	Dictionary get_credits_editor_ui_handles();
 
 	Dictionary get_hud_draft_copy() const;
 	int add_hud_widget(const String &p_type = "bar", const Dictionary &p_fields = Dictionary());
@@ -1590,16 +1594,16 @@ public:
 	bool set_hud_widget_field(int p_index, const String &p_key, const Variant &p_val);
 	void set_hud_preview_resolution(int p_width, int p_height);
 	void set_hud_preview_sample_values(int p_hp, int p_gold, int p_item_qty);
-	ClockGearsHudOverlay *get_hud_live_preview() const { return hud_live_preview; }
-	CheckBox *get_hud_hearts_show_bg_checkbox() const { return hud_hearts_show_bg_chk; }
-	Dictionary get_hud_editor_ui_handles() const;
+	ClockGearsHudOverlay *get_hud_live_preview() { _setup_hud_editor_ui(); return hud_live_preview; }
+	CheckBox *get_hud_hearts_show_bg_checkbox() { _setup_hud_editor_ui(); return hud_hearts_show_bg_chk; }
+	Dictionary get_hud_editor_ui_handles();
 
 	String import_menu_asset_for_ui_designer(const String &p_src_path, bool p_pixel_preset = true);
-	ClockGearsUiDesignEditor *get_ui_designer_editor() const { return ui_design_editor_panel; }
-	Dictionary get_ui_designer_ui_handles() const;
+	ClockGearsUiDesignEditor *get_ui_designer_editor() { _setup_ui_design_editor_ui(); return ui_design_editor_panel; }
+	Dictionary get_ui_designer_ui_handles();
 	Dictionary get_game_over_draft_copy() const { return game_over_config_draft.duplicate(true); }
-	ClockGearsGameOverScreen *get_game_over_live_preview() const { return go_live_preview; }
-	Dictionary get_game_over_editor_ui_handles() const;
+	ClockGearsGameOverScreen *get_game_over_live_preview() { _setup_game_over_editor_ui(); return go_live_preview; }
+	Dictionary get_game_over_editor_ui_handles();
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);

@@ -224,6 +224,9 @@ private:
 	void _refresh_style_binding_action_options();
 	void _refresh_undo_redo_buttons();
 	void _notify_data_mutated(bool p_mark_dirty = true);
+	ClockGearsTitleScreen *_ensure_default_title_preview();
+	ClockGearsGameMenu *_ensure_default_gmenu_preview();
+	ClockGearsCreditsPlayer *_ensure_default_credits_preview();
 
 	Dictionary _get_selected_element_copy() const;
 	String _get_selected_anchor_key() const;
@@ -260,6 +263,7 @@ protected:
 public:
 	void set_owner_database(ClockGearsDatabaseDialog *p_db) { owner_db = p_db; }
 	void refresh_from_data_manager();
+	void refresh_geometry_fast(bool p_refresh_props = true);
 	void adapt_to_width(int p_window_width);
 
 	// API pública clara para interacción directa y pruebas automatizadas

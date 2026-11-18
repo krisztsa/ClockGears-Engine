@@ -112,7 +112,7 @@ ClockGearsMapCellSelector::ClockGearsMapCellSelector() {
 
 	subvp = memnew(SubViewport);
 	subvp->set_size(Vector2i(map_tiles_w * 32, map_tiles_h * 32));
-	subvp->set_update_mode(SubViewport::UPDATE_ALWAYS);
+	subvp->set_update_mode(SubViewport::UPDATE_WHEN_VISIBLE);
 	subvp->set_disable_3d(true);
 	subvp_container->add_child(subvp);
 
@@ -123,7 +123,18 @@ ClockGearsMapCellSelector::ClockGearsMapCellSelector() {
 	overlay_control->connect("gui_input", callable_mp(this, &ClockGearsMapCellSelector::_on_overlay_gui_input));
 	canvas_wrapper->add_child(overlay_control);
 
-	populate_maps();
+	_populate_maps_internal(false);
+}
+
+void ClockGearsMapCellSelector::_notification(int p_what) {
+	if (p_what == NOTIFICATION_VISIBILITY_CHANGED) {
+		if (is_visible_in_tree() && !loaded_map_instance) {
+			String target = get_target_map();
+			if (!target.is_empty()) {
+				load_map_preview(target);
+			}
+		}
+	}
 }
 
 ClockGearsMapCellSelector::~ClockGearsMapCellSelector() {
@@ -133,6 +144,10 @@ ClockGearsMapCellSelector::~ClockGearsMapCellSelector() {
 }
 
 void ClockGearsMapCellSelector::populate_maps() {
+	_populate_maps_internal(is_visible_in_tree() || loaded_map_instance != nullptr);
+}
+
+void ClockGearsMapCellSelector::_populate_maps_internal(bool p_load_preview) {
 	if (!map_opt) return;
 	map_opt->clear();
 	Vector<String> maps;
@@ -159,7 +174,9 @@ void ClockGearsMapCellSelector::populate_maps() {
 		if (map_path_edit && map_path_edit->get_text().strip_edges().is_empty()) {
 			map_opt->select(0);
 			map_path_edit->set_text(maps[0]);
-			load_map_preview(maps[0]);
+			if (p_load_preview) {
+				load_map_preview(maps[0]);
+			}
 		}
 	}
 }
@@ -184,7 +201,9 @@ void ClockGearsMapCellSelector::set_target_map(const String &p_map_path) {
 			map_opt->select(idx);
 		}
 	}
-	load_map_preview(p_map_path);
+	if (is_visible_in_tree() || loaded_map_instance != nullptr) {
+		load_map_preview(p_map_path);
+	}
 }
 
 String ClockGearsMapCellSelector::get_target_map() const {
@@ -198,6 +217,10 @@ String ClockGearsMapCellSelector::get_target_map() const {
 }
 
 void ClockGearsMapCellSelector::load_map_preview(const String &p_map_path) {
+	if (!p_map_path.is_empty() && p_map_path == loaded_map_path && loaded_map_instance != nullptr) {
+		return;
+	}
+	loaded_map_path = "";
 	if (loaded_map_instance) {
 		loaded_map_instance->queue_free();
 		loaded_map_instance = nullptr;
@@ -220,7 +243,9 @@ void ClockGearsMapCellSelector::load_map_preview(const String &p_map_path) {
 			if (inst) {
 				ClockGearsMap *cgmap = Object::cast_to<ClockGearsMap>(inst);
 				if (cgmap) {
+					cgmap->set_preview_only(true);
 					loaded_map_instance = cgmap;
+					loaded_map_path = p_map_path;
 					Vector2i sz = cgmap->get_map_size();
 					if (sz.x > 0 && sz.y > 0) {
 						map_tiles_w = sz.x;

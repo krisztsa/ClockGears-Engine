@@ -9,6 +9,7 @@
 #include "scene/main/node.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/texture.h"
+#include "modules/tilemap/tile_set.h"
 
 class CanvasLayer;
 class ColorRect;
@@ -106,6 +107,14 @@ private:
 	Node *active_editor_map = nullptr;
 	mutable HashMap<String, Ref<Texture2D>> entry_icon_cache;
 	mutable Vector<String> last_repaired_json_files;
+	uint64_t window_styles_generation = 1;
+	mutable uint64_t cached_ws_norm_gen = 0;
+	mutable Dictionary cached_ws_norm;
+	mutable HashMap<String, Dictionary> cached_ws_by_id;
+	mutable HashMap<String, Ref<TileSet>> built_tileset_cache;
+
+	void _invalidate_window_styles_cache();
+	void _ensure_window_styles_cache() const;
 
 	Variant _normalize_json_numbers(const Variant &p_val) const;
 	bool _write_json_atomic(const String &p_file_path, const Variant &p_data) const;
@@ -149,6 +158,11 @@ public:
 	void clear_entry_icon_cache();
 
 	Dictionary get_system_config() const { return system_config.duplicate(true); }
+	const Dictionary &get_system_config_ref() const { return system_config; }
+	uint64_t get_window_styles_generation() const { return window_styles_generation; }
+	Ref<TileSet> get_cached_tileset(const String &p_key) const;
+	void set_cached_tileset(const String &p_key, const Ref<TileSet> &p_tileset) const;
+	void clear_tileset_cache() const { built_tileset_cache.clear(); }
 	void set_system_config(const Dictionary &p_cfg);
 	int get_mannequin_size() const;
 	void set_mannequin_size(int p_size);

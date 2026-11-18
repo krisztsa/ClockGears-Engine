@@ -145,6 +145,8 @@ private:
 	bool last_returned_to_title = false;
 	bool direct_subscreen_close_on_back = false;
 	String last_applied_style_type;
+	uint64_t applied_styles_generation = 0;
+	double applied_styles_scale = -1.0;
 	bool preview_mode = false;
 	bool editor_test_popup_mode = false;
 	bool preview_config_override_active = false;
@@ -157,7 +159,7 @@ private:
 	float preview_drag_start_deg = 0.0f;
 
 	void _build_ui();
-	void _apply_unified_styles();
+	void _apply_unified_styles(bool p_force = false);
 	void _update_responsive_layout();
 	void _refresh_background();
 	void _refresh_playtime_label();

@@ -12,6 +12,21 @@
 ClockGearsWindowStyleManager *ClockGearsWindowStyleManager::singleton = nullptr;
 
 namespace {
+static HashMap<String, Ref<ClockGearsWindowStyleBox>> s_stylebox_cache;
+static HashMap<String, Ref<Texture2D>> s_style_tex_cache;
+static uint64_t s_stylebox_cache_gen = 0;
+
+static void _sync_stylebox_cache_generation() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	uint64_t gen = dm ? dm->get_window_styles_generation() : 0;
+	if (gen != s_stylebox_cache_gen) {
+		s_stylebox_cache.clear();
+		s_stylebox_cache_gen = gen;
+	}
+}
+} // namespace
+
+namespace {
 static Color s_parse_html_color(const Variant &p_val, const Color &p_default) {
 	if (p_val.get_type() == Variant::COLOR) {
 		return Color(p_val);
@@ -284,9 +299,16 @@ ClockGearsWindowStyleManager::ClockGearsWindowStyleManager() {
 }
 
 ClockGearsWindowStyleManager::~ClockGearsWindowStyleManager() {
+	clear_caches();
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+}
+
+void ClockGearsWindowStyleManager::clear_caches() {
+	s_stylebox_cache.clear();
+	s_style_tex_cache.clear();
+	s_stylebox_cache_gen = 0;
 }
 
 float ClockGearsWindowStyleManager::compute_viewport_scale(const Control *p_control, bool p_pixel_art) {
@@ -314,16 +336,24 @@ Ref<Texture2D> ClockGearsWindowStyleManager::load_texture_safe(const String &p_p
 	if (path.is_empty()) {
 		return Ref<Texture2D>();
 	}
+	if (const Ref<Texture2D> *cached = s_style_tex_cache.getptr(path)) {
+		if (cached->is_valid()) {
+			return *cached;
+		}
+	}
 	if (ResourceLoader::exists(path)) {
 		Ref<Texture2D> tex = ResourceLoader::load(path);
 		if (tex.is_valid()) {
+			s_style_tex_cache[path] = tex;
 			return tex;
 		}
 	}
 	if (FileAccess::exists(path)) {
 		Ref<Image> img = Image::load_from_file(path);
 		if (img.is_valid() && !img->is_empty()) {
-			return ImageTexture::create_from_image(img);
+			Ref<ImageTexture> itex = ImageTexture::create_from_image(img);
+			s_style_tex_cache[path] = itex;
+			return itex;
 		}
 	}
 	return Ref<Texture2D>();
@@ -353,44 +383,85 @@ static Dictionary s_get_rounded_fallback_dict() {
 }
 
 Ref<ClockGearsWindowStyleBox> ClockGearsWindowStyleManager::build_window_style_box(const String &p_window_type_id, float p_vp_scale, const Dictionary &p_overrides) {
+	String cache_key;
+	if (p_overrides.is_empty()) {
+		_sync_stylebox_cache_generation();
+		String wt = p_window_type_id.strip_edges().to_lower();
+		cache_key = vformat("win|%s|%d", wt, int(Math::round(p_vp_scale * 100.0f)));
+		if (const Ref<ClockGearsWindowStyleBox> *found = s_stylebox_cache.getptr(cache_key)) {
+			if (found->is_valid()) {
+				return *found;
+			}
+		}
+	}
+
 	Dictionary style = s_resolve_style_dict(p_window_type_id);
-	Dictionary surface = style.duplicate(true);
-	s_merge_surface_overrides(surface, p_overrides);
+	Dictionary surface = p_overrides.is_empty() ? style : style.duplicate(true);
+	if (!p_overrides.is_empty()) {
+		s_merge_surface_overrides(surface, p_overrides);
+	}
 
 	Ref<ClockGearsWindowStyleBox> sb;
 	sb.instantiate();
 	if (!sb->configure_from_surface(surface, p_vp_scale, String(style.get("id", "rounded")), p_window_type_id)) {
 		Dictionary fb = s_get_rounded_fallback_dict();
-		Dictionary fb_surface = fb.duplicate(true);
-		s_merge_surface_overrides(fb_surface, p_overrides);
+		Dictionary fb_surface = p_overrides.is_empty() ? fb : fb.duplicate(true);
+		if (!p_overrides.is_empty()) {
+			s_merge_surface_overrides(fb_surface, p_overrides);
+		}
 		sb->configure_from_surface(fb_surface, p_vp_scale, "rounded", p_window_type_id);
 		sb->set_fallback_used(true);
+	}
+	if (!cache_key.is_empty()) {
+		s_stylebox_cache[cache_key] = sb;
 	}
 	return sb;
 }
 
 Ref<ClockGearsWindowStyleBox> ClockGearsWindowStyleManager::build_button_style_box(const String &p_window_type_id, const String &p_state, float p_vp_scale, const Dictionary &p_overrides) {
+	String state_key = p_state.strip_edges().to_lower();
+	String cache_key;
+	if (p_overrides.is_empty()) {
+		_sync_stylebox_cache_generation();
+		String wt = p_window_type_id.strip_edges().to_lower();
+		cache_key = vformat("btn|%s|%s|%d", wt, state_key, int(Math::round(p_vp_scale * 100.0f)));
+		if (const Ref<ClockGearsWindowStyleBox> *found = s_stylebox_cache.getptr(cache_key)) {
+			if (found->is_valid()) {
+				return *found;
+			}
+		}
+	}
+
 	Dictionary style = s_resolve_style_dict(p_window_type_id);
 	Dictionary btns = (style.has("buttons") && style["buttons"].get_type() == Variant::DICTIONARY) ? Dictionary(style["buttons"]) : Dictionary();
-	String state_key = p_state.strip_edges().to_lower();
-	if (!btns.has(state_key)) {
-		state_key = "normal";
+	String btn_state_key = state_key;
+	if (!btns.has(btn_state_key)) {
+		btn_state_key = "normal";
 	}
-	Dictionary surface = btns.has(state_key) ? Dictionary(btns[state_key]).duplicate(true) : style.duplicate(true);
+	Dictionary surface = btns.has(btn_state_key) ? Dictionary(btns[btn_state_key]) : style;
 	if (bool(surface.get("inherit_normal", false)) && btns.has("normal")) {
-		surface = Dictionary(btns["normal"]).duplicate(true);
+		surface = Dictionary(btns["normal"]);
 	}
-	s_merge_surface_overrides(surface, p_overrides);
+	if (!p_overrides.is_empty()) {
+		surface = surface.duplicate(true);
+		s_merge_surface_overrides(surface, p_overrides);
+	}
 
 	Ref<ClockGearsWindowStyleBox> sb;
 	sb.instantiate();
 	if (!sb->configure_from_surface(surface, p_vp_scale, String(style.get("id", "rounded")), p_window_type_id)) {
 		Dictionary fb = s_get_rounded_fallback_dict();
 		Dictionary fb_btns = fb.get("buttons", Dictionary());
-		Dictionary fb_surface = fb_btns.has(state_key) ? Dictionary(fb_btns[state_key]).duplicate(true) : fb.duplicate(true);
-		s_merge_surface_overrides(fb_surface, p_overrides);
+		Dictionary fb_surface = fb_btns.has(btn_state_key) ? Dictionary(fb_btns[btn_state_key]) : fb;
+		if (!p_overrides.is_empty()) {
+			fb_surface = fb_surface.duplicate(true);
+			s_merge_surface_overrides(fb_surface, p_overrides);
+		}
 		sb->configure_from_surface(fb_surface, p_vp_scale, "rounded", p_window_type_id);
 		sb->set_fallback_used(true);
+	}
+	if (!cache_key.is_empty()) {
+		s_stylebox_cache[cache_key] = sb;
 	}
 	return sb;
 }
