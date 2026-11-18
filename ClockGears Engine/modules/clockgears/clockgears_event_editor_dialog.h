@@ -375,6 +375,9 @@ private:
 	ConfirmationDialog *dlg_show_credits = nullptr;
 	Label *show_credits_info_lbl = nullptr;
 
+	ConfirmationDialog *dlg_show_game_over = nullptr;
+	Label *show_game_over_info_lbl = nullptr;
+
 	ConfirmationDialog *dlg_open_menu = nullptr;
 
 	ConfirmationDialog *dlg_change_menu_access = nullptr;
@@ -529,6 +532,7 @@ private:
 	// Handlers 9B Tanda 4: Menús y Sistema
 	void _populate_change_window_style_options(const String &p_sel_wtype = "", const String &p_sel_style = "");
 	void _on_confirm_show_credits();
+	void _on_confirm_show_game_over();
 	void _on_confirm_open_menu();
 	void _on_confirm_change_menu_access();
 	void _on_confirm_return_to_title();

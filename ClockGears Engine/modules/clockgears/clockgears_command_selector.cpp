@@ -33,6 +33,7 @@ void ClockGearsCommandSelector::_bind_methods() {
 	BIND_CONSTANT(CMD_OPEN_SAVE);
 	BIND_CONSTANT(CMD_CHANGE_WINDOW_STYLE);
 	BIND_CONSTANT(CMD_CHANGE_HUD_VISIBILITY);
+	BIND_CONSTANT(CMD_SHOW_GAME_OVER);
 }
 
 Button *ClockGearsCommandSelector::_create_cmd_button(GridContainer *p_parent, const String &p_text, int p_cmd_id) {
@@ -197,6 +198,7 @@ ClockGearsCommandSelector::ClockGearsCommandSelector() {
 	_create_cmd_button(grid4, CG_TR("◆ Abrir Menú del Juego..."), CMD_OPEN_MENU);
 	_create_cmd_button(grid4, CG_TR("◆ Bloquear / Permitir Menú..."), CMD_CHANGE_MENU_ACCESS);
 	_create_cmd_button(grid4, CG_TR("◆ Ir a la Pantalla de Título..."), CMD_RETURN_TO_TITLE);
+	_create_cmd_button(grid4, CG_TR("◆ Mostrar Game Over..."), CMD_SHOW_GAME_OVER);
 	_create_cmd_button(grid4, CG_TR("◆ Abrir Guardado..."), CMD_OPEN_SAVE);
 	_create_cmd_button(grid4, CG_TR("◆ Cambiar Estilo de Ventana..."), CMD_CHANGE_WINDOW_STYLE);
 	_create_cmd_button(grid4, CG_TR("◆ Mostrar / Ocultar HUD..."), CMD_CHANGE_HUD_VISIBILITY);

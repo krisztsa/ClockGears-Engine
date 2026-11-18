@@ -1,5 +1,6 @@
 #include "clockgears_runtime.h"
 #include "clockgears_credits.h"
+#include "clockgears_game_over.h"
 #include "clockgears_entity_ai.h"
 #include "clockgears_game_menu.h"
 #include "clockgears_hud.h"
@@ -945,7 +946,10 @@ void ClockGearsPlayer::_finish_arpg_player_death() {
 	arpg_dying = false;
 	arpg_dead = true;
 	arpg_death_fallback_timer = 0.0f;
-	if (current_map) {
+	if (current_map && current_map->get_runtime_interpreter()) {
+		// Al terminar la animación "morir", se muestra la pantalla de Game Over en lugar del reinicio directo.
+		current_map->get_runtime_interpreter()->show_game_over();
+	} else if (current_map) {
 		current_map->restart_map_after_player_death();
 	} else {
 		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -2447,6 +2451,8 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_cutscene_player"), &ClockGearsEventInterpreter::get_cutscene_player);
 	ClassDB::bind_method(D_METHOD("get_game_menu"), &ClockGearsEventInterpreter::get_game_menu);
 	ClassDB::bind_method(D_METHOD("get_credits_player"), &ClockGearsEventInterpreter::get_credits_player);
+	ClassDB::bind_method(D_METHOD("get_game_over_screen"), &ClockGearsEventInterpreter::get_game_over_screen);
+	ClassDB::bind_method(D_METHOD("show_game_over", "cfg_override"), &ClockGearsEventInterpreter::show_game_over, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("get_hud_layer"), &ClockGearsEventInterpreter::get_hud_layer);
 	ClassDB::bind_method(D_METHOD("get_hud_overlay"), &ClockGearsEventInterpreter::get_hud_overlay);
 	ClassDB::bind_method(D_METHOD("has_active_battle"), &ClockGearsEventInterpreter::has_active_battle);
@@ -2580,10 +2586,20 @@ void ClockGearsEventInterpreter::_build_runtime_ui() {
 		credits_player->connect("credits_finished", callable_mp(this, &ClockGearsEventInterpreter::_on_credits_player_finished));
 		ui_layer->add_child(credits_player);
 	}
+
+	// 8. Pantalla de Game Over en Runtime (9B Punto 8)
+	if (!game_over_screen) {
+		game_over_screen = memnew(ClockGearsGameOverScreen);
+		game_over_screen->set_name("ClockGearsGameOverScreen");
+		game_over_screen->set_visible(false);
+		game_over_screen->connect("retry_requested", callable_mp(this, &ClockGearsEventInterpreter::_on_game_over_retry_requested));
+		game_over_screen->connect("return_to_title_requested", callable_mp(this, &ClockGearsEventInterpreter::_on_game_over_return_to_title_requested));
+		ui_layer->add_child(game_over_screen);
+	}
 }
 
 bool ClockGearsEventInterpreter::is_blocking_player() const {
-	return state != STATE_IDLE || (game_menu && game_menu->is_menu_open());
+	return state != STATE_IDLE || (game_menu && game_menu->is_menu_open()) || (game_over_screen && game_over_screen->is_open());
 }
 
 void ClockGearsEventInterpreter::setup_interpreter(ClockGearsMap *p_map, ClockGearsPlayer *p_player, ClockGearsFollowerManager *p_followers) {
@@ -2749,6 +2765,45 @@ void ClockGearsEventInterpreter::_on_game_menu_closed() {
 	_sync_hud_context_visibility();
 }
 
+void ClockGearsEventInterpreter::show_game_over(const Dictionary &p_cfg_override) {
+	_build_runtime_ui();
+	if (game_menu && game_menu->is_menu_open()) {
+		game_menu->close_menu();
+	}
+	if (credits_player && credits_player->is_playing()) {
+		credits_player->stop_credits(true);
+	}
+	if (game_over_screen) {
+		game_over_screen->show_game_over(p_cfg_override);
+	}
+	state = STATE_GAME_OVER;
+	_sync_hud_context_visibility();
+}
+
+void ClockGearsEventInterpreter::_on_game_over_retry_requested(const String &p_mode, int p_slot) {
+	state = STATE_IDLE;
+	active_event = nullptr;
+	active_commands.clear();
+	command_index = 0;
+	if (p_mode == "restart_initial_map" && current_map) {
+		// Fallback cuando no hay start_map guardado como archivo .tscn (ej. mapa en memoria).
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		Dictionary sys = dm ? dm->get_system_config() : Dictionary();
+		String start_map = String(sys.get("start_map", "")).strip_edges();
+		if (start_map.is_empty() || !ResourceLoader::exists(start_map)) {
+			current_map->restart_map_after_player_death();
+		}
+	}
+	_sync_hud_context_visibility();
+}
+
+void ClockGearsEventInterpreter::_on_game_over_return_to_title_requested() {
+	state = STATE_IDLE;
+	return_to_title_requested_flag = true;
+	emit_signal("return_to_title_requested");
+	_sync_hud_context_visibility();
+}
+
 void ClockGearsEventInterpreter::_sync_hud_context_visibility() {
 	if (!hud_overlay) {
 		return;
@@ -2756,8 +2811,10 @@ void ClockGearsEventInterpreter::_sync_hud_context_visibility() {
 	bool blocked = (state == STATE_WAITING_MESSAGE || state == STATE_WAITING_CHOICE ||
 			state == STATE_WAITING_NUMBER || state == STATE_WAITING_BATTLE ||
 			state == STATE_WAITING_CREDITS || state == STATE_WAITING_MENU ||
+			state == STATE_GAME_OVER ||
 			(game_menu && game_menu->is_menu_open()) ||
 			(credits_player && credits_player->is_playing()) ||
+			(game_over_screen && game_over_screen->is_open()) ||
 			(message_window && message_window->is_busy()));
 	hud_overlay->set_context_blocked(blocked);
 }
@@ -2769,8 +2826,7 @@ void ClockGearsEventInterpreter::_on_battle_scene_finished(int p_result) {
 	}
 
 	if (p_result == 4 /* RESULT_GAME_OVER */ || (p_result == 2 /* RESULT_DEFEAT */ && !battle_can_lose_flag)) {
-		state = STATE_GAME_OVER;
-		_sync_hud_context_visibility();
+		show_game_over();
 		print_line("[ClockGears Event] Batalla terminada en GAME OVER.");
 		return;
 	}
@@ -3475,6 +3531,15 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 			}
 		}
 		return true;
+	}
+
+	// --- Mostrar Game Over (9B Punto 8) ---
+	if (type == "show_game_over" || type == "game_over" || code == CG_CMD_SHOW_GAME_OVER || code == CG_CMD_GAME_OVER) {
+		Dictionary cfg_ov = p_cmd.has("game_over_config") && p_cmd["game_over_config"].get_type() == Variant::DICTIONARY
+				? Dictionary(p_cmd["game_over_config"])
+				: Dictionary();
+		show_game_over(cfg_ov);
+		return false;
 	}
 
 	// --- Abrir Menú del Juego (9B Tanda 4) ---

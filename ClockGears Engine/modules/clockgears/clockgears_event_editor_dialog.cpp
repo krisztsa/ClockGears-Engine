@@ -881,6 +881,15 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 			show_credits_info_lbl->set_text(vformat(CG_TR("Muestra los créditos configurados en Base de Datos → Menús → Créditos (%d elemento(s)).\nEl evento espera a que terminen o el jugador pulse Esc."), n_items));
 		}
 		dlg_show_credits->popup_centered(Size2(420, 160) * EDSCALE);
+	} else if (type == "show_game_over" && dlg_show_game_over) {
+		if (show_game_over_info_lbl) {
+			String go_title = "GAME OVER";
+			if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+				go_title = String(dm->get_game_over_config().get("title_text", "GAME OVER"));
+			}
+			show_game_over_info_lbl->set_text(vformat(CG_TR("Muestra la pantalla de Game Over configurada en Base de Datos → Menús → Game Over (título: \"%s\").\nPermite Reintentar o Volver al menú."), go_title));
+		}
+		dlg_show_game_over->popup_centered(Size2(440, 165) * EDSCALE);
 	} else if (type == "open_menu" && dlg_open_menu) {
 		dlg_open_menu->popup_centered(Size2(400, 150) * EDSCALE);
 	} else if ((type == "change_menu_access" || type == "set_menu_access" || type == "menu_access") && dlg_change_menu_access) {
@@ -1160,6 +1169,18 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 					show_credits_info_lbl->set_text(vformat(CG_TR("Muestra los créditos configurados en Base de Datos → Menús → Créditos (%d elemento(s)).\nEl evento espera a que terminen o el jugador pulse Esc."), n_items));
 				}
 				dlg_show_credits->popup_centered(Size2(420, 160) * EDSCALE);
+			}
+			break;
+		case CMD_SHOW_GAME_OVER:
+			if (dlg_show_game_over) {
+				if (show_game_over_info_lbl) {
+					String go_title = "GAME OVER";
+					if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+						go_title = String(dm->get_game_over_config().get("title_text", "GAME OVER"));
+					}
+					show_game_over_info_lbl->set_text(vformat(CG_TR("Muestra la pantalla de Game Over configurada en Base de Datos → Menús → Game Over (título: \"%s\").\nPermite Reintentar o Volver al menú."), go_title));
+				}
+				dlg_show_game_over->popup_centered(Size2(440, 165) * EDSCALE);
 			}
 			break;
 		case CMD_OPEN_MENU:
@@ -2176,6 +2197,14 @@ void ClockGearsEventEditorDialog::_on_confirm_show_credits() {
 	_append_command_to_active_page(cmd);
 }
 
+void ClockGearsEventEditorDialog::_on_confirm_show_game_over() {
+	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
+	Dictionary cmd;
+	cmd["type"] = "show_game_over";
+	cmd["code"] = CMD_SHOW_GAME_OVER;
+	_append_command_to_active_page(cmd);
+}
+
 void ClockGearsEventEditorDialog::_on_confirm_open_menu() {
 	if (current_page_index < 0 || current_page_index >= working_pages.size()) return;
 	Dictionary cmd;
@@ -2334,6 +2363,7 @@ Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() const {
 	out["command_selector"] = cmd_catalog_dialog;
 	out["command_tree"] = command_tree;
 	out["dlg_show_credits"] = dlg_show_credits;
+	out["dlg_show_game_over"] = dlg_show_game_over;
 	out["dlg_open_menu"] = dlg_open_menu;
 	out["dlg_change_menu_access"] = dlg_change_menu_access;
 	out["menu_access_opt"] = menu_access_opt;
@@ -4057,6 +4087,11 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 			CG_TR("Muestra los créditos configurados en Base de Datos → Menús → Créditos.\nEl evento espera a que terminen o el jugador pulse Esc."),
 			show_credits_info_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_show_credits));
 
+	// Mostrar Game Over (CMD_SHOW_GAME_OVER)
+	make_info_cmd_dialog(dlg_show_game_over, CG_TR("Mostrar Game Over"),
+			CG_TR("Muestra la pantalla de Game Over configurada en Base de Datos → Menús → Game Over.\nPermite Reintentar o Volver al menú."),
+			show_game_over_info_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_show_game_over));
+
 	// Abrir Menú del Juego (CMD_OPEN_MENU)
 	Label *open_menu_lbl = nullptr;
 	make_info_cmd_dialog(dlg_open_menu, CG_TR("Abrir Menú del Juego"),
@@ -5237,6 +5272,8 @@ String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) co
 		}
 	} else if (type == "show_credits") {
 		return CG_TR("◆ Mostrar Créditos");
+	} else if (type == "show_game_over") {
+		return CG_TR("◆ Mostrar Game Over");
 	} else if (type == "open_menu") {
 		return CG_TR("◆ Abrir Menú del Juego");
 	} else if (type == "change_menu_access" || type == "set_menu_access" || type == "menu_access") {

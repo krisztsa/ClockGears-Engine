@@ -24,6 +24,7 @@ class ClockGearsFollowerManager;
 class ClockGearsEventInterpreter;
 class ClockGearsGameMenu;
 class ClockGearsCreditsPlayer;
+class ClockGearsGameOverScreen;
 class ClockGearsHudOverlay;
 
 // ============================================================================
@@ -381,6 +382,7 @@ private:
 	ClockGearsCutscenePlayer *cutscene_player = nullptr;
 	ClockGearsGameMenu *game_menu = nullptr;
 	ClockGearsCreditsPlayer *credits_player = nullptr;
+	ClockGearsGameOverScreen *game_over_screen = nullptr;
 	CanvasLayer *hud_layer = nullptr;
 	ClockGearsHudOverlay *hud_overlay = nullptr;
 	Node *active_battle_scene = nullptr;
@@ -424,6 +426,8 @@ private:
 	void _on_credits_player_finished(bool p_cancelled);
 	void _on_game_menu_opened();
 	void _on_game_menu_closed();
+	void _on_game_over_retry_requested(const String &p_mode, int p_slot);
+	void _on_game_over_return_to_title_requested();
 	void _sync_hud_context_visibility();
 	void _execute_next_commands();
 	bool _execute_single_command(const Dictionary &p_cmd);
@@ -449,6 +453,8 @@ public:
 	ClockGearsCutscenePlayer *get_cutscene_player() const { return cutscene_player; }
 	ClockGearsGameMenu *get_game_menu() const { return game_menu; }
 	ClockGearsCreditsPlayer *get_credits_player() const { return credits_player; }
+	ClockGearsGameOverScreen *get_game_over_screen() const { return game_over_screen; }
+	void show_game_over(const Dictionary &p_cfg_override = Dictionary());
 	CanvasLayer *get_hud_layer() const { return hud_layer; }
 	ClockGearsHudOverlay *get_hud_overlay() const { return hud_overlay; }
 	Color get_screen_tint_color() const { return current_tint_color; }

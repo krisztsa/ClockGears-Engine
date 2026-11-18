@@ -148,6 +148,9 @@ enum ClockGearsCommandID {
 
 	// HUD (9B Tanda 5)
 	CMD_CHANGE_HUD_VISIBILITY = 360,
+
+	// Game Over (9B Punto 8)
+	CMD_SHOW_GAME_OVER = 361,
 };
 
 #define CG_TR(m_str) String::utf8(m_str)

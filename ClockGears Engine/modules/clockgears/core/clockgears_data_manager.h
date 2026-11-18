@@ -63,6 +63,7 @@ private:
 	Dictionary title_menu_config;
 	Dictionary game_menu_config;
 	Dictionary credits_config;
+	Dictionary game_over_config;
 	Dictionary window_styles_config;
 	Dictionary hud_config;
 	Dictionary ui_designs_config;
@@ -171,6 +172,12 @@ public:
 	Dictionary get_credits_config() const { return credits_config.duplicate(true); }
 	void set_credits_config(const Dictionary &p_cfg);
 	bool has_credits_lines() const;
+
+	// Game Over (9B Punto 8)
+	static Dictionary get_default_game_over_config();
+	static Dictionary normalize_game_over_config(const Dictionary &p_cfg);
+	Dictionary get_game_over_config() const { return game_over_config.duplicate(true); }
+	void set_game_over_config(const Dictionary &p_cfg);
 	bool is_game_menu_disabled() const { return runtime_game_menu_disabled; }
 	void set_game_menu_disabled(bool p_disabled) { runtime_game_menu_disabled = p_disabled; }
 	void set_runtime_window_style_override(const String &p_window_type_id, const String &p_style_id);
@@ -290,6 +297,7 @@ public:
 	Dictionary get_save_slot_info(int p_slot) const;
 	Array list_save_slots() const;
 	bool has_any_save() const;
+	int get_latest_save_slot() const;
 	bool delete_save_slot(int p_slot);
 	String get_pending_loaded_map_path() const { return pending_loaded_map_path; }
 	static String format_playtime_hms(double p_seconds);

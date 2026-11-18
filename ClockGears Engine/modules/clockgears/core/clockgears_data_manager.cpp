@@ -135,6 +135,7 @@ void ClockGearsDataManager::init_empty() {
 	title_menu_config = get_default_title_menu_config();
 	game_menu_config = get_default_game_menu_config();
 	credits_config = get_default_credits_config();
+	game_over_config = get_default_game_over_config();
 	hud_config = get_default_hud_config();
 	ui_designs_config = get_default_ui_designs_config();
 	ui_design_undo_stacks.clear();
@@ -1561,6 +1562,10 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 	if (!_write_json_atomic(p_dir_path.path_join("credits.json"), credits_config)) {
 		return false;
 	}
+	game_over_config = normalize_game_over_config(game_over_config);
+	if (!_write_json_atomic(p_dir_path.path_join("game_over.json"), game_over_config)) {
+		return false;
+	}
 	hud_config = normalize_hud_config(hud_config);
 	if (!_write_json_atomic(p_dir_path.path_join("hud.json"), hud_config)) {
 		return false;
@@ -1698,6 +1703,14 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		credits_config = get_default_credits_config();
 	}
 	title_menu_config["credits_configured"] = has_credits_lines();
+
+	// Migración de game_over.json (proyectos previos heredan valores por defecto)
+	Variant go_var;
+	if (_read_json_with_backup(p_dir_path.path_join("game_over.json"), go_var) && go_var.get_type() == Variant::DICTIONARY) {
+		game_over_config = normalize_game_over_config(Dictionary(go_var));
+	} else {
+		game_over_config = get_default_game_over_config();
+	}
 
 	// Migración de estilos de ventana (window_styles.json; proyectos antiguos heredan "Redondeado")
 	ensure_default_window_types_registered();
@@ -4213,6 +4226,55 @@ bool ClockGearsDataManager::has_credits_lines() const {
 	return false;
 }
 
+Dictionary ClockGearsDataManager::get_default_game_over_config() {
+	Dictionary d;
+	d["schema_version"] = 1;
+	d["background"] = _cg_default_menu_bg("#0c070cff");
+	d["title_text"] = "GAME OVER";
+	d["title_color"] = "#e84a5fff";
+	d["title_font_size"] = 48;
+	d["bgm_path"] = "";
+	d["bgm_volume_db"] = 0.0;
+	d["retry_enabled"] = true;
+	d["retry_label"] = "Reintentar";
+	d["title_enabled"] = true;
+	d["title_label"] = String::utf8("Volver al menú");
+	d["window_style_id"] = "default";
+	return d;
+}
+
+Dictionary ClockGearsDataManager::normalize_game_over_config(const Dictionary &p_cfg) {
+	Dictionary def = get_default_game_over_config();
+	Dictionary out;
+	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+	out["background"] = _cg_normalize_menu_bg(p_cfg.get("background", Dictionary()), def["background"]);
+	String t = String(p_cfg.get("title_text", def["title_text"])).strip_edges();
+	out["title_text"] = t.is_empty() ? String("GAME OVER") : t;
+	String tc = String(p_cfg.get("title_color", def["title_color"])).strip_edges();
+	if (tc.is_empty() || !Color::html_is_valid(tc)) {
+		tc = String(def["title_color"]);
+	}
+	out["title_color"] = tc;
+	out["title_font_size"] = CLAMP(int(p_cfg.get("title_font_size", def["title_font_size"])), 16, 128);
+	out["bgm_path"] = String(p_cfg.get("bgm_path", "")).strip_edges();
+	out["bgm_volume_db"] = CLAMP(double(p_cfg.get("bgm_volume_db", 0.0)), -40.0, 6.0);
+	out["retry_enabled"] = p_cfg.has("retry_enabled") ? bool(p_cfg["retry_enabled"]) : true;
+	String rl = String(p_cfg.get("retry_label", def["retry_label"])).strip_edges();
+	out["retry_label"] = rl.is_empty() ? String("Reintentar") : rl;
+	out["title_enabled"] = p_cfg.has("title_enabled") ? bool(p_cfg["title_enabled"]) : true;
+	String tl = String(p_cfg.get("title_label", def["title_label"])).strip_edges();
+	out["title_label"] = tl.is_empty() ? String::utf8("Volver al menú") : tl;
+	String wsid = String(p_cfg.get("window_style_id", "default")).strip_edges().to_lower();
+	out["window_style_id"] = wsid.is_empty() ? String("default") : wsid;
+	return out;
+}
+
+void ClockGearsDataManager::set_game_over_config(const Dictionary &p_cfg) {
+	game_over_config = normalize_game_over_config(p_cfg);
+	dirty = true;
+	emit_signal("data_changed", "game_over", 0);
+}
+
 void ClockGearsDataManager::set_runtime_window_style_override(const String &p_window_type_id, const String &p_style_id) {
 	String wt = p_window_type_id.strip_edges().to_lower();
 	if (wt.is_empty()) {
@@ -6685,6 +6747,38 @@ bool ClockGearsDataManager::has_any_save() const {
 	return false;
 }
 
+int ClockGearsDataManager::get_latest_save_slot() const {
+	int count = get_save_slot_count();
+	int best_slot = -1;
+	String best_saved_at;
+	uint64_t best_mtime = 0;
+	for (int s = 1; s <= count; s++) {
+		Dictionary info = get_save_slot_info(s);
+		if (!bool(info.get("exists", false))) {
+			continue;
+		}
+		String p = get_save_slot_path(s);
+		uint64_t mtime = FileAccess::exists(p) ? FileAccess::get_modified_time(p) : (FileAccess::exists(p + ".bak") ? FileAccess::get_modified_time(p + ".bak") : 0);
+		String sat = String(info.get("saved_at", "")).strip_edges();
+		bool newer = false;
+		if (best_slot < 0) {
+			newer = true;
+		} else if (!sat.is_empty() && !best_saved_at.is_empty() && sat != best_saved_at) {
+			newer = (sat > best_saved_at);
+		} else if (mtime != best_mtime) {
+			newer = (mtime > best_mtime);
+		} else {
+			newer = (s > best_slot);
+		}
+		if (newer) {
+			best_slot = s;
+			best_saved_at = sat;
+			best_mtime = mtime;
+		}
+	}
+	return best_slot;
+}
+
 bool ClockGearsDataManager::delete_save_slot(int p_slot) {
 	if (p_slot < 1) {
 		return false;
@@ -6789,6 +6883,7 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_save_slot_info", "slot"), &ClockGearsDataManager::get_save_slot_info);
 	ClassDB::bind_method(D_METHOD("list_save_slots"), &ClockGearsDataManager::list_save_slots);
 	ClassDB::bind_method(D_METHOD("has_any_save"), &ClockGearsDataManager::has_any_save);
+	ClassDB::bind_method(D_METHOD("get_latest_save_slot"), &ClockGearsDataManager::get_latest_save_slot);
 	ClassDB::bind_method(D_METHOD("delete_save_slot", "slot"), &ClockGearsDataManager::delete_save_slot);
 	ClassDB::bind_method(D_METHOD("get_pending_loaded_map_path"), &ClockGearsDataManager::get_pending_loaded_map_path);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("format_playtime_hms", "seconds"), &ClockGearsDataManager::format_playtime_hms);
@@ -6832,6 +6927,10 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_credits_config"), &ClockGearsDataManager::get_credits_config);
 	ClassDB::bind_method(D_METHOD("set_credits_config", "cfg"), &ClockGearsDataManager::set_credits_config);
 	ClassDB::bind_method(D_METHOD("has_credits_lines"), &ClockGearsDataManager::has_credits_lines);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_game_over_config"), &ClockGearsDataManager::get_default_game_over_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_game_over_config", "cfg"), &ClockGearsDataManager::normalize_game_over_config);
+	ClassDB::bind_method(D_METHOD("get_game_over_config"), &ClockGearsDataManager::get_game_over_config);
+	ClassDB::bind_method(D_METHOD("set_game_over_config", "cfg"), &ClockGearsDataManager::set_game_over_config);
 	ClassDB::bind_method(D_METHOD("is_game_menu_disabled"), &ClockGearsDataManager::is_game_menu_disabled);
 	ClassDB::bind_method(D_METHOD("set_game_menu_disabled", "disabled"), &ClockGearsDataManager::set_game_menu_disabled);
 	ClassDB::bind_method(D_METHOD("set_runtime_window_style_override", "window_type_id", "style_id"), &ClockGearsDataManager::set_runtime_window_style_override);

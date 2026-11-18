@@ -27,6 +27,7 @@
 
 class ClockGearsBattleScene;
 class ClockGearsCreditsPlayer;
+class ClockGearsGameOverScreen;
 class ClockGearsUiDesignEditor;
 class ClockGearsEventEditorDialog;
 class ClockGearsGameMenu;
@@ -961,6 +962,28 @@ private:
 
 	// Editor Visual de Interfaz (9B Tanda 6B-1)
 	ClockGearsUiDesignEditor *ui_design_editor_panel = nullptr;
+
+	// Menús -> Game Over (9B Punto 8)
+	Dictionary game_over_config_draft;
+	VBoxContainer *game_over_editor_panel = nullptr;
+	OptionButton *go_bg_type_opt = nullptr;
+	ColorPickerButton *go_bg_color_btn = nullptr;
+	LineEdit *go_bg_img_edit = nullptr;
+	OptionButton *go_bg_mode_opt = nullptr;
+	OptionButton *go_bg_filter_opt = nullptr;
+	LineEdit *go_title_text_edit = nullptr;
+	ColorPickerButton *go_title_color_btn = nullptr;
+	SpinBox *go_title_size_spin = nullptr;
+	LineEdit *go_bgm_edit = nullptr;
+	CheckBox *go_retry_enabled_chk = nullptr;
+	LineEdit *go_retry_label_edit = nullptr;
+	CheckBox *go_title_enabled_chk = nullptr;
+	LineEdit *go_title_label_edit = nullptr;
+	OptionButton *go_window_style_opt = nullptr;
+	SubViewport *go_preview_viewport = nullptr;
+	ClockGearsGameOverScreen *go_live_preview = nullptr;
+	FileDialog *go_asset_file_dialog = nullptr;
+	int go_asset_pick_target = 0; // 0 = bg image, 1 = bgm audio
 	bool ui_designer_hud_synced = false;
 
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
@@ -1348,6 +1371,15 @@ private:
 	// Menús -> Créditos helpers (9B Tanda 4 UI)
 	void _setup_credits_editor_ui();
 	void _refresh_credits_editor_ui();
+
+	// Menús -> Game Over helpers (9B Punto 8)
+	void _setup_game_over_editor_ui();
+	void _refresh_game_over_editor_ui();
+	void _update_game_over_live_preview();
+	void _on_game_over_field_changed();
+	void _on_game_over_pick_asset_pressed(int p_target);
+	void _on_game_over_clear_asset_pressed(int p_target);
+	void _on_game_over_asset_selected(const String &p_path);
 	void _rebuild_credits_items_list();
 	void _refresh_credits_selected_item_props();
 	void _update_credits_live_preview();
@@ -1416,7 +1448,7 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3, DB_CAT_HUD = CAT_MAX + 4, DB_CAT_UI_DESIGNER = CAT_MAX + 5 };
+	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3, DB_CAT_HUD = CAT_MAX + 4, DB_CAT_UI_DESIGNER = CAT_MAX + 5, DB_CAT_GAME_OVER = CAT_MAX + 6 };
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");
@@ -1528,6 +1560,9 @@ public:
 	String import_menu_asset_for_ui_designer(const String &p_src_path, bool p_pixel_preset = true);
 	ClockGearsUiDesignEditor *get_ui_designer_editor() const { return ui_design_editor_panel; }
 	Dictionary get_ui_designer_ui_handles() const;
+	Dictionary get_game_over_draft_copy() const { return game_over_config_draft.duplicate(true); }
+	ClockGearsGameOverScreen *get_game_over_live_preview() const { return go_live_preview; }
+	Dictionary get_game_over_editor_ui_handles() const;
 
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);
