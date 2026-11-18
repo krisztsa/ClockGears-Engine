@@ -1801,6 +1801,7 @@ void ClockGearsPlayer::_notification(int p_what) {
 				if (!act_now) {
 					action_key_released = true;
 					action_key_was_pressed = false;
+					action_cooldown = 0.0f;
 					diag_key_blocked_printed = false;
 				} else if (!action_key_released) {
 					// Jugador mantiene pulsada la tecla de cierre; esperar a que la suelte.

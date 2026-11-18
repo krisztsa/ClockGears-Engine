@@ -115,6 +115,7 @@ private:
 	bool instant_text_active = false;
 	bool waiting_for_release = false;
 	int input_block_frames = 0;
+	uint64_t opened_process_frame = 0;
 	String current_face_base_path;
 	String current_speaker_name;
 	String current_expression;
@@ -124,6 +125,7 @@ private:
 	void _update_background_style();
 	void _apply_unified_styles();
 	void _advance_typewriter(float p_delta);
+	void _complete_typing_to_next_pause();
 	void _process_current_token();
 	void _on_choice_btn_pressed(int p_idx);
 	void _handle_choice_cancel();
@@ -166,6 +168,7 @@ public:
 
 	// Estado
 	State get_state() const { return current_state; }
+	int get_message_state() const { return int(current_state); }
 	bool is_busy() const { return current_state != STATE_CLOSED; }
 	void refresh_window_styles() { _apply_unified_styles(); }
 

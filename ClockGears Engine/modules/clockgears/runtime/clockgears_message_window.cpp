@@ -37,6 +37,7 @@ void ClockGearsMessageWindow::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_skip_mode", "enable"), &ClockGearsMessageWindow::set_skip_mode);
 	ClassDB::bind_method(D_METHOD("get_skip_mode"), &ClockGearsMessageWindow::get_skip_mode);
 	ClassDB::bind_method(D_METHOD("is_busy"), &ClockGearsMessageWindow::is_busy);
+	ClassDB::bind_method(D_METHOD("get_message_state"), &ClockGearsMessageWindow::get_message_state);
 	ClassDB::bind_method(D_METHOD("refresh_window_styles"), &ClockGearsMessageWindow::refresh_window_styles);
 	ClassDB::bind_method(D_METHOD("handle_choice_cancel"), &ClockGearsMessageWindow::_handle_choice_cancel);
 	ClassDB::bind_method(D_METHOD("unhandled_input", "event"), &ClockGearsMessageWindow::unhandled_input);
@@ -528,8 +529,15 @@ void ClockGearsMessageWindow::show_message(const String &p_text, const String &p
 	_update_window_position_layout();
 	_update_background_style();
 
-	waiting_for_release = true;
-	input_block_frames = 2; // Ignorar tecla en los primeros 2 frames de apertura
+	waiting_for_release = false;
+	input_block_frames = 0;
+	opened_process_frame = Engine::get_singleton() ? Engine::get_singleton()->get_process_frames() : 0;
+	// Evitar que algún control de UI ajeno con foco intercepte Enter (ui_accept) durante el diálogo.
+	if (Viewport *vp = get_viewport()) {
+		if (Control *focused = vp->gui_get_focus_owner()) {
+			focused->release_focus();
+		}
+	}
 	is_auto_mode = false;
 	is_skip_mode = false;
 	_update_mode_indicators();
@@ -850,19 +858,54 @@ void ClockGearsMessageWindow::_notification(int p_what) {
 	}
 }
 
+void ClockGearsMessageWindow::_complete_typing_to_next_pause() {
+	while (current_token_idx < active_message.execution_tokens.size()) {
+		const ClockGearsTextParser::Token &tok = active_message.execution_tokens[current_token_idx++];
+		switch (tok.type) {
+			case ClockGearsTextParser::TOKEN_CHAR:
+				visible_chars_count++;
+				break;
+			case ClockGearsTextParser::TOKEN_WAIT_INPUT:
+				if (rich_text_label) {
+					rich_text_label->set_visible_characters(visible_chars_count);
+				}
+				if (continue_arrow) {
+					continue_arrow->show();
+				}
+				current_state = STATE_WAITING;
+				return;
+			case ClockGearsTextParser::TOKEN_EXPRESSION:
+				set_face(current_face_base_path, active_message.face_index, tok.str_param);
+				break;
+			case ClockGearsTextParser::TOKEN_FACE_INDEX:
+				set_face(current_face_base_path, tok.int_param, active_message.face_expression);
+				break;
+			case ClockGearsTextParser::TOKEN_NAME:
+				if (name_label && name_panel) {
+					name_label->set_text(tok.str_param);
+					name_panel->set_visible(!tok.str_param.is_empty());
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	if (rich_text_label) {
+		rich_text_label->set_visible_characters(-1);
+	}
+	if (continue_arrow) {
+		continue_arrow->show();
+	}
+	if (active_message.no_input_wait) {
+		close_window_with_reason("codigo ^ (no_input_wait)");
+	} else {
+		current_state = STATE_WAITING;
+	}
+}
+
 void ClockGearsMessageWindow::_advance_typewriter(float p_delta) {
 	if (instant_text_active) {
-		if (rich_text_label) {
-			rich_text_label->set_visible_characters(-1);
-		}
-		if (continue_arrow) {
-			continue_arrow->show();
-		}
-		if (active_message.no_input_wait) {
-			close_window_with_reason("codigo ^ (no_input_wait)");
-		} else {
-			current_state = STATE_WAITING;
-		}
+		_complete_typing_to_next_pause();
 		return;
 	}
 
@@ -890,8 +933,6 @@ void ClockGearsMessageWindow::_advance_typewriter(float p_delta) {
 				case ClockGearsTextParser::TOKEN_WAIT_INPUT:
 					current_state = STATE_WAITING;
 					if (continue_arrow) continue_arrow->show();
-					waiting_for_release = true;
-					input_block_frames = 2;
 					return;
 				case ClockGearsTextParser::TOKEN_INSTANT_ON:
 					instant_text_active = true;
@@ -1038,23 +1079,17 @@ void ClockGearsMessageWindow::unhandled_input(const Ref<InputEvent> &p_event) {
 	}
 
 	if (is_advance) {
-		get_viewport()->set_input_as_handled(); // CONSUMIR LA TECLA DE ACCIÓN
-
-		if (input_block_frames > 0 || waiting_for_release) {
+		uint64_t cur_frame = Engine::get_singleton() ? Engine::get_singleton()->get_process_frames() : 0;
+		if (cur_frame == opened_process_frame) {
+			// Misma pulsación/frame en que el jugador abrió la ventana: no adelantar este mensaje aún.
+			get_viewport()->set_input_as_handled();
 			return;
 		}
+		get_viewport()->set_input_as_handled(); // CONSUMIR LA TECLA DE ACCIÓN
 
 		if (current_state == STATE_TYPING) {
 			instant_text_active = true;
-			if (rich_text_label) {
-				rich_text_label->set_visible_characters(-1);
-			}
-			if (continue_arrow) {
-				continue_arrow->show();
-			}
-			current_state = STATE_WAITING;
-			waiting_for_release = true;
-			input_block_frames = 2;
+			_complete_typing_to_next_pause();
 			return;
 		}
 
@@ -1065,8 +1100,6 @@ void ClockGearsMessageWindow::unhandled_input(const Ref<InputEvent> &p_event) {
 				if (continue_arrow) {
 					continue_arrow->hide();
 				}
-				waiting_for_release = true;
-				input_block_frames = 2;
 				return;
 			}
 			close_window_with_reason("tecla de accion del jugador");
