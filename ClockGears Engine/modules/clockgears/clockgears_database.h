@@ -840,6 +840,13 @@ private:
 	VBoxContainer *hud_common_box = nullptr;
 	LineEdit *hud_name_edit = nullptr;
 	Button *hud_anchor_btns[9] = { nullptr };
+	Button *hud_free_anchor_btn = nullptr;
+	Control *hud_preview_drag_overlay = nullptr;
+	bool hud_drag_active = false;
+	Vector2 hud_drag_start_mouse;
+	int hud_drag_start_ox = 0;
+	int hud_drag_start_oy = 0;
+	Size2 hud_drag_widget_size;
 	SpinBox *hud_offset_x_spin = nullptr;
 	SpinBox *hud_offset_y_spin = nullptr;
 	HSlider *hud_width_slider = nullptr;
@@ -1386,6 +1393,7 @@ private:
 	void _on_hud_layer_move_pressed(int p_delta);
 	void _on_hud_widget_selected(int p_idx);
 	void _on_hud_anchor_pressed(const String &p_anchor_id);
+	void _on_hud_preview_gui_input(const Ref<InputEvent> &p_event);
 	void _on_hud_common_changed();
 	void _on_hud_slider_spin_sync(double p_val, const String &p_key, Slider *p_slider, SpinBox *p_spin, bool p_is_pct_opacity = false);
 	void _on_hud_type_field_changed();

@@ -4588,11 +4588,17 @@ Dictionary ClockGearsDataManager::normalize_hud_widget(const Dictionary &p_widge
 	out["id"] = raw_id;
 	out["name"] = raw_name;
 	out["type"] = wtype;
-	out["anchor"] = _cg_norm_hud_anchor(p_widget.get("anchor", def["anchor"]));
+	String raw_anchor = String(p_widget.get("anchor", def["anchor"])).strip_edges().to_lower();
+	out["anchor"] = (raw_anchor == "free") ? String("free") : _cg_norm_hud_anchor(raw_anchor);
 	out["offset_x"] = CLAMP(int(p_widget.get("offset_x", def["offset_x"])), -960, 960);
 	out["offset_y"] = CLAMP(int(p_widget.get("offset_y", def["offset_y"])), -540, 540);
 	out["width"] = CLAMP(int(p_widget.get("width", def["width"])), 16, 960);
 	out["height"] = CLAMP(int(p_widget.get("height", def["height"])), 16, 540);
+	if (raw_anchor == "free") {
+		// Modo libre: posición absoluta en píxeles enteros sobre 960x540, sin salirse de la pantalla.
+		out["offset_x"] = CLAMP(int(out["offset_x"]), 0, 960 - int(out["width"]));
+		out["offset_y"] = CLAMP(int(out["offset_y"]), 0, 540 - int(out["height"]));
+	}
 	out["layer_order"] = CLAMP(int(p_widget.get("layer_order", def["layer_order"])), -100, 1000);
 
 	String ws = String(p_widget.get("window_style_id", def["window_style_id"])).strip_edges().to_lower();

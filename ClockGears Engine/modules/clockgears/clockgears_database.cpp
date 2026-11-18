@@ -20015,7 +20015,17 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	anchor_grid->set_columns(3);
 	anchor_grid->add_theme_constant_override("h_separation", int(4 * EDSCALE));
 	anchor_grid->add_theme_constant_override("v_separation", int(4 * EDSCALE));
-	anchor_row->add_child(anchor_grid);
+	VBoxContainer *anchor_col = memnew(VBoxContainer);
+	anchor_col->add_theme_constant_override("separation", int(4 * EDSCALE));
+	anchor_row->add_child(anchor_col);
+	anchor_col->add_child(anchor_grid);
+	hud_free_anchor_btn = memnew(Button(CG_DB_TR("Libre (desanclado)")));
+	hud_free_anchor_btn->set_theme_type_variation("ClockGearsTabButton");
+	hud_free_anchor_btn->set_toggle_mode(true);
+	hud_free_anchor_btn->set_tooltip_text(CG_DB_TR("El widget se coloca en píxeles exactos sobre 960x540. Arrástralo en la vista previa o usa X e Y."));
+	hud_free_anchor_btn->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
+	hud_free_anchor_btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_anchor_pressed).bind(String("free")));
+	anchor_col->add_child(hud_free_anchor_btn);
 
 	Array anchor_ids = ClockGearsDataManager::get_hud_anchor_ids();
 	static const char *k_anchor_glyphs[9] = { "↖", "↑", "↗", "←", "•", "→", "↙", "↓", "↘" };
@@ -20518,6 +20528,15 @@ void ClockGearsDatabaseDialog::_setup_hud_editor_ui() {
 	preview_disp->set_texture(hud_preview_viewport->get_texture());
 	aspect->add_child(preview_disp);
 
+	// Capa transparente encima de la vista previa: selección y arrastre de widgets en modo libre.
+	hud_preview_drag_overlay = memnew(Control);
+	hud_preview_drag_overlay->set_name("HudPreviewDragOverlay");
+	hud_preview_drag_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	hud_preview_drag_overlay->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	hud_preview_drag_overlay->set_tooltip_text(CG_DB_TR("Clic para seleccionar un widget. Los widgets en modo Libre se arrastran."));
+	hud_preview_drag_overlay->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_hud_preview_gui_input));
+	aspect->add_child(hud_preview_drag_overlay);
+
 	hud_preview_map_bg = memnew(TextureRect);
 	hud_preview_map_bg->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	hud_preview_map_bg->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
@@ -20717,6 +20736,16 @@ void ClockGearsDatabaseDialog::_refresh_hud_selected_widget_props() {
 		if (!hud_anchor_btns[i]) continue;
 		String aid = (i < anchor_ids.size()) ? String(anchor_ids[i]) : String();
 		hud_anchor_btns[i]->set_pressed_no_signal(aid == anchor);
+	}
+	bool is_free = (anchor == "free");
+	if (hud_free_anchor_btn) hud_free_anchor_btn->set_pressed_no_signal(is_free);
+	if (hud_offset_x_spin) {
+		hud_offset_x_spin->set_min(is_free ? 0 : -960);
+		hud_offset_x_spin->set_max(960);
+	}
+	if (hud_offset_y_spin) {
+		hud_offset_y_spin->set_min(is_free ? 0 : -540);
+		hud_offset_y_spin->set_max(540);
 	}
 	if (hud_offset_x_spin) hud_offset_x_spin->set_value(int(w.get("offset_x", 0)));
 	if (hud_offset_y_spin) hud_offset_y_spin->set_value(int(w.get("offset_y", 0)));
@@ -21004,8 +21033,116 @@ void ClockGearsDatabaseDialog::_on_hud_anchor_pressed(const String &p_anchor_id)
 	if (updating_ui) {
 		return;
 	}
+	Array widgets = hud_config_draft.get("widgets", Array());
+	if (hud_selected_widget_idx >= 0 && hud_selected_widget_idx < widgets.size() && hud_live_preview) {
+		// Conserva la posición visible del widget al cambiar entre anclajes y modo libre.
+		Dictionary w = widgets[hud_selected_widget_idx];
+		Dictionary st = hud_live_preview->get_widget_state(String(w.get("id", "")));
+		if (st.has("base_rect")) {
+			Rect2 br = st["base_rect"];
+			Vector2 af(0, 0);
+			if (p_anchor_id.ends_with("_center") || p_anchor_id == "center") af.x = 0.5f;
+			if (p_anchor_id.ends_with("_right")) af.x = 1.0f;
+			if (p_anchor_id.begins_with("middle_") || p_anchor_id == "center") af.y = 0.5f;
+			if (p_anchor_id.begins_with("bottom_")) af.y = 1.0f;
+			int nox = int(Math::round(br.position.x - af.x * (960.0f - br.size.x)));
+			int noy = int(Math::round(br.position.y - af.y * (540.0f - br.size.y)));
+			_hud_set_selected_field("offset_x", nox, false);
+			_hud_set_selected_field("offset_y", noy, false);
+		}
+	}
 	_hud_set_selected_field("anchor", p_anchor_id);
 	_refresh_hud_selected_widget_props();
+}
+
+void ClockGearsDatabaseDialog::_on_hud_preview_gui_input(const Ref<InputEvent> &p_event) {
+	if (!hud_live_preview || !hud_preview_drag_overlay || !hud_preview_viewport) {
+		return;
+	}
+	Size2 ov_sz = hud_preview_drag_overlay->get_size();
+	if (ov_sz.x < 1.0f || ov_sz.y < 1.0f) {
+		return;
+	}
+	Vector2 vp_sz = Vector2(hud_preview_viewport->get_size());
+	Vector2 to_vp(vp_sz.x / ov_sz.x, vp_sz.y / ov_sz.y);
+	Dictionary info = hud_live_preview->get_layout_bounds_info();
+	float hud_scale = MAX(0.01f, float(info.get("scale", 1.0)));
+
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid()) {
+		MouseButton bi = mb->get_button_index();
+		if (bi == MouseButton::WHEEL_UP || bi == MouseButton::WHEEL_DOWN || bi == MouseButton::WHEEL_LEFT || bi == MouseButton::WHEEL_RIGHT) {
+			return; // La rueda no hace nada en la vista previa (sin zoom).
+		}
+		if (bi != MouseButton::LEFT) {
+			return;
+		}
+		if (!mb->is_pressed()) {
+			hud_drag_active = false;
+			hud_preview_drag_overlay->accept_event();
+			return;
+		}
+		Vector2 vp_pt = mb->get_position() * to_vp;
+		Array rects = info.get("widget_rects", Array());
+		String hit_id;
+		for (int i = rects.size() - 1; i >= 0; i--) {
+			Dictionary row = rects[i];
+			if (!bool(row.get("visible", true))) {
+				continue;
+			}
+			Rect2 r = row.get("screen_rect", Rect2());
+			if (r.has_point(vp_pt)) {
+				hit_id = String(row.get("id", ""));
+				break;
+			}
+		}
+		if (hit_id.is_empty()) {
+			return;
+		}
+		Array widgets = hud_config_draft.get("widgets", Array());
+		int idx = -1;
+		for (int i = 0; i < widgets.size(); i++) {
+			if (String(Dictionary(widgets[i]).get("id", "")) == hit_id) {
+				idx = i;
+				break;
+			}
+		}
+		if (idx < 0) {
+			return;
+		}
+		if (idx != hud_selected_widget_idx) {
+			select_hud_widget(idx);
+		}
+		Dictionary w = Dictionary(Array(hud_config_draft.get("widgets", Array()))[idx]);
+		if (String(w.get("anchor", "")) == "free") {
+			Dictionary st = hud_live_preview->get_widget_state(hit_id);
+			Rect2 br = st.get("base_rect", Rect2());
+			hud_drag_active = true;
+			hud_drag_start_mouse = mb->get_position();
+			hud_drag_start_ox = int(Math::round(br.position.x));
+			hud_drag_start_oy = int(Math::round(br.position.y));
+			hud_drag_widget_size = br.size;
+		}
+		hud_preview_drag_overlay->accept_event();
+		return;
+	}
+
+	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && hud_drag_active) {
+		Vector2 d = (mm->get_position() - hud_drag_start_mouse) * to_vp / hud_scale;
+		int max_x = MAX(0, 960 - int(Math::ceil(hud_drag_widget_size.x)));
+		int max_y = MAX(0, 540 - int(Math::ceil(hud_drag_widget_size.y)));
+		int nx = CLAMP(hud_drag_start_ox + int(Math::round(d.x)), 0, max_x);
+		int ny = CLAMP(hud_drag_start_oy + int(Math::round(d.y)), 0, max_y);
+		_hud_set_selected_field("offset_x", nx, false);
+		_hud_set_selected_field("offset_y", ny);
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		if (hud_offset_x_spin) hud_offset_x_spin->set_value(nx);
+		if (hud_offset_y_spin) hud_offset_y_spin->set_value(ny);
+		updating_ui = prev_upd;
+		hud_preview_drag_overlay->accept_event();
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_hud_common_changed() {
@@ -21394,6 +21531,8 @@ Dictionary ClockGearsDatabaseDialog::get_hud_editor_ui_handles() const {
 		ab.push_back(hud_anchor_btns[i]);
 	}
 	out["anchor_btns"] = ab;
+	out["free_anchor_btn"] = hud_free_anchor_btn;
+	out["preview_drag_overlay"] = hud_preview_drag_overlay;
 	out["offset_x_spin"] = hud_offset_x_spin;
 	out["offset_y_spin"] = hud_offset_y_spin;
 	out["width_slider"] = hud_width_slider;

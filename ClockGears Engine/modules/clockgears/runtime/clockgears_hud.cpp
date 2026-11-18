@@ -743,6 +743,11 @@ void ClockGearsHudOverlay::_relayout_widgets(bool p_refresh_styles) {
 		Vector2 af = s_anchor_factors(w.anchor);
 		float base_x = af.x * (LOGICAL_WIDTH - float(w.width)) + float(w.offset_x);
 		float base_y = af.y * (LOGICAL_HEIGHT - float(w.height)) + float(w.offset_y);
+		if (w.anchor == "free") {
+			// Desanclado: posición absoluta, siempre dentro de la pantalla lógica.
+			base_x = CLAMP(float(w.offset_x), 0.0f, MAX(0.0f, LOGICAL_WIDTH - float(w.width)));
+			base_y = CLAMP(float(w.offset_y), 0.0f, MAX(0.0f, LOGICAL_HEIGHT - float(w.height)));
+		}
 		Vector2 screen_pos(Math::round(stage_origin.x + base_x * s), Math::round(stage_origin.y + base_y * s));
 		Vector2 screen_sz(Math::round(float(w.width) * s), Math::round(float(w.height) * s));
 		screen_sz.x = MAX(4.0f, screen_sz.x);
@@ -1318,6 +1323,13 @@ Dictionary ClockGearsHudOverlay::get_widget_state(const String &p_id_or_name) co
 					af.y * (LOGICAL_HEIGHT - float(w.height)) + float(w.offset_y),
 					float(w.width),
 					float(w.height));
+			if (w.anchor == "free") {
+				out["base_rect"] = Rect2(
+						CLAMP(float(w.offset_x), 0.0f, MAX(0.0f, LOGICAL_WIDTH - float(w.width))),
+						CLAMP(float(w.offset_y), 0.0f, MAX(0.0f, LOGICAL_HEIGHT - float(w.height))),
+						float(w.width),
+						float(w.height));
+			}
 			return out;
 		}
 	}
