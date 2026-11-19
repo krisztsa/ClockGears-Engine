@@ -1743,6 +1743,7 @@ void ClockGearsTheme::refresh_all_themed_roots() {
 #ifdef TOOLS_ENABLED
 	if (EditorNode::get_singleton()) {
 		if (VBoxContainer *wroot = EditorNode::get_singleton()->get_clockgears_workspace_root()) {
+			register_themed_root(wroot);
 			if (wroot->get_child_count() > 0) {
 				register_themed_root(wroot->get_child(0)); // title_bar
 			}

@@ -333,6 +333,9 @@ void ClockGearsPreferencesDialog::_on_export_now_pressed() {
 }
 
 void ClockGearsPreferencesDialog::open_preferences() {
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 	_load_settings();
 	Size2 target_sz = Size2(640, 500) * EDSCALE;
 	if (Window *pw = (get_parent() ? get_parent()->get_window() : nullptr)) {
@@ -372,6 +375,36 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	res_tab->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	res_tab->add_theme_constant_override("separation", 10);
 	res_scroll->add_child(res_tab);
+
+	// Tarjeta destacada arriba del todo (visible sin hacer scroll): Tema visual del editor
+	PanelContainer *theme_card = memnew(PanelContainer);
+	theme_card->add_theme_style_override("panel", _pref_card_style());
+	res_tab->add_child(theme_card);
+
+	VBoxContainer *theme_box = memnew(VBoxContainer);
+	theme_box->add_theme_constant_override("separation", 6);
+	theme_card->add_child(theme_box);
+
+	Label *theme_title = memnew(Label(CG_TR("Apariencia y Tema del Editor:")));
+	theme_title->add_theme_color_override("font_color", Color(0.95, 0.8, 0.35));
+	theme_box->add_child(theme_title);
+
+	HBoxContainer *theme_hb = memnew(HBoxContainer);
+	theme_hb->add_theme_constant_override("separation", 8);
+	theme_hb->add_child(memnew(Label(CG_TR("Tema Visual (Cambio en caliente):"))));
+	editor_theme_opt = memnew(OptionButton);
+	editor_theme_opt->add_item(CG_TR("ClockGears Oscuro (Por defecto)"));
+	editor_theme_opt->set_item_metadata(0, "dark");
+	editor_theme_opt->add_item(CG_TR("ClockGears Claro"));
+	editor_theme_opt->set_item_metadata(1, "light");
+	editor_theme_opt->add_item(CG_TR("ClockGears Latón"));
+	editor_theme_opt->set_item_metadata(2, "brass");
+	editor_theme_opt->select(0);
+	editor_theme_opt->set_tooltip_text(CG_TR("Selecciona el tema del editor (Oscuro, Claro o ClockGears Latón) y aplícalo al instante sin reiniciar."));
+	editor_theme_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	editor_theme_opt->connect(SceneStringName(item_selected), callable_mp(this, &ClockGearsPreferencesDialog::_on_editor_theme_selected));
+	theme_hb->add_child(editor_theme_opt);
+	theme_box->add_child(theme_hb);
 
 	PanelContainer *res_card = memnew(PanelContainer);
 	res_card->add_theme_style_override("panel", _pref_card_style());
@@ -527,24 +560,6 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	inactive_layer_opacity_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	dim_pct_hb->add_child(inactive_layer_opacity_spin);
 	layer_edit_box->add_child(dim_pct_hb);
-
-	layer_edit_box->add_child(memnew(HSeparator));
-
-	HBoxContainer *theme_hb = memnew(HBoxContainer);
-	theme_hb->add_theme_constant_override("separation", 8);
-	theme_hb->add_child(memnew(Label(CG_TR("Tema Visual del Editor (Cambio en caliente):"))));
-	editor_theme_opt = memnew(OptionButton);
-	editor_theme_opt->add_item(CG_TR("ClockGears Oscuro (Por defecto)"));
-	editor_theme_opt->set_item_metadata(0, "dark");
-	editor_theme_opt->add_item(CG_TR("ClockGears Claro"));
-	editor_theme_opt->set_item_metadata(1, "light");
-	editor_theme_opt->add_item(CG_TR("ClockGears Latón"));
-	editor_theme_opt->set_item_metadata(2, "brass");
-	editor_theme_opt->select(0);
-	editor_theme_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	editor_theme_opt->connect(SceneStringName(item_selected), callable_mp(this, &ClockGearsPreferencesDialog::_on_editor_theme_selected));
-	theme_hb->add_child(editor_theme_opt);
-	layer_edit_box->add_child(theme_hb);
 
 	// =============================================================
 	// Pestaña 2: Exportación Simplificada
