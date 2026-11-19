@@ -245,10 +245,9 @@ Rect2 ClockGearsUiCanvasOverlay::_get_handle_rect(const Rect2 &p_elem_rect, Hand
 		case HANDLE_RADIUS: {
 			float rad_px = 14.0f;
 			if (owner_editor) {
-				ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-				Dictionary el = dm ? dm->get_ui_element(owner_editor->get_current_screen(), owner_editor->get_selected_element_id()) : Dictionary();
+				Dictionary el = owner_editor->get_effective_element(owner_editor->get_selected_element_id());
 				if (el.has("shape") && el["shape"].get_type() == Variant::DICTIONARY) {
-					float z = float(MAX(1, owner_editor->get_canvas_zoom()));
+					float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
 					rad_px = CLAMP(float(Dictionary(el["shape"]).get("corner_radius", 8)) * z, 8.0f, MIN(s.x, s.y) * 0.45f);
 				}
 			}
@@ -273,7 +272,7 @@ ClockGearsUiCanvasOverlay::HandleType ClockGearsUiCanvasOverlay::_hit_test_radia
 	if (String(lay.get("mode", "free")) != "radial") {
 		return HANDLE_NONE;
 	}
-	float z = float(MAX(1, owner_editor->get_canvas_zoom()));
+	float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
 	Vector2 c(float(lay.get("radial_center_x", 480)) * z, float(lay.get("radial_center_y", 270)) * z);
 	float rad = float(lay.get("radial_radius", 145)) * z;
 	float ang = Math::deg_to_rad(float(lay.get("radial_start_angle_deg", -90.0)));
@@ -329,8 +328,8 @@ Vector2 ClockGearsUiCanvasOverlay::_apply_snap_and_guides(const Rect2 &p_base_re
 			r_delta.y += (270.0f - moved_ctr.y);
 			guide_lines_y.push_back(270.0f);
 		}
-		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
-			Array elems = dm->get_ui_screen_elements(owner_editor->get_current_screen());
+		if (owner_editor) {
+			Array elems = owner_editor->get_effective_screen_elements();
 			Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_H));
 			Vector2 cur_pos = p_base_rect.position + r_delta;
 			for (int i = 0; i < elems.size(); i++) {
@@ -368,15 +367,11 @@ String ClockGearsUiCanvasOverlay::_hit_test_element(const Vector2 &p_pt) const {
 	if (!owner_editor) {
 		return String();
 	}
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm) {
-		return String();
-	}
-	Array elems = dm->get_ui_screen_elements(owner_editor->get_current_screen());
+	Array elems = owner_editor->get_effective_screen_elements();
 	if (elems.is_empty()) {
 		return String();
 	}
-	float scale = float(owner_editor->get_canvas_zoom());
+	float scale = owner_editor->get_canvas_stage_scale();
 	Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W * scale, ClockGearsUiDesignEditor::BASE_H * scale));
 
 	int best_score_layer = -999999;
@@ -411,15 +406,11 @@ Rect2 ClockGearsUiCanvasOverlay::get_selected_widget_rect() const {
 	if (sel_id.is_empty()) {
 		return Rect2();
 	}
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm) {
-		return Rect2();
-	}
-	Dictionary elem = dm->get_ui_element(owner_editor->get_current_screen(), sel_id);
+	Dictionary elem = owner_editor->get_effective_element(sel_id);
 	if (elem.is_empty()) {
 		return Rect2();
 	}
-	float scale = float(owner_editor->get_canvas_zoom());
+	float scale = owner_editor->get_canvas_stage_scale();
 	Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W * scale, ClockGearsUiDesignEditor::BASE_H * scale));
 	return ClockGearsUiDesignLayer::compute_element_rect(elem, stage, scale);
 }
@@ -446,7 +437,7 @@ void ClockGearsUiCanvasOverlay::drop_data(const Point2 &p_point, const Variant &
 	}
 	Dictionary d = p_data;
 	String etype = String(d.get("element_type", ""));
-	float z = float(MAX(1, owner_editor->get_canvas_zoom()));
+	float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
 	Vector2i logical_pos(
 			CLAMP(int(Math::round(p_point.x / z)), 0, ClockGearsUiDesignEditor::BASE_W),
 			CLAMP(int(Math::round(p_point.y / z)), 0, ClockGearsUiDesignEditor::BASE_H));
@@ -519,9 +510,9 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					hh = HANDLE_NONE;
 				}
 				if (dm) {
-					drag_initial_elem = dm->get_ui_element(owner_editor->get_current_screen(), hit_id);
+					drag_initial_elem = owner_editor->get_effective_element(hit_id);
 					drag_initial_screen_snapshot = dm->get_ui_screen_design(owner_editor->get_current_screen());
-					drag_elem_id = hit_id;
+					drag_elem_id = String(drag_initial_elem.get("id", hit_id));
 					drag_start_pos = pt;
 					active_handle = (hh != HANDLE_NONE) ? hh : HANDLE_MOVE;
 					dragging = !drag_initial_elem.is_empty() && !bool(drag_initial_elem.get("locked", false));
@@ -532,8 +523,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 			} else if (dragging) {
 				ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 				if (dm && drag_changed && !drag_initial_screen_snapshot.is_empty()) {
-					dm->push_ui_design_undo_state(owner_editor->get_current_screen(), drag_initial_screen_snapshot);
-					owner_editor->call_deferred("refresh_from_data_manager");
+					owner_editor->commit_canvas_drag_undo(drag_initial_screen_snapshot);
 				}
 				dragging = false;
 				active_handle = HANDLE_NONE;
@@ -555,7 +545,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 		if (dragging && (active_handle == HANDLE_RADIAL_RADIUS || active_handle == HANDLE_RADIAL_ANGLE)) {
 			ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 			if (dm) {
-				float z = float(MAX(1, owner_editor->get_canvas_zoom()));
+				float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
 				Dictionary design = dm->get_ui_screen_design(owner_editor->get_current_screen());
 				Dictionary lay = design.get("layout", Dictionary());
 				Vector2 c(float(lay.get("radial_center_x", 480)) * z, float(lay.get("radial_center_y", 270)) * z);
@@ -567,6 +557,9 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 				} else {
 					ang = Math::rad_to_deg(Math::atan2(d.y, d.x));
 				}
+				if (!drag_changed) {
+					owner_editor->ensure_screen_customizable_for_edit(false);
+				}
 				drag_changed = true;
 				owner_editor->set_radial_layout_live(rad, ang);
 			}
@@ -576,7 +569,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 		if (dragging && !drag_elem_id.is_empty()) {
 			ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 			if (dm) {
-				float z = float(MAX(1, owner_editor->get_canvas_zoom()));
+				float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
 				int dx = int(Math::round((pt.x - drag_start_pos.x) / z));
 				int dy = int(Math::round((pt.y - drag_start_pos.y) / z));
 
@@ -651,9 +644,12 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 				if (int(next_elem["offset_x"]) != ox0 || int(next_elem["offset_y"]) != oy0 ||
 						int(next_elem["width"]) != w0 || int(next_elem["height"]) != h0 ||
 						int(next_elem.get("corner_radius", 8)) != rad0) {
+					if (!drag_changed) {
+						owner_editor->ensure_screen_customizable_for_edit(false);
+					}
 					drag_changed = true;
+					owner_editor->update_dragged_element_fast(drag_elem_id, next_elem);
 				}
-				owner_editor->update_dragged_element_fast(drag_elem_id, next_elem);
 			}
 			accept_event();
 			return;
@@ -676,7 +672,7 @@ void ClockGearsUiCanvasOverlay::_notification(int p_what) {
 		if (!dm) {
 			return;
 		}
-		float scale = float(MAX(1, owner_editor->get_canvas_zoom()));
+		float scale = owner_editor->get_canvas_stage_scale();
 		Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W * scale, ClockGearsUiDesignEditor::BASE_H * scale));
 
 		// Rejilla opcional con imán (4D)
@@ -710,7 +706,7 @@ void ClockGearsUiCanvasOverlay::_notification(int p_what) {
 			draw_circle(ang_pt, 6.0f, (hover_handle == HANDLE_RADIAL_ANGLE) ? Color(0.85f, 1.0f, 1.0f) : Color(0.35f, 0.80f, 0.95f));
 		}
 
-		Array elems = dm->get_ui_screen_elements(owner_editor->get_current_screen());
+		Array elems = owner_editor->get_effective_screen_elements();
 		String sel_id = owner_editor->get_selected_element_id();
 		for (int i = 0; i < elems.size(); i++) {
 			if (elems[i].get_type() != Variant::DICTIONARY) {
@@ -1090,15 +1086,21 @@ void ClockGearsUiDesignEditor::shortcut_input(const Ref<InputEvent> &p_event) {
 		int dx = (kc == Key::LEFT ? -step : (kc == Key::RIGHT ? step : 0));
 		int dy = (kc == Key::UP ? -step : (kc == Key::DOWN ? step : 0));
 		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
-			Dictionary el = dm->get_ui_element(current_screen_id, selected_elem_id);
-			if (!el.is_empty() && !bool(el.get("locked", false))) {
-				el["offset_x"] = CLAMP(int(el.get("offset_x", 0)) + dx, -BASE_W, BASE_W);
-				el["offset_y"] = CLAMP(int(el.get("offset_y", 0)) + dy, -BASE_H, BASE_H);
-				dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
-				refresh_geometry_fast(true);
-				_notify_data_mutated(true);
-				if (get_viewport()) get_viewport()->set_input_as_handled();
-			}
+				Dictionary el = get_effective_element(selected_elem_id);
+				if (!el.is_empty() && !bool(el.get("locked", false))) {
+					Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+					bool was_custom = dm->has_custom_ui_design(current_screen_id);
+					ensure_screen_customizable_for_edit(false);
+					el["offset_x"] = CLAMP(int(el.get("offset_x", 0)) + dx, -BASE_W, BASE_W);
+					el["offset_y"] = CLAMP(int(el.get("offset_y", 0)) + dy, -BASE_H, BASE_H);
+					dm->update_ui_element(current_screen_id, selected_elem_id, el, was_custom);
+					if (!was_custom) {
+						dm->push_ui_design_undo_state(current_screen_id, snap);
+					}
+					refresh_geometry_fast(true);
+					_notify_data_mutated(true);
+					if (get_viewport()) get_viewport()->set_input_as_handled();
+				}
 		}
 	}
 }
@@ -1279,7 +1281,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	redo_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_redo_pressed));
 	act_hb->add_child(redo_btn);
 
-	reset_btn = memnew(Button(String::utf8("Restaurar plantilla original")));
+	reset_btn = memnew(Button(String::utf8("Restablecer a diseño por defecto")));
 	reset_btn->set_custom_minimum_size(Size2(0, row_h));
 	reset_btn->set_tooltip_text(String::utf8("Restaura la pantalla actual a su diseño por defecto."));
 	s_make_rounded_action_btn(reset_btn);
@@ -2855,7 +2857,11 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 
 	design_layer->set_viewport_size_override(stage_sz);
 	design_layer->set_size(stage_sz);
-	if (current_screen_id == "hud" || has_custom) {
+	if (current_screen_id == "hud" && !has_custom) {
+		Dictionary hud_preview = dm->get_default_ui_screen_template("hud");
+		design_layer->apply_prebuilt_screen_design(current_screen_id, hud_preview);
+		design_layer->show();
+	} else if (current_screen_id == "hud" || has_custom) {
 		design_layer->apply_prebuilt_screen_design(current_screen_id, design);
 		design_layer->show();
 	} else {
@@ -2970,7 +2976,7 @@ void ClockGearsUiDesignEditor::_refresh_layers_list() {
 	if (!dm) {
 		return;
 	}
-	Array elems = dm->get_ui_screen_elements(current_screen_id);
+	Array elems = get_effective_screen_elements();
 	Vector<Dictionary> sorted;
 	for (int i = 0; i < elems.size(); i++) {
 		if (elems[i].get_type() == Variant::DICTIONARY) {
@@ -3229,11 +3235,10 @@ void ClockGearsUiDesignEditor::_refresh_style_binding_action_options() {
 }
 
 Dictionary ClockGearsUiDesignEditor::_get_selected_element_copy() const {
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm || selected_elem_id.is_empty()) {
+	if (selected_elem_id.is_empty()) {
 		return Dictionary();
 	}
-	return dm->get_ui_element(current_screen_id, selected_elem_id);
+	return get_effective_element(selected_elem_id);
 }
 
 void ClockGearsUiDesignEditor::_refresh_recent_colors_palette() {
@@ -3626,13 +3631,78 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 	}
 	current_screen_id = norm_sid;
 	selected_elem_id = "";
-	if (dm) {
-		Array elems = dm->get_ui_screen_elements(current_screen_id);
-		if (!elems.is_empty() && elems[0].get_type() == Variant::DICTIONARY) {
-			selected_elem_id = String(Dictionary(elems[0]).get("id", ""));
-		}
+	Array elems = get_effective_screen_elements();
+	if (!elems.is_empty() && elems[0].get_type() == Variant::DICTIONARY) {
+		selected_elem_id = String(Dictionary(elems[0]).get("id", ""));
 	}
 	refresh_from_data_manager();
+}
+
+float ClockGearsUiDesignEditor::get_canvas_stage_scale() const {
+	float base_ratio = float(MAX(320, preview_resolution.x)) / float(BASE_W);
+	return base_ratio * float(MAX(1, canvas_zoom));
+}
+
+Array ClockGearsUiDesignEditor::get_effective_screen_elements() const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return Array();
+	}
+	Array elems = dm->get_ui_screen_elements(current_screen_id);
+	if (!elems.is_empty()) {
+		return elems;
+	}
+	bool is_custom_menu = dm->has_menu(current_screen_id) && !ClockGearsDataManager::is_system_menu_id(current_screen_id);
+	if (is_custom_menu || (current_screen_id != "hud" && dm->has_custom_ui_design(current_screen_id))) {
+		return elems;
+	}
+	Dictionary def_tpl = dm->get_default_ui_screen_template(current_screen_id);
+	return Array(def_tpl.get("elements", Array())).duplicate(true);
+}
+
+Dictionary ClockGearsUiDesignEditor::get_effective_element(const String &p_elem_id) const {
+	String target = p_elem_id.strip_edges().to_lower();
+	if (target.is_empty()) {
+		return Dictionary();
+	}
+	Array elems = get_effective_screen_elements();
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary el = elems[i];
+		if (String(el.get("id", "")).to_lower() == target || String(el.get("name", "")).strip_edges().to_lower() == target) {
+			return el.duplicate(true);
+		}
+	}
+	return Dictionary();
+}
+
+bool ClockGearsUiDesignEditor::ensure_screen_customizable_for_edit(bool p_record_undo) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return false;
+	}
+	bool has_cust = dm->has_custom_ui_design(current_screen_id);
+	if (current_screen_id == "hud") {
+		if (!dm->get_hud_widgets().is_empty()) {
+			return false;
+		}
+	} else if (has_cust || !dm->get_ui_screen_elements(current_screen_id).is_empty()) {
+		return false;
+	}
+	Dictionary tpl = dm->get_default_ui_screen_template(current_screen_id);
+	tpl["custom_enabled"] = true;
+	dm->set_ui_screen_design(current_screen_id, tpl, p_record_undo);
+	return true;
+}
+
+void ClockGearsUiDesignEditor::commit_canvas_drag_undo(const Dictionary &p_initial_snapshot) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (dm && !p_initial_snapshot.is_empty()) {
+		dm->push_ui_design_undo_state(current_screen_id, p_initial_snapshot);
+	}
+	_notify_data_mutated(true);
 }
 
 void ClockGearsUiDesignEditor::set_canvas_zoom(int p_zoom) {
@@ -3684,7 +3754,7 @@ bool ClockGearsUiDesignEditor::select_element(const String &p_elem_id) {
 		if (canvas_overlay) canvas_overlay->queue_redraw();
 		return true;
 	}
-	Dictionary el = dm->get_ui_element(current_screen_id, p_elem_id);
+	Dictionary el = get_effective_element(p_elem_id);
 	if (el.is_empty()) {
 		return false;
 	}
@@ -3702,11 +3772,17 @@ bool ClockGearsUiDesignEditor::delete_selected_element() {
 	if (!dm || selected_elem_id.is_empty()) {
 		return false;
 	}
-	if (!dm->delete_ui_element(current_screen_id, selected_elem_id, true)) {
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	if (!dm->delete_ui_element(current_screen_id, selected_elem_id, was_custom)) {
 		return false;
 	}
+	if (!was_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	selected_elem_id = "";
-	Array rem = dm->get_ui_screen_elements(current_screen_id);
+	Array rem = get_effective_screen_elements();
 	if (!rem.is_empty() && rem[0].get_type() == Variant::DICTIONARY) {
 		selected_elem_id = String(Dictionary(rem[0]).get("id", ""));
 	}
@@ -3719,12 +3795,18 @@ bool ClockGearsUiDesignEditor::toggle_element_visibility(const String &p_elem_id
 	if (!dm) {
 		return false;
 	}
-	Dictionary el = dm->get_ui_element(current_screen_id, p_elem_id);
+	Dictionary el = get_effective_element(p_elem_id);
 	if (el.is_empty()) {
 		return false;
 	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
 	el["visible"] = !bool(el.get("visible", true));
-	if (dm->update_ui_element(current_screen_id, p_elem_id, el, true)) {
+	if (dm->update_ui_element(current_screen_id, p_elem_id, el, was_custom)) {
+		if (!was_custom) {
+			dm->push_ui_design_undo_state(current_screen_id, snap);
+		}
 		_notify_data_mutated(true);
 		return true;
 	}
@@ -3736,7 +3818,13 @@ bool ClockGearsUiDesignEditor::move_selected_layer(int p_delta) {
 	if (!dm || selected_elem_id.is_empty()) {
 		return false;
 	}
-	if (dm->move_ui_element_layer(current_screen_id, selected_elem_id, p_delta, true)) {
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	if (dm->move_ui_element_layer(current_screen_id, selected_elem_id, p_delta, was_custom)) {
+		if (!was_custom) {
+			dm->push_ui_design_undo_state(current_screen_id, snap);
+		}
 		_notify_data_mutated(true);
 		return true;
 	}
@@ -3776,7 +3864,7 @@ void ClockGearsUiDesignEditor::_begin_inline_text_edit(const String &p_elem_id) 
 	if (!dm || !inline_text_edit || !canvas_overlay || p_elem_id.is_empty()) {
 		return;
 	}
-	Dictionary el = dm->get_ui_element(current_screen_id, p_elem_id);
+	Dictionary el = get_effective_element(p_elem_id);
 	if (el.is_empty()) {
 		return;
 	}
@@ -3784,7 +3872,7 @@ void ClockGearsUiDesignEditor::_begin_inline_text_edit(const String &p_elem_id) 
 	if (et != "text" && et != "button" && et != "bar" && et != "variable") {
 		return;
 	}
-	float scale = float(MAX(1, canvas_zoom));
+	float scale = get_canvas_stage_scale();
 	Rect2 stage(Vector2(), Vector2(BASE_W * scale, BASE_H * scale));
 	Rect2 r = ClockGearsUiDesignLayer::compute_element_rect(el, stage, scale);
 	inline_edit_elem_id = p_elem_id;
@@ -3874,11 +3962,12 @@ bool ClockGearsUiDesignEditor::align_selected_elements(const String &p_mode) {
 		return false;
 	}
 	if (p_mode == "distribute_v") {
-		Array elems = dm->get_ui_screen_elements(current_screen_id);
+		Array elems = get_effective_screen_elements();
 		if (elems.size() < 2) {
 			return false;
 		}
 		Dictionary prev_d = dm->get_ui_screen_design(current_screen_id);
+		ensure_screen_customizable_for_edit(false);
 		dm->push_ui_design_undo_state(current_screen_id, prev_d);
 		int start_y = 90;
 		int step = (BASE_H - 180) / MAX(1, elems.size());
@@ -3898,6 +3987,9 @@ bool ClockGearsUiDesignEditor::align_selected_elements(const String &p_mode) {
 	if (el.is_empty()) {
 		return false;
 	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
 	int w = int(el.get("width", 120));
 	int h = int(el.get("height", 36));
 	el["anchor"] = "top_left";
@@ -3907,7 +3999,10 @@ bool ClockGearsUiDesignEditor::align_selected_elements(const String &p_mode) {
 	if (p_mode == "center_v" || p_mode == "center_both") {
 		el["offset_y"] = (BASE_H - h) / 2;
 	}
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, was_custom);
+	if (!was_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	_notify_data_mutated(true);
 	return true;
 }
@@ -3917,8 +4012,14 @@ bool ClockGearsUiDesignEditor::duplicate_selected_element() {
 	if (!dm || selected_elem_id.is_empty()) {
 		return false;
 	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
 	String nid = dm->duplicate_ui_element(current_screen_id, selected_elem_id, Vector2i(16, 16));
 	if (!nid.is_empty()) {
+		if (!was_custom) {
+			dm->push_ui_design_undo_state(current_screen_id, snap);
+		}
 		selected_elem_id = nid;
 		_notify_data_mutated(true);
 		return true;
@@ -4552,7 +4653,13 @@ void ClockGearsUiDesignEditor::_on_prop_add_multi_action_pressed() {
 	na["type"] = atype;
 	acts.push_back(na);
 	el["actions"] = acts;
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	_notify_data_mutated(true);
 }
 
@@ -4566,7 +4673,13 @@ void ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed(int p_idx) {
 	if (p_idx >= 0 && p_idx < acts.size()) {
 		acts.remove_at(p_idx);
 		el["actions"] = acts;
-		dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+		Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 		_notify_data_mutated(true);
 	}
 }
@@ -4629,8 +4742,14 @@ void ClockGearsUiDesignEditor::_on_anchor_btn_pressed(int p_idx) {
 	if (!dm || el.is_empty()) {
 		return;
 	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
 	el["anchor"] = _anchor_key_by_index(p_idx);
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, was_custom);
+	if (!was_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	_notify_data_mutated(true);
 }
 
@@ -4756,7 +4875,13 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 			el["enabled_condition"] = ec;
 		}
 	}
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	if (only_geom) {
 		refresh_geometry_fast(false);
 		_refresh_undo_redo_buttons();
@@ -4776,7 +4901,13 @@ void ClockGearsUiDesignEditor::_on_prop_binding_changed(int p_idx) {
 		return;
 	}
 	el["data_binding"] = String(prop_binding_opt->get_item_metadata(p_idx));
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	_notify_data_mutated(true);
 }
 
@@ -4801,7 +4932,13 @@ void ClockGearsUiDesignEditor::_on_prop_item_opt_selected(int p_idx) {
 		return;
 	}
 	el["item_key"] = String(prop_item_opt->get_item_metadata(p_idx));
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	_notify_data_mutated(true);
 }
 
@@ -4815,7 +4952,13 @@ void ClockGearsUiDesignEditor::_on_prop_action_changed(int p_idx) {
 		return;
 	}
 	el["action"] = String(prop_action_opt->get_item_metadata(p_idx));
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
 	_notify_data_mutated(true);
 }
 

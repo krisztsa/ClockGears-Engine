@@ -560,8 +560,14 @@ public:
 
 	void set_canvas_zoom(int p_zoom);
 	int get_canvas_zoom() const { return canvas_zoom; }
+	float get_canvas_stage_scale() const;
 	void set_preview_resolution(int p_width, int p_height, bool p_sync_owner_db = true);
 	Vector2i get_preview_resolution() const { return preview_resolution; }
+
+	Array get_effective_screen_elements() const;
+	Dictionary get_effective_element(const String &p_elem_id) const;
+	bool ensure_screen_customizable_for_edit(bool p_record_undo = false);
+	void commit_canvas_drag_undo(const Dictionary &p_initial_snapshot);
 
 	String add_element_at(const String &p_type, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
 	bool select_element(const String &p_elem_id);

@@ -6393,6 +6393,32 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		back_b["focus_order"] = 0;
 		elems.push_back(back_b);
 	} else if (sid == "credits") {
+		Dictionary chdr = make_default_ui_element("text", sid);
+		chdr["id"] = "credits_heading";
+		chdr["name"] = String::utf8("Título Créditos");
+		chdr["text"] = String::utf8("Créditos");
+		chdr["anchor"] = "top_center";
+		chdr["offset_x"] = 0;
+		chdr["offset_y"] = 42;
+		chdr["width"] = 480;
+		chdr["height"] = 44;
+		chdr["font_size"] = 30;
+		chdr["align"] = "center";
+		elems.push_back(chdr);
+
+		Dictionary cbody = make_default_ui_element("text", sid);
+		cbody["id"] = "credits_body";
+		cbody["name"] = String::utf8("Lista de créditos");
+		cbody["text"] = String::utf8("Dirección · Arte · Música\nClockGears Studio");
+		cbody["anchor"] = "center";
+		cbody["offset_x"] = 0;
+		cbody["offset_y"] = 0;
+		cbody["width"] = 620;
+		cbody["height"] = 220;
+		cbody["font_size"] = 18;
+		cbody["align"] = "center";
+		elems.push_back(cbody);
+
 		Dictionary back_b = make_default_ui_element("button", sid);
 		back_b["id"] = "btn_credits_back";
 		back_b["name"] = "Volver";
@@ -6405,6 +6431,55 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		back_b["height"] = 36;
 		back_b["focus_order"] = 0;
 		elems.push_back(back_b);
+	} else if (sid == "hud") {
+		Dictionary frame_el = make_default_ui_element("frame", sid);
+		frame_el["id"] = "hud_panel";
+		frame_el["name"] = "Panel Estado HUD";
+		frame_el["anchor"] = "top_left";
+		frame_el["offset_x"] = 16;
+		frame_el["offset_y"] = 16;
+		frame_el["width"] = 240;
+		frame_el["height"] = 112;
+		frame_el["layer_order"] = 0;
+		elems.push_back(frame_el);
+
+		Dictionary hp_bar = make_default_ui_element("bar", sid);
+		hp_bar["id"] = "hud_hp_bar";
+		hp_bar["name"] = "Barra PV";
+		hp_bar["label_text"] = "PV";
+		hp_bar["data_binding"] = "player_hp";
+		hp_bar["anchor"] = "top_left";
+		hp_bar["offset_x"] = 28;
+		hp_bar["offset_y"] = 28;
+		hp_bar["width"] = 216;
+		hp_bar["height"] = 24;
+		hp_bar["layer_order"] = 1;
+		elems.push_back(hp_bar);
+
+		Dictionary mp_bar = make_default_ui_element("bar", sid);
+		mp_bar["id"] = "hud_mp_bar";
+		mp_bar["name"] = "Barra PM";
+		mp_bar["label_text"] = "PM";
+		mp_bar["data_binding"] = "player_mp";
+		mp_bar["anchor"] = "top_left";
+		mp_bar["offset_x"] = 28;
+		mp_bar["offset_y"] = 60;
+		mp_bar["width"] = 216;
+		mp_bar["height"] = 22;
+		mp_bar["layer_order"] = 1;
+		elems.push_back(mp_bar);
+
+		Dictionary gold_el = make_default_ui_element("currency", sid);
+		gold_el["id"] = "hud_gold";
+		gold_el["name"] = "Monedas";
+		gold_el["data_binding"] = "gold";
+		gold_el["anchor"] = "top_left";
+		gold_el["offset_x"] = 28;
+		gold_el["offset_y"] = 90;
+		gold_el["width"] = 216;
+		gold_el["height"] = 28;
+		gold_el["layer_order"] = 1;
+		elems.push_back(gold_el);
 	} else {
 		Dictionary close_b = make_default_ui_element("button", sid);
 		close_b["id"] = "btn_close";
@@ -6923,6 +6998,25 @@ bool ClockGearsDataManager::update_ui_element(const String &p_screen_id, const S
 	String target = p_elem_id.strip_edges().to_lower();
 
 	// Camino rápido O(1) durante arrastre interactivo (sin duplicar las otras 99 capas ni re-normalizar toda la pantalla)
+	if (!p_record_undo && sid == "hud" && hud_config.has("widgets") && hud_config["widgets"].get_type() == Variant::ARRAY) {
+		Array widgets = hud_config["widgets"];
+		for (int i = 0; i < widgets.size(); i++) {
+			if (widgets[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary cur = widgets[i];
+			if (String(cur.get("id", "")).to_lower() == target) {
+				Array keys = p_elem.keys();
+				for (int k = 0; k < keys.size(); k++) {
+					Variant kv = keys[k];
+					String ks = String(kv);
+					if (ks != "id") {
+						cur[kv] = p_elem[kv];
+					}
+				}
+				dirty = true;
+				return true;
+			}
+		}
+	}
 	if (!p_record_undo && sid != "hud" && ui_designs_config.has("screens") && ui_designs_config["screens"].get_type() == Variant::DICTIONARY) {
 		Dictionary screens = ui_designs_config["screens"];
 		if (screens.has(sid) && screens[sid].get_type() == Variant::DICTIONARY) {
