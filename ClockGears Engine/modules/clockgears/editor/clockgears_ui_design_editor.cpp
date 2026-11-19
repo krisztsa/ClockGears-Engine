@@ -76,6 +76,38 @@ static void s_make_rounded_action_btn(Button *p_btn) {
 	p_btn->add_theme_style_override("pressed", prs);
 }
 
+static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
+	if (!p_ctrl) {
+		return;
+	}
+	if (OptionButton *opt = Object::cast_to<OptionButton>(p_ctrl)) {
+		opt->set_fit_to_longest_item(false);
+		opt->set_clip_text(true);
+		opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		Size2 ms = opt->get_custom_minimum_size();
+		opt->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 72.0f * p_scale, 76.0f * p_scale), ms.y));
+	} else if (CheckBox *cb = Object::cast_to<CheckBox>(p_ctrl)) {
+		cb->set_clip_text(true);
+		cb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	} else if (LineEdit *le = Object::cast_to<LineEdit>(p_ctrl)) {
+		Size2 ms = le->get_custom_minimum_size();
+		if (ms.x > 72.0f * p_scale || ms.x <= 0.0f) {
+			le->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+		}
+	} else if (SpinBox *sp = Object::cast_to<SpinBox>(p_ctrl)) {
+		Size2 ms = sp->get_custom_minimum_size();
+		if (ms.x > 72.0f * p_scale || ms.x <= 0.0f) {
+			sp->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+		}
+	}
+	for (int i = 0; i < p_ctrl->get_child_count(); i++) {
+		if (Control *ch = Object::cast_to<Control>(p_ctrl->get_child(i))) {
+			s_clamp_narrow_controls(ch, p_scale);
+		}
+	}
+}
+
 // Miniatura procedural 16:9 generada y cacheada para galeria de plantillas y asistente (4A/4B)
 class ClockGearsTemplateThumbCtrl : public Control {
 	GDCLASS(ClockGearsTemplateThumbCtrl, Control);
@@ -1447,17 +1479,25 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_hbox->add_child(wide_center_col);
 
 	wide_right_col = memnew(VBoxContainer);
-	wide_right_col->set_custom_minimum_size(Size2(304 * EDSCALE, 0));
+	wide_right_col->set_custom_minimum_size(Size2(280 * EDSCALE, 0));
 	wide_right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	wide_right_col->set_clip_contents(true);
 	wide_right_col->add_theme_constant_override("separation", int(8 * EDSCALE));
 	wide_hbox->add_child(wide_right_col);
+
+	compact_scroll = memnew(ScrollContainer);
+	compact_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	compact_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	compact_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	compact_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
+	compact_scroll->hide();
+	layout_root->add_child(compact_scroll);
 
 	compact_vbox = memnew(VBoxContainer);
 	compact_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	compact_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	compact_vbox->add_theme_constant_override("separation", int(8 * EDSCALE));
-	compact_vbox->hide();
-	layout_root->add_child(compact_vbox);
+	compact_scroll->add_child(compact_vbox);
 
 	// --- Tarjeta 0 (4A): Panel de Menús (sistema + personalizados) ---
 	menus_card = memnew(PanelContainer);
@@ -1877,7 +1917,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	ScrollContainer *props_scroll = memnew(ScrollContainer);
 	props_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	props_scroll->set_custom_minimum_size(Size2(160 * EDSCALE, 220 * EDSCALE));
+	props_scroll->set_custom_minimum_size(Size2(150 * EDSCALE, 140 * EDSCALE));
 	props_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	props_body->add_child(props_scroll);
 
@@ -1897,11 +1937,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 		Label *l = memnew(Label(p_lbl));
-		l->set_custom_minimum_size(Size2(86 * EDSCALE, 0));
+		l->set_custom_minimum_size(Size2(82 * EDSCALE, 0));
+		l->set_clip_text(true);
+		l->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		l->set_tooltip_text(p_tip);
 		hb->add_child(l);
 		p_ctrl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		p_ctrl->set_tooltip_text(p_tip);
+		s_clamp_narrow_controls(p_ctrl, EDSCALE);
 		hb->add_child(p_ctrl);
 		p_parent->add_child(hb);
 		_register_prop_filter_row(hb, p_lbl + " " + p_kw, p_adv);
@@ -2133,8 +2176,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_binding_row->add_child(memnew(Label("Enlace de datos:")));
 	prop_binding_opt = memnew(OptionButton);
 	prop_binding_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prop_binding_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	prop_binding_opt->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
 	prop_binding_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_binding_changed));
+	s_clamp_narrow_controls(prop_binding_opt, EDSCALE);
 	prop_binding_row->add_child(prop_binding_opt);
 
 	prop_var_row = memnew(HBoxContainer);
@@ -2143,11 +2187,13 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_var_opt = memnew(OptionButton);
 	prop_var_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_var_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_var_opt_selected));
+	s_clamp_narrow_controls(prop_var_opt, EDSCALE);
 	prop_var_row->add_child(prop_var_opt);
 	prop_var_edit = memnew(LineEdit);
 	prop_var_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_var_edit->set_placeholder("variable");
 	prop_var_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	s_clamp_narrow_controls(prop_var_edit, EDSCALE);
 	prop_var_row->add_child(prop_var_edit);
 
 	prop_item_row = memnew(HBoxContainer);
@@ -2157,6 +2203,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_item_opt = memnew(OptionButton);
 	prop_item_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_item_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_item_opt_selected));
+	s_clamp_narrow_controls(prop_item_opt, EDSCALE);
 	prop_item_row->add_child(prop_item_opt);
 	_register_prop_filter_row(prop_binding_row, "enlace datos vida mana oro nivel variable objeto", false);
 
@@ -2167,8 +2214,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_action_row->add_child(memnew(Label(String::utf8("Acción principal del botón:"))));
 	prop_action_opt = memnew(OptionButton);
 	prop_action_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prop_action_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	prop_action_opt->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
 	prop_action_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_action_changed));
+	s_clamp_narrow_controls(prop_action_opt, EDSCALE);
 	prop_action_row->add_child(prop_action_opt);
 
 	HBoxContainer *fo_hb = memnew(HBoxContainer);
@@ -2191,6 +2239,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_action_row->add_child(add_act_hb);
 	prop_add_action_opt = memnew(OptionButton);
 	prop_add_action_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_add_action_opt, EDSCALE);
 	add_act_hb->add_child(prop_add_action_opt);
 	prop_add_action_btn = memnew(Button(String::utf8("+ Acción")));
 	s_make_rounded_action_btn(prop_add_action_btn);
@@ -2694,11 +2743,12 @@ int ClockGearsUiDesignEditor::_anchor_index_by_key(const String &p_key) {
 
 void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 	last_adapt_width = p_avail_w;
-	bool want_compact = (p_avail_w > 0 && p_avail_w < int(960 * EDSCALE));
+	bool want_compact = (p_avail_w > 0 && p_avail_w < int(1020 * EDSCALE));
 	compact_two_row_layout = want_compact;
 
 	if (want_compact) {
 		wide_hbox->hide();
+		if (compact_scroll) compact_scroll->show();
 		compact_vbox->show();
 		s_reparent_ctrl(canvas_card, compact_vbox);
 		s_reparent_ctrl(menus_card, compact_vbox);
@@ -2709,10 +2759,12 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		palette_card->set_custom_minimum_size(Size2(0, 0));
 		layers_card->set_custom_minimum_size(Size2(0, 0));
 		props_card->set_custom_minimum_size(Size2(0, 0));
+		canvas_card->set_custom_minimum_size(Size2(0, 320 * EDSCALE));
 		if (palette_grid) {
 			palette_grid->set_columns(3);
 		}
 	} else {
+		if (compact_scroll) compact_scroll->hide();
 		compact_vbox->hide();
 		wide_hbox->show();
 		if (left_col_scroll) {
@@ -2727,6 +2779,7 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		palette_card->set_custom_minimum_size(Size2(0, 0));
 		layers_card->set_custom_minimum_size(Size2(0, 0));
 		props_card->set_custom_minimum_size(Size2(0, 0));
+		canvas_card->set_custom_minimum_size(Size2(0, 0));
 		if (palette_grid) {
 			palette_grid->set_columns(2);
 		}
@@ -5762,8 +5815,9 @@ static HBoxContainer *s_ss_add_row(VBoxContainer *p_parent, const String &p_labe
 	hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	hb->add_theme_constant_override("separation", int(6 * p_scale));
 	Label *lbl = memnew(Label(p_label));
-	lbl->set_custom_minimum_size(Size2(102 * p_scale, 0));
+	lbl->set_custom_minimum_size(Size2(84 * p_scale, 0));
 	lbl->set_clip_text(true);
+	lbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	lbl->set_tooltip_text(p_tip);
 	hb->add_child(lbl);
 	if (p_ctrl) {
@@ -5771,6 +5825,7 @@ static HBoxContainer *s_ss_add_row(VBoxContainer *p_parent, const String &p_labe
 		if (p_ctrl->get_tooltip_text().is_empty()) {
 			p_ctrl->set_tooltip_text(p_tip);
 		}
+		s_clamp_narrow_controls(p_ctrl, p_scale);
 		hb->add_child(p_ctrl);
 	}
 	p_parent->add_child(hb);
@@ -5963,8 +6018,9 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 		pos_opt->connect("item_selected", cb.unbind(1));
 		s_ss_add_row(screen_settings_body, String::utf8("Posición:"), String::utf8("Coloca la vista previa a izquierda o derecha del listado."), pos_opt, EDSCALE);
 
-		HBoxContainer *flags_hb = memnew(HBoxContainer);
-		flags_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		HFlowContainer *flags_hb = memnew(HFlowContainer);
+		flags_hb->add_theme_constant_override("h_separation", int(4 * EDSCALE));
+		flags_hb->add_theme_constant_override("v_separation", int(2 * EDSCALE));
 		CheckBox *ic_chk = memnew(CheckBox("Icono"));
 		ic_chk->set_name("SsIpIconChk");
 		ic_chk->set_pressed(ip.has("show_icon") ? bool(ip["show_icon"]) : true);

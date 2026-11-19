@@ -215,6 +215,7 @@ private:
 	VBoxContainer *wide_left_col = nullptr;
 	VBoxContainer *wide_center_col = nullptr;
 	VBoxContainer *wide_right_col = nullptr;
+	ScrollContainer *compact_scroll = nullptr;
 	VBoxContainer *compact_vbox = nullptr;
 	HBoxContainer *compact_top_hbox = nullptr;
 	HBoxContainer *compact_bottom_hbox = nullptr;

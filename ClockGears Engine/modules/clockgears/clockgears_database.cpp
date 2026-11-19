@@ -5566,7 +5566,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	set_title(CG_DB_TR("Base de Datos - ClockGears Engine"));
 	set_wrap_controls(false);
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
-	set_min_size(Size2i(1000, 640));
+	set_min_size(Size2i(960, 600));
 	connect("size_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_window_size_changed));
 
 	_init_chapters();
@@ -8362,7 +8362,7 @@ void ClockGearsDatabaseDialog::open_database() {
 		}
 	}
 
-	Size2i min_sz(int(1000 * EDSCALE), int(640 * EDSCALE));
+	Size2i min_sz(int(960 * EDSCALE), int(600 * EDSCALE));
 	if (screen_sz.x < min_sz.x) {
 		min_sz.x = screen_sz.x;
 	}

@@ -307,7 +307,9 @@ void ClockGearsCreditsPlayer::_update_responsive_stage(const Vector2 &p_override
 	}
 	Vector2 vp_size = p_override_vp_size;
 	if (vp_size.x <= 1.0f || vp_size.y <= 1.0f) {
-		if (is_inside_tree() && get_viewport()) {
+		if (preview_mode && get_size().x > 1.0f && get_size().y > 1.0f) {
+			vp_size = get_size();
+		} else if (is_inside_tree() && get_viewport()) {
 			vp_size = get_viewport()->get_visible_rect().size;
 		}
 	}
