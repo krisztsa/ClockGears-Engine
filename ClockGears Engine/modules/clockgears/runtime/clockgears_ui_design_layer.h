@@ -178,6 +178,7 @@ private:
 		bool visible = true;
 		String window_style_id;
 		String data_binding = "none";
+		String widget_kind;
 		String action;
 		Array actions;
 		int focus_order = 0;
@@ -300,6 +301,8 @@ public:
 	void update_cursor_for_button(Button *p_button);
 	Array get_focus_order_actions() const;
 	Control *get_element_control(const String &p_elem_id) const;
+	Control *get_widget_mount(const String &p_widget_kind) const;
+	bool has_button_action(const String &p_action) const;
 	Array get_element_actions(const String &p_elem_id) const;
 	String get_element_displayed_text(const String &p_elem_id) const;
 	int get_element_count() const { return elements.size(); }

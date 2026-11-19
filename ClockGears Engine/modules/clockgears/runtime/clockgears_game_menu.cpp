@@ -259,7 +259,7 @@ void ClockGearsGameMenu::_build_ui() {
 	party_panel->add_child(party_outer);
 	party_outer->add_child(_cg_make_title_label("Grupo"));
 
-	ScrollContainer *party_scroll = memnew(ScrollContainer);
+	party_scroll = memnew(ScrollContainer);
 	party_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	party_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	party_outer->add_child(party_scroll);
@@ -455,14 +455,14 @@ void ClockGearsGameMenu::_build_ui() {
 	col_slots->add_theme_constant_override("separation", 6);
 	equip_cols->add_child(col_slots);
 	col_slots->add_child(_cg_make_title_label("Huecos", 14));
-	ScrollContainer *slots_scroll = memnew(ScrollContainer);
-	slots_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	slots_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	col_slots->add_child(slots_scroll);
+	equip_slots_scroll = memnew(ScrollContainer);
+	equip_slots_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_slots_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	col_slots->add_child(equip_slots_scroll);
 	equip_slots_box = memnew(VBoxContainer);
 	equip_slots_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_slots_box->add_theme_constant_override("separation", 5);
-	slots_scroll->add_child(equip_slots_box);
+	equip_slots_scroll->add_child(equip_slots_box);
 	btn_equip_clear = _cg_make_menu_button("Desequipar", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_equip_clear_pressed));
 	col_slots->add_child(btn_equip_clear);
 
@@ -472,14 +472,14 @@ void ClockGearsGameMenu::_build_ui() {
 	col_cand->add_theme_constant_override("separation", 6);
 	equip_cols->add_child(col_cand);
 	col_cand->add_child(_cg_make_title_label("Inventario compatible", 14));
-	ScrollContainer *cand_scroll = memnew(ScrollContainer);
-	cand_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	cand_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	col_cand->add_child(cand_scroll);
+	equip_candidates_scroll = memnew(ScrollContainer);
+	equip_candidates_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_candidates_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	col_cand->add_child(equip_candidates_scroll);
 	equip_candidates_box = memnew(VBoxContainer);
 	equip_candidates_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_candidates_box->add_theme_constant_override("separation", 5);
-	cand_scroll->add_child(equip_candidates_box);
+	equip_candidates_scroll->add_child(equip_candidates_box);
 	btn_equip_apply = _cg_make_menu_button("Equipar", "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_equip_apply_pressed));
 	col_cand->add_child(btn_equip_apply);
 
@@ -542,14 +542,14 @@ void ClockGearsGameMenu::_build_ui() {
 	col_prev->add_child(equip_desc_box);
 
 	col_prev->add_child(_cg_make_title_label(String::utf8("Parámetros"), 14));
-	ScrollContainer *prev_scroll = memnew(ScrollContainer);
-	prev_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	col_prev->add_child(prev_scroll);
+	equip_params_scroll = memnew(ScrollContainer);
+	equip_params_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_params_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	col_prev->add_child(equip_params_scroll);
 	equip_preview_box = memnew(VBoxContainer);
 	equip_preview_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_preview_box->add_theme_constant_override("separation", 4);
-	prev_scroll->add_child(equip_preview_box);
+	equip_params_scroll->add_child(equip_preview_box);
 	equip_feedback_label = memnew(Label);
 	equip_feedback_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_feedback_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
@@ -602,9 +602,14 @@ void ClockGearsGameMenu::_build_ui() {
 	st_left->add_theme_constant_override("separation", 8);
 	st_cols->add_child(st_left);
 
+	status_basic_box = memnew(VBoxContainer);
+	status_basic_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	status_basic_box->add_theme_constant_override("separation", 6);
+	st_left->add_child(status_basic_box);
+
 	HBoxContainer *st_top_row = memnew(HBoxContainer);
 	st_top_row->add_theme_constant_override("separation", 12);
-	st_left->add_child(st_top_row);
+	status_basic_box->add_child(st_top_row);
 
 	status_portrait_rect = memnew(TextureRect);
 	status_portrait_rect->set_name("StatusPortrait");
@@ -622,31 +627,31 @@ void ClockGearsGameMenu::_build_ui() {
 	status_states_label = memnew(Label);
 	status_states_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_states_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	st_left->add_child(status_states_label);
+	status_basic_box->add_child(status_states_label);
 
 	Label *eq_title = _cg_make_title_label(String::utf8("Equipo equipado:"), 14);
 	st_left->add_child(eq_title);
-	ScrollContainer *st_eq_scroll = memnew(ScrollContainer);
-	st_eq_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	st_eq_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	st_left->add_child(st_eq_scroll);
+	status_equips_scroll = memnew(ScrollContainer);
+	status_equips_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	status_equips_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	st_left->add_child(status_equips_scroll);
 	status_equips_box = memnew(VBoxContainer);
 	status_equips_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_equips_box->add_theme_constant_override("separation", 4);
-	st_eq_scroll->add_child(status_equips_box);
+	status_equips_scroll->add_child(status_equips_box);
 
-	VBoxContainer *st_right = memnew(VBoxContainer);
-	st_right->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	st_right->add_theme_constant_override("separation", 8);
-	st_cols->add_child(st_right);
+	status_params_box = memnew(VBoxContainer);
+	status_params_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	status_params_box->add_theme_constant_override("separation", 8);
+	st_cols->add_child(status_params_box);
 	status_params_label = memnew(Label);
 	status_params_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_params_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	st_right->add_child(status_params_label);
+	status_params_box->add_child(status_params_label);
 	status_elements_label = memnew(Label);
 	status_elements_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	status_elements_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	st_right->add_child(status_elements_label);
+	status_params_box->add_child(status_elements_label);
 
 	// --- 5. Subpantalla Guardar ---
 	save_panel = memnew(PanelContainer);
@@ -659,7 +664,7 @@ void ClockGearsGameMenu::_build_ui() {
 	save_vb->add_theme_constant_override("separation", 10);
 	save_panel->add_child(save_vb);
 	save_vb->add_child(_cg_make_title_label("Guardar partida"));
-	ScrollContainer *save_scroll = memnew(ScrollContainer);
+	save_scroll = memnew(ScrollContainer);
 	save_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	save_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	save_vb->add_child(save_scroll);
@@ -1199,10 +1204,112 @@ void ClockGearsGameMenu::refresh_window_styles() {
 	}
 }
 
+void ClockGearsGameMenu::_restore_default_widget_parents() {
+	for (int i = mounted_widgets.size() - 1; i >= 0; i--) {
+		const MountedWidgetRecord &rec = mounted_widgets[i];
+		if (!rec.node || !rec.orig_parent) {
+			continue;
+		}
+		if (rec.node->get_parent()) {
+			rec.node->get_parent()->remove_child(rec.node);
+		}
+		rec.orig_parent->add_child(rec.node);
+		int clamp_idx = CLAMP(rec.orig_index, 0, rec.orig_parent->get_child_count() - 1);
+		rec.orig_parent->move_child(rec.node, clamp_idx);
+		rec.node->set_custom_minimum_size(rec.orig_min_size);
+		rec.node->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	}
+	mounted_widgets.clear();
+	if (item_action_btns) {
+		item_action_btns->set_visible(true);
+	}
+	if (options_box && options_box->get_back_button()) {
+		options_box->get_back_button()->set_visible(true);
+	}
+}
+
+void ClockGearsGameMenu::_mount_widget_to_slot(Control *p_widget, const String &p_kind) {
+	if (!p_widget || !custom_ui_layer) {
+		return;
+	}
+	Control *mount = custom_ui_layer->get_widget_mount(p_kind);
+	if (!mount) {
+		return;
+	}
+	MountedWidgetRecord rec;
+	rec.node = p_widget;
+	rec.orig_parent = p_widget->get_parent();
+	rec.orig_index = rec.orig_parent ? p_widget->get_index() : 0;
+	rec.orig_min_size = p_widget->get_custom_minimum_size();
+	mounted_widgets.push_back(rec);
+
+	if (rec.orig_parent) {
+		rec.orig_parent->remove_child(p_widget);
+	}
+	p_widget->set_custom_minimum_size(Size2(0, 0));
+	mount->add_child(p_widget);
+	p_widget->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	p_widget->set_visible(true);
+}
+
+void ClockGearsGameMenu::_mount_custom_widgets(const String &p_ui_sid) {
+	if (!custom_ui_layer) {
+		return;
+	}
+	if (p_ui_sid == "game_menu_main") {
+		_mount_widget_to_slot(party_scroll, "party_list");
+		_refresh_main_view();
+	} else if (p_ui_sid == "game_menu_items") {
+		_mount_widget_to_slot(items_member_selector, "items_target");
+		_mount_widget_to_slot(items_scroll, "items_list");
+		_mount_widget_to_slot(item_preview_box, "item_preview");
+		_mount_widget_to_slot(item_desc_box, "item_details");
+		if (item_action_btns) {
+			bool custom_btns = custom_ui_layer->has_button_action("item_use") || custom_ui_layer->has_button_action("item_discard");
+			item_action_btns->set_visible(!custom_btns);
+		}
+		if (item_feedback_label) {
+			item_feedback_label->set_text("");
+		}
+		_refresh_items_view();
+	} else if (p_ui_sid == "game_menu_equip") {
+		_mount_widget_to_slot(equip_member_selector, "equip_target");
+		_mount_widget_to_slot(equip_slots_scroll, "equip_slots");
+		_mount_widget_to_slot(equip_candidates_scroll, "equip_candidates");
+		_mount_widget_to_slot(equip_item_preview_box, "equip_preview");
+		_mount_widget_to_slot(equip_desc_box, "equip_desc");
+		_mount_widget_to_slot(equip_params_scroll, "equip_params");
+		if (equip_feedback_label) {
+			equip_feedback_label->set_text("");
+		}
+		_refresh_equip_view();
+	} else if (p_ui_sid == "game_menu_status") {
+		_mount_widget_to_slot(status_member_selector, "status_target");
+		_mount_widget_to_slot(status_basic_box, "status_basic");
+		_mount_widget_to_slot(status_equips_scroll, "status_equips");
+		_mount_widget_to_slot(status_params_box, "status_params");
+		_refresh_status_view();
+	} else if (p_ui_sid == "game_menu_save") {
+		_mount_widget_to_slot(save_scroll, "save_slots");
+		if (save_feedback_label) {
+			save_feedback_label->set_text("");
+		}
+		_refresh_save_view();
+	} else if (p_ui_sid == "game_menu_options" && options_box) {
+		_mount_widget_to_slot(options_box, "options_controls");
+		if (options_box->get_back_button() && custom_ui_layer->has_button_action("back")) {
+			options_box->get_back_button()->set_visible(false);
+		}
+		options_box->sync_from_dm();
+		options_box->apply_button_theme();
+	}
+}
+
 void ClockGearsGameMenu::close_menu() {
 	if (!menu_open) {
 		return;
 	}
+	_restore_default_widget_parents();
 	_play_menu_sound("close");
 	preview_rotation_deg = 0.0f;
 	_apply_preview_rotation(0.0f);
@@ -1666,6 +1773,7 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 	}
 	bool is_custom_menu_id = (!ui_sid.is_empty() && dm && dm->has_menu(ui_sid) && !ClockGearsDataManager::is_system_menu_id(ui_sid));
 	bool use_custom = (dm && !ui_sid.is_empty() && (dm->has_custom_ui_design(ui_sid) || is_custom_menu_id));
+	_restore_default_widget_parents();
 	if (use_custom && custom_ui_layer) {
 		if (main_view) main_view->set_visible(false);
 		if (items_panel) items_panel->set_visible(false);
@@ -1677,7 +1785,9 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 		if (confirm_title_panel) confirm_title_panel->set_visible(false);
 		custom_ui_layer->set_window_type_fallback("game_menu");
 		custom_ui_layer->set_preview_mode(preview_mode);
+		custom_ui_layer->clear_disabled_actions();
 		custom_ui_layer->apply_screen_design(ui_sid);
+		_mount_custom_widgets(ui_sid);
 		custom_ui_layer->set_visible(true);
 		if (!preview_mode) {
 			custom_ui_layer->play_transition_in();
@@ -2200,6 +2310,11 @@ void ClockGearsGameMenu::_update_item_preview_panel(const String &p_key, bool p_
 			if (item_detail_desc) item_detail_desc->set_text(String::utf8("No hay ningún objeto seleccionado."));
 			if (btn_item_use) btn_item_use->set_disabled(true);
 			if (btn_item_discard) btn_item_discard->set_disabled(true);
+			if (custom_ui_layer && custom_ui_layer->is_visible()) {
+				custom_ui_layer->set_action_disabled("item_use", true);
+				custom_ui_layer->set_action_disabled("item_discard", true);
+				custom_ui_layer->refresh_live_values();
+			}
 			if (item_preview_icon_rect) item_preview_icon_rect->set_texture(Ref<Texture2D>());
 		} else {
 			bool is_key = bool(cur_row.get("is_key_item", false));
@@ -2211,6 +2326,11 @@ void ClockGearsGameMenu::_update_item_preview_panel(const String &p_key, bool p_
 			if (item_detail_desc) item_detail_desc->set_text(String(cur_row.get("desc", "")));
 			if (btn_item_use) btn_item_use->set_disabled(!usable || qty <= 0);
 			if (btn_item_discard) btn_item_discard->set_disabled(is_key || qty <= 0);
+			if (custom_ui_layer && custom_ui_layer->is_visible()) {
+				custom_ui_layer->set_action_disabled("item_use", !usable || qty <= 0);
+				custom_ui_layer->set_action_disabled("item_discard", is_key || qty <= 0);
+				custom_ui_layer->refresh_live_values();
+			}
 			if (item_preview_icon_rect) {
 				item_preview_icon_rect->set_custom_minimum_size(Size2(preview_px, preview_px));
 				item_preview_icon_rect->set_pivot_offset(Vector2(preview_px * 0.5f, preview_px * 0.5f));
@@ -2401,6 +2521,11 @@ void ClockGearsGameMenu::_refresh_equip_view() {
 	}
 	if (btn_equip_apply) {
 		btn_equip_apply->set_disabled(selected_equip_candidate_key.is_empty() || cur_locked || cur_sealed);
+	}
+	if (custom_ui_layer && custom_ui_layer->is_visible()) {
+		custom_ui_layer->set_action_disabled("equip_apply", selected_equip_candidate_key.is_empty() || cur_locked || cur_sealed);
+		custom_ui_layer->set_action_disabled("equip_clear", cur_locked || cur_sealed);
+		custom_ui_layer->refresh_live_values();
 	}
 	_refresh_equip_preview_labels();
 
@@ -2752,6 +2877,22 @@ bool ClockGearsGameMenu::_execute_button_step(const Dictionary &p_step, const St
 	}
 	if (step_type == "options") {
 		return open_menu_by_id("game_menu_options", false, true, true);
+	}
+	if (step_type == "item_use") {
+		_on_use_item_pressed();
+		return true;
+	}
+	if (step_type == "item_discard") {
+		_on_discard_item_pressed();
+		return true;
+	}
+	if (step_type == "equip_apply") {
+		_on_equip_apply_pressed();
+		return true;
+	}
+	if (step_type == "equip_clear") {
+		_on_equip_clear_pressed();
+		return true;
 	}
 	if (step_type == "save_game") {
 		int slot = int(p_step.get("slot", 0));

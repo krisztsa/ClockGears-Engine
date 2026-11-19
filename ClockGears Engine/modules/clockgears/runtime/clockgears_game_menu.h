@@ -48,6 +48,7 @@ private:
 	Label *playtime_label = nullptr;
 	Button *btn_close_menu = nullptr;
 	PanelContainer *party_panel = nullptr;
+	ScrollContainer *party_scroll = nullptr;
 	VBoxContainer *party_list_box = nullptr;
 
 	// Subpantalla Objetos
@@ -82,8 +83,11 @@ private:
 	OptionButton *equip_actor_option = nullptr;
 	Button *btn_equip_next_actor = nullptr;
 	Label *equip_mode_label = nullptr;
+	ScrollContainer *equip_slots_scroll = nullptr;
 	VBoxContainer *equip_slots_box = nullptr;
+	ScrollContainer *equip_candidates_scroll = nullptr;
 	VBoxContainer *equip_candidates_box = nullptr;
+	ScrollContainer *equip_params_scroll = nullptr;
 	VBoxContainer *equip_preview_box = nullptr;
 	Label *equip_feedback_label = nullptr;
 	Button *btn_equip_apply = nullptr;
@@ -106,16 +110,20 @@ private:
 	Button *btn_status_prev_actor = nullptr;
 	OptionButton *status_actor_option = nullptr;
 	Button *btn_status_next_actor = nullptr;
+	VBoxContainer *status_basic_box = nullptr;
 	TextureRect *status_portrait_rect = nullptr;
 	Label *status_basic_label = nullptr;
 	Label *status_params_label = nullptr;
 	Label *status_states_label = nullptr;
 	Label *status_elements_label = nullptr;
+	ScrollContainer *status_equips_scroll = nullptr;
 	VBoxContainer *status_equips_box = nullptr;
+	VBoxContainer *status_params_box = nullptr;
 	Button *btn_status_back = nullptr;
 
 	// Subpantalla Guardar
 	PanelContainer *save_panel = nullptr;
+	ScrollContainer *save_scroll = nullptr;
 	VBoxContainer *save_slots_box = nullptr;
 	Label *save_feedback_label = nullptr;
 	Button *btn_save_back = nullptr;
@@ -131,6 +139,17 @@ private:
 	Button *btn_confirm_title_yes = nullptr;
 	Button *btn_confirm_title_no = nullptr;
 	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
+
+	struct MountedWidgetRecord {
+		Control *node = nullptr;
+		Node *orig_parent = nullptr;
+		int orig_index = -1;
+		Size2 orig_min_size;
+	};
+	Vector<MountedWidgetRecord> mounted_widgets;
+	void _restore_default_widget_parents();
+	void _mount_widget_to_slot(Control *p_widget, const String &p_kind);
+	void _mount_custom_widgets(const String &p_ui_sid);
 
 	bool menu_open = false;
 	String current_subscreen = "main";

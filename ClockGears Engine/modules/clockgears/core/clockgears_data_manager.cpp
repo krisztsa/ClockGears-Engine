@@ -4712,7 +4712,7 @@ static String _cg_norm_ui_elem_type(const Variant &p_val) {
 	String t = String(p_val).strip_edges().to_lower();
 	if (t == "image" || t == "text" || t == "button" || t == "frame" ||
 			t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "variable" ||
-			t == "container" || t == "radial") {
+			t == "container" || t == "radial" || t == "widget") {
 		return t;
 	}
 	if (t == "imagen") {
@@ -4741,6 +4741,9 @@ static String _cg_norm_ui_elem_type(const Variant &p_val) {
 	}
 	if (t == "contenedor") {
 		return "container";
+	}
+	if (t == "lista" || t == "lista/widget") {
+		return "widget";
 	}
 	return "text";
 }
@@ -4806,7 +4809,7 @@ static bool _cg_is_system_menu_id(const String &p_id) {
 	return p_id == "title" || p_id == "game_menu_main" || p_id == "game_menu_items" ||
 			p_id == "game_menu_equip" || p_id == "game_menu_status" ||
 			p_id == "game_menu_save" || p_id == "game_menu_options" ||
-			p_id == "credits" || p_id == "hud";
+			p_id == "credits" || p_id == "hud" || p_id == "game_over";
 }
 
 static String _cg_default_system_menu_name(const String &p_id) {
@@ -4819,6 +4822,7 @@ static String _cg_default_system_menu_name(const String &p_id) {
 	if (p_id == "game_menu_options") return String::utf8("Menú del juego: Opciones");
 	if (p_id == "credits") return String::utf8("Créditos");
 	if (p_id == "hud") return "HUD";
+	if (p_id == "game_over") return "Fin del Juego";
 	return p_id;
 }
 
@@ -5639,6 +5643,10 @@ Array ClockGearsDataManager::get_all_ui_button_action_types() {
 	push_t("set_variable", "Cambiar variable");
 	push_t("play_sound", "Reproducir sonido");
 	push_t("hud_visibility", "Mostrar u ocultar HUD");
+	push_t("item_use", "Usar objeto seleccionado");
+	push_t("item_discard", "Tirar objeto seleccionado");
+	push_t("equip_apply", "Equipar pieza seleccionada");
+	push_t("equip_clear", "Desequipar hueco seleccionado");
 	return out;
 }
 
@@ -5874,6 +5882,13 @@ Array ClockGearsDataManager::get_ui_button_actions(const String &p_screen_id) {
 		push_a("back", "Volver");
 	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "game_menu_options") {
 		push_a("back", "Volver");
+		if (sid == "game_menu_items") {
+			push_a("item_use", "Usar objeto seleccionado");
+			push_a("item_discard", "Tirar objeto seleccionado");
+		} else if (sid == "game_menu_equip") {
+			push_a("equip_apply", "Equipar pieza seleccionada");
+			push_a("equip_clear", "Desequipar hueco seleccionado");
+		}
 		push_a("items", "Objetos");
 		push_a("equip", "Equipo");
 		push_a("status", "Estado");
@@ -5930,6 +5945,11 @@ Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, 
 			lay["mode"] = "radial";
 		}
 		el["layout"] = normalize_menu_layout(lay);
+	} else if (etype == "widget") {
+		el["name"] = "Panel / Lista";
+		el["width"] = 360;
+		el["height"] = 220;
+		el["widget_kind"] = (sid == "game_menu_main") ? String("party_list") : ((sid == "game_menu_items") ? String("items_list") : ((sid == "game_menu_equip") ? String("equip_slots") : ((sid == "game_menu_status") ? String("status_params") : ((sid == "game_menu_save") ? String("save_slots") : ((sid == "game_menu_options") ? String("options_controls") : String("party_list"))))));
 	} else if (etype == "text") {
 		el["anchor"] = "top_left";
 		el["offset_x"] = 24;
@@ -6023,6 +6043,13 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	}
 	if (p_elem.has("locked")) {
 		out["locked"] = bool(p_elem["locked"]);
+	}
+	if (etype == "widget") {
+		String wk = String(p_elem.get("widget_kind", def.get("widget_kind", "party_list"))).strip_edges().to_lower();
+		if (wk.is_empty()) {
+			wk = String(def.get("widget_kind", "party_list"));
+		}
+		out["widget_kind"] = wk;
 	}
 	// Forma avanzada opcional (3F: rect, rounded, pill, circle, ellipse, image + recorte, degradado, sombra, brillo)
 	if (p_elem.has("shape") && p_elem["shape"].get_type() == Variant::DICTIONARY) {
@@ -6338,18 +6365,53 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			y_cursor += 48;
 		}
 	} else if (sid == "game_menu_main") {
-		Dictionary cmd_frame = make_default_ui_element("frame", sid);
-		cmd_frame["id"] = "menu_frame";
-		cmd_frame["name"] = "Panel Comandos";
-		cmd_frame["anchor"] = "top_left";
-		cmd_frame["offset_x"] = 24;
-		cmd_frame["offset_y"] = 24;
-		cmd_frame["width"] = 240;
-		cmd_frame["height"] = 340;
-		elems.push_back(cmd_frame);
+		auto add_box = [&](const String &p_id, const String &p_name, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+			Dictionary f = make_default_ui_element("frame", sid);
+			f["id"] = p_id;
+			f["name"] = p_name;
+			f["anchor"] = "top_left";
+			f["offset_x"] = p_x;
+			f["offset_y"] = p_y;
+			f["width"] = p_w;
+			f["height"] = p_h;
+			f["layer_order"] = p_layer;
+			elems.push_back(f);
+		};
+		auto add_txt = [&](const String &p_id, const String &p_name, const String &p_text, int p_x, int p_y, int p_w, int p_h, int p_fsz, const String &p_align, const String &p_bind, int p_layer) {
+			Dictionary t = make_default_ui_element("text", sid);
+			t["id"] = p_id;
+			t["name"] = p_name;
+			t["text"] = p_text;
+			t["anchor"] = "top_left";
+			t["offset_x"] = p_x;
+			t["offset_y"] = p_y;
+			t["width"] = p_w;
+			t["height"] = p_h;
+			t["font_size"] = p_fsz;
+			t["align"] = p_align;
+			t["data_binding"] = p_bind;
+			t["layer_order"] = p_layer;
+			elems.push_back(t);
+		};
+		auto add_wid = [&](const String &p_id, const String &p_name, const String &p_kind, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+			Dictionary w = make_default_ui_element("widget", sid);
+			w["id"] = p_id;
+			w["name"] = p_name;
+			w["widget_kind"] = p_kind;
+			w["anchor"] = "top_left";
+			w["offset_x"] = p_x;
+			w["offset_y"] = p_y;
+			w["width"] = p_w;
+			w["height"] = p_h;
+			w["layer_order"] = p_layer;
+			elems.push_back(w);
+		};
+
+		add_box("menu_frame", "Panel Comandos", 24, 20, 220, 384, 0);
+		add_txt("menu_heading", String::utf8("Título Menú"), String::utf8("Menú"), 36, 30, 196, 28, 18, "left", "none", 1);
 
 		Array entries = get_visible_game_menu_entries();
-		int y_cursor = 40;
+		int y_cursor = 66;
 		for (int i = 0; i < entries.size(); i++) {
 			Dictionary e = entries[i];
 			Dictionary b = make_default_ui_element("button", sid);
@@ -6359,40 +6421,143 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			b["text"] = String(e.get("text", act));
 			b["action"] = act;
 			b["anchor"] = "top_left";
-			b["offset_x"] = 40;
+			b["offset_x"] = 36;
 			b["offset_y"] = y_cursor;
-			b["width"] = 208;
-			b["height"] = 36;
-			b["layer_order"] = 1;
+			b["width"] = 196;
+			b["height"] = 34;
+			b["layer_order"] = 2;
 			b["focus_order"] = i;
 			elems.push_back(b);
-			y_cursor += 42;
+			y_cursor += 40;
 		}
-	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "game_menu_options") {
-		Dictionary hdr = make_default_ui_element("text", sid);
-		hdr["id"] = "sub_heading";
-		hdr["name"] = "Encabezado";
-		hdr["text"] = _cg_default_system_menu_name(sid);
-		hdr["anchor"] = "top_left";
-		hdr["offset_x"] = 24;
-		hdr["offset_y"] = 20;
-		hdr["width"] = 480;
-		hdr["height"] = 40;
-		hdr["font_size"] = 22;
-		elems.push_back(hdr);
+		Dictionary close_b = make_default_ui_element("button", sid);
+		close_b["id"] = "menu_btn_close";
+		close_b["name"] = "Cerrar (Esc)";
+		close_b["text"] = "Cerrar (Esc)";
+		close_b["action"] = "close";
+		close_b["anchor"] = "top_left";
+		close_b["offset_x"] = 36;
+		close_b["offset_y"] = 358;
+		close_b["width"] = 196;
+		close_b["height"] = 34;
+		close_b["layer_order"] = 2;
+		close_b["focus_order"] = entries.size();
+		elems.push_back(close_b);
 
-		Dictionary back_b = make_default_ui_element("button", sid);
-		back_b["id"] = "btn_back";
-		back_b["name"] = "Volver";
-		back_b["text"] = "Volver";
-		back_b["action"] = "back";
-		back_b["anchor"] = "bottom_right";
-		back_b["offset_x"] = -24;
-		back_b["offset_y"] = -24;
-		back_b["width"] = 160;
-		back_b["height"] = 38;
-		back_b["focus_order"] = 0;
-		elems.push_back(back_b);
+		add_box("currency_time_frame", "Tarjeta Moneda y Tiempo", 24, 414, 220, 106, 0);
+		Dictionary gold_el = make_default_ui_element("currency", sid);
+		gold_el["id"] = "menu_gold";
+		gold_el["name"] = "Monedas";
+		gold_el["data_binding"] = "gold";
+		gold_el["anchor"] = "top_left";
+		gold_el["offset_x"] = 36;
+		gold_el["offset_y"] = 428;
+		gold_el["width"] = 196;
+		gold_el["height"] = 28;
+		gold_el["layer_order"] = 1;
+		elems.push_back(gold_el);
+		add_txt("menu_playtime", "Tiempo jugado", "Tiempo: 00:00:00", 36, 468, 196, 26, 13, "right", "playtime", 1);
+
+		add_box("party_frame", "Panel Grupo", 260, 20, 676, 500, 0);
+		add_txt("party_heading", String::utf8("Título Grupo"), "Grupo", 276, 30, 240, 28, 18, "left", "none", 1);
+		add_wid("party_list", "Lista del grupo", "party_list", 274, 68, 648, 438, 1);
+	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "game_menu_options") {
+		auto add_panel = [&](const String &p_id, const String &p_name, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+			Dictionary f = make_default_ui_element("frame", sid);
+			f["id"] = p_id;
+			f["name"] = p_name;
+			f["anchor"] = "top_left";
+			f["offset_x"] = p_x;
+			f["offset_y"] = p_y;
+			f["width"] = p_w;
+			f["height"] = p_h;
+			f["layer_order"] = p_layer;
+			elems.push_back(f);
+		};
+		auto add_hdr = [&](const String &p_id, const String &p_name, const String &p_text, int p_x, int p_y, int p_w, int p_h, int p_fsz, int p_layer) {
+			Dictionary h = make_default_ui_element("text", sid);
+			h["id"] = p_id;
+			h["name"] = p_name;
+			h["text"] = p_text;
+			h["anchor"] = "top_left";
+			h["offset_x"] = p_x;
+			h["offset_y"] = p_y;
+			h["width"] = p_w;
+			h["height"] = p_h;
+			h["font_size"] = p_fsz;
+			h["layer_order"] = p_layer;
+			elems.push_back(h);
+		};
+		auto add_widget = [&](const String &p_id, const String &p_name, const String &p_kind, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+			Dictionary w = make_default_ui_element("widget", sid);
+			w["id"] = p_id;
+			w["name"] = p_name;
+			w["widget_kind"] = p_kind;
+			w["anchor"] = "top_left";
+			w["offset_x"] = p_x;
+			w["offset_y"] = p_y;
+			w["width"] = p_w;
+			w["height"] = p_h;
+			w["layer_order"] = p_layer;
+			elems.push_back(w);
+		};
+		auto add_act_btn = [&](const String &p_id, const String &p_text, const String &p_act, int p_x, int p_y, int p_w, int p_h, int p_focus) {
+			Dictionary b = make_default_ui_element("button", sid);
+			b["id"] = p_id;
+			b["name"] = p_text;
+			b["text"] = p_text;
+			b["action"] = p_act;
+			b["anchor"] = "top_left";
+			b["offset_x"] = p_x;
+			b["offset_y"] = p_y;
+			b["width"] = p_w;
+			b["height"] = p_h;
+			b["layer_order"] = 2;
+			b["focus_order"] = p_focus;
+			elems.push_back(b);
+		};
+
+		if (sid == "game_menu_items") {
+			add_panel("items_panel_frame", "Panel Objetos", 24, 20, 912, 500, 0);
+			add_hdr("sub_heading", "Encabezado", "Objetos", 40, 32, 150, 34, 22, 1);
+			add_widget("items_target_selector", "Selector de objetivo", "items_target", 200, 32, 320, 34, 1);
+			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 2);
+			add_widget("items_list", "Lista de objetos", "items_list", 40, 78, 568, 426, 1);
+			add_widget("item_preview", "Vista previa del objeto", "item_preview", 620, 78, 300, 140, 1);
+			add_widget("item_details", String::utf8("Descripción del objeto"), "item_details", 620, 226, 300, 228, 1);
+			add_act_btn("btn_item_use", "Usar", "item_use", 632, 462, 132, 36, 0);
+			add_act_btn("btn_item_discard", "Tirar", "item_discard", 776, 462, 132, 36, 1);
+		} else if (sid == "game_menu_equip") {
+			add_panel("equip_panel_frame", "Panel Equipo", 24, 20, 912, 500, 0);
+			add_hdr("sub_heading", "Encabezado", "Equipo", 40, 32, 140, 34, 22, 1);
+			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 190, 32, 320, 34, 1);
+			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 2);
+			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 40, 78, 292, 378, 1);
+			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 40, 464, 292, 38, 0);
+			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 344, 78, 292, 378, 1);
+			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 344, 464, 292, 38, 1);
+			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 648, 78, 272, 100, 1);
+			add_widget("equip_desc", "Detalles pieza", "equip_desc", 648, 186, 272, 110, 1);
+			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 648, 304, 272, 198, 1);
+		} else if (sid == "game_menu_status") {
+			add_panel("status_panel_frame", "Panel Estado", 24, 20, 912, 500, 0);
+			add_hdr("sub_heading", "Encabezado", "Estado", 40, 32, 140, 34, 22, 1);
+			add_widget("status_target_selector", "Selector de personaje", "status_target", 190, 32, 320, 34, 1);
+			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 0);
+			add_widget("status_basic", String::utf8("Retrato y datos básicos"), "status_basic", 40, 78, 430, 176, 1);
+			add_widget("status_equips", "Equipo equipado", "status_equips", 40, 264, 430, 240, 1);
+			add_widget("status_params", "Atributos y afinidades", "status_params", 486, 78, 434, 426, 1);
+		} else if (sid == "game_menu_save") {
+			add_panel("save_panel_frame", "Panel Partidas", 24, 20, 912, 500, 0);
+			add_hdr("sub_heading", "Encabezado", "Guardar partida", 40, 32, 480, 36, 22, 1);
+			add_widget("save_slots", "Ranuras de guardado", "save_slots", 40, 78, 880, 382, 1);
+			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0);
+		} else {
+			add_panel("options_panel_frame", "Panel Opciones", 24, 20, 912, 500, 0);
+			add_hdr("sub_heading", "Encabezado", "Opciones", 40, 32, 480, 36, 22, 1);
+			add_widget("options_controls", "Controles de opciones", "options_controls", 40, 78, 880, 382, 1);
+			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0);
+		}
 	} else if (sid == "credits") {
 		Dictionary chdr = make_default_ui_element("text", sid);
 		chdr["id"] = "credits_heading";

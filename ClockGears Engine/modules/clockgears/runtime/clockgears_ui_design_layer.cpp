@@ -1281,6 +1281,7 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.visible = bool(cfg.get("visible", true));
 		entry.window_style_id = String(cfg.get("window_style_id", "")).strip_edges().to_lower();
 		entry.data_binding = String(cfg.get("data_binding", "none")).strip_edges().to_lower();
+		entry.widget_kind = String(cfg.get("widget_kind", "")).strip_edges().to_lower();
 		entry.action = String(cfg.get("action", "")).strip_edges().to_lower();
 		entry.actions = cfg.has("actions") && cfg["actions"].get_type() == Variant::ARRAY ? Array(cfg["actions"]).duplicate(true) : Array();
 		entry.focus_order = int(cfg.get("focus_order", i));
@@ -1358,7 +1359,8 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 	Control *root = memnew(Control);
 	root->set_name(vformat("UiElem_%s", r_entry.id));
-	root->set_mouse_filter(r_entry.type == "button" ? MOUSE_FILTER_PASS : MOUSE_FILTER_IGNORE);
+	const bool allow_pass = (r_entry.type == "button") || (r_entry.type == "widget" && !preview_mode);
+	root->set_mouse_filter(allow_pass ? MOUSE_FILTER_PASS : MOUSE_FILTER_IGNORE);
 	root->set_z_index(r_entry.layer_order);
 	root->set_visible(r_entry.visible);
 	add_child(root);
@@ -1397,7 +1399,7 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 
 	Control *content = memnew(Control);
 	content->set_name("ContentRoot");
-	content->set_mouse_filter(r_entry.type == "button" ? MOUSE_FILTER_PASS : MOUSE_FILTER_IGNORE);
+	content->set_mouse_filter(allow_pass ? MOUSE_FILTER_PASS : MOUSE_FILTER_IGNORE);
 	content_parent->add_child(content);
 	r_entry.content_root = content;
 
@@ -1523,6 +1525,65 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		lbl->add_theme_constant_override("outline_size", 2);
 		hb->add_child(lbl);
 		r_entry.label = lbl;
+	} else if (r_entry.type == "widget") {
+		if (preview_mode) {
+			PanelContainer *card = memnew(PanelContainer);
+			card->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			card->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+			ClockGearsWindowStyleManager::apply_window_style(card, window_type_fallback);
+			card->set_modulate(Color(1, 1, 1, 0.92f));
+			content->add_child(card);
+
+			VBoxContainer *vb = memnew(VBoxContainer);
+			vb->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			vb->add_theme_constant_override("separation", 4);
+			card->add_child(vb);
+
+			Label *hdr = memnew(Label);
+			hdr->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			hdr->set_text(r_entry.name.is_empty() ? String("Panel") : r_entry.name);
+			hdr->add_theme_font_size_override("font_size", 13);
+			hdr->add_theme_color_override("font_color", Color(0.95f, 0.85f, 0.55f, 1.0f));
+			vb->add_child(hdr);
+
+			String wk = r_entry.widget_kind;
+			String hint = String::utf8("Contenido dinámico");
+			if (wk == "party_list") {
+				hint = String::utf8("• Héroe  Nv.1  PV 100/100  PM 30/30");
+			} else if (wk == "items_target" || wk == "equip_target" || wk == "status_target") {
+				hdr->set_visible(false);
+				hint = String::utf8("Objetivo: <  Héroe  >");
+			} else if (wk == "items_list") {
+				hint = String::utf8("> Poción menor  (x3)\n  Éter simple  (x2)\n  Llave oxidada  (x1)");
+			} else if (wk == "item_preview" || wk == "equip_preview") {
+				hint = String::utf8("[ Vista previa 64×64 ]");
+			} else if (wk == "item_details" || wk == "equip_desc") {
+				hint = String::utf8("Nombre del objeto\nCantidad: 3 / 99\nDescripción del objeto…");
+			} else if (wk == "equip_slots") {
+				hint = String::utf8("> Arma: Espada corta\n  Armadura: Cota de cuero\n  Accesorio: ---");
+			} else if (wk == "equip_candidates") {
+				hint = String::utf8("> Espada larga (x1)\n  Daga de latón (x2)");
+			} else if (wk == "equip_params") {
+				hint = String::utf8("ATQ: 18 -> 24  (+6)\nDEF: 12 -> 12  (=)");
+			} else if (wk == "status_basic") {
+				hint = String::utf8("[Retrato]  Héroe · Nv. 1\nPV 100/100 · PM 30/30 · EXP 0");
+			} else if (wk == "status_equips") {
+				hint = String::utf8("Arma: Espada corta\nArmadura: Cota de cuero");
+			} else if (wk == "status_params") {
+				hint = String::utf8("ATQ 18 · DEF 12 · VEL 14\nAfinidades elementales");
+			} else if (wk == "save_slots") {
+				hint = String::utf8("Ranura 1 — Mapa 001  00:12:40\nRanura 2 — (Vacía)\nRanura 3 — (Vacía)");
+			} else if (wk == "options_controls") {
+				hint = String::utf8("Música  [========--] 80%\nEfectos [========--] 80%\nBrillo  [==========] 100%\n[ ] Pantalla completa");
+			}
+			Label *body = memnew(Label);
+			body->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			body->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+			body->add_theme_font_size_override("font_size", 12);
+			body->add_theme_color_override("font_color", Color(0.84f, 0.88f, 0.95f, 0.92f));
+			body->set_text(hint);
+			vb->add_child(body);
+		}
 	} else {
 		Label *lbl = memnew(Label);
 		lbl->set_name("TextLabel");
@@ -2376,6 +2437,36 @@ Dictionary ClockGearsUiDesignLayer::get_layout_state_info() const {
 	return d;
 }
 
+Control *ClockGearsUiDesignLayer::get_widget_mount(const String &p_widget_kind) const {
+	String wk = p_widget_kind.strip_edges().to_lower();
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &e = elements[i];
+		if (e.type == "widget" && e.widget_kind == wk && e.content_root) {
+			return e.content_root;
+		}
+	}
+	return nullptr;
+}
+
+bool ClockGearsUiDesignLayer::has_button_action(const String &p_action) const {
+	String act = p_action.strip_edges().to_lower();
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &e = elements[i];
+		if (e.type == "button" && e.visible) {
+			if (e.action == act) {
+				return true;
+			}
+			for (int j = 0; j < e.actions.size(); j++) {
+				if (e.actions[j].get_type() == Variant::DICTIONARY &&
+						String(Dictionary(e.actions[j]).get("type", "")).strip_edges().to_lower() == act) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 bool ClockGearsUiDesignLayer::trigger_action(const String &p_action) {
 	String act = p_action.strip_edges().to_lower();
 	for (int i = 0; i < elements.size(); i++) {
@@ -2504,6 +2595,8 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("refresh_live_values"), &ClockGearsUiDesignLayer::refresh_live_values);
 	ClassDB::bind_method(D_METHOD("get_focus_order_actions"), &ClockGearsUiDesignLayer::get_focus_order_actions);
 	ClassDB::bind_method(D_METHOD("get_element_control", "elem_id"), &ClockGearsUiDesignLayer::get_element_control);
+	ClassDB::bind_method(D_METHOD("get_widget_mount", "widget_kind"), &ClockGearsUiDesignLayer::get_widget_mount);
+	ClassDB::bind_method(D_METHOD("has_button_action", "action"), &ClockGearsUiDesignLayer::has_button_action);
 	ClassDB::bind_method(D_METHOD("get_element_actions", "elem_id"), &ClockGearsUiDesignLayer::get_element_actions);
 	ClassDB::bind_method(D_METHOD("get_element_displayed_text", "elem_id"), &ClockGearsUiDesignLayer::get_element_displayed_text);
 	ClassDB::bind_method(D_METHOD("get_element_count"), &ClockGearsUiDesignLayer::get_element_count);

@@ -2665,6 +2665,7 @@ void ClockGearsUiDesignEditor::update_dragged_element_fast(const String &p_elem_
 	dm->update_ui_element(current_screen_id, p_elem_id, p_elem, false);
 	if (design_layer) {
 		if (!design_layer->is_visible()) {
+			_refresh_background_and_default_preview(true);
 			Dictionary design = dm->get_ui_screen_design(current_screen_id);
 			design_layer->apply_screen_design(current_screen_id, design);
 			design_layer->show();
