@@ -17,6 +17,7 @@
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/keyboard.h"
+#include "core/os/time.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/aspect_ratio_container.h"
 #include "scene/gui/label.h"
@@ -496,6 +497,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 				}
 				String hit_id = (hh != HANDLE_NONE) ? owner_editor->get_selected_element_id() : _hit_test_element(pt);
 				if (hit_id.is_empty()) {
+					owner_editor->log_trace_action("canvas_click_miss", vformat("screen=%s pt=(%.1f,%.1f) scale=%.3f ov_sz=(%.1f,%.1f)", owner_editor->get_current_screen(), pt.x, pt.y, owner_editor->get_canvas_stage_scale(), get_size().x, get_size().y));
 					owner_editor->select_element("");
 					dragging = false;
 					active_handle = HANDLE_NONE;
@@ -517,12 +519,16 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					active_handle = (hh != HANDLE_NONE) ? hh : HANDLE_MOVE;
 					dragging = !drag_initial_elem.is_empty() && !bool(drag_initial_elem.get("locked", false));
 					drag_changed = false;
+					if (dragging) {
+						owner_editor->log_trace_action(active_handle == HANDLE_MOVE ? "drag_start" : "resize_start", owner_editor->get_current_screen() + " elem=" + drag_elem_id);
+					}
 				}
 				accept_event();
 				return;
 			} else if (dragging) {
 				ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 				if (dm && drag_changed && !drag_initial_screen_snapshot.is_empty()) {
+					owner_editor->log_trace_action(active_handle == HANDLE_MOVE ? "drag_end" : "resize_end", owner_editor->get_current_screen() + " elem=" + drag_elem_id);
 					owner_editor->commit_canvas_drag_undo(drag_initial_screen_snapshot);
 				}
 				dragging = false;
@@ -1152,16 +1158,17 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 	}
 	Size2 stage_sz(float(preview_resolution.x * canvas_zoom), float(preview_resolution.y * canvas_zoom));
 	if (canvas_zoom <= 1 && canvas_aspect && canvas_scroll) {
-		float avail_w = canvas_scroll->get_size().x;
-		if (avail_w >= 32.0f) {
-			float max_h = 440.0f * EDSCALE;
-			float target_w = MAX(160.0f * EDSCALE, MIN(avail_w, max_h * (16.0f / 9.0f)));
-			float target_h = Math::round(target_w * (9.0f / 16.0f));
-			Size2 target_sz(Math::round(target_w), target_h);
-			if (canvas_aspect->get_custom_minimum_size().distance_to(target_sz) > 1.5f) {
-				canvas_aspect->set_custom_minimum_size(target_sz);
-				canvas_aspect->set_size(target_sz);
-			}
+		canvas_aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		canvas_aspect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		Size2 min_16_9(160.0f * EDSCALE, 90.0f * EDSCALE);
+		if (canvas_aspect->get_custom_minimum_size().distance_to(min_16_9) > 1.5f) {
+			canvas_aspect->set_custom_minimum_size(min_16_9);
+		}
+	} else if (canvas_zoom > 1 && canvas_aspect) {
+		canvas_aspect->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+		canvas_aspect->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		if (canvas_aspect->get_custom_minimum_size().distance_to(stage_sz) > 1.5f) {
+			canvas_aspect->set_custom_minimum_size(stage_sz);
 		}
 	}
 	Size2 holder_sz = canvas_fit_holder->get_size();
@@ -1408,7 +1415,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	screens_tree->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	screens_tree->set_custom_minimum_size(Size2(0, 178 * EDSCALE));
 	screens_tree->set_tooltip_text(String::utf8("Selecciona la pantalla o subpantalla que deseas editar en el lienzo."));
-	screens_tree->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_screens_tree_selected));
+	screens_tree->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_screens_tree_selected), CONNECT_DEFERRED);
 	menus_body->add_child(screens_tree);
 
 	ScrollContainer *menus_scroll = memnew(ScrollContainer);
@@ -1550,15 +1557,16 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_aspect = memnew(AspectRatioContainer);
 	canvas_aspect->set_ratio(16.0f / 9.0f);
 	canvas_aspect->set_stretch_mode(AspectRatioContainer::STRETCH_FIT);
-	canvas_aspect->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
-	canvas_aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
+	canvas_aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	canvas_aspect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	canvas_aspect->set_custom_minimum_size(Size2(160 * EDSCALE, 90 * EDSCALE));
 	canvas_scroll->add_child(canvas_aspect);
 	canvas_scroll->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale));
 
 	canvas_fit_holder = memnew(Control);
 	canvas_fit_holder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	canvas_fit_holder->set_clip_contents(true);
-	canvas_fit_holder->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale));
+	canvas_fit_holder->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale), CONNECT_DEFERRED);
 	canvas_aspect->add_child(canvas_fit_holder);
 
 	canvas_stage = memnew(Control);
@@ -3026,59 +3034,88 @@ void ClockGearsUiDesignEditor::_refresh_menus_list() {
 	if (menu_restore_btn) menu_restore_btn->set_disabled(!is_sys);
 
 	if (screens_tree) {
-		bool prev_upd = updating_ui;
-		updating_ui = true;
-		screens_tree->clear();
-		TreeItem *root_item = screens_tree->create_item();
-		TreeItem *to_select = nullptr;
-		auto add_tree_screen = [&](TreeItem *p_parent, const String &p_label, const String &p_id, const String &p_tip) -> TreeItem * {
-			TreeItem *it = screens_tree->create_item(p_parent);
-			it->set_text(0, p_label);
-			it->set_metadata(0, p_id);
-			it->set_tooltip_text(0, p_tip);
-			if (p_id == current_screen_id) {
-				to_select = it;
-			}
-			return it;
-		};
-		add_tree_screen(root_item, String::utf8("Título"), "title", String::utf8("Pantalla de título del juego, logo, música y entradas."));
-		add_tree_screen(root_item, "Opciones", "game_menu_options", String::utf8("Pantalla de volumen, pantalla completa y controles."));
-		add_tree_screen(root_item, "Lista de partidas", "game_menu_save", String::utf8("Ranuras para guardar y cargar partidas."));
-
-		TreeItem *gm_branch = screens_tree->create_item(root_item);
-		gm_branch->set_text(0, String::utf8("Menú del juego"));
-		gm_branch->set_metadata(0, "game_menu_main");
-		gm_branch->set_tooltip_text(0, String::utf8("Menú de pausa y sus subpantallas principales."));
-		gm_branch->set_collapsed(false);
-		add_tree_screen(gm_branch, "Principal", "game_menu_main", String::utf8("Entradas y diseño principal del menú de pausa."));
-		add_tree_screen(gm_branch, "Objetos", "game_menu_items", String::utf8("Inventario del grupo y vista previa de objetos."));
-		add_tree_screen(gm_branch, "Equipo", "game_menu_equip", String::utf8("Ranuras de equipo y estadísticas del personaje."));
-		add_tree_screen(gm_branch, "Estado", "game_menu_status", String::utf8("Atributos, nivel y estado detallado del grupo."));
-
-		add_tree_screen(root_item, String::utf8("Créditos"), "credits", String::utf8("Lista de créditos, desplazamiento y música."));
-		add_tree_screen(root_item, "HUD", "hud", String::utf8("Indicadores en pantalla durante el juego (PV, oro, widgets)."));
-		add_tree_screen(root_item, "Fin del Juego", "game_over", String::utf8("Pantalla de Game Over, música y botones de reintento."));
-
 		Vector<Dictionary> custom_list;
+		String sig = "base";
 		for (int i = 0; i < menus.size(); i++) {
 			Dictionary md = menus[i];
 			String mid = String(md.get("id", ""));
 			if (!mid.is_empty() && !ClockGearsDataManager::is_system_menu_id(mid) && mid != "game_over") {
 				custom_list.push_back(md);
+				sig += "|" + mid + ":" + String(md.get("name", md.get("label", mid)));
 			}
 		}
-		if (!custom_list.is_empty()) {
-			TreeItem *cust_branch = screens_tree->create_item(root_item);
-			cust_branch->set_text(0, String::utf8("Menús propios"));
-			cust_branch->set_selectable(0, false);
-			cust_branch->set_collapsed(false);
-			for (int i = 0; i < custom_list.size(); i++) {
-				String mid = String(custom_list[i].get("id", ""));
-				String mname = String(custom_list[i].get("name", custom_list[i].get("label", mid)));
-				add_tree_screen(cust_branch, mname, mid, String::utf8("Menú personalizado creado en el proyecto."));
+
+		bool prev_upd = updating_ui;
+		updating_ui = true;
+		TreeItem *to_select = nullptr;
+		if (screens_tree->get_root() == nullptr || sig != cached_screens_tree_sig) {
+			cached_screens_tree_sig = sig;
+			screens_tree->clear();
+			TreeItem *root_item = screens_tree->create_item();
+			if (root_item) {
+				auto add_tree_screen = [&](TreeItem *p_parent, const String &p_label, const String &p_id, const String &p_tip) -> TreeItem * {
+					TreeItem *it = screens_tree->create_item(p_parent);
+					if (!it) {
+						return nullptr;
+					}
+					it->set_text(0, p_label);
+					it->set_metadata(0, p_id);
+					it->set_tooltip_text(0, p_tip);
+					if (p_id == current_screen_id) {
+						to_select = it;
+					}
+					return it;
+				};
+				add_tree_screen(root_item, String::utf8("Título"), "title", String::utf8("Pantalla de título del juego, logo, música y entradas."));
+				add_tree_screen(root_item, "Opciones", "game_menu_options", String::utf8("Pantalla de volumen, pantalla completa y controles."));
+				add_tree_screen(root_item, "Lista de partidas", "game_menu_save", String::utf8("Ranuras para guardar y cargar partidas."));
+
+				TreeItem *gm_branch = screens_tree->create_item(root_item);
+				if (gm_branch) {
+					gm_branch->set_text(0, String::utf8("Menú del juego"));
+					gm_branch->set_selectable(0, false);
+					gm_branch->set_tooltip_text(0, String::utf8("Menú de pausa y sus subpantallas principales."));
+					gm_branch->set_collapsed(false);
+					add_tree_screen(gm_branch, "Principal", "game_menu_main", String::utf8("Entradas y diseño principal del menú de pausa."));
+					add_tree_screen(gm_branch, "Objetos", "game_menu_items", String::utf8("Inventario del grupo y vista previa de objetos."));
+					add_tree_screen(gm_branch, "Equipo", "game_menu_equip", String::utf8("Ranuras de equipo y estadísticas del personaje."));
+					add_tree_screen(gm_branch, "Estado", "game_menu_status", String::utf8("Atributos, nivel y estado detallado del grupo."));
+				}
+
+				add_tree_screen(root_item, String::utf8("Créditos"), "credits", String::utf8("Lista de créditos, desplazamiento y música."));
+				add_tree_screen(root_item, "HUD", "hud", String::utf8("Indicadores en pantalla durante el juego (PV, oro, widgets)."));
+				add_tree_screen(root_item, "Fin del Juego", "game_over", String::utf8("Pantalla de Game Over, música y botones de reintento."));
+
+				if (!custom_list.is_empty()) {
+					TreeItem *cust_branch = screens_tree->create_item(root_item);
+					if (cust_branch) {
+						cust_branch->set_text(0, String::utf8("Menús propios"));
+						cust_branch->set_selectable(0, false);
+						cust_branch->set_collapsed(false);
+						for (int i = 0; i < custom_list.size(); i++) {
+							String mid = String(custom_list[i].get("id", ""));
+							String mname = String(custom_list[i].get("name", custom_list[i].get("label", mid)));
+							add_tree_screen(cust_branch, mname, mid, String::utf8("Menú personalizado creado en el proyecto."));
+						}
+					}
+				}
+			}
+		} else {
+			Vector<TreeItem *> q;
+			q.push_back(screens_tree->get_root());
+			while (!q.is_empty()) {
+				TreeItem *cur = q[q.size() - 1];
+				q.remove_at(q.size() - 1);
+				if (cur != screens_tree->get_root() && cur->is_selectable(0) && String(cur->get_metadata(0)) == current_screen_id) {
+					to_select = cur;
+					break;
+				}
+				for (TreeItem *ch = cur->get_first_child(); ch != nullptr; ch = ch->get_next()) {
+					q.push_back(ch);
+				}
 			}
 		}
-		if (to_select) {
+		if (to_select && screens_tree->get_selected() != to_select) {
 			to_select->select(0);
 		}
 		updating_ui = prev_upd;
@@ -3193,7 +3230,7 @@ void ClockGearsUiDesignEditor::_refresh_layers_list() {
 				eye_btn->set_toggle_mode(true);
 				eye_btn->set_custom_minimum_size(Size2(34 * EDSCALE, 28 * EDSCALE));
 				_apply_rounded_btn_style(eye_btn);
-				eye_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_pooled_layer_eye_toggled).bind(eye_btn));
+				eye_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_pooled_layer_eye_toggled).bind(eye_btn), CONNECT_DEFERRED);
 				row->add_child(eye_btn);
 
 				sel_btn = memnew(Button);
@@ -3204,7 +3241,7 @@ void ClockGearsUiDesignEditor::_refresh_layers_list() {
 				sel_btn->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
 				sel_btn->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 				_apply_rounded_btn_style(sel_btn);
-				sel_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_pooled_layer_row_pressed).bind(sel_btn));
+				sel_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_pooled_layer_row_pressed).bind(sel_btn), CONNECT_DEFERRED);
 				row->add_child(sel_btn);
 			}
 
@@ -3745,6 +3782,20 @@ void ClockGearsUiDesignEditor::_notify_data_mutated(bool p_mark_dirty) {
 	}
 }
 
+void ClockGearsUiDesignEditor::_trace_log(const String &p_event, const String &p_detail) const {
+	static bool s_trace_opened = false;
+	static Ref<FileAccess> s_trace_file;
+	if (!s_trace_opened) {
+		s_trace_opened = true;
+		s_trace_file = FileAccess::open("user://ui_editor_trace.log", FileAccess::WRITE);
+	}
+	if (s_trace_file.is_valid()) {
+		String ts = Time::get_singleton() ? Time::get_singleton()->get_time_string_from_system() : String("00:00:00");
+		s_trace_file->store_line("[" + ts + "] " + p_event + (p_detail.is_empty() ? String("") : String(" | ") + p_detail));
+		s_trace_file->flush();
+	}
+}
+
 void ClockGearsUiDesignEditor::_on_screens_tree_selected() {
 	if (updating_ui || !screens_tree) {
 		return;
@@ -3754,6 +3805,7 @@ void ClockGearsUiDesignEditor::_on_screens_tree_selected() {
 		return;
 	}
 	String mid = String(sel->get_metadata(0));
+	_trace_log("tree_selected", "meta=" + mid + " current=" + current_screen_id);
 	if (!mid.is_empty() && mid != current_screen_id) {
 		select_screen(mid);
 	}
@@ -3762,6 +3814,7 @@ void ClockGearsUiDesignEditor::_on_screens_tree_selected() {
 void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	String norm_sid = (p_screen_id.strip_edges().to_lower() == "game_over") ? String("game_over") : ClockGearsDataManager::normalize_menu_id(p_screen_id);
+	_trace_log("screen_open_begin", "req=" + p_screen_id + " norm=" + norm_sid);
 	if (dm && norm_sid != "game_over" && !dm->has_menu(norm_sid)) {
 		Array menus = dm->get_all_menus_for_selector();
 		if (!menus.is_empty()) {
@@ -3775,6 +3828,7 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 		selected_elem_id = String(Dictionary(elems[0]).get("id", ""));
 	}
 	refresh_from_data_manager();
+	_trace_log("screen_open_done", "screen=" + current_screen_id + " elems=" + itos(elems.size()) + " sel=" + selected_elem_id);
 }
 
 float ClockGearsUiDesignEditor::get_canvas_stage_scale() const {
@@ -3888,6 +3942,7 @@ bool ClockGearsUiDesignEditor::select_element(const String &p_elem_id) {
 	}
 	if (p_elem_id.is_empty()) {
 		selected_elem_id = "";
+		_trace_log("element_select", "screen=" + current_screen_id + " elem=<none>");
 		_refresh_layers_list();
 		_refresh_properties_panel();
 		if (canvas_overlay) canvas_overlay->queue_redraw();
@@ -3898,6 +3953,7 @@ bool ClockGearsUiDesignEditor::select_element(const String &p_elem_id) {
 		return false;
 	}
 	selected_elem_id = String(el.get("id", p_elem_id));
+	_trace_log("element_select", "screen=" + current_screen_id + " elem=" + selected_elem_id);
 	_refresh_layers_list();
 	_refresh_properties_panel();
 	if (canvas_overlay) {
@@ -3975,6 +4031,7 @@ bool ClockGearsUiDesignEditor::apply_undo() {
 	if (!dm || !dm->undo_ui_design(current_screen_id)) {
 		return false;
 	}
+	_trace_log("undo", "screen=" + current_screen_id);
 	_notify_data_mutated(true);
 	return true;
 }
@@ -3984,11 +4041,13 @@ bool ClockGearsUiDesignEditor::apply_redo() {
 	if (!dm || !dm->redo_ui_design(current_screen_id)) {
 		return false;
 	}
+	_trace_log("redo", "screen=" + current_screen_id);
 	_notify_data_mutated(true);
 	return true;
 }
 
 void ClockGearsUiDesignEditor::request_reset_to_default(bool p_confirmed_directly) {
+	_trace_log("reset_request", "screen=" + current_screen_id + " direct=" + (p_confirmed_directly ? "true" : "false"));
 	if (p_confirmed_directly) {
 		_on_reset_confirmed();
 		return;
@@ -5555,7 +5614,7 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 		Dictionary ip = gm.get("item_preview", Dictionary());
 		Callable cb = callable_mp(this, &ClockGearsUiDesignEditor::_on_ss_gm_item_preview_changed);
 
-		CheckBox *en_chk = memnew(CheckBox("Mostrar vista previa 3D/icono"));
+		CheckBox *en_chk = memnew(CheckBox("Activar"));
 		en_chk->set_name("SsIpEnabledChk");
 		en_chk->set_pressed(ip.has("enabled") ? bool(ip["enabled"]) : true);
 		en_chk->connect("toggled", cb.unbind(1));
@@ -5684,14 +5743,17 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 			s_ss_add_row(screen_settings_body, String::utf8(k_sl[i]), String::utf8("Tamaño y color para líneas de este tipo."), shb, EDSCALE);
 		}
 
-		HBoxContainer *add_hb = memnew(HBoxContainer);
-		add_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+		HFlowContainer *add_hb = memnew(HFlowContainer);
+		add_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		add_hb->add_theme_constant_override("h_separation", int(4 * EDSCALE));
+		add_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 		ss_cred_add_type_opt = memnew(OptionButton);
 		ss_cred_add_type_opt->add_item(String::utf8("Sección"), 0); ss_cred_add_type_opt->set_item_metadata(0, "section");
 		ss_cred_add_type_opt->add_item("Rol + Nombre", 1); ss_cred_add_type_opt->set_item_metadata(1, "role_name");
 		ss_cred_add_type_opt->add_item("Texto", 2); ss_cred_add_type_opt->set_item_metadata(2, "text");
 		ss_cred_add_type_opt->add_item("Imagen", 3); ss_cred_add_type_opt->set_item_metadata(3, "image");
 		ss_cred_add_type_opt->add_item("Espacio", 4); ss_cred_add_type_opt->set_item_metadata(4, "spacer");
+		ss_cred_add_type_opt->set_custom_minimum_size(Size2(110 * EDSCALE, 0));
 		ss_cred_add_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		ss_cred_add_type_opt->set_tooltip_text(String::utf8("Tipo de entrada nueva para añadir a los créditos."));
 		add_hb->add_child(ss_cred_add_type_opt);

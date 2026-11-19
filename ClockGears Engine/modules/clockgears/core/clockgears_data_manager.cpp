@@ -6094,7 +6094,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_design(const String &p_s
 	d["is_system"] = _cg_is_system_menu_id(sid);
 	d["order"] = 0;
 	d["window_type"] = _cg_default_system_menu_win_type(sid);
-	d["custom_enabled"] = !bool(d["is_system"]);
+	d["custom_enabled"] = (!bool(d["is_system"]) && sid != "game_over");
 	d["elements"] = Array();
 	d["triggers"] = (sid == "game_menu_main") ? _cg_default_game_menu_triggers() : Array();
 	d["trigger_context"] = "map";
@@ -6158,10 +6158,11 @@ Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_scr
 		}
 	}
 	out["elements"] = norm_elems;
+	bool can_toggle_default = is_sys || (sid == "game_over");
 	if (p_design.has("custom_enabled")) {
-		out["custom_enabled"] = is_sys ? bool(p_design["custom_enabled"]) : true;
+		out["custom_enabled"] = can_toggle_default ? bool(p_design["custom_enabled"]) : true;
 	} else {
-		out["custom_enabled"] = is_sys ? !norm_elems.is_empty() : true;
+		out["custom_enabled"] = can_toggle_default ? !norm_elems.is_empty() : true;
 	}
 
 	Array trigs;

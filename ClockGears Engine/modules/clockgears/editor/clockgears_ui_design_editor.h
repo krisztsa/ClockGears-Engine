@@ -336,6 +336,7 @@ private:
 	FileDialog *screen_asset_dialog = nullptr;
 	String screen_asset_target;
 	int ss_selected_cred_idx = -1;
+	String cached_screens_tree_sig;
 	OptionButton *ss_hud_add_type_opt = nullptr;
 	SpinBox *ss_hud_sample_hp_spin = nullptr;
 	SpinBox *ss_hud_sample_gold_spin = nullptr;
@@ -446,6 +447,7 @@ private:
 	Dictionary test_saved_runtime_state;
 
 	void _build_ui();
+	void _trace_log(const String &p_event, const String &p_detail = "") const;
 	void _rebalance_responsive_layout(int p_avail_w);
 	void _update_canvas_fit_scale();
 	Button *_attach_collapsible_header(VBoxContainer *p_card_vb, const String &p_title, Control *p_body, bool p_expanded = true);
@@ -607,6 +609,7 @@ public:
 	Dictionary get_effective_element(const String &p_elem_id) const;
 	bool ensure_screen_customizable_for_edit(bool p_record_undo = false);
 	void commit_canvas_drag_undo(const Dictionary &p_initial_snapshot);
+	void log_trace_action(const String &p_event, const String &p_detail = "") const { _trace_log(p_event, p_detail); }
 
 	String add_element_at(const String &p_type, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
 	bool select_element(const String &p_elem_id);
