@@ -258,12 +258,26 @@ void ClockGearsTopBar::_refresh_icon_scale() {
 		if (!entry.button) {
 			continue;
 		}
+		Ref<Texture2D> resolved_icon;
 		if (!entry.png_name.is_empty()) {
-			entry.button->set_button_icon(_get_png_icon(entry.png_name, icon_scale));
+			resolved_icon = _get_png_icon(entry.png_name, icon_scale);
 		} else if (!entry.svg_src.is_empty()) {
-			entry.button->set_button_icon(_make_svg_icon(entry.svg_src, icon_scale));
-		} else if (entry.editor_icon_name != StringName() && editor_theme.is_valid()) {
-			entry.button->set_button_icon(editor_theme->get_icon(entry.editor_icon_name, SNAME("EditorIcons")));
+			resolved_icon = _make_svg_icon(entry.svg_src, icon_scale);
+		} else if (entry.editor_icon_name != StringName()) {
+			if (is_inside_tree() && entry.button->has_theme_icon(entry.editor_icon_name, SNAME("EditorIcons"))) {
+				resolved_icon = entry.button->get_theme_icon(entry.editor_icon_name, SNAME("EditorIcons"));
+			} else if (editor_theme.is_valid() && editor_theme->has_icon(entry.editor_icon_name, SNAME("EditorIcons"))) {
+				resolved_icon = editor_theme->get_icon(entry.editor_icon_name, SNAME("EditorIcons"));
+			}
+			if (resolved_icon.is_null() && !entry.cg_fallback_icon.is_empty() && ClockGearsIcons::get_singleton()) {
+				resolved_icon = ClockGearsIcons::get_singleton()->get_icon(entry.cg_fallback_icon, float(icon_scale));
+			}
+		}
+		entry.button->set_button_icon(resolved_icon);
+		if (resolved_icon.is_null() && !entry.fallback_text.is_empty()) {
+			entry.button->set_text(entry.fallback_text);
+		} else {
+			entry.button->set_text(String());
 		}
 		_apply_toolbar_button_style(entry.button, editor_theme, icon_scale);
 	}
@@ -291,9 +305,9 @@ void ClockGearsTopBar::_notification(int p_what) {
 			}
 		}
 		sync_active_layer_display();
-		if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
-			_refresh_icon_scale();
-		}
+		_refresh_icon_scale();
+	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		_refresh_icon_scale();
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
 		if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed))) {
 			EditorSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed));
@@ -617,8 +631,17 @@ ClockGearsTopBar::ClockGearsTopBar() {
 
 	EditorNode *en = EditorNode::get_singleton();
 	Ref<Theme> editor_theme = en ? en->get_editor_theme() : Ref<Theme>();
-	const auto editor_icon = [&editor_theme](const StringName &p_name) -> Ref<Texture2D> {
-		return editor_theme.is_valid() ? editor_theme->get_icon(p_name, SNAME("EditorIcons")) : Ref<Texture2D>();
+	const auto editor_icon = [&editor_theme, int_scale](const StringName &p_name, const String &p_cg_fallback) -> Ref<Texture2D> {
+		if (editor_theme.is_valid() && editor_theme->has_icon(p_name, SNAME("EditorIcons"))) {
+			Ref<Texture2D> ic = editor_theme->get_icon(p_name, SNAME("EditorIcons"));
+			if (ic.is_valid()) {
+				return ic;
+			}
+		}
+		if (!p_cg_fallback.is_empty() && ClockGearsIcons::get_singleton()) {
+			return ClockGearsIcons::get_singleton()->get_icon(p_cg_fallback, float(MAX(1, int_scale)));
+		}
+		return Ref<Texture2D>();
 	};
 	const auto make_group = [ui_scale, this]() -> HBoxContainer * {
 		HBoxContainer *g = memnew(HBoxContainer);
@@ -626,24 +649,37 @@ ClockGearsTopBar::ClockGearsTopBar() {
 		all_groups.push_back(g);
 		return g;
 	};
-	const auto track_png = [this](Button *p_btn, const String &p_png) -> Button * {
+	const auto track_png = [this](Button *p_btn, const String &p_png, const String &p_fallback_txt = String()) -> Button * {
 		ToolbarIconEntry e;
 		e.button = p_btn;
 		e.png_name = p_png;
+		e.fallback_text = p_fallback_txt;
+		if (p_btn && p_btn->get_button_icon().is_null() && !p_fallback_txt.is_empty()) {
+			p_btn->set_text(p_fallback_txt);
+		}
 		icon_entries.push_back(e);
 		return p_btn;
 	};
-	const auto track_svg = [this](Button *p_btn, const String &p_svg) -> Button * {
+	const auto track_svg = [this](Button *p_btn, const String &p_svg, const String &p_fallback_txt = String()) -> Button * {
 		ToolbarIconEntry e;
 		e.button = p_btn;
 		e.svg_src = p_svg;
+		e.fallback_text = p_fallback_txt;
+		if (p_btn && p_btn->get_button_icon().is_null() && !p_fallback_txt.is_empty()) {
+			p_btn->set_text(p_fallback_txt);
+		}
 		icon_entries.push_back(e);
 		return p_btn;
 	};
-	const auto track_editor = [this](Button *p_btn, const StringName &p_ed) -> Button * {
+	const auto track_editor = [this](Button *p_btn, const StringName &p_ed, const String &p_cg_fallback, const String &p_fallback_txt) -> Button * {
 		ToolbarIconEntry e;
 		e.button = p_btn;
 		e.editor_icon_name = p_ed;
+		e.cg_fallback_icon = p_cg_fallback;
+		e.fallback_text = p_fallback_txt;
+		if (p_btn && p_btn->get_button_icon().is_null() && !p_fallback_txt.is_empty()) {
+			p_btn->set_text(p_fallback_txt);
+		}
 		icon_entries.push_back(e);
 		return p_btn;
 	};
@@ -702,9 +738,9 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	// Fila 1 (en 2 filas) - Grupo 1: Edición e historial
 	// ------------------------------------------------------------------
 	HBoxContainer *grp_edit = make_group();
-	track_editor(_make_icon_button(grp_edit, editor_icon(SNAME("ActionCut")), CG_TR("Cortar"), callable_mp(this, &ClockGearsTopBar::_on_cut_pressed), editor_theme, int_scale), SNAME("ActionCut"));
-	track_editor(_make_icon_button(grp_edit, editor_icon(SNAME("ActionCopy")), CG_TR("Copiar (Ctrl+C)"), callable_mp(this, &ClockGearsTopBar::_on_copy_pressed), editor_theme, int_scale), SNAME("ActionCopy"));
-	track_editor(_make_icon_button(grp_edit, editor_icon(SNAME("ActionPaste")), CG_TR("Pegar (Ctrl+V)"), callable_mp(this, &ClockGearsTopBar::_on_paste_pressed), editor_theme, int_scale), SNAME("ActionPaste"));
+	track_editor(_make_icon_button(grp_edit, editor_icon(SNAME("ActionCut"), "cut"), CG_TR("Cortar (Ctrl+X)"), callable_mp(this, &ClockGearsTopBar::_on_cut_pressed), editor_theme, int_scale), SNAME("ActionCut"), "cut", CG_TR("Cort."));
+	track_editor(_make_icon_button(grp_edit, editor_icon(SNAME("ActionCopy"), "copy"), CG_TR("Copiar (Ctrl+C)"), callable_mp(this, &ClockGearsTopBar::_on_copy_pressed), editor_theme, int_scale), SNAME("ActionCopy"), "copy", CG_TR("Cop."));
+	track_editor(_make_icon_button(grp_edit, editor_icon(SNAME("ActionPaste"), "paste"), CG_TR("Pegar (Ctrl+V)"), callable_mp(this, &ClockGearsTopBar::_on_paste_pressed), editor_theme, int_scale), SNAME("ActionPaste"), "paste", CG_TR("Peg."));
 	undo_btn = track_png(_make_icon_button(grp_edit, _get_png_icon("deshacer_icono", int_scale), CG_TR("Deshacer (Ctrl+Z)"), callable_mp(this, &ClockGearsTopBar::_on_undo_pressed), editor_theme, int_scale), "deshacer_icono");
 	redo_btn = track_png(_make_icon_button(grp_edit, _get_png_icon("rehacer_icono", int_scale), CG_TR("Rehacer (Ctrl+Y)"), callable_mp(this, &ClockGearsTopBar::_on_redo_pressed), editor_theme, int_scale), "rehacer_icono");
 

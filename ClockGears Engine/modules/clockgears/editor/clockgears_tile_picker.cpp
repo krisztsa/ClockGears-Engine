@@ -718,6 +718,31 @@ float ClockGearsTilePicker::get_atlas_draw_width() const {
 	return current_atlas_texture->get_size().x * zoom_level;
 }
 
+void ClockGearsTilePicker::_refresh_theme_icons() {
+	if (!btn_load_tileset) {
+		return;
+	}
+	Ref<Texture2D> ic;
+	if (is_inside_tree() && btn_load_tileset->is_inside_tree()) {
+		if (btn_load_tileset->has_theme_icon(SNAME("Folder"), SNAME("EditorIcons"))) {
+			ic = btn_load_tileset->get_theme_icon(SNAME("Folder"), SNAME("EditorIcons"));
+		} else if (btn_load_tileset->has_theme_icon(SNAME("Load"), SNAME("EditorIcons"))) {
+			ic = btn_load_tileset->get_theme_icon(SNAME("Load"), SNAME("EditorIcons"));
+		}
+	}
+	if (ic.is_null() && ClockGearsIcons::get_singleton()) {
+		ic = ClockGearsIcons::get_singleton()->get_icon("folder", float(ClockGearsIcons::get_editor_icon_scale(this)));
+	}
+	btn_load_tileset->set_button_icon(ic);
+	btn_load_tileset->set_text(ic.is_valid() ? String() : "+");
+}
+
+void ClockGearsTilePicker::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		_refresh_theme_icons();
+	}
+}
+
 void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scale) {
 	tileset_panel_mode = p_enabled;
 	fixed_tile_draw_scale = MAX(1, p_int_scale);
@@ -839,16 +864,8 @@ void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scal
 		btn_load_tileset->set_h_size_flags(SIZE_SHRINK_CENTER);
 		btn_load_tileset->set_v_size_flags(SIZE_SHRINK_CENTER);
 		btn_load_tileset->set_custom_minimum_size(Size2(int(28 * s), int(28 * s)));
-		if (btn_load_tileset->has_theme_icon(SNAME("Folder"), SNAME("EditorIcons"))) {
-			btn_load_tileset->set_text("");
-			btn_load_tileset->set_button_icon(btn_load_tileset->get_theme_icon(SNAME("Folder"), SNAME("EditorIcons")));
-		} else if (btn_load_tileset->has_theme_icon(SNAME("Load"), SNAME("EditorIcons"))) {
-			btn_load_tileset->set_text("");
-			btn_load_tileset->set_button_icon(btn_load_tileset->get_theme_icon(SNAME("Load"), SNAME("EditorIcons")));
-		} else {
-			btn_load_tileset->set_text("+");
-		}
 		apply_compact_styles(btn_load_tileset, sb_icon_compact, sb_icon_hover, sb_icon_pressed, sb_icon_hover_pressed);
+		_refresh_theme_icons();
 	}
 	if (search_filter_edit) {
 		search_filter_edit->set_h_size_flags(SIZE_SHRINK_CENTER);

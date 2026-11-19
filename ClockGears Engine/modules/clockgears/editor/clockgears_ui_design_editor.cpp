@@ -932,8 +932,44 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_test_popup_info"), &ClockGearsUiDesignEditor::get_test_popup_info);
 }
 
+void ClockGearsUiDesignEditor::_refresh_theme_icons() {
+	const float icon_scale = float(ClockGearsIcons::get_editor_icon_scale(this));
+	const int icon_px = int(16 * EDSCALE);
+	ClockGearsIcons *cg_icons = ClockGearsIcons::get_singleton();
+	auto assign_btn_icon = [&](Button *p_btn, const StringName &p_ed_name, const String &p_cg_name) {
+		if (!p_btn) {
+			return;
+		}
+		Ref<Texture2D> ic;
+		if (is_inside_tree() && p_btn->is_inside_tree() && p_ed_name != StringName() && p_btn->has_theme_icon(p_ed_name, SNAME("EditorIcons"))) {
+			ic = p_btn->get_theme_icon(p_ed_name, SNAME("EditorIcons"));
+		}
+		if (ic.is_null() && cg_icons && !p_cg_name.is_empty()) {
+			ic = cg_icons->get_icon(p_cg_name, icon_scale);
+		}
+		if (ic.is_valid()) {
+			p_btn->set_button_icon(ic);
+			p_btn->add_theme_constant_override("icon_max_width", icon_px);
+		}
+	};
+	assign_btn_icon(undo_btn, SNAME("UndoRedo"), "deshacer_icono");
+	assign_btn_icon(redo_btn, SNAME("Redo"), "rehacer_icono");
+	assign_btn_icon(dup_elem_btn, SNAME("Duplicate"), "copy");
+	assign_btn_icon(copy_elem_btn, SNAME("ActionCopy"), "copy");
+	assign_btn_icon(paste_elem_btn, SNAME("ActionPaste"), "paste");
+	assign_btn_icon(layer_up_btn, SNAME("MoveUp"), "");
+	assign_btn_icon(layer_down_btn, SNAME("MoveDown"), "");
+	assign_btn_icon(layer_del_btn, SNAME("Remove"), "remove");
+	assign_btn_icon(menu_dup_btn, SNAME("Duplicate"), "copy");
+	assign_btn_icon(menu_up_btn, SNAME("MoveUp"), "");
+	assign_btn_icon(menu_down_btn, SNAME("MoveDown"), "");
+	assign_btn_icon(menu_del_btn, SNAME("Remove"), "remove");
+}
+
 void ClockGearsUiDesignEditor::_notification(int p_what) {
-	if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_VISIBILITY_CHANGED) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		_refresh_theme_icons();
+	} else if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_VISIBILITY_CHANGED) {
 		if (is_visible()) {
 			refresh_from_data_manager();
 			callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
@@ -1215,6 +1251,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		zb->set_toggle_mode(true);
 		zb->set_pressed(z == canvas_zoom);
 		zb->set_custom_minimum_size(Size2(40 * EDSCALE, row_h));
+		zb->set_tooltip_text(vformat(String::utf8("Escala del lienzo %dx."), z));
 		s_make_rounded_action_btn(zb);
 		zb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_zoom_pressed).bind(z));
 		zoom_hb->add_child(zb);
@@ -1230,18 +1267,21 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	undo_btn = memnew(Button("Deshacer"));
 	undo_btn->set_custom_minimum_size(Size2(0, row_h));
+	undo_btn->set_tooltip_text(String::utf8("Deshacer último cambio (Ctrl+Z)"));
 	s_make_rounded_action_btn(undo_btn);
 	undo_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_undo_pressed));
 	act_hb->add_child(undo_btn);
 
 	redo_btn = memnew(Button("Rehacer"));
 	redo_btn->set_custom_minimum_size(Size2(0, row_h));
+	redo_btn->set_tooltip_text(String::utf8("Rehacer cambio deshecho (Ctrl+Y)"));
 	s_make_rounded_action_btn(redo_btn);
 	redo_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_redo_pressed));
 	act_hb->add_child(redo_btn);
 
 	reset_btn = memnew(Button(String::utf8("Restaurar plantilla original")));
 	reset_btn->set_custom_minimum_size(Size2(0, row_h));
+	reset_btn->set_tooltip_text(String::utf8("Restaura la pantalla actual a su diseño por defecto."));
 	s_make_rounded_action_btn(reset_btn);
 	reset_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_reset_pressed));
 	act_hb->add_child(reset_btn);
@@ -1319,21 +1359,25 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	menus_body->add_child(menu_ops);
 
 	menu_dup_btn = memnew(Button("Duplicar"));
+	menu_dup_btn->set_tooltip_text(String::utf8("Duplica la pantalla o menú personalizado actual."));
 	s_make_rounded_action_btn(menu_dup_btn);
 	menu_dup_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_list_dup_pressed));
 	menu_ops->add_child(menu_dup_btn);
 
 	menu_up_btn = memnew(Button("Subir"));
+	menu_up_btn->set_tooltip_text(String::utf8("Sube el menú personalizado en la lista."));
 	s_make_rounded_action_btn(menu_up_btn);
 	menu_up_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_list_move_pressed).bind(-1));
 	menu_ops->add_child(menu_up_btn);
 
 	menu_down_btn = memnew(Button("Bajar"));
+	menu_down_btn->set_tooltip_text(String::utf8("Baja el menú personalizado en la lista."));
 	s_make_rounded_action_btn(menu_down_btn);
 	menu_down_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_list_move_pressed).bind(1));
 	menu_ops->add_child(menu_down_btn);
 
 	menu_del_btn = memnew(Button("Borrar"));
+	menu_del_btn->set_tooltip_text(String::utf8("Elimina el menú personalizado seleccionado."));
 	s_make_rounded_action_btn(menu_del_btn);
 	menu_del_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_list_del_pressed));
 	menu_ops->add_child(menu_del_btn);
@@ -1436,31 +1480,37 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	can_hdr_flow->add_child(guides_chk);
 
 	align_center_h_btn = memnew(Button("Centrar H"));
+	align_center_h_btn->set_tooltip_text(String::utf8("Centrar elemento horizontalmente en el lienzo"));
 	s_make_rounded_action_btn(align_center_h_btn);
 	align_center_h_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_align_center_pressed).bind(false));
 	can_hdr_flow->add_child(align_center_h_btn);
 
 	align_center_v_btn = memnew(Button("Centrar V"));
+	align_center_v_btn->set_tooltip_text(String::utf8("Centrar elemento verticalmente en el lienzo"));
 	s_make_rounded_action_btn(align_center_v_btn);
 	align_center_v_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_align_center_pressed).bind(true));
 	can_hdr_flow->add_child(align_center_v_btn);
 
 	dist_v_btn = memnew(Button("Distribuir V"));
+	dist_v_btn->set_tooltip_text(String::utf8("Distribuir los elementos verticalmente en el lienzo"));
 	s_make_rounded_action_btn(dist_v_btn);
 	dist_v_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_distribute_vertical_pressed));
 	can_hdr_flow->add_child(dist_v_btn);
 
 	dup_elem_btn = memnew(Button("Duplicar"));
+	dup_elem_btn->set_tooltip_text(String::utf8("Duplicar elemento seleccionado (Ctrl+D)"));
 	s_make_rounded_action_btn(dup_elem_btn);
 	dup_elem_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_duplicate_elem_pressed));
 	can_hdr_flow->add_child(dup_elem_btn);
 
 	copy_elem_btn = memnew(Button("Copiar"));
+	copy_elem_btn->set_tooltip_text(String::utf8("Copiar elemento seleccionado (Ctrl+C)"));
 	s_make_rounded_action_btn(copy_elem_btn);
 	copy_elem_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_copy_elem_pressed));
 	can_hdr_flow->add_child(copy_elem_btn);
 
 	paste_elem_btn = memnew(Button("Pegar"));
+	paste_elem_btn->set_tooltip_text(String::utf8("Pegar elemento del portapapeles (Ctrl+V)"));
 	s_make_rounded_action_btn(paste_elem_btn);
 	paste_elem_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_paste_elem_pressed));
 	can_hdr_flow->add_child(paste_elem_btn);
@@ -1578,16 +1628,19 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	lay_body->add_child(lay_btns);
 
 	layer_up_btn = memnew(Button(String::utf8("Subir")));
+	layer_up_btn->set_tooltip_text(String::utf8("Traer al frente un nivel de capa."));
 	s_make_rounded_action_btn(layer_up_btn);
 	layer_up_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_layer_move_pressed).bind(1));
 	lay_btns->add_child(layer_up_btn);
 
 	layer_down_btn = memnew(Button(String::utf8("Bajar")));
+	layer_down_btn->set_tooltip_text(String::utf8("Enviar al fondo un nivel de capa."));
 	s_make_rounded_action_btn(layer_down_btn);
 	layer_down_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_layer_move_pressed).bind(-1));
 	lay_btns->add_child(layer_down_btn);
 
 	layer_del_btn = memnew(Button("Borrar"));
+	layer_del_btn->set_tooltip_text(String::utf8("Eliminar elemento seleccionado (Supr)"));
 	s_make_rounded_action_btn(layer_del_btn);
 	layer_del_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_layer_delete_pressed));
 	lay_btns->add_child(layer_del_btn);
@@ -3201,9 +3254,14 @@ void ClockGearsUiDesignEditor::_refresh_recent_colors_palette() {
 		}
 		Button *cb = memnew(Button);
 		cb->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
-		cb->set_tooltip_text(hex);
+		cb->set_tooltip_text(String::utf8("Aplicar color reciente: ") + hex);
+		Color sw_col = Color::html(hex);
+		Ref<Image> sw_img = Image::create_empty(12, 12, false, Image::FORMAT_RGBA8);
+		sw_img->fill(sw_col);
+		cb->set_button_icon(ImageTexture::create_from_image(sw_img));
+		cb->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 		Ref<StyleBoxFlat> sb = memnew(StyleBoxFlat);
-		sb->set_bg_color(Color::html(hex));
+		sb->set_bg_color(sw_col);
 		sb->set_corner_radius_all(int(4 * EDSCALE));
 		sb->set_border_width_all(1);
 		sb->set_border_color(Color(0.85f, 0.85f, 0.90f, 0.7f));

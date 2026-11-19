@@ -124,6 +124,7 @@ private:
 	int last_icon_scale = 0;
 
 	void _refresh_icon_scale();
+	void _refresh_slot_icons();
 	void _on_editor_settings_changed();
 
 	// Editor Tabs (Enemigos: General | Combate | Animaciones; Actores: General | Animaciones; Resto: General sin pestañas)

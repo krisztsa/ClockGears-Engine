@@ -166,6 +166,8 @@ private:
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
+	void _refresh_theme_icons();
 
 public:
 	// Capas de datos personalizadas precreadas (Regla de Base Precreada 1.2 y Sección 6.2)

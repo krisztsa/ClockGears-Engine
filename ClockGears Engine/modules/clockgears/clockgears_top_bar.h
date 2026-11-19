@@ -36,6 +36,8 @@ class ClockGearsTopBar : public PanelContainer {
 		String png_name;
 		String svg_src;
 		StringName editor_icon_name;
+		String cg_fallback_icon;
+		String fallback_text;
 	};
 	Vector<ToolbarIconEntry> icon_entries;
 

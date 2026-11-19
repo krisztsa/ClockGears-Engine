@@ -91,6 +91,14 @@ class ClockGearsMapPanel : public VBoxContainer {
 	Tree *map_tree = nullptr;
 	Button *new_map_button = nullptr;
 	int last_icon_scale = 0;
+	struct HeaderIconEntry {
+		Button *button = nullptr;
+		StringName editor_icon;
+		String cg_fallback;
+		String fallback_text;
+		bool is_new_map_btn = false;
+	};
+	Vector<HeaderIconEntry> header_icon_buttons;
 	PopupMenu *map_context_menu = nullptr;
 	ClockGearsMapPropertiesDialog *map_properties_dialog = nullptr;
 	ConfirmationDialog *tileset_change_dialog = nullptr;

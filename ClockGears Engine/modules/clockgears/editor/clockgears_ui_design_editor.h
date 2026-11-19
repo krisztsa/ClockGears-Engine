@@ -513,6 +513,7 @@ private:
 	void _on_pooled_layer_row_pressed(Button *p_btn);
 	void _on_pooled_menu_btn_pressed(Button *p_btn);
 	void _apply_rounded_btn_style(Button *p_btn);
+	void _refresh_theme_icons();
 	void _on_layer_move_pressed(int p_delta);
 	void _on_layer_delete_pressed();
 	void _on_anchor_btn_pressed(int p_idx);

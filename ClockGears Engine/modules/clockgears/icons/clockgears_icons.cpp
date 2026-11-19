@@ -47,10 +47,35 @@ void ClockGearsIcons::_register_builtin_svgs() {
 			"<path fill=\"none\" stroke=\"#9aa0ab\" stroke-width=\"1.5\" d=\"M3 11V3h8\"/>"
 			"</svg>";
 
+	svg_sources["cut"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<circle cx=\"4.2\" cy=\"11.8\" r=\"2.2\" fill=\"none\" stroke=\"#e6e6e6\" stroke-width=\"1.5\"/>"
+			"<circle cx=\"11.8\" cy=\"11.8\" r=\"2.2\" fill=\"none\" stroke=\"#e6e6e6\" stroke-width=\"1.5\"/>"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.6\" stroke-linecap=\"round\" d=\"M5.5 9.8L12.2 2.5M10.5 9.8L3.8 2.5\"/>"
+			"</svg>";
+
 	svg_sources["paste"] =
 			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
 			"<rect x=\"3\" y=\"3\" width=\"10\" height=\"11\" rx=\"1.5\" fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.5\"/>"
 			"<rect x=\"6\" y=\"1.5\" width=\"4\" height=\"2.5\" rx=\"1\" fill=\"#e0a040\"/>"
+			"</svg>";
+
+	svg_sources["folder"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.5\" stroke-linejoin=\"round\" d=\"M2 4.5h4.2l1.3 1.5H14v7H2z\"/>"
+			"</svg>";
+
+	svg_sources["edit"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.5\" stroke-linejoin=\"round\" d=\"M3 13l.8-3.2L11.2 2.4 13.6 4.8 6.2 12.2z\"/>"
+			"</svg>";
+
+	svg_sources["grid"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<rect x=\"2.5\" y=\"2.5\" width=\"4.5\" height=\"4.5\" fill=\"none\" stroke=\"#e6e6e6\" stroke-width=\"1.4\"/>"
+			"<rect x=\"9\" y=\"2.5\" width=\"4.5\" height=\"4.5\" fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.4\"/>"
+			"<rect x=\"2.5\" y=\"9\" width=\"4.5\" height=\"4.5\" fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.4\"/>"
+			"<rect x=\"9\" y=\"9\" width=\"4.5\" height=\"4.5\" fill=\"none\" stroke=\"#e6e6e6\" stroke-width=\"1.4\"/>"
 			"</svg>";
 
 	svg_sources["ok"] =

@@ -42,15 +42,23 @@ static Ref<StyleBoxFlat> _clockgears_card_style() {
 	return style;
 }
 
-static void _clockgears_icon_button(Button *p_button, const StringName &p_icon, const String &p_tooltip) {
+static void _clockgears_icon_button(Button *p_button, const StringName &p_icon, const String &p_cg_fallback, const String &p_fallback_text, const String &p_tooltip) {
 	p_button->set_flat(true);
 	p_button->set_tooltip_text(p_tooltip);
 	p_button->set_focus_mode(Control::FOCUS_NONE);
 	p_button->set_custom_minimum_size(Size2(26, 26));
 	p_button->add_theme_constant_override("icon_max_width", 18);
-	if (!p_icon.is_empty() && EditorNode::get_singleton() && EditorNode::get_singleton()->get_editor_theme().is_valid()) {
-		p_button->set_button_icon(EditorNode::get_singleton()->get_editor_theme()->get_icon(p_icon, SNAME("EditorIcons")));
+	Ref<Texture2D> ic;
+	if (!p_icon.is_empty() && p_button->is_inside_tree() && p_button->has_theme_icon(p_icon, SNAME("EditorIcons"))) {
+		ic = p_button->get_theme_icon(p_icon, SNAME("EditorIcons"));
+	} else if (!p_icon.is_empty() && EditorNode::get_singleton() && EditorNode::get_singleton()->get_editor_theme().is_valid() && EditorNode::get_singleton()->get_editor_theme()->has_icon(p_icon, SNAME("EditorIcons"))) {
+		ic = EditorNode::get_singleton()->get_editor_theme()->get_icon(p_icon, SNAME("EditorIcons"));
 	}
+	if (ic.is_null() && !p_cg_fallback.is_empty() && ClockGearsIcons::get_singleton()) {
+		ic = ClockGearsIcons::get_singleton()->get_icon(p_cg_fallback, float(ClockGearsIcons::get_editor_icon_scale(p_button)));
+	}
+	p_button->set_button_icon(ic);
+	p_button->set_text(ic.is_valid() ? String() : p_fallback_text);
 }
 
 ////////////////////////////////////////////////////////////
@@ -461,25 +469,39 @@ Control *ClockGearsMapPanel::_make_section_header(const String &p_title, bool p_
 	title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	header->add_child(title);
 
+	auto track_header_btn = [this](Button *p_btn, const StringName &p_ed, const String &p_cg, const String &p_fb, bool p_new_map = false) {
+		HeaderIconEntry e;
+		e.button = p_btn;
+		e.editor_icon = p_ed;
+		e.cg_fallback = p_cg;
+		e.fallback_text = p_fb;
+		e.is_new_map_btn = p_new_map;
+		header_icon_buttons.push_back(e);
+	};
+
 	if (p_with_tileset_action) {
 		Button *picker_button = memnew(Button);
-		_clockgears_icon_button(picker_button, SNAME("Grid"), CG_TR("Abrir Selector de Tiles Avanzado (Zoom / Favoritos / Pasabilidad)"));
+		_clockgears_icon_button(picker_button, SNAME("Grid"), "grid", CG_TR("Tiles"), CG_TR("Abrir Selector de Tiles Avanzado (Zoom / Favoritos / Pasabilidad)"));
+		track_header_btn(picker_button, SNAME("Grid"), "grid", CG_TR("Tiles"));
 		picker_button->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsMapPanel::_on_open_advanced_picker_pressed));
 		header->add_child(picker_button);
 
 		Button *load_button = memnew(Button);
-		_clockgears_icon_button(load_button, SNAME("Folder"), CG_TR("Cargar tileset 32x32 en esta pestaña"));
+		_clockgears_icon_button(load_button, SNAME("Folder"), "folder", CG_TR("Abrir"), CG_TR("Cargar tileset 32x32 en esta pestaña"));
+		track_header_btn(load_button, SNAME("Folder"), "folder", CG_TR("Abrir"));
 		load_button->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsMapPanel::_on_load_tileset_pressed));
 		header->add_child(load_button);
 	} else {
 		Button *new_button = memnew(Button);
-		_clockgears_icon_button(new_button, SNAME("New"), CG_TR("Nuevo mapa (Abre Propiedades)"));
+		_clockgears_icon_button(new_button, SNAME("New"), "nuevo_mapa_icono", CG_TR("+Mapa"), CG_TR("Nuevo mapa (Abre Propiedades)"));
 		new_map_button = new_button;
+		track_header_btn(new_button, SNAME("New"), "nuevo_mapa_icono", CG_TR("+Mapa"), true);
 		if (ClockGearsIcons::get_singleton()) {
 			const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
 			last_icon_scale = int_scale;
 			const int icon_px = 32 * int_scale;
 			new_button->set_button_icon(ClockGearsIcons::get_singleton()->get_icon("nuevo_mapa_icono", float(int_scale)));
+			new_button->set_text(String());
 			new_button->set_custom_minimum_size(Size2(icon_px + 8, icon_px + 8));
 			new_button->add_theme_constant_override("icon_max_width", icon_px);
 			new_button->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
@@ -494,12 +516,14 @@ Control *ClockGearsMapPanel::_make_section_header(const String &p_title, bool p_
 		header->add_child(new_button);
 
 		Button *edit_button = memnew(Button);
-		_clockgears_icon_button(edit_button, SNAME("Edit"), CG_TR("Editar Propiedades del mapa"));
+		_clockgears_icon_button(edit_button, SNAME("Edit"), "edit", CG_TR("Prop."), CG_TR("Editar Propiedades del mapa"));
+		track_header_btn(edit_button, SNAME("Edit"), "edit", CG_TR("Prop."));
 		edit_button->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsMapPanel::_on_edit_map_properties));
 		header->add_child(edit_button);
 
 		Button *delete_button = memnew(Button);
-		_clockgears_icon_button(delete_button, SNAME("Remove"), CG_TR("Eliminar mapa seleccionado"));
+		_clockgears_icon_button(delete_button, SNAME("Remove"), "remove", CG_TR("Sup."), CG_TR("Eliminar mapa seleccionado"));
+		track_header_btn(delete_button, SNAME("Remove"), "remove", CG_TR("Sup."));
 		delete_button->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsMapPanel::_on_delete_map));
 		header->add_child(delete_button);
 	}
@@ -1475,11 +1499,34 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 void ClockGearsMapPanel::_refresh_icon_scale() {
 	const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
 	last_icon_scale = int_scale;
-	if (new_map_button && ClockGearsIcons::get_singleton()) {
-		const int icon_px = 32 * int_scale;
-		new_map_button->set_button_icon(ClockGearsIcons::get_singleton()->get_icon("nuevo_mapa_icono", float(int_scale)));
-		new_map_button->set_custom_minimum_size(Size2(icon_px + 8, icon_px + 8));
-		new_map_button->add_theme_constant_override("icon_max_width", icon_px);
+	Ref<Theme> editor_theme = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_theme() : Ref<Theme>();
+	for (int i = 0; i < header_icon_buttons.size(); i++) {
+		const HeaderIconEntry &e = header_icon_buttons[i];
+		if (!e.button) {
+			continue;
+		}
+		if (e.is_new_map_btn && ClockGearsIcons::get_singleton()) {
+			const int icon_px = 32 * int_scale;
+			Ref<Texture2D> ic = ClockGearsIcons::get_singleton()->get_icon("nuevo_mapa_icono", float(int_scale));
+			e.button->set_button_icon(ic);
+			e.button->set_text(ic.is_valid() ? String() : e.fallback_text);
+			e.button->set_custom_minimum_size(Size2(icon_px + 8, icon_px + 8));
+			e.button->add_theme_constant_override("icon_max_width", icon_px);
+			continue;
+		}
+		Ref<Texture2D> ic;
+		if (e.editor_icon != StringName()) {
+			if (is_inside_tree() && e.button->is_inside_tree() && e.button->has_theme_icon(e.editor_icon, SNAME("EditorIcons"))) {
+				ic = e.button->get_theme_icon(e.editor_icon, SNAME("EditorIcons"));
+			} else if (editor_theme.is_valid() && editor_theme->has_icon(e.editor_icon, SNAME("EditorIcons"))) {
+				ic = editor_theme->get_icon(e.editor_icon, SNAME("EditorIcons"));
+			}
+		}
+		if (ic.is_null() && !e.cg_fallback.is_empty() && ClockGearsIcons::get_singleton()) {
+			ic = ClockGearsIcons::get_singleton()->get_icon(e.cg_fallback, float(int_scale));
+		}
+		e.button->set_button_icon(ic);
+		e.button->set_text(ic.is_valid() ? String() : e.fallback_text);
 	}
 }
 
@@ -1494,9 +1541,9 @@ void ClockGearsMapPanel::_notification(int p_what) {
 		if (EditorSettings::get_singleton() && !EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed))) {
 			EditorSettings::get_singleton()->connect("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed));
 		}
-		if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
-			_refresh_icon_scale();
-		}
+		_refresh_icon_scale();
+	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		_refresh_icon_scale();
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
 		if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed))) {
 			EditorSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed));

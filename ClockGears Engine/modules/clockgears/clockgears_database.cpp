@@ -557,9 +557,13 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 				EditorSettings::get_singleton()->connect("settings_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_editor_settings_changed));
 			}
 #endif
+			_refresh_slot_icons();
 			if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
 				_refresh_icon_scale();
 			}
+		} break;
+		case NOTIFICATION_THEME_CHANGED: {
+			_refresh_slot_icons();
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 #ifdef TOOLS_ENABLED
@@ -6717,22 +6721,14 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		sl_row->add_child(tileset_slot_edits[s]);
 
 		btn_load_slot[s] = memnew(Button);
-		if (has_theme_icon(SNAME("Load"), SNAME("EditorIcons"))) {
-			btn_load_slot[s]->set_button_icon(get_editor_theme_icon(SNAME("Load")));
-		} else {
-			btn_load_slot[s]->set_text("+");
-		}
+		btn_load_slot[s]->set_text("+");
 		btn_load_slot[s]->set_tooltip_text(vformat(CG_DB_TR("Cargar hoja PNG 32x32 en la ranura %s (%s)"), _get_slot_key(s), _get_slot_label(s)));
 		btn_load_slot[s]->set_custom_minimum_size(Size2(28 * EDSCALE, row_h));
 		btn_load_slot[s]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_load_slot_button_pressed).bind(s));
 		sl_row->add_child(btn_load_slot[s]);
 
 		btn_clear_slot[s] = memnew(Button);
-		if (has_theme_icon(SNAME("Close"), SNAME("EditorIcons"))) {
-			btn_clear_slot[s]->set_button_icon(get_editor_theme_icon(SNAME("Close")));
-		} else {
-			btn_clear_slot[s]->set_text("-");
-		}
+		btn_clear_slot[s]->set_text("-");
 		btn_clear_slot[s]->set_tooltip_text(vformat(CG_DB_TR("Quitar la hoja asignada a la ranura %s"), _get_slot_key(s)));
 		btn_clear_slot[s]->set_custom_minimum_size(Size2(28 * EDSCALE, row_h));
 		btn_clear_slot[s]->set_disabled(true);
@@ -8284,6 +8280,37 @@ void ClockGearsDatabaseDialog::_refresh_icon_scale() {
 		db_tile_picker->set_tileset_panel_mode(true, icon_scale);
 	}
 	_update_tileset_split_layout();
+}
+
+void ClockGearsDatabaseDialog::_refresh_slot_icons() {
+	const bool in_tree = is_inside_tree();
+	const int icon_scale = ClockGearsIcons::get_editor_icon_scale(this);
+	Ref<Texture2D> load_ic;
+	Ref<Texture2D> clear_ic;
+	if (in_tree) {
+		if (has_theme_icon(SNAME("Load"), SNAME("EditorIcons"))) {
+			load_ic = get_theme_icon(SNAME("Load"), SNAME("EditorIcons"));
+		}
+		if (has_theme_icon(SNAME("Close"), SNAME("EditorIcons"))) {
+			clear_ic = get_theme_icon(SNAME("Close"), SNAME("EditorIcons"));
+		}
+	}
+	if (load_ic.is_null() && ClockGearsIcons::get_singleton()) {
+		load_ic = ClockGearsIcons::get_singleton()->get_icon("folder", float(icon_scale));
+	}
+	if (clear_ic.is_null() && ClockGearsIcons::get_singleton()) {
+		clear_ic = ClockGearsIcons::get_singleton()->get_icon("remove", float(icon_scale));
+	}
+	for (int s = 0; s < TILESET_SLOT_COUNT; s++) {
+		if (btn_load_slot[s]) {
+			btn_load_slot[s]->set_button_icon(load_ic);
+			btn_load_slot[s]->set_text(load_ic.is_valid() ? String() : "+");
+		}
+		if (btn_clear_slot[s]) {
+			btn_clear_slot[s]->set_button_icon(clear_ic);
+			btn_clear_slot[s]->set_text(clear_ic.is_valid() ? String() : "-");
+		}
+	}
 }
 
 void ClockGearsDatabaseDialog::_on_editor_settings_changed() {
