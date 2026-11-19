@@ -733,7 +733,7 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 		case DB_CAT_HUD:
 			return CG_DB_TR("HUD");
 		case DB_CAT_UI_DESIGNER:
-			return CG_DB_TR("Diseño de interfaz");
+			return CG_DB_TR("Interfaz");
 		case DB_CAT_GAME_OVER:
 			return CG_DB_TR("Game Over");
 		default:
@@ -1076,7 +1076,7 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 	add_chap("Animaciones", { CAT_ANIMATIONS });
 	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
 	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
-	add_chap("Menús", { DB_CAT_MAIN_MENU, DB_CAT_WINDOW_STYLES, DB_CAT_GAME_MENU, DB_CAT_CREDITS, DB_CAT_HUD, DB_CAT_UI_DESIGNER, DB_CAT_GAME_OVER });
+	add_chap("Menús", { DB_CAT_UI_DESIGNER, DB_CAT_WINDOW_STYLES, DB_CAT_MAIN_MENU, DB_CAT_GAME_MENU, DB_CAT_CREDITS, DB_CAT_HUD, DB_CAT_GAME_OVER });
 
 	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
 	for (int c = 0; c < CAT_MAX; c++) {
@@ -1100,6 +1100,14 @@ int ClockGearsDatabaseDialog::_find_chapter_for_category(int p_category) const {
 		}
 	}
 	return 0;
+}
+
+static bool _cg_is_consolidated_legacy_menu_cat(int p_category) {
+	return p_category == ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_CREDITS ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_HUD ||
+			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_OVER;
 }
 
 void ClockGearsDatabaseDialog::_update_chapter_and_category_visibility() {
@@ -1132,7 +1140,7 @@ void ClockGearsDatabaseDialog::_update_chapter_and_category_visibility() {
 			: Vector<int>();
 	for (int c = 0; c < category_buttons.size(); c++) {
 		if (category_buttons[c]) {
-			bool vis = (chap_cats.is_empty() || chap_cats.has(c)) && s_is_category_visible_in_mode(c, mode);
+			bool vis = (chap_cats.is_empty() || chap_cats.has(c)) && s_is_category_visible_in_mode(c, mode) && !_cg_is_consolidated_legacy_menu_cat(c);
 			category_buttons[c]->set_visible(vis);
 			category_buttons[c]->set_pressed_no_signal(c == current_category);
 		}
@@ -1151,12 +1159,12 @@ void ClockGearsDatabaseDialog::_on_chapter_selected(int p_chapter_idx) {
 	const Vector<int> &cats = chapters[current_chapter].categories;
 	int first_vis = -1;
 	for (int i = 0; i < cats.size(); i++) {
-		if (s_is_category_visible_in_mode(cats[i], mode)) {
+		if (s_is_category_visible_in_mode(cats[i], mode) && !_cg_is_consolidated_legacy_menu_cat(cats[i])) {
 			first_vis = cats[i];
 			break;
 		}
 	}
-	if ((!cats.has(current_category) || !s_is_category_visible_in_mode(current_category, mode)) && first_vis >= 0) {
+	if ((!cats.has(current_category) || !s_is_category_visible_in_mode(current_category, mode) || _cg_is_consolidated_legacy_menu_cat(current_category)) && first_vis >= 0) {
 		_on_category_selected(first_vis);
 	} else {
 		_save_editor_ui_state();
@@ -8329,8 +8337,8 @@ void ClockGearsDatabaseDialog::open_database() {
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
 	int last_cat = int(ui_state.get("last_category", current_category));
-	if (last_cat >= 0 && last_cat <= DB_CAT_UI_DESIGNER) {
-		current_category = last_cat;
+	if (last_cat >= 0 && last_cat <= DB_CAT_GAME_OVER) {
+		current_category = _cg_is_consolidated_legacy_menu_cat(last_cat) ? DB_CAT_UI_DESIGNER : last_cat;
 	}
 	_on_category_selected(current_category);
 
@@ -21799,6 +21807,10 @@ void ClockGearsDatabaseDialog::_setup_ui_design_editor_ui() {
 
 void ClockGearsDatabaseDialog::_on_ui_designer_modified() {
 	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		menu_title_config = ClockGearsDataManager::normalize_title_menu_config(dm->get_title_menu_config());
+		game_menu_config_draft = ClockGearsDataManager::normalize_game_menu_config(dm->get_game_menu_config());
+		credits_config_draft = ClockGearsDataManager::normalize_credits_config(dm->get_credits_config());
+		game_over_config_draft = ClockGearsDataManager::normalize_game_over_config(dm->get_game_over_config());
 		hud_config_draft = ClockGearsDataManager::normalize_hud_config(dm->get_hud_config());
 	}
 	ui_designer_hud_synced = true;

@@ -6480,6 +6480,47 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		gold_el["height"] = 28;
 		gold_el["layer_order"] = 1;
 		elems.push_back(gold_el);
+	} else if (sid == "game_over") {
+		Dictionary go = normalize_game_over_config(game_over_config);
+		Dictionary gh = make_default_ui_element("text", sid);
+		gh["id"] = "game_over_title";
+		gh["name"] = String::utf8("Título Fin del Juego");
+		gh["text"] = String(go.get("title_text", "GAME OVER"));
+		gh["anchor"] = "top_center";
+		gh["offset_x"] = 0;
+		gh["offset_y"] = 96;
+		gh["width"] = 620;
+		gh["height"] = 72;
+		gh["font_size"] = int(go.get("title_font_size", 48));
+		gh["font_color"] = String(go.get("title_color", "#e84a5f"));
+		gh["align"] = "center";
+		elems.push_back(gh);
+
+		Dictionary rb = make_default_ui_element("button", sid);
+		rb["id"] = "btn_game_over_retry";
+		rb["name"] = String::utf8("Botón Reintentar");
+		rb["text"] = String(go.get("retry_label", "Reintentar"));
+		rb["visible"] = bool(go.get("retry_enabled", true));
+		rb["anchor"] = "bottom_center";
+		rb["offset_x"] = 0;
+		rb["offset_y"] = -140;
+		rb["width"] = 240;
+		rb["height"] = 42;
+		rb["focus_order"] = 0;
+		elems.push_back(rb);
+
+		Dictionary tb = make_default_ui_element("button", sid);
+		tb["id"] = "btn_game_over_title";
+		tb["name"] = String::utf8("Botón Volver al título");
+		tb["text"] = String(go.get("title_label", String::utf8("Volver al menú")));
+		tb["visible"] = bool(go.get("title_enabled", true));
+		tb["anchor"] = "bottom_center";
+		tb["offset_x"] = 0;
+		tb["offset_y"] = -86;
+		tb["width"] = 240;
+		tb["height"] = 42;
+		tb["focus_order"] = 1;
+		elems.push_back(tb);
 	} else {
 		Dictionary close_b = make_default_ui_element("button", sid);
 		close_b["id"] = "btn_close";

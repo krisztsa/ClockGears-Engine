@@ -20,6 +20,7 @@
 #include "scene/gui/spin_box.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
+#include "scene/gui/tree.h"
 #include "scene/resources/style_box_flat.h"
 
 class AspectRatioContainer;
@@ -210,7 +211,9 @@ private:
 	PanelContainer *layers_card = nullptr;
 	PanelContainer *props_card = nullptr;
 
-	// Panel "Menús" (4A)
+	// Panel "Pantallas" (4A / Consolidación 9B)
+	ScrollContainer *left_col_scroll = nullptr;
+	Tree *screens_tree = nullptr;
 	VBoxContainer *menus_list_vbox = nullptr;
 	Button *menu_dup_btn = nullptr;
 	Button *menu_up_btn = nullptr;
@@ -327,6 +330,24 @@ private:
 	LineEdit *menu_snd_cancel_edit = nullptr;
 	LineEdit *menu_bgm_edit = nullptr;
 
+	// Sección "Ajustes de la pantalla" consolidada en Propiedades (9B Corr Punto 5)
+	VBoxContainer *screen_settings_box = nullptr;
+	VBoxContainer *screen_settings_body = nullptr;
+	FileDialog *screen_asset_dialog = nullptr;
+	String screen_asset_target;
+	int ss_selected_cred_idx = -1;
+	OptionButton *ss_hud_add_type_opt = nullptr;
+	SpinBox *ss_hud_sample_hp_spin = nullptr;
+	SpinBox *ss_hud_sample_gold_spin = nullptr;
+	SpinBox *ss_hud_sample_qty_spin = nullptr;
+	OptionButton *ss_cred_add_type_opt = nullptr;
+	LineEdit *ss_cred_item_text_edit = nullptr;
+	LineEdit *ss_cred_item_role_edit = nullptr;
+	LineEdit *ss_cred_item_name_edit = nullptr;
+	LineEdit *ss_cred_item_img_edit = nullptr;
+	SpinBox *ss_cred_item_spacer_spin = nullptr;
+	OptionButton *ss_cred_item_align_opt = nullptr;
+
 	// Cachés de rendimiento (5C)
 	String cached_opts_screen_id;
 	int cached_opts_styles_cnt = -1;
@@ -436,7 +457,25 @@ private:
 	void _refresh_screen_dropdown();
 	void _refresh_layers_list();
 	void _refresh_properties_panel();
+	void _refresh_screen_settings_panel();
 	void _refresh_menu_global_properties();
+	void _on_screens_tree_selected();
+	void _on_ss_asset_pick_pressed(const String &p_target, bool p_is_audio);
+	void _on_ss_asset_file_selected(const String &p_path);
+	void _on_ss_title_changed();
+	void _on_ss_entry_toggled(bool p_enabled, const String &p_entry_id, bool p_is_game_menu);
+	void _on_ss_entry_text_changed(const String &p_text, const String &p_entry_id, bool p_is_game_menu);
+	void _on_ss_entry_move(const String &p_entry_id, int p_delta, bool p_is_game_menu);
+	void _on_ss_gm_item_preview_changed();
+	void _on_ss_credits_meta_changed();
+	void _on_ss_credits_item_selected(int p_idx);
+	void _on_ss_credits_add_pressed();
+	void _on_ss_credits_del_pressed();
+	void _on_ss_credits_move_pressed(int p_delta);
+	void _on_ss_credits_item_field_changed();
+	void _on_ss_hud_add_widget_pressed();
+	void _on_ss_hud_sample_changed(double p_val = 0.0);
+	void _on_ss_gameover_changed();
 	void _refresh_multi_actions_ui(const Dictionary &p_elem);
 	void _refresh_recent_colors_palette();
 	void _refresh_image_thumbs_gallery();
