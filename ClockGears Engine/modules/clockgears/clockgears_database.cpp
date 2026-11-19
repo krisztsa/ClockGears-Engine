@@ -8341,6 +8341,9 @@ void ClockGearsDatabaseDialog::open_database() {
 		current_category = _cg_is_consolidated_legacy_menu_cat(last_cat) ? DB_CAT_UI_DESIGNER : last_cat;
 	}
 	_on_category_selected(current_category);
+	if (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass") {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 
 	Size2i screen_sz(1920, 1080);
 	if (DisplayServer::get_singleton()) {

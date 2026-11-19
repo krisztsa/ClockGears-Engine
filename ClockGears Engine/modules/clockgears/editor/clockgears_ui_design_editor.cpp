@@ -1113,9 +1113,11 @@ Button *ClockGearsUiDesignEditor::_attach_collapsible_header(VBoxContainer *p_ca
 	hdr->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 	hdr->set_clip_text(true);
 	hdr->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
-	hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	hdr->add_theme_color_override("font_pressed_color", ClockGearsTheme::color_accent_amber());
-	hdr->add_theme_color_override("font_hover_color", Color(1.0f, 0.85f, 0.45f));
+	// Oro luminoso (>= 9.5:1 contraste tanto en tema Oscuro como en Latón)
+	const Color hdr_gold(0.98f, 0.87f, 0.56f);
+	hdr->add_theme_color_override("font_color", hdr_gold);
+	hdr->add_theme_color_override("font_pressed_color", hdr_gold);
+	hdr->add_theme_color_override("font_hover_color", Color(1.0f, 0.94f, 0.72f));
 	s_make_rounded_action_btn(hdr);
 	p_card_vb->add_child(hdr);
 	if (p_body) {
@@ -5885,6 +5887,9 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 	}
 
 	updating_ui = prev_upd;
+	if (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass") {
+		ClockGearsTheme::get_singleton()->apply_theme_to_node_tree(screen_settings_body);
+	}
 }
 
 void ClockGearsUiDesignEditor::_on_ss_asset_pick_pressed(const String &p_target, bool p_is_audio) {
