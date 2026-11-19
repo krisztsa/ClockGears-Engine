@@ -4,16 +4,21 @@
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/color_picker.h"
 #include "scene/gui/color_rect.h"
 #include "scene/gui/control.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
+#include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
 
 class AspectRatioContainer;
@@ -63,7 +68,10 @@ public:
 		HANDLE_R = 5,
 		HANDLE_BL = 6,
 		HANDLE_B = 7,
-		HANDLE_BR = 8
+		HANDLE_BR = 8,
+		HANDLE_RADIUS = 9,
+		HANDLE_RADIAL_RADIUS = 10,
+		HANDLE_RADIAL_ANGLE = 11
 	};
 
 private:
@@ -77,10 +85,18 @@ private:
 	bool drag_changed = false;
 	String hover_elem_id;
 	HandleType hover_handle = HANDLE_NONE;
+	bool show_grid_overlay = true;
+	bool snap_to_grid = false;
+	int grid_step = 8;
+	bool show_smart_guides = true;
+	Vector<float> guide_lines_x;
+	Vector<float> guide_lines_y;
 
 	Rect2 _get_handle_rect(const Rect2 &p_elem_rect, HandleType p_handle) const;
 	HandleType _hit_test_handle(const Rect2 &p_elem_rect, const Vector2 &p_pt) const;
+	HandleType _hit_test_radial_handle(const Vector2 &p_pt) const;
 	String _hit_test_element(const Vector2 &p_pt) const;
+	Vector2 _apply_snap_and_guides(const Rect2 &p_base_rect, const String &p_ignore_id, Vector2 &r_delta);
 
 protected:
 	void _notification(int p_what);
@@ -93,6 +109,14 @@ public:
 	Rect2 get_selected_widget_rect() const;
 	Rect2 get_handle_widget_rect(int p_handle) const;
 	bool is_dragging_canvas() const { return dragging; }
+	void set_grid_overlay_enabled(bool p_en);
+	bool is_grid_overlay_enabled() const { return show_grid_overlay; }
+	void set_snap_enabled(bool p_en);
+	bool is_snap_enabled() const { return snap_to_grid; }
+	void set_grid_step(int p_step) { grid_step = CLAMP(p_step, 4, 64); queue_redraw(); }
+	int get_grid_step() const { return grid_step; }
+	void set_smart_guides_enabled(bool p_en) { show_smart_guides = p_en; queue_redraw(); }
+	bool is_smart_guides_enabled() const { return show_smart_guides; }
 };
 
 // ============================================================================
@@ -126,7 +150,20 @@ private:
 	Button *redo_btn = nullptr;
 	Button *reset_btn = nullptr;
 	Button *test_btn = nullptr;
+	Button *new_menu_wizard_btn = nullptr;
+	Button *templates_btn = nullptr;
 	Label *screen_status_lbl = nullptr;
+
+	// Barra de edición rápida (rejilla, imán, guías, alinear, distribuir, duplicar, copiar/pegar)
+	CheckBox *grid_chk = nullptr;
+	CheckBox *snap_chk = nullptr;
+	CheckBox *guides_chk = nullptr;
+	Button *align_center_h_btn = nullptr;
+	Button *align_center_v_btn = nullptr;
+	Button *dist_v_btn = nullptr;
+	Button *dup_elem_btn = nullptr;
+	Button *copy_elem_btn = nullptr;
+	Button *paste_elem_btn = nullptr;
 
 	// Contenedores responsivos (3 columnas >= 1460px; 2 filas < 1460px sin scroll H)
 	VBoxContainer *layout_root = nullptr;
@@ -139,10 +176,19 @@ private:
 	HBoxContainer *compact_bottom_hbox = nullptr;
 
 	// Tarjetas principales
+	PanelContainer *menus_card = nullptr;
 	PanelContainer *palette_card = nullptr;
 	PanelContainer *canvas_card = nullptr;
 	PanelContainer *layers_card = nullptr;
 	PanelContainer *props_card = nullptr;
+
+	// Panel "Menús" (4A)
+	VBoxContainer *menus_list_vbox = nullptr;
+	Button *menu_dup_btn = nullptr;
+	Button *menu_up_btn = nullptr;
+	Button *menu_down_btn = nullptr;
+	Button *menu_del_btn = nullptr;
+	Button *menu_restore_btn = nullptr;
 
 	// Paleta lateral (9 tipos)
 	GridContainer *palette_grid = nullptr;
@@ -163,6 +209,10 @@ private:
 	ClockGearsCreditsPlayer *default_credits_preview = nullptr;
 	ClockGearsUiDesignLayer *design_layer = nullptr;
 	ClockGearsUiCanvasOverlay *canvas_overlay = nullptr;
+	LineEdit *inline_text_edit = nullptr;
+	String inline_edit_elem_id;
+	PopupMenu *canvas_context_menu = nullptr;
+	Vector2 canvas_context_pos;
 
 	// Lista de capas con ojo de visibilidad y reordenado
 	VBoxContainer *layers_list_vbox = nullptr;
@@ -170,9 +220,20 @@ private:
 	Button *layer_down_btn = nullptr;
 	Button *layer_del_btn = nullptr;
 
-	// Panel de propiedades
+	// Panel de propiedades (4C: Simple/Avanzado, Buscador, Secciones plegables, Sliders, Selectores)
+	bool props_advanced_mode = false;
+	String props_search_query;
+	Button *props_mode_simple_btn = nullptr;
+	Button *props_mode_adv_btn = nullptr;
+	LineEdit *props_search_edit = nullptr;
 	Label *props_sel_lbl = nullptr;
 	VBoxContainer *props_fields_box = nullptr;
+	struct PropRowFilterEntry {
+		Control *row = nullptr;
+		String search_text;
+		bool advanced_only = false;
+	};
+	Vector<PropRowFilterEntry> prop_filter_entries;
 	LineEdit *prop_name_edit = nullptr;
 	Button *anchor_btns[9] = { nullptr };
 	SpinBox *prop_ox_spin = nullptr;
@@ -183,6 +244,71 @@ private:
 	CheckBox *prop_visible_chk = nullptr;
 	CheckBox *prop_show_bg_chk = nullptr;
 	OptionButton *prop_style_opt = nullptr;
+
+	// Forma, relleno, bordes, sombra, brillo y fuente (3F / 4C)
+	OptionButton *prop_shape_opt = nullptr;
+	HSlider *prop_radius_slider = nullptr;
+	Label *prop_radius_val_lbl = nullptr;
+	ColorPickerButton *prop_fill_color_btn = nullptr;
+	HBoxContainer *prop_recent_colors_box = nullptr;
+	CheckBox *prop_grad_chk = nullptr;
+	ColorPickerButton *prop_grad_top_btn = nullptr;
+	ColorPickerButton *prop_grad_bot_btn = nullptr;
+	HSlider *prop_border_w_slider = nullptr;
+	ColorPickerButton *prop_border_col_btn = nullptr;
+	CheckBox *prop_shadow_chk = nullptr;
+	CheckBox *prop_glow_chk = nullptr;
+	ColorPickerButton *prop_glow_col_btn = nullptr;
+	CheckBox *prop_clip_chk = nullptr;
+	CheckBox *prop_pixel_art_chk = nullptr;
+	OptionButton *prop_font_opt = nullptr;
+	Button *prop_font_import_btn = nullptr;
+	HSlider *prop_font_size_slider = nullptr;
+	ColorPickerButton *prop_font_color_btn = nullptr;
+
+	// Propiedades globales del menú (4F fondo/animación, 3B entradas/contexto, 3E radial)
+	VBoxContainer *menu_props_box = nullptr;
+	OptionButton *menu_bg_type_opt = nullptr;
+	ColorPickerButton *menu_bg_col_btn = nullptr;
+	ColorPickerButton *menu_bg_grad_bot_btn = nullptr;
+	LineEdit *menu_bg_img_edit = nullptr;
+	Button *menu_bg_img_btn = nullptr;
+	SpinBox *menu_bg_scroll_x_spin = nullptr;
+	SpinBox *menu_bg_scroll_y_spin = nullptr;
+	CheckBox *menu_bg_veil_chk = nullptr;
+	OptionButton *menu_trans_in_opt = nullptr;
+	OptionButton *menu_trans_out_opt = nullptr;
+	HSlider *menu_trans_dur_slider = nullptr;
+	OptionButton *menu_trans_curve_opt = nullptr;
+	OptionButton *menu_ctx_opt = nullptr;
+	CheckBox *menu_pause_chk = nullptr;
+	Button *menu_capture_key_btn = nullptr;
+	Label *menu_triggers_lbl = nullptr;
+	Label *menu_conflict_lbl = nullptr;
+	OptionButton *menu_layout_mode_opt = nullptr;
+	HSlider *menu_radial_radius_slider = nullptr;
+	HSlider *menu_radial_start_slider = nullptr;
+	HSlider *menu_radial_sweep_slider = nullptr;
+	CheckBox *menu_radial_cw_chk = nullptr;
+	Button *menu_radial_add_slot_btn = nullptr;
+	LineEdit *menu_snd_open_edit = nullptr;
+	LineEdit *menu_snd_close_edit = nullptr;
+	LineEdit *menu_snd_move_edit = nullptr;
+	LineEdit *menu_snd_accept_edit = nullptr;
+	LineEdit *menu_snd_cancel_edit = nullptr;
+
+	// Condiciones por interruptor y constructor multi-acción (3D / 4C)
+	OptionButton *prop_vis_mode_opt = nullptr;
+	LineEdit *prop_vis_sw_edit = nullptr;
+	OptionButton *prop_en_mode_opt = nullptr;
+	LineEdit *prop_en_sw_edit = nullptr;
+	VBoxContainer *prop_multi_actions_vbox = nullptr;
+	OptionButton *prop_add_action_opt = nullptr;
+	Button *prop_add_action_btn = nullptr;
+
+	// Miniaturas rápidas de imagen
+	HFlowContainer *prop_img_thumbs_flow = nullptr;
+	HashMap<String, Ref<Texture2D>> thumb_tex_cache;
 
 	// Texto / Imagen / Enlace / Acción botón
 	VBoxContainer *prop_text_row = nullptr;
@@ -202,14 +328,60 @@ private:
 	OptionButton *prop_action_opt = nullptr;
 	SpinBox *prop_focus_spin = nullptr;
 
-	// Diálogos auxiliares
+	// Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B)
 	FileDialog *import_image_dialog = nullptr;
+	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF
+	FileDialog *import_font_dialog = nullptr;
+	FileDialog *export_pkg_dialog = nullptr;
+	FileDialog *import_pkg_dialog = nullptr;
 	ConfirmationDialog *reset_confirm_dialog = nullptr;
+	ConfirmationDialog *delete_menu_confirm_dialog = nullptr;
+	ConfirmationDialog *template_apply_confirm_dialog = nullptr;
+	ConfirmationDialog *save_tpl_name_dialog = nullptr;
+	LineEdit *save_tpl_name_edit = nullptr;
+	bool save_tpl_is_component = false;
+	String pending_delete_menu_id;
+	String pending_apply_template_id;
+	bool capturing_key_for_screen = false;
+	bool capturing_key_for_wizard = false;
+
+	AcceptDialog *menu_wizard_dialog = nullptr;
+	int wizard_step = 0;
+	String wizard_selected_template_id = "classic_jrpg";
+	VBoxContainer *wizard_step_panels[3] = { nullptr, nullptr, nullptr };
+	Label *wizard_step_lbl = nullptr;
+	Button *wizard_prev_btn = nullptr;
+	Button *wizard_next_btn = nullptr;
+	Button *wizard_finish_btn = nullptr;
+	GridContainer *wizard_tpl_grid = nullptr;
+	LineEdit *wizard_name_edit = nullptr;
+	Vector<CheckBox *> wizard_btn_checks;
+	OptionButton *wizard_ctx_opt = nullptr;
+	CheckBox *wizard_pause_chk = nullptr;
+	Button *wizard_capture_key_btn = nullptr;
+	Label *wizard_triggers_lbl = nullptr;
+	Label *wizard_conflict_lbl = nullptr;
+	Array wizard_triggers;
+
+	AcceptDialog *template_gallery_dialog = nullptr;
+	TabContainer *template_tabs = nullptr;
+	GridContainer *tpl_screen_grid = nullptr;
+	GridContainer *tpl_comp_grid = nullptr;
+	GridContainer *tpl_user_grid = nullptr;
+	CheckBox *tpl_preserve_btns_chk = nullptr;
+	String selected_gallery_template_id;
+	Label *tpl_selected_info_lbl = nullptr;
+	Button *tpl_apply_btn = nullptr;
+	Button *tpl_export_btn = nullptr;
+	Button *tpl_delete_user_btn = nullptr;
+
 	Window *test_window = nullptr;
 	ClockGearsTitleScreen *test_title = nullptr;
 	ClockGearsGameMenu *test_gmenu = nullptr;
 	ClockGearsCreditsPlayer *test_credits = nullptr;
 	ClockGearsHudOverlay *test_hud = nullptr;
+	bool test_injected_sample_state = false;
+	Dictionary test_saved_runtime_state;
 
 	void _build_ui();
 	void _rebalance_responsive_layout(int p_avail_w);
@@ -219,11 +391,63 @@ private:
 	void _on_preview_res_selected(int p_idx);
 	void _refresh_canvas_stage();
 	void _refresh_background_and_default_preview(bool p_has_custom);
+	void _refresh_menus_list();
+	void _refresh_screen_dropdown();
 	void _refresh_layers_list();
 	void _refresh_properties_panel();
+	void _refresh_menu_global_properties();
+	void _refresh_multi_actions_ui(const Dictionary &p_elem);
+	void _refresh_recent_colors_palette();
+	void _refresh_image_thumbs_gallery();
+	void _apply_properties_filter();
+	void _register_prop_filter_row(Control *p_row, const String &p_keywords, bool p_advanced_only);
 	void _refresh_style_binding_action_options();
 	void _refresh_undo_redo_buttons();
 	void _notify_data_mutated(bool p_mark_dirty = true);
+	void _begin_inline_text_edit(const String &p_elem_id);
+	void _commit_inline_text_edit();
+	void _populate_template_gallery();
+	void _open_menu_wizard();
+	void _update_wizard_step_ui();
+	void _refresh_wizard_conflict_label();
+	void _on_wizard_tpl_selected(const String &p_tpl_id);
+	void _on_wizard_prev_pressed();
+	void _on_wizard_next_pressed();
+	void _on_wizard_finish_pressed();
+	void _on_wizard_capture_key_pressed();
+	void _on_templates_btn_pressed();
+	void _on_tpl_card_selected(const String &p_tpl_id);
+	void _on_tpl_apply_pressed();
+	void _on_tpl_apply_confirmed();
+	void _on_tpl_save_current_pressed();
+	void _on_tpl_save_name_confirmed();
+	void _on_tpl_export_pressed();
+	void _on_tpl_import_pressed();
+	void _on_tpl_delete_user_pressed();
+	void _on_export_pkg_file_selected(const String &p_path);
+	void _on_import_pkg_file_selected(const String &p_path);
+	void _on_props_mode_changed(bool p_advanced);
+	void _on_props_search_changed(const String &p_text);
+	void _on_menu_list_select_pressed(const String &p_menu_id);
+	void _on_menu_list_dup_pressed();
+	void _on_menu_list_move_pressed(int p_delta);
+	void _on_menu_list_del_pressed();
+	void _on_menu_del_confirmed();
+	void _on_menu_restore_pressed();
+	void _on_menu_global_changed();
+	void _on_menu_capture_key_pressed();
+	void _on_menu_radial_add_slot_pressed();
+	void _on_menu_bg_import_pressed();
+	void _on_prop_font_import_pressed();
+	void _on_font_file_selected(const String &p_path);
+	void _on_prop_add_multi_action_pressed();
+	void _on_prop_remove_multi_action_pressed(int p_idx);
+	void _on_canvas_context_menu_id(int p_id);
+	void _on_align_center_pressed(bool p_vertical);
+	void _on_distribute_vertical_pressed();
+	void _on_duplicate_elem_pressed();
+	void _on_copy_elem_pressed();
+	void _on_paste_elem_pressed();
 	ClockGearsTitleScreen *_ensure_default_title_preview();
 	ClockGearsGameMenu *_ensure_default_gmenu_preview();
 	ClockGearsCreditsPlayer *_ensure_default_credits_preview();
@@ -259,16 +483,34 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void input(const Ref<InputEvent> &p_event) override;
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void set_owner_database(ClockGearsDatabaseDialog *p_db) { owner_db = p_db; }
 	void refresh_from_data_manager();
 	void refresh_geometry_fast(bool p_refresh_props = true);
+	void update_dragged_element_fast(const String &p_elem_id, const Dictionary &p_elem);
 	void adapt_to_width(int p_window_width);
 
-	// API pública clara para interacción directa y pruebas automatizadas
+	// API pública clara para interacción directa y pruebas automatizadas (Etapa 4)
 	void select_screen(const String &p_screen_id);
 	String get_current_screen() const { return current_screen_id; }
+	void set_props_advanced_mode(bool p_adv);
+	bool is_props_advanced_mode() const { return props_advanced_mode; }
+	void set_props_search_filter(const String &p_query);
+	int get_visible_prop_row_count() const;
+	String create_menu_via_wizard(const Dictionary &p_opts);
+	bool apply_template_by_id(const String &p_tpl_id, bool p_preserve_buttons = true, bool p_record_undo = true);
+	String save_current_as_user_template(const String &p_name);
+	bool begin_inline_edit_for_selected();
+	void show_canvas_context_menu(const Vector2 &p_screen_pos);
+	bool align_selected_elements(const String &p_mode);
+	bool duplicate_selected_element();
+	void copy_selected_to_clipboard();
+	PackedStringArray paste_from_clipboard();
+	void set_radial_layout_live(int p_radius, float p_start_deg);
+	bool add_radial_slot_from_editor();
 
 	void set_canvas_zoom(int p_zoom);
 	int get_canvas_zoom() const { return canvas_zoom; }

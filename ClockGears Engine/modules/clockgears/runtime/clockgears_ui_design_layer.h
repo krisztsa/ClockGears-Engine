@@ -217,6 +217,20 @@ private:
 	Rect2 current_stage_rect;
 	float current_ui_scale = 1.0f;
 
+	// Fondo por menú (color, degradado, imagen con desplazamiento en bucle, velo oscuro 4F) y transición
+	ColorRect *bg_veil_rect = nullptr;
+	Control *bg_backdrop_ctrl = nullptr;
+	TextureRect *bg_image_rect = nullptr;
+	Ref<Texture2D> cached_bg_texture;
+	String cached_bg_path;
+	Vector2 bg_scroll_offset;
+	bool transition_active = false;
+	bool transition_is_out = false;
+	double transition_elapsed = 0.0;
+	double transition_duration = 0.0;
+	String transition_type = "none";
+	String transition_curve = "ease_out";
+
 	// Soporte para contenedores 3E (paginación / pestañas / carrusel / radial) y cursor 3G
 	int current_layout_page = 0;
 	int current_layout_tab = 0;
@@ -227,6 +241,11 @@ private:
 
 	Size2 _resolve_effective_viewport_size() const;
 	void _clear_aux_layout_controls();
+	void _ensure_background_nodes();
+	void _apply_screen_background(const Dictionary &p_design, const Size2 &p_vp);
+	static Ref<Font> _load_cached_font(const String &p_path);
+	float _eval_transition_curve(float p_t) const;
+	void _apply_transition_pose(float p_progress);
 	void _rebuild_from_design(const Dictionary &p_design);
 	void _build_element_entry(ElementEntry &r_entry);
 	void _apply_element_style(ElementEntry &r_entry, float p_scale);
@@ -268,6 +287,10 @@ public:
 	void clear_disabled_actions();
 
 	void apply_screen_design(const String &p_screen_id, const Dictionary &p_design_override = Dictionary());
+	bool update_element_geometry_fast(const String &p_elem_id, const Dictionary &p_elem);
+	void play_transition_in();
+	void play_transition_out();
+	bool is_transition_active() const { return transition_active; }
 	void clear_elements();
 	void refresh_live_values();
 

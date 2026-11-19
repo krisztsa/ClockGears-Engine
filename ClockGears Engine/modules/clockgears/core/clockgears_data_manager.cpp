@@ -12,11 +12,13 @@
 #include "clockgears_time_manager.h"
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/crypto/crypto_core.h"
 #include "core/input/input_map.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/io/json.h"
+#include "core/io/marshalls.h"
 #include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
 #include "core/object/undo_redo.h"
@@ -5749,6 +5751,52 @@ Dictionary ClockGearsDataManager::normalize_menu_layout(const Dictionary &p_layo
 	return out;
 }
 
+Dictionary ClockGearsDataManager::normalize_ui_background(const Dictionary &p_bg) {
+	Dictionary out;
+	String bt = String(p_bg.get("type", "none")).strip_edges().to_lower();
+	if (bt != "none" && bt != "color" && bt != "gradient" && bt != "image") {
+		bt = "none";
+	}
+	out["type"] = bt;
+	out["color"] = _cg_norm_color_rgba(p_bg.get("color", "#0d111ae6"), "#0d111ae6");
+	out["gradient_top"] = _cg_norm_color_rgba(p_bg.get("gradient_top", "#1b2234ff"), "#1b2234ff");
+	out["gradient_bottom"] = _cg_norm_color_rgba(p_bg.get("gradient_bottom", "#0b0e16ff"), "#0b0e16ff");
+	String ga = String(p_bg.get("gradient_angle", "vertical")).strip_edges().to_lower();
+	out["gradient_angle"] = (ga == "horizontal") ? "horizontal" : "vertical";
+	out["image_path"] = String(p_bg.get("image_path", "")).strip_edges();
+	String sm = String(p_bg.get("scale_mode", "stretch")).strip_edges().to_lower();
+	if (sm != "stretch" && sm != "fit" && sm != "fill" && sm != "tile") {
+		sm = "stretch";
+	}
+	out["scale_mode"] = sm;
+	out["pixel_art"] = p_bg.has("pixel_art") ? bool(p_bg["pixel_art"]) : true;
+	out["scroll_speed_x"] = CLAMP(int(p_bg.get("scroll_speed_x", 0)), -400, 400);
+	out["scroll_speed_y"] = CLAMP(int(p_bg.get("scroll_speed_y", 0)), -400, 400);
+	out["veil_enabled"] = bool(p_bg.get("veil_enabled", false));
+	out["veil_color"] = _cg_norm_color_rgba(p_bg.get("veil_color", "#05070ca6"), "#05070ca6");
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_ui_transition(const Dictionary &p_tr) {
+	Dictionary out;
+	auto norm_t = [](const String &p_raw) -> String {
+		String s = p_raw.strip_edges().to_lower();
+		if (s == "fade" || s == "slide_left" || s == "slide_right" || s == "slide_top" || s == "slide_bottom" || s == "scale" || s == "radial_spin") {
+			return s;
+		}
+		return "none";
+	};
+	out["in_type"] = norm_t(String(p_tr.get("in_type", "fade")));
+	out["out_type"] = norm_t(String(p_tr.get("out_type", "fade")));
+	out["duration_sec"] = CLAMP(float(p_tr.get("duration_sec", 0.16)), 0.0f, 1.5f);
+	String c = String(p_tr.get("curve", "ease_out")).strip_edges().to_lower();
+	if (c != "linear" && c != "ease_out" && c != "ease_in_out" && c != "back_out") {
+		c = "ease_out";
+	}
+	out["curve"] = c;
+	return out;
+}
+
 Dictionary ClockGearsDataManager::normalize_ui_shape(const Dictionary &p_shape) {
 	Dictionary out;
 	String st = _cg_norm_shape_type(p_shape.get("shape_type", p_shape.get("type", "rounded")));
@@ -5950,6 +5998,24 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	if (p_elem.has("icon_path") && !out.has("icon_path")) {
 		out["icon_path"] = String(p_elem["icon_path"]).strip_edges();
 	}
+	if (p_elem.has("font_path")) {
+		out["font_path"] = String(p_elem["font_path"]).strip_edges();
+	}
+	if (p_elem.has("font_size")) {
+		out["font_size"] = CLAMP(int(p_elem["font_size"]), 8, 72);
+	}
+	if (p_elem.has("font_color")) {
+		out["font_color"] = _cg_norm_color_rgba(p_elem["font_color"], "#eef2faff");
+	}
+	if (p_elem.has("color") && !out.has("fill_color")) {
+		out["color"] = _cg_norm_color_rgba(p_elem["color"], "#eef2faff");
+	}
+	if (p_elem.has("group_id")) {
+		out["group_id"] = String(p_elem["group_id"]).strip_edges();
+	}
+	if (p_elem.has("locked")) {
+		out["locked"] = bool(p_elem["locked"]);
+	}
 	// Forma avanzada opcional (3F: rect, rounded, pill, circle, ellipse, image + recorte, degradado, sombra, brillo)
 	if (p_elem.has("shape") && p_elem["shape"].get_type() == Variant::DICTIONARY) {
 		out["shape"] = normalize_ui_shape(Dictionary(p_elem["shape"]));
@@ -6129,7 +6195,10 @@ Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_scr
 	out["sounds"] = snd;
 
 	if (p_design.has("background") && p_design["background"].get_type() == Variant::DICTIONARY) {
-		out["background"] = Dictionary(p_design["background"]).duplicate(true);
+		out["background"] = normalize_ui_background(Dictionary(p_design["background"]));
+	}
+	if (p_design.has("transition") && p_design["transition"].get_type() == Variant::DICTIONARY) {
+		out["transition"] = normalize_ui_transition(Dictionary(p_design["transition"]));
 	}
 	return out;
 }
@@ -6148,6 +6217,8 @@ Dictionary ClockGearsDataManager::get_default_ui_designs_config() {
 		screens[sids[i]] = def;
 	}
 	out["screens"] = screens;
+	out["user_templates"] = Dictionary();
+	out["recent_colors"] = Array();
 	return out;
 }
 
@@ -6196,6 +6267,19 @@ Dictionary ClockGearsDataManager::normalize_ui_designs_config(const Dictionary &
 		screens[sid] = norm;
 	}
 	out["screens"] = screens;
+	if (p_cfg.has("user_templates") && p_cfg["user_templates"].get_type() == Variant::DICTIONARY) {
+		out["user_templates"] = Dictionary(p_cfg["user_templates"]).duplicate(true);
+	} else {
+		out["user_templates"] = Dictionary();
+	}
+	Array rc;
+	if (p_cfg.has("recent_colors") && p_cfg["recent_colors"].get_type() == Variant::ARRAY) {
+		Array raw_rc = p_cfg["recent_colors"];
+		for (int i = 0; i < MIN(raw_rc.size(), 16); i++) {
+			rc.push_back(_cg_norm_color_rgba(raw_rc[i], "#e0a040ff"));
+		}
+	}
+	out["recent_colors"] = rc;
 	return out;
 }
 
@@ -6806,6 +6890,34 @@ String ClockGearsDataManager::add_ui_element(const String &p_screen_id, const Di
 bool ClockGearsDataManager::update_ui_element(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem, bool p_record_undo) {
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
 	String target = p_elem_id.strip_edges().to_lower();
+
+	// Camino rápido O(1) durante arrastre interactivo (sin duplicar las otras 99 capas ni re-normalizar toda la pantalla)
+	if (!p_record_undo && sid != "hud" && ui_designs_config.has("screens") && ui_designs_config["screens"].get_type() == Variant::DICTIONARY) {
+		Dictionary screens = ui_designs_config["screens"];
+		if (screens.has(sid) && screens[sid].get_type() == Variant::DICTIONARY) {
+			Dictionary scr = screens[sid];
+			if (scr.has("elements") && scr["elements"].get_type() == Variant::ARRAY) {
+				Array elems = scr["elements"];
+				for (int i = 0; i < elems.size(); i++) {
+					if (elems[i].get_type() != Variant::DICTIONARY) continue;
+					Dictionary cur = elems[i];
+					if (String(cur.get("id", "")).to_lower() == target) {
+						Array keys = p_elem.keys();
+						for (int k = 0; k < keys.size(); k++) {
+							Variant kv = keys[k];
+							if (String(kv) != "id") {
+								cur[kv] = p_elem[kv];
+							}
+						}
+						scr["custom_enabled"] = true;
+						dirty = true;
+						return true;
+					}
+				}
+			}
+		}
+	}
+
 	Dictionary d = get_ui_screen_design(sid);
 	Array elems = Array(d.get("elements", Array())).duplicate(true);
 	for (int i = 0; i < elems.size(); i++) {
@@ -6903,6 +7015,1190 @@ void ClockGearsDataManager::set_ui_designs_config(const Dictionary &p_cfg) {
 	dirty = true;
 	emit_signal("data_changed", "ui_designs", 0);
 	emit_signal("runtime_state_changed", "ui_design", String());
+}
+
+static Dictionary _cg_make_tpl_meta(const String &p_id, const String &p_name, const String &p_cat, const String &p_desc, const Dictionary &p_design) {
+	Dictionary d;
+	d["id"] = p_id;
+	d["name"] = p_name;
+	d["category"] = p_cat;
+	d["description"] = p_desc;
+	d["is_component"] = false;
+	d["is_builtin"] = true;
+	d["design"] = p_design;
+	return d;
+}
+
+static Dictionary _cg_make_tpl_btn(const String &p_id, const String &p_text, const String &p_act, int p_ox, int p_oy, int p_w, int p_h, const String &p_anchor = "top_left", const String &p_shape_type = "rounded", int p_radius = 8) {
+	Dictionary b;
+	b["id"] = p_id;
+	b["name"] = p_text;
+	b["type"] = "button";
+	b["text"] = p_text;
+	b["anchor"] = p_anchor;
+	b["offset_x"] = p_ox;
+	b["offset_y"] = p_oy;
+	b["width"] = p_w;
+	b["height"] = p_h;
+	b["action"] = p_act;
+	Dictionary act;
+	act["type"] = p_act;
+	Array acts;
+	acts.push_back(act);
+	b["actions"] = acts;
+	Dictionary sh;
+	sh["shape_type"] = p_shape_type;
+	sh["corner_radius"] = p_radius;
+	sh["fill_color"] = "#1c202cf2";
+	sh["border_width"] = 2;
+	sh["border_color"] = "#d49b42ff";
+	b["shape"] = sh;
+	return b;
+}
+
+Array ClockGearsDataManager::get_builtin_menu_templates() {
+	Array out;
+
+	// 1. Clásico JRPG
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		d["background"] = normalize_ui_background(Dictionary());
+		Dictionary f_left;
+		f_left["id"] = "jrpg_cmd_panel";
+		f_left["name"] = "Panel Comandos";
+		f_left["type"] = "frame";
+		f_left["anchor"] = "top_left";
+		f_left["offset_x"] = 28;
+		f_left["offset_y"] = 28;
+		f_left["width"] = 230;
+		f_left["height"] = 340;
+		f_left["layer_order"] = 0;
+
+		Dictionary f_right;
+		f_right["id"] = "jrpg_status_panel";
+		f_right["name"] = "Panel Grupo";
+		f_right["type"] = "frame";
+		f_right["anchor"] = "top_left";
+		f_right["offset_x"] = 276;
+		f_right["offset_y"] = 28;
+		f_right["width"] = 656;
+		f_right["height"] = 484;
+		f_right["layer_order"] = 0;
+
+		Dictionary f_gold;
+		f_gold["id"] = "jrpg_gold_card";
+		f_gold["name"] = "Tarjeta Oro";
+		f_gold["type"] = "currency";
+		f_gold["anchor"] = "top_left";
+		f_gold["offset_x"] = 28;
+		f_gold["offset_y"] = 384;
+		f_gold["width"] = 230;
+		f_gold["height"] = 64;
+		f_gold["layer_order"] = 1;
+
+		Dictionary t_hp;
+		t_hp["id"] = "jrpg_party_hp";
+		t_hp["name"] = "HP Lider";
+		t_hp["type"] = "text";
+		t_hp["data_binding"] = "player_hp";
+		t_hp["text"] = "HP: {value}";
+		t_hp["anchor"] = "top_left";
+		t_hp["offset_x"] = 308;
+		t_hp["offset_y"] = 64;
+		t_hp["width"] = 260;
+		t_hp["height"] = 34;
+
+		Array els;
+		els.push_back(f_left);
+		els.push_back(f_right);
+		els.push_back(f_gold);
+		els.push_back(t_hp);
+		const char *lbls[5] = { "Objetos", "Equipo", "Estado", "Guardar", "Cerrar" };
+		const char *acts[5] = { "items", "equip", "status", "save", "close" };
+		for (int i = 0; i < 5; i++) {
+			Dictionary btn = _cg_make_tpl_btn(vformat("jrpg_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 44, 48 + i * 54, 198, 42);
+			btn["focus_order"] = i;
+			btn["layer_order"] = 2;
+			els.push_back(btn);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("classic_jrpg", String::utf8("Clásico JRPG"), "menu", String::utf8("Lista lateral clásica, panel de estado y tarjeta de moneda."), d));
+	}
+
+	// 2. Anillo radial (estilo disposición Zelda 3D, dibujo propio)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary bg;
+		bg["veil_enabled"] = true;
+		bg["veil_color"] = "#05070cb8";
+		d["background"] = bg;
+		Dictionary tr;
+		tr["in_type"] = "radial_spin";
+		tr["out_type"] = "fade";
+		tr["duration_sec"] = 0.22;
+		d["transition"] = tr;
+		Dictionary lay;
+		lay["mode"] = "radial";
+		lay["radial_center_x"] = 480;
+		lay["radial_center_y"] = 270;
+		lay["radial_radius"] = 155;
+		lay["radial_slot_size"] = 62;
+		lay["radial_selected_scale"] = 1.32;
+		lay["radial_start_angle_deg"] = -90.0;
+		lay["radial_sweep_angle_deg"] = 360.0;
+		lay["radial_clockwise"] = true;
+		lay["radial_show_center_info"] = true;
+		Array slots;
+		const char *s_titles[8] = { "Objetos", "Equipo", "Estado", "Opciones", "Guardar", "Cargar", "Mapa", "Cerrar" };
+		const char *s_descs[8] = { "Mochila de consumibles", "Armas y armaduras", "Atributos del héroe", "Volumen y pantalla", "Guardar avance", "Cargar partida", "Diario de viaje", "Volver al juego" };
+		const char *s_acts[8] = { "items", "equip", "status", "options", "save", "load_game", "close", "close" };
+		for (int i = 0; i < 8; i++) {
+			Dictionary sl;
+			sl["id"] = vformat("rad_slot_%d", i + 1);
+			sl["title"] = String::utf8(s_titles[i]);
+			sl["description"] = String::utf8(s_descs[i]);
+			sl["action"] = String(s_acts[i]);
+			Dictionary st;
+			st["type"] = String(s_acts[i]);
+			Array sa;
+			sa.push_back(st);
+			sl["actions"] = sa;
+			slots.push_back(sl);
+		}
+		lay["radial_slots"] = slots;
+		d["layout"] = lay;
+		d["elements"] = Array();
+		out.push_back(_cg_make_tpl_meta("radial_ring", "Anillo radial", "radial", String::utf8("Círculo de 8 ranuras dibujado sin nodos y descripción central."), d));
+	}
+
+	// 3. Rueda de objetos rápida (medio círculo)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary bg;
+		bg["veil_enabled"] = true;
+		bg["veil_color"] = "#05070ca0";
+		d["background"] = bg;
+		Dictionary lay;
+		lay["mode"] = "radial";
+		lay["radial_center_x"] = 480;
+		lay["radial_center_y"] = 370;
+		lay["radial_radius"] = 170;
+		lay["radial_slot_size"] = 60;
+		lay["radial_selected_scale"] = 1.3;
+		lay["radial_start_angle_deg"] = -180.0;
+		lay["radial_sweep_angle_deg"] = 180.0;
+		lay["radial_clockwise"] = true;
+		lay["radial_show_center_info"] = true;
+		Array slots;
+		for (int i = 0; i < 5; i++) {
+			Dictionary sl;
+			sl["id"] = vformat("wheel_slot_%d", i + 1);
+			sl["title"] = vformat(String::utf8("Rápido %d"), i + 1);
+			sl["description"] = String::utf8("Ranura rápida de inventario");
+			sl["action"] = (i == 4) ? "close" : "items";
+			Dictionary st;
+			st["type"] = sl["action"];
+			Array sa;
+			sa.push_back(st);
+			sl["actions"] = sa;
+			slots.push_back(sl);
+		}
+		lay["radial_slots"] = slots;
+		d["layout"] = lay;
+		d["elements"] = Array();
+		out.push_back(_cg_make_tpl_meta("quick_item_wheel", String::utf8("Rueda de objetos rápida"), "radial", String::utf8("Semicírculo inferior superior con 5 ranuras rápidas."), d));
+	}
+
+	// 4. Cuadrícula de inventario (ARPG)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary lay;
+		lay["mode"] = "grid";
+		lay["origin_anchor"] = "center";
+		lay["offset_x"] = 0;
+		lay["offset_y"] = -20;
+		lay["width"] = 640;
+		lay["height"] = 300;
+		lay["columns"] = 4;
+		lay["rows"] = 2;
+		lay["spacing_x"] = 14;
+		lay["spacing_y"] = 14;
+		d["layout"] = lay;
+		Array els;
+		for (int i = 0; i < 8; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("inv_slot_%d", i + 1), vformat("Ranura %d", i + 1), (i == 7) ? "close" : "items", 160 + (i % 4) * 160, 120 + (i / 4) * 140, 140, 120, "top_left", "rounded", 10);
+			b["focus_order"] = i;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("arpg_inventory_grid", String::utf8("Cuadrícula de inventario (ARPG)"), "grid", String::utf8("Rejilla 4x2 con navegación direccional para inventario o habilidades."), d));
+	}
+
+	// 5. Pestañas a pantalla completa
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary lay;
+		lay["mode"] = "tabs";
+		lay["origin_anchor"] = "center";
+		lay["width"] = 780;
+		lay["height"] = 380;
+		Array tlbls;
+		tlbls.push_back("General");
+		tlbls.push_back("Equipo");
+		tlbls.push_back("Sistema");
+		lay["tab_labels"] = tlbls;
+		d["layout"] = lay;
+		Array els;
+		const char *acts[4] = { "items", "equip", "status", "close" };
+		const char *txts[4] = { "Objetos", "Armamento", "Estado", "Cerrar" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("tab_el_%d", i + 1), String::utf8(txts[i]), String(acts[i]), 100, 100 + i * 52, 220, 44);
+			b["tab_index"] = i % 3;
+			b["focus_order"] = i;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("fullscreen_tabs", String::utf8("Pestañas a pantalla completa"), "tabs", String::utf8("Contenedor con pestañas superiores y cambio instantáneo."), d));
+	}
+
+	// 6. Lateral deslizante
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary bg;
+		bg["veil_enabled"] = true;
+		bg["veil_color"] = "#05070c70";
+		d["background"] = bg;
+		Dictionary tr;
+		tr["in_type"] = "slide_left";
+		tr["out_type"] = "slide_left";
+		tr["duration_sec"] = 0.2;
+		d["transition"] = tr;
+		Array els;
+		Dictionary f;
+		f["id"] = "sidebar_panel";
+		f["name"] = "Barra Lateral";
+		f["type"] = "frame";
+		f["anchor"] = "top_left";
+		f["offset_x"] = 0;
+		f["offset_y"] = 0;
+		f["width"] = 270;
+		f["height"] = 540;
+		els.push_back(f);
+		const char *lbls[4] = { "Objetos", "Estado", "Opciones", "Cerrar" };
+		const char *acts[4] = { "items", "status", "options", "close" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("side_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 24, 56 + i * 58, 220, 44, "top_left", "pill", 22);
+			b["focus_order"] = i;
+			b["layer_order"] = 2;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("sliding_sidebar", "Lateral deslizante", "menu", String::utf8("Panel lateral izquierdo que se desliza suavemente sobre el mapa."), d));
+	}
+
+	// 7. Minimalista (solo botones)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Array els;
+		const char *lbls[4] = { "Objetos", "Estado", "Opciones", "Cerrar" };
+		const char *acts[4] = { "items", "status", "options", "close" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("min_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 0, -110 + i * 62, 220, 46, "center", "pill", 23);
+			b["focus_order"] = i;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("minimalist", "Minimalista (solo botones)", "menu", String::utf8("Columna limpia centrada de botones tipo píldora sin marcos extra."), d));
+	}
+
+	// 8. Cartas o carrusel
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary lay;
+		lay["mode"] = "carousel";
+		lay["origin_anchor"] = "center";
+		lay["width"] = 480;
+		lay["height"] = 280;
+		d["layout"] = lay;
+		Array els;
+		const char *lbls[4] = { "Objetos", "Equipo", "Estado", "Opciones" };
+		const char *acts[4] = { "items", "equip", "status", "options" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("card_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 320, 140, 300, 200, "top_left", "rounded", 14);
+			b["focus_order"] = i;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("cards_carousel", "Cartas o carrusel", "carousel", String::utf8("Tarjetas amplias en carrusel con avance izquierda/derecha."), d));
+	}
+
+	// 9. Pausa rápida (ventana pequeña centrada)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		d["pause_on_open"] = true;
+		Dictionary bg;
+		bg["veil_enabled"] = true;
+		bg["veil_color"] = "#05070cb4";
+		d["background"] = bg;
+		Dictionary tr;
+		tr["in_type"] = "scale";
+		tr["out_type"] = "fade";
+		tr["duration_sec"] = 0.14;
+		tr["curve"] = "back_out";
+		d["transition"] = tr;
+		Array els;
+		Dictionary fr;
+		fr["id"] = "pause_box";
+		fr["name"] = "Marco Pausa";
+		fr["type"] = "frame";
+		fr["anchor"] = "center";
+		fr["width"] = 300;
+		fr["height"] = 290;
+		els.push_back(fr);
+		Dictionary tit;
+		tit["id"] = "pause_title";
+		tit["name"] = String::utf8("Título Pausa");
+		tit["type"] = "text";
+		tit["text"] = "PAUSA";
+		tit["anchor"] = "center";
+		tit["offset_y"] = -112;
+		tit["width"] = 240;
+		tit["height"] = 34;
+		tit["align"] = "center";
+		tit["font_size"] = 20;
+		els.push_back(tit);
+		const char *lbls[4] = { "Reanudar", "Opciones", "Ir al título", "Salir" };
+		const char *acts[4] = { "close", "options", "to_title", "quit" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("pause_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 0, -56 + i * 50, 220, 40, "center", "rounded", 8);
+			b["focus_order"] = i;
+			b["layer_order"] = 2;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("quick_pause", String::utf8("Pausa rápida"), "menu", String::utf8("Ventana compacta centrada que pausa el juego con velo oscuro."), d));
+	}
+
+	// 10. Título clásico
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		d["window_type"] = "title";
+		Dictionary bg;
+		bg["type"] = "gradient";
+		bg["gradient_top"] = "#1b2438ff";
+		bg["gradient_bottom"] = "#0a0d16ff";
+		d["background"] = bg;
+		Array els;
+		Dictionary tit;
+		tit["id"] = "title_classic_txt";
+		tit["name"] = String::utf8("Título del juego");
+		tit["type"] = "text";
+		tit["data_binding"] = "project_title";
+		tit["anchor"] = "top_center";
+		tit["offset_y"] = 60;
+		tit["width"] = 640;
+		tit["height"] = 72;
+		tit["font_size"] = 40;
+		tit["align"] = "center";
+		els.push_back(tit);
+		const char *lbls[4] = { "Nueva partida", "Continuar", "Opciones", "Salir" };
+		const char *acts[4] = { "new_game", "continue", "options", "quit" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("tcls_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 0, 20 + i * 52, 240, 42, "center", "rounded", 8);
+			b["focus_order"] = i;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("classic_title", String::utf8("Título clásico"), "title", String::utf8("Título superior y columna inferior de acciones principales."), d));
+	}
+
+	// 11. Título con logo grande y botones centrados
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		d["window_type"] = "title";
+		Array els;
+		Dictionary logo_fr;
+		logo_fr["id"] = "hero_logo_frame";
+		logo_fr["name"] = "Marco Logo Grande";
+		logo_fr["type"] = "frame";
+		logo_fr["anchor"] = "top_center";
+		logo_fr["offset_y"] = 42;
+		logo_fr["width"] = 520;
+		logo_fr["height"] = 160;
+		els.push_back(logo_fr);
+		Dictionary logo_lbl;
+		logo_lbl["id"] = "hero_logo_txt";
+		logo_lbl["name"] = "Logo Texto";
+		logo_lbl["type"] = "text";
+		logo_lbl["data_binding"] = "project_title";
+		logo_lbl["anchor"] = "top_center";
+		logo_lbl["offset_y"] = 96;
+		logo_lbl["width"] = 480;
+		logo_lbl["height"] = 56;
+		logo_lbl["font_size"] = 36;
+		logo_lbl["align"] = "center";
+		logo_lbl["layer_order"] = 2;
+		els.push_back(logo_lbl);
+		const char *lbls[4] = { "Comenzar", "Continuar", "Opciones", "Créditos" };
+		const char *acts[4] = { "new_game", "continue", "options", "credits" };
+		for (int i = 0; i < 4; i++) {
+			Dictionary b = _cg_make_tpl_btn(vformat("hlogo_b%d", i + 1), String::utf8(lbls[i]), String(acts[i]), 0, 250 + i * 54, 240, 44, "top_center", "pill", 22);
+			b["focus_order"] = i;
+			els.push_back(b);
+		}
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("hero_logo_title", String::utf8("Título con logo grande y botones centrados"), "title", String::utf8("Gran emblema centrado arriba y botones en píldora debajo."), d));
+	}
+
+	// 12. HUD de esquina
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		d["window_type"] = "hud";
+		d["pause_on_open"] = false;
+		Array els;
+		Dictionary panel;
+		panel["id"] = "hud_corner_panel";
+		panel["name"] = "Fondo HUD Esquina";
+		panel["type"] = "frame";
+		panel["anchor"] = "top_left";
+		panel["offset_x"] = 16;
+		panel["offset_y"] = 16;
+		panel["width"] = 248;
+		panel["height"] = 114;
+		els.push_back(panel);
+		Dictionary hp;
+		hp["id"] = "hud_hp_bar";
+		hp["name"] = "Barra HP";
+		hp["type"] = "bar";
+		hp["anchor"] = "top_left";
+		hp["offset_x"] = 28;
+		hp["offset_y"] = 28;
+		hp["width"] = 224;
+		hp["height"] = 24;
+		hp["layer_order"] = 2;
+		els.push_back(hp);
+		Dictionary hts;
+		hts["id"] = "hud_hearts";
+		hts["name"] = "Corazones";
+		hts["type"] = "hearts";
+		hts["anchor"] = "top_left";
+		hts["offset_x"] = 28;
+		hts["offset_y"] = 60;
+		hts["width"] = 140;
+		hts["height"] = 24;
+		hts["layer_order"] = 2;
+		els.push_back(hts);
+		Dictionary gold;
+		gold["id"] = "hud_gold";
+		gold["name"] = "Monedas";
+		gold["type"] = "currency";
+		gold["anchor"] = "top_left";
+		gold["offset_x"] = 28;
+		gold["offset_y"] = 90;
+		gold["width"] = 180;
+		gold["height"] = 28;
+		gold["layer_order"] = 2;
+		els.push_back(gold);
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("corner_hud", "HUD de esquina", "hud", String::utf8("Barra de salud, corazones y monedas agrupados en esquina superior izquierda."), d));
+	}
+
+	return out;
+}
+
+Array ClockGearsDataManager::get_builtin_component_templates() {
+	Array out;
+	auto push_comp = [&](const String &p_id, const String &p_name, const String &p_desc, const Dictionary &p_el) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["name"] = p_name;
+		d["category"] = "component";
+		d["description"] = p_desc;
+		d["is_component"] = true;
+		d["is_builtin"] = true;
+		d["element"] = p_el;
+		out.push_back(d);
+	};
+
+	push_comp("comp_round_btn", String::utf8("Botón redondo"), String::utf8("Botón circular ideal para accesos rápidos."),
+			_cg_make_tpl_btn("comp_round", String::utf8("Acción"), "close", 440, 230, 82, 82, "top_left", "circle", 41));
+
+	Dictionary fr;
+	fr["id"] = "comp_panel";
+	fr["name"] = "Panel con marco";
+	fr["type"] = "frame";
+	fr["anchor"] = "center";
+	fr["width"] = 280;
+	fr["height"] = 180;
+	Dictionary fsh;
+	fsh["shape_type"] = "rounded";
+	fsh["corner_radius"] = 10;
+	fsh["gradient_enabled"] = true;
+	fsh["gradient_top_color"] = "#24201aff";
+	fsh["gradient_bottom_color"] = "#12100eff";
+	fsh["border_width"] = 2;
+	fsh["border_color"] = "#e0a040ff";
+	fsh["shadow_enabled"] = true;
+	fr["shape"] = fsh;
+	push_comp("comp_framed_panel", "Panel con marco", String::utf8("Panel redondeado con degradado latón y sombra."), fr);
+
+	Dictionary cbar;
+	cbar["id"] = "comp_circ_bar";
+	cbar["name"] = "Barra circular";
+	cbar["type"] = "bar";
+	cbar["anchor"] = "top_left";
+	cbar["offset_x"] = 48;
+	cbar["offset_y"] = 48;
+	cbar["width"] = 96;
+	cbar["height"] = 96;
+	Dictionary csh;
+	csh["shape_type"] = "circle";
+	csh["border_width"] = 3;
+	csh["border_color"] = "#f5bc54ff";
+	cbar["shape"] = csh;
+	push_comp("comp_circular_bar", "Barra circular", String::utf8("Medidor recortado en círculo con borde ámbar."), cbar);
+
+	Dictionary clist;
+	clist["id"] = "comp_item_list";
+	clist["name"] = "Lista de objetos";
+	clist["type"] = "container";
+	clist["anchor"] = "top_left";
+	clist["offset_x"] = 40;
+	clist["offset_y"] = 40;
+	clist["width"] = 260;
+	clist["height"] = 300;
+	Dictionary clay;
+	clay["mode"] = "vertical_list";
+	clay["spacing_y"] = 8;
+	clist["layout"] = normalize_menu_layout(clay);
+	push_comp("comp_item_list", "Lista de objetos", String::utf8("Contenedor vertical para organizar botones en lista."), clist);
+
+	Dictionary slot;
+	slot = _cg_make_tpl_btn("comp_slot", "", "items", 80, 80, 68, 68, "top_left", "rounded", 12);
+	slot["show_background"] = true;
+	push_comp("comp_icon_slot", "Ranura con icono", String::utf8("Casilla cuadrada redondeada lista para asignar icono."), slot);
+
+	return out;
+}
+
+Dictionary ClockGearsDataManager::get_builtin_template_by_id(const String &p_template_id) {
+	String tid = p_template_id.strip_edges().to_lower();
+	Array all = get_builtin_menu_templates();
+	for (int i = 0; i < all.size(); i++) {
+		Dictionary d = all[i];
+		if (String(d.get("id", "")) == tid) {
+			return d;
+		}
+	}
+	Array comps = get_builtin_component_templates();
+	for (int i = 0; i < comps.size(); i++) {
+		Dictionary d = comps[i];
+		if (String(d.get("id", "")) == tid) {
+			return d;
+		}
+	}
+	return Dictionary();
+}
+
+Array ClockGearsDataManager::get_user_menu_templates() const {
+	Array out;
+	if (!ui_designs_config.has("user_templates") || ui_designs_config["user_templates"].get_type() != Variant::DICTIONARY) {
+		return out;
+	}
+	Dictionary ut = ui_designs_config["user_templates"];
+	Array keys = ut.keys();
+	keys.sort();
+	for (int i = 0; i < keys.size(); i++) {
+		if (ut[keys[i]].get_type() == Variant::DICTIONARY) {
+			out.push_back(Dictionary(ut[keys[i]]).duplicate(true));
+		}
+	}
+	return out;
+}
+
+String ClockGearsDataManager::save_screen_as_user_template(const String &p_screen_id, const String &p_name) {
+	String nm = p_name.strip_edges();
+	if (nm.is_empty()) {
+		nm = String::utf8("Mi plantilla");
+	}
+	String base = _cg_slugify_menu_id(nm);
+	if (base.is_empty()) base = "tpl";
+	if (!ui_designs_config.has("user_templates") || ui_designs_config["user_templates"].get_type() != Variant::DICTIONARY) {
+		ui_designs_config["user_templates"] = Dictionary();
+	}
+	Dictionary ut = Dictionary(ui_designs_config["user_templates"]).duplicate(true);
+	String tid = "user_" + base;
+	int sfx = 2;
+	while (ut.has(tid)) {
+		tid = "user_" + base + "_" + itos(sfx++);
+	}
+	Dictionary src = get_ui_screen_design(p_screen_id);
+	Dictionary tpl;
+	tpl["id"] = tid;
+	tpl["name"] = nm;
+	tpl["category"] = "user";
+	tpl["description"] = String::utf8("Plantilla guardada desde ") + String(src.get("name", p_screen_id));
+	tpl["is_component"] = false;
+	tpl["is_builtin"] = false;
+	tpl["design"] = src;
+	ut[tid] = tpl;
+	ui_designs_config["user_templates"] = ut;
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	return tid;
+}
+
+String ClockGearsDataManager::save_element_as_component_template(const String &p_screen_id, const String &p_elem_id, const String &p_name) {
+	Dictionary el = get_ui_element(p_screen_id, p_elem_id);
+	if (el.is_empty()) {
+		return String();
+	}
+	String nm = p_name.strip_edges();
+	if (nm.is_empty()) {
+		nm = String(el.get("name", "Componente"));
+	}
+	String base = _cg_slugify_menu_id(nm);
+	if (base.is_empty()) base = "comp";
+	if (!ui_designs_config.has("user_templates") || ui_designs_config["user_templates"].get_type() != Variant::DICTIONARY) {
+		ui_designs_config["user_templates"] = Dictionary();
+	}
+	Dictionary ut = Dictionary(ui_designs_config["user_templates"]).duplicate(true);
+	String tid = "user_comp_" + base;
+	int sfx = 2;
+	while (ut.has(tid)) {
+		tid = "user_comp_" + base + "_" + itos(sfx++);
+	}
+	Dictionary tpl;
+	tpl["id"] = tid;
+	tpl["name"] = nm;
+	tpl["category"] = "component";
+	tpl["description"] = String::utf8("Componente guardado por el creador");
+	tpl["is_component"] = true;
+	tpl["is_builtin"] = false;
+	tpl["element"] = el;
+	ut[tid] = tpl;
+	ui_designs_config["user_templates"] = ut;
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	return tid;
+}
+
+bool ClockGearsDataManager::delete_user_template(const String &p_template_id) {
+	String tid = p_template_id.strip_edges().to_lower();
+	if (!ui_designs_config.has("user_templates") || ui_designs_config["user_templates"].get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	Dictionary ut = Dictionary(ui_designs_config["user_templates"]).duplicate(true);
+	if (!ut.has(tid)) {
+		return false;
+	}
+	ut.erase(tid);
+	ui_designs_config["user_templates"] = ut;
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	return true;
+}
+
+bool ClockGearsDataManager::apply_menu_template(const String &p_screen_id, const String &p_template_id, bool p_preserve_buttons, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String tid = p_template_id.strip_edges().to_lower();
+	Dictionary tpl = get_builtin_template_by_id(tid);
+	if (tpl.is_empty() && ui_designs_config.has("user_templates") && ui_designs_config["user_templates"].get_type() == Variant::DICTIONARY) {
+		Dictionary ut = ui_designs_config["user_templates"];
+		if (ut.has(tid) && ut[tid].get_type() == Variant::DICTIONARY) {
+			tpl = Dictionary(ut[tid]).duplicate(true);
+		}
+	}
+	if (tpl.is_empty() || bool(tpl.get("is_component", false))) {
+		return false;
+	}
+	Dictionary tpl_design = Dictionary(tpl.get("design", Dictionary())).duplicate(true);
+	Dictionary cur = get_ui_screen_design(sid);
+
+	// Recolectar botones previos si se pidió conservar botones y acciones
+	Vector<Dictionary> prev_buttons;
+	if (p_preserve_buttons) {
+		Array cur_elems = cur.get("elements", Array());
+		for (int i = 0; i < cur_elems.size(); i++) {
+			if (cur_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ce = cur_elems[i];
+			if (String(ce.get("type", "")) == "button") {
+				prev_buttons.push_back(ce);
+			}
+		}
+	}
+
+	// Preservar metadatos propios del menú (id, nombre, entradas, contexto, pausa, sonidos)
+	Dictionary next = tpl_design.duplicate(true);
+	next["id"] = sid;
+	next["screen_id"] = sid;
+	next["name"] = cur.get("name", sid);
+	next["is_system"] = cur.get("is_system", _cg_is_system_menu_id(sid));
+	next["order"] = cur.get("order", 0);
+	if (!cur.get("window_type", "").operator String().is_empty()) {
+		next["window_type"] = cur["window_type"];
+	}
+	next["custom_enabled"] = true;
+	if (cur.has("triggers")) next["triggers"] = cur["triggers"];
+	if (cur.has("trigger_context")) next["trigger_context"] = cur["trigger_context"];
+	if (cur.has("pause_on_open")) next["pause_on_open"] = cur["pause_on_open"];
+	if (cur.has("respect_menu_access")) next["respect_menu_access"] = cur["respect_menu_access"];
+	if (cur.has("sounds")) next["sounds"] = cur["sounds"];
+
+	if (p_preserve_buttons && !prev_buttons.is_empty()) {
+		Array next_elems = next.get("elements", Array());
+		int mapped = 0;
+		for (int i = 0; i < next_elems.size() && mapped < prev_buttons.size(); i++) {
+			if (next_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ne = next_elems[i];
+			if (String(ne.get("type", "")) == "button") {
+				const Dictionary &pb = prev_buttons[mapped++];
+				if (pb.has("text")) ne["text"] = pb["text"];
+				if (pb.has("name")) ne["name"] = pb["name"];
+				if (pb.has("action")) ne["action"] = pb["action"];
+				if (pb.has("actions")) ne["actions"] = Array(pb["actions"]).duplicate(true);
+				next_elems[i] = ne;
+			}
+		}
+		next["elements"] = next_elems;
+
+		Dictionary lay = next.get("layout", Dictionary());
+		if (String(lay.get("mode", "")) == "radial" && lay.has("radial_slots") && lay["radial_slots"].get_type() == Variant::ARRAY) {
+			Array rslots = lay["radial_slots"];
+			int rm = 0;
+			for (int i = 0; i < rslots.size() && rm < prev_buttons.size(); i++) {
+				if (rslots[i].get_type() != Variant::DICTIONARY) continue;
+				Dictionary rs = rslots[i];
+				const Dictionary &pb = prev_buttons[rm++];
+				String ptxt = String(pb.get("text", pb.get("name", ""))).strip_edges();
+				if (!ptxt.is_empty()) rs["title"] = ptxt;
+				if (pb.has("action")) rs["action"] = pb["action"];
+				if (pb.has("actions")) rs["actions"] = Array(pb["actions"]).duplicate(true);
+				rslots[i] = rs;
+			}
+			lay["radial_slots"] = rslots;
+			next["layout"] = lay;
+		}
+	}
+
+	set_ui_screen_design(sid, next, p_record_undo);
+	return true;
+}
+
+String ClockGearsDataManager::instantiate_component_template(const String &p_screen_id, const String &p_template_id, const Vector2i &p_pos) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String tid = p_template_id.strip_edges().to_lower();
+	Dictionary tpl = get_builtin_template_by_id(tid);
+	if (tpl.is_empty() && ui_designs_config.has("user_templates") && ui_designs_config["user_templates"].get_type() == Variant::DICTIONARY) {
+		Dictionary ut = ui_designs_config["user_templates"];
+		if (ut.has(tid) && ut[tid].get_type() == Variant::DICTIONARY) {
+			tpl = Dictionary(ut[tid]).duplicate(true);
+		}
+	}
+	if (tpl.is_empty() || !bool(tpl.get("is_component", false))) {
+		return String();
+	}
+	Dictionary el = Dictionary(tpl.get("element", Dictionary())).duplicate(true);
+	el.erase("id");
+	if (p_pos.x >= 0 && p_pos.y >= 0) {
+		el["anchor"] = "top_left";
+		int w = int(el.get("width", 120));
+		int h = int(el.get("height", 36));
+		el["offset_x"] = CLAMP(p_pos.x - w / 2, 0, 960 - w);
+		el["offset_y"] = CLAMP(p_pos.y - h / 2, 0, 540 - h);
+	}
+	return add_ui_element(sid, el, true);
+}
+
+String ClockGearsDataManager::create_menu_from_wizard(const Dictionary &p_opts) {
+	String mname = String(p_opts.get("name", String::utf8("Nuevo Menú"))).strip_edges();
+	if (mname.is_empty()) {
+		mname = String::utf8("Nuevo Menú");
+	}
+	String tpl_id = String(p_opts.get("template_id", "classic_jrpg")).strip_edges().to_lower();
+	String ctx = _cg_norm_trigger_context(p_opts.get("trigger_context", "map"));
+	bool pause_open = p_opts.has("pause_on_open") ? bool(p_opts["pause_on_open"]) : true;
+	Array triggers = p_opts.has("triggers") && p_opts["triggers"].get_type() == Variant::ARRAY ? Array(p_opts["triggers"]).duplicate(true) : Array();
+
+	String mid = create_custom_menu(mname);
+	if (mid.is_empty()) {
+		return String();
+	}
+	if (!tpl_id.is_empty()) {
+		apply_menu_template(mid, tpl_id, false, false);
+	}
+
+	Dictionary d = get_ui_screen_design(mid);
+	d["name"] = mname;
+	d["trigger_context"] = ctx;
+	d["pause_on_open"] = pause_open;
+	if (!triggers.is_empty()) {
+		Array norm_tr;
+		for (int i = 0; i < triggers.size(); i++) {
+			if (triggers[i].get_type() == Variant::DICTIONARY) {
+				norm_tr.push_back(normalize_menu_trigger(Dictionary(triggers[i])));
+			}
+		}
+		d["triggers"] = norm_tr;
+	}
+
+	// Personalizar botones elegidos en paso 2 del asistente
+	if (p_opts.has("selected_buttons") && p_opts["selected_buttons"].get_type() == Variant::ARRAY) {
+		Array sel_btns = p_opts["selected_buttons"];
+		if (!sel_btns.is_empty()) {
+			Dictionary lay = d.get("layout", Dictionary());
+			if (String(lay.get("mode", "")) == "radial") {
+				Array rslots;
+				for (int i = 0; i < sel_btns.size(); i++) {
+					Dictionary sb = sel_btns[i];
+					Dictionary rs;
+					rs["id"] = vformat("wiz_slot_%d", i + 1);
+					rs["title"] = String(sb.get("label", sb.get("text", vformat(String::utf8("Opción %d"), i + 1))));
+					rs["description"] = String(sb.get("description", ""));
+					String act = String(sb.get("action", "close")).strip_edges().to_lower();
+					rs["action"] = act;
+					Dictionary st;
+					st["type"] = act;
+					Array sa;
+					sa.push_back(st);
+					rs["actions"] = sa;
+					rslots.push_back(rs);
+				}
+				lay["radial_slots"] = rslots;
+				d["layout"] = lay;
+			} else {
+				Array old_els = d.get("elements", Array());
+				Array kept_els;
+				Dictionary first_btn_tpl;
+				for (int i = 0; i < old_els.size(); i++) {
+					Dictionary oe = old_els[i];
+					if (String(oe.get("type", "")) == "button") {
+						if (first_btn_tpl.is_empty()) first_btn_tpl = oe;
+					} else {
+						kept_els.push_back(oe);
+					}
+				}
+				int bx = first_btn_tpl.is_empty() ? 48 : int(first_btn_tpl.get("offset_x", 48));
+				int by = first_btn_tpl.is_empty() ? 56 : int(first_btn_tpl.get("offset_y", 56));
+				int bw = first_btn_tpl.is_empty() ? 200 : int(first_btn_tpl.get("width", 200));
+				int bh = first_btn_tpl.is_empty() ? 42 : int(first_btn_tpl.get("height", 42));
+				String banc = first_btn_tpl.is_empty() ? String("top_left") : String(first_btn_tpl.get("anchor", "top_left"));
+				String bshape = first_btn_tpl.has("shape") ? String(Dictionary(first_btn_tpl["shape"]).get("shape_type", "rounded")) : String("rounded");
+				for (int i = 0; i < sel_btns.size(); i++) {
+					Dictionary sb = sel_btns[i];
+					String lbl = String(sb.get("label", sb.get("text", vformat(String::utf8("Botón %d"), i + 1))));
+					String act = String(sb.get("action", "close")).strip_edges().to_lower();
+					Dictionary nb = _cg_make_tpl_btn(vformat("wiz_btn_%d", i + 1), lbl, act, bx, by + i * (bh + 10), bw, bh, banc, bshape, bshape == "pill" ? bh / 2 : 8);
+					nb["focus_order"] = i;
+					nb["layer_order"] = 2;
+					kept_els.push_back(nb);
+				}
+				d["elements"] = kept_els;
+			}
+		}
+	}
+
+	set_ui_screen_design(mid, d, false);
+	return mid;
+}
+
+static void _cg_collect_asset_paths_from_variant(const Variant &p_var, HashSet<String> &r_paths) {
+	if (p_var.get_type() == Variant::DICTIONARY) {
+		Dictionary d = p_var;
+		Array keys = d.keys();
+		for (int i = 0; i < keys.size(); i++) {
+			Variant v = d[keys[i]];
+			if (v.get_type() == Variant::STRING) {
+				String s = String(v).strip_edges();
+				if (s.begins_with("res://") && (s.ends_with(".png") || s.ends_with(".webp") || s.ends_with(".jpg") || s.ends_with(".jpeg") || s.ends_with(".ttf") || s.ends_with(".otf") || s.ends_with(".wav") || s.ends_with(".ogg"))) {
+					r_paths.insert(s);
+				}
+			} else {
+				_cg_collect_asset_paths_from_variant(v, r_paths);
+			}
+		}
+	} else if (p_var.get_type() == Variant::ARRAY) {
+		Array a = p_var;
+		for (int i = 0; i < a.size(); i++) {
+			_cg_collect_asset_paths_from_variant(a[i], r_paths);
+		}
+	}
+}
+
+static Variant _cg_remap_asset_paths_in_variant(const Variant &p_var, const Dictionary &p_remap) {
+	if (p_var.get_type() == Variant::DICTIONARY) {
+		Dictionary d = p_var;
+		Dictionary out;
+		Array keys = d.keys();
+		for (int i = 0; i < keys.size(); i++) {
+			out[keys[i]] = _cg_remap_asset_paths_in_variant(d[keys[i]], p_remap);
+		}
+		return out;
+	}
+	if (p_var.get_type() == Variant::ARRAY) {
+		Array a = p_var;
+		Array out;
+		for (int i = 0; i < a.size(); i++) {
+			out.push_back(_cg_remap_asset_paths_in_variant(a[i], p_remap));
+		}
+		return out;
+	}
+	if (p_var.get_type() == Variant::STRING) {
+		String s = String(p_var).strip_edges();
+		if (p_remap.has(s)) {
+			return p_remap[s];
+		}
+	}
+	return p_var;
+}
+
+bool ClockGearsDataManager::export_template_package(const String &p_id, const String &p_dst_path, bool p_is_screen) const {
+	String dst = p_dst_path.strip_edges();
+	if (dst.is_empty()) {
+		return false;
+	}
+	Dictionary payload;
+	payload["package_format"] = "clockgears_ui_package_v1";
+	if (p_is_screen) {
+		Dictionary scr = get_ui_screen_design(p_id);
+		payload["kind"] = "screen";
+		payload["name"] = String(scr.get("name", p_id));
+		payload["design"] = scr;
+	} else {
+		String tid = p_id.strip_edges().to_lower();
+		Dictionary tpl = get_builtin_template_by_id(tid);
+		if (tpl.is_empty() && ui_designs_config.has("user_templates") && ui_designs_config["user_templates"].get_type() == Variant::DICTIONARY) {
+			Dictionary ut = ui_designs_config["user_templates"];
+			if (ut.has(tid) && ut[tid].get_type() == Variant::DICTIONARY) {
+				tpl = Dictionary(ut[tid]).duplicate(true);
+			}
+		}
+		if (tpl.is_empty()) {
+			return false;
+		}
+		payload["kind"] = "template";
+		payload["name"] = String(tpl.get("name", tid));
+		payload["template"] = tpl;
+	}
+
+	HashSet<String> asset_paths;
+	_cg_collect_asset_paths_from_variant(payload, asset_paths);
+	Dictionary embedded;
+	for (const String &ap : asset_paths) {
+		if (!FileAccess::exists(ap)) {
+			continue;
+		}
+		PackedByteArray bytes = FileAccess::get_file_as_bytes(ap);
+		if (!bytes.is_empty()) {
+			Dictionary rec;
+			rec["filename"] = ap.get_file();
+			rec["base64"] = CryptoCore::b64_encode_str(bytes.ptr(), bytes.size());
+			embedded[ap] = rec;
+		}
+	}
+	payload["embedded_assets"] = embedded;
+	return _write_json_atomic(dst, payload);
+}
+
+Dictionary ClockGearsDataManager::import_template_package(const String &p_src_path, bool p_import_as_custom_menu, const String &p_assets_subdir) {
+	Dictionary res;
+	res["ok"] = false;
+	Variant parsed;
+	if (!_read_json_with_backup(p_src_path, parsed, false) || parsed.get_type() != Variant::DICTIONARY) {
+		return res;
+	}
+	Dictionary pkg = parsed;
+	Dictionary remap;
+	String target_dir = p_assets_subdir.strip_edges();
+	if (target_dir.is_empty()) {
+		target_dir = "res://img/ui/imported";
+	}
+	if (pkg.has("embedded_assets") && pkg["embedded_assets"].get_type() == Variant::DICTIONARY) {
+		Dictionary emb = pkg["embedded_assets"];
+		if (!emb.is_empty()) {
+			String abs_dir = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->globalize_path(target_dir) : target_dir;
+			DirAccess::make_dir_recursive_absolute(abs_dir);
+			Array ekeys = emb.keys();
+			int extracted = 0;
+			for (int i = 0; i < ekeys.size(); i++) {
+				String orig_path = String(ekeys[i]);
+				if (emb[ekeys[i]].get_type() != Variant::DICTIONARY) continue;
+				Dictionary rec = emb[ekeys[i]];
+				String fname = String(rec.get("filename", orig_path.get_file())).get_file();
+				String b64 = String(rec.get("base64", ""));
+				if (fname.is_empty() || b64.is_empty()) continue;
+				CharString cstr = b64.utf8();
+				PackedByteArray raw;
+				raw.resize(cstr.length());
+				size_t dec_len = 0;
+				if (CryptoCore::b64_decode(raw.ptrw(), raw.size(), &dec_len, (const uint8_t *)cstr.get_data(), cstr.length()) != OK || dec_len == 0) {
+					continue;
+				}
+				raw.resize(dec_len);
+				String new_res_path = target_dir.path_join(fname);
+				Ref<FileAccess> fw = FileAccess::open(new_res_path, FileAccess::WRITE);
+				if (fw.is_valid()) {
+					fw->store_buffer(raw);
+					fw->flush();
+					remap[orig_path] = new_res_path;
+					extracted++;
+				}
+			}
+			res["extracted_assets"] = extracted;
+		}
+	}
+
+	String kind = String(pkg.get("kind", "template"));
+	String pkg_name = String(pkg.get("name", "Importado")).strip_edges();
+	if (pkg_name.is_empty()) pkg_name = "Importado";
+
+	if (kind == "screen" || pkg.has("design")) {
+		Dictionary d = _cg_remap_asset_paths_in_variant(pkg.get("design", Dictionary()), remap);
+		if (p_import_as_custom_menu) {
+			String mid = create_custom_menu(pkg_name, d);
+			res["ok"] = !mid.is_empty();
+			res["menu_id"] = mid;
+			res["kind"] = "menu";
+		} else {
+			if (!ui_designs_config.has("user_templates") || ui_designs_config["user_templates"].get_type() != Variant::DICTIONARY) {
+				ui_designs_config["user_templates"] = Dictionary();
+			}
+			Dictionary ut = Dictionary(ui_designs_config["user_templates"]).duplicate(true);
+			String base = _cg_slugify_menu_id(pkg_name);
+			if (base.is_empty()) base = "imported";
+			String tid = "user_" + base;
+			int sfx = 2;
+			while (ut.has(tid)) tid = "user_" + base + "_" + itos(sfx++);
+			Dictionary tpl;
+			tpl["id"] = tid;
+			tpl["name"] = pkg_name;
+			tpl["category"] = "user";
+			tpl["description"] = String::utf8("Importado desde paquete");
+			tpl["is_component"] = false;
+			tpl["is_builtin"] = false;
+			tpl["design"] = d;
+			ut[tid] = tpl;
+			ui_designs_config["user_templates"] = ut;
+			dirty = true;
+			emit_signal("data_changed", "ui_designs", 0);
+			res["ok"] = true;
+			res["template_id"] = tid;
+			res["kind"] = "template";
+		}
+		return res;
+	}
+
+	Dictionary raw_tpl = _cg_remap_asset_paths_in_variant(pkg.get("template", Dictionary()), remap);
+	if (!raw_tpl.is_empty()) {
+		if (!ui_designs_config.has("user_templates") || ui_designs_config["user_templates"].get_type() != Variant::DICTIONARY) {
+			ui_designs_config["user_templates"] = Dictionary();
+		}
+		Dictionary ut = Dictionary(ui_designs_config["user_templates"]).duplicate(true);
+		String base = _cg_slugify_menu_id(String(raw_tpl.get("name", pkg_name)));
+		if (base.is_empty()) base = "imported";
+		String tid = "user_" + base;
+		int sfx = 2;
+		while (ut.has(tid)) tid = "user_" + base + "_" + itos(sfx++);
+		raw_tpl["id"] = tid;
+		raw_tpl["is_builtin"] = false;
+		raw_tpl["category"] = bool(raw_tpl.get("is_component", false)) ? String("component") : String("user");
+		ut[tid] = raw_tpl;
+		ui_designs_config["user_templates"] = ut;
+		dirty = true;
+		emit_signal("data_changed", "ui_designs", 0);
+		res["ok"] = true;
+		res["template_id"] = tid;
+		res["kind"] = "template";
+		if (p_import_as_custom_menu && !bool(raw_tpl.get("is_component", false))) {
+			String mid = create_custom_menu(pkg_name);
+			apply_menu_template(mid, tid, false, false);
+			res["menu_id"] = mid;
+			res["kind"] = "menu";
+		}
+	}
+	return res;
+}
+
+String ClockGearsDataManager::duplicate_ui_element(const String &p_screen_id, const String &p_elem_id, const Vector2i &p_offset_delta) {
+	Dictionary src = get_ui_element(p_screen_id, p_elem_id);
+	if (src.is_empty()) {
+		return String();
+	}
+	Dictionary copy = src.duplicate(true);
+	copy.erase("id");
+	copy["name"] = String(src.get("name", "Elemento")) + " (Copia)";
+	copy["offset_x"] = CLAMP(int(src.get("offset_x", 0)) + p_offset_delta.x, -960, 960);
+	copy["offset_y"] = CLAMP(int(src.get("offset_y", 0)) + p_offset_delta.y, -540, 540);
+	return add_ui_element(p_screen_id, copy, true);
+}
+
+void ClockGearsDataManager::copy_ui_elements_to_clipboard(const String &p_screen_id, const PackedStringArray &p_elem_ids) {
+	ui_elements_clipboard.clear();
+	for (int i = 0; i < p_elem_ids.size(); i++) {
+		Dictionary el = get_ui_element(p_screen_id, p_elem_ids[i]);
+		if (!el.is_empty()) {
+			ui_elements_clipboard.push_back(el.duplicate(true));
+		}
+	}
+}
+
+PackedStringArray ClockGearsDataManager::paste_ui_elements_from_clipboard(const String &p_screen_id) {
+	PackedStringArray added;
+	if (ui_elements_clipboard.is_empty()) {
+		return added;
+	}
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	push_ui_design_undo_state(sid);
+	for (int i = 0; i < ui_elements_clipboard.size(); i++) {
+		if (ui_elements_clipboard[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary el = Dictionary(ui_elements_clipboard[i]).duplicate(true);
+		el.erase("id");
+		el["offset_x"] = CLAMP(int(el.get("offset_x", 0)) + 16, -960, 960);
+		el["offset_y"] = CLAMP(int(el.get("offset_y", 0)) + 16, -540, 540);
+		String nid = add_ui_element(sid, el, false);
+		if (!nid.is_empty()) {
+			added.push_back(nid);
+		}
+	}
+	return added;
+}
+
+PackedStringArray ClockGearsDataManager::get_recent_ui_colors() const {
+	PackedStringArray out;
+	if (ui_designs_config.has("recent_colors") && ui_designs_config["recent_colors"].get_type() == Variant::ARRAY) {
+		Array rc = ui_designs_config["recent_colors"];
+		for (int i = 0; i < rc.size(); i++) {
+			out.push_back(String(rc[i]));
+		}
+	}
+	return out;
+}
+
+void ClockGearsDataManager::record_recent_ui_color(const String &p_hex_color) {
+	String c = _cg_norm_color_rgba(p_hex_color, "#e0a040ff");
+	Array rc;
+	rc.push_back(c);
+	if (ui_designs_config.has("recent_colors") && ui_designs_config["recent_colors"].get_type() == Variant::ARRAY) {
+		Array prev = ui_designs_config["recent_colors"];
+		for (int i = 0; i < prev.size() && rc.size() < 12; i++) {
+			String pc = String(prev[i]);
+			if (pc != c) rc.push_back(pc);
+		}
+	}
+	ui_designs_config["recent_colors"] = rc;
+	dirty = true;
 }
 
 String ClockGearsDataManager::resolve_ui_data_binding(const String &p_binding, const Dictionary &p_element) const {
@@ -8464,6 +9760,26 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("reset_ui_screen_design_to_default", "screen_id", "record_undo"), &ClockGearsDataManager::reset_ui_screen_design_to_default, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_ui_designs_config"), &ClockGearsDataManager::get_ui_designs_config);
 	ClassDB::bind_method(D_METHOD("set_ui_designs_config", "cfg"), &ClockGearsDataManager::set_ui_designs_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_background", "bg"), &ClockGearsDataManager::normalize_ui_background);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_transition", "tr"), &ClockGearsDataManager::normalize_ui_transition);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_menu_templates"), &ClockGearsDataManager::get_builtin_menu_templates);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_component_templates"), &ClockGearsDataManager::get_builtin_component_templates);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_template_by_id", "template_id"), &ClockGearsDataManager::get_builtin_template_by_id);
+	ClassDB::bind_method(D_METHOD("get_user_menu_templates"), &ClockGearsDataManager::get_user_menu_templates);
+	ClassDB::bind_method(D_METHOD("save_screen_as_user_template", "screen_id", "name"), &ClockGearsDataManager::save_screen_as_user_template);
+	ClassDB::bind_method(D_METHOD("save_element_as_component_template", "screen_id", "elem_id", "name"), &ClockGearsDataManager::save_element_as_component_template);
+	ClassDB::bind_method(D_METHOD("delete_user_template", "template_id"), &ClockGearsDataManager::delete_user_template);
+	ClassDB::bind_method(D_METHOD("apply_menu_template", "screen_id", "template_id", "preserve_buttons", "record_undo"), &ClockGearsDataManager::apply_menu_template, DEFVAL(true), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("instantiate_component_template", "screen_id", "template_id", "pos"), &ClockGearsDataManager::instantiate_component_template, DEFVAL(Vector2i(-1, -1)));
+	ClassDB::bind_method(D_METHOD("create_menu_from_wizard", "opts"), &ClockGearsDataManager::create_menu_from_wizard);
+	ClassDB::bind_method(D_METHOD("export_template_package", "id", "dst_path", "is_screen"), &ClockGearsDataManager::export_template_package, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("import_template_package", "src_path", "import_as_custom_menu", "assets_subdir"), &ClockGearsDataManager::import_template_package, DEFVAL(false), DEFVAL("res://img/ui/imported"));
+	ClassDB::bind_method(D_METHOD("duplicate_ui_element", "screen_id", "elem_id", "offset_delta"), &ClockGearsDataManager::duplicate_ui_element, DEFVAL(Vector2i(16, 16)));
+	ClassDB::bind_method(D_METHOD("copy_ui_elements_to_clipboard", "screen_id", "elem_ids"), &ClockGearsDataManager::copy_ui_elements_to_clipboard);
+	ClassDB::bind_method(D_METHOD("paste_ui_elements_from_clipboard", "screen_id"), &ClockGearsDataManager::paste_ui_elements_from_clipboard);
+	ClassDB::bind_method(D_METHOD("get_ui_clipboard_count"), &ClockGearsDataManager::get_ui_clipboard_count);
+	ClassDB::bind_method(D_METHOD("get_recent_ui_colors"), &ClockGearsDataManager::get_recent_ui_colors);
+	ClassDB::bind_method(D_METHOD("record_recent_ui_color", "hex_color"), &ClockGearsDataManager::record_recent_ui_color);
 	ClassDB::bind_method(D_METHOD("resolve_ui_data_binding", "binding", "element"), &ClockGearsDataManager::resolve_ui_data_binding, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("push_ui_design_undo_state", "screen_id", "snapshot"), &ClockGearsDataManager::push_ui_design_undo_state, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("can_undo_ui_design", "screen_id"), &ClockGearsDataManager::can_undo_ui_design);

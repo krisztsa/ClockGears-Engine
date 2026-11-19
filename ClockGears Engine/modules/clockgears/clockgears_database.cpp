@@ -15639,6 +15639,8 @@ void ClockGearsDatabaseDialog::_populate_common_preview_res_option(OptionButton 
 	p_opt->set_item_metadata(1, Vector2i(1366, 768));
 	p_opt->add_item("1920 x 1080 (Full HD)", 2);
 	p_opt->set_item_metadata(2, Vector2i(1920, 1080));
+	p_opt->add_item("2560 x 1440 (QHD)", 3);
+	p_opt->set_item_metadata(3, Vector2i(2560, 1440));
 	p_opt->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_common_preview_res_option_selected).bind(p_opt));
 }
 

@@ -128,6 +128,7 @@ private:
 	mutable Dictionary cached_ws_norm;
 	mutable HashMap<String, Dictionary> cached_ws_by_id;
 	mutable HashMap<String, Ref<TileSet>> built_tileset_cache;
+	Array ui_elements_clipboard;
 
 	void _invalidate_window_styles_cache();
 	void _ensure_window_styles_cache() const;
@@ -304,6 +305,28 @@ public:
 	void reset_ui_screen_design_to_default(const String &p_screen_id, bool p_record_undo = true);
 	Dictionary get_ui_designs_config() const;
 	void set_ui_designs_config(const Dictionary &p_cfg);
+
+	// Plantillas, asistente, paquetes portables y portapapeles de interfaz (Etapa 4)
+	static Dictionary normalize_ui_background(const Dictionary &p_bg);
+	static Dictionary normalize_ui_transition(const Dictionary &p_tr);
+	static Array get_builtin_menu_templates();
+	static Array get_builtin_component_templates();
+	static Dictionary get_builtin_template_by_id(const String &p_template_id);
+	Array get_user_menu_templates() const;
+	String save_screen_as_user_template(const String &p_screen_id, const String &p_name);
+	String save_element_as_component_template(const String &p_screen_id, const String &p_elem_id, const String &p_name);
+	bool delete_user_template(const String &p_template_id);
+	bool apply_menu_template(const String &p_screen_id, const String &p_template_id, bool p_preserve_buttons = true, bool p_record_undo = true);
+	String instantiate_component_template(const String &p_screen_id, const String &p_template_id, const Vector2i &p_pos = Vector2i(-1, -1));
+	String create_menu_from_wizard(const Dictionary &p_opts);
+	bool export_template_package(const String &p_id, const String &p_dst_path, bool p_is_screen = false) const;
+	Dictionary import_template_package(const String &p_src_path, bool p_import_as_custom_menu = false, const String &p_assets_subdir = "res://img/ui/imported");
+	String duplicate_ui_element(const String &p_screen_id, const String &p_elem_id, const Vector2i &p_offset_delta = Vector2i(16, 16));
+	void copy_ui_elements_to_clipboard(const String &p_screen_id, const PackedStringArray &p_elem_ids);
+	PackedStringArray paste_ui_elements_from_clipboard(const String &p_screen_id);
+	int get_ui_clipboard_count() const { return ui_elements_clipboard.size(); }
+	PackedStringArray get_recent_ui_colors() const;
+	void record_recent_ui_color(const String &p_hex_color);
 
 	String resolve_ui_data_binding(const String &p_binding, const Dictionary &p_element = Dictionary()) const;
 

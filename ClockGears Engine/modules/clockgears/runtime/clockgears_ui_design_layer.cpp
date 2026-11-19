@@ -3,7 +3,9 @@
 #include "../core/clockgears_data_manager.h"
 #include "clockgears_title_screen.h"
 #include "clockgears_window_style.h"
+#include "core/io/file_access.h"
 #include "core/io/image.h"
+#include "core/io/resource_loader.h"
 #include "core/math/geometry_2d.h"
 #include "core/math/math_funcs.h"
 #include "core/object/callable_mp.h"
@@ -13,6 +15,79 @@
 #include "scene/resources/image_texture.h"
 
 namespace {
+static HashMap<String, Ref<Font>> s_cg_ui_font_cache;
+static Color _cg_ui_parse_color(const Variant &p_val, const Color &p_default);
+
+class ClockGearsUiBackdropDraw : public Control {
+	GDCLASS(ClockGearsUiBackdropDraw, Control);
+
+	Dictionary bg_cfg;
+	Ref<Texture2D> bg_tex;
+	Vector2 scroll_offset;
+
+protected:
+	void _notification(int p_what) {
+		if (p_what != NOTIFICATION_DRAW) {
+			return;
+		}
+		Size2 sz = get_size();
+		if (sz.x <= 0.0f || sz.y <= 0.0f) {
+			return;
+		}
+		String bt = String(bg_cfg.get("type", "none")).strip_edges().to_lower();
+		if (bt == "color") {
+			draw_rect(Rect2(Vector2(), sz), _cg_ui_parse_color(bg_cfg.get("color", "#0d111ae6"), Color(0.05f, 0.07f, 0.1f, 0.9f)));
+		} else if (bt == "gradient") {
+			Color c1 = _cg_ui_parse_color(bg_cfg.get("gradient_top", "#1b2234ff"), Color(0.11f, 0.13f, 0.2f, 1.0f));
+			Color c2 = _cg_ui_parse_color(bg_cfg.get("gradient_bottom", "#0b0e16ff"), Color(0.04f, 0.05f, 0.09f, 1.0f));
+			bool horiz = (String(bg_cfg.get("gradient_angle", "vertical")).strip_edges().to_lower() == "horizontal");
+			PackedVector2Array pts = { Vector2(0, 0), Vector2(sz.x, 0), Vector2(sz.x, sz.y), Vector2(0, sz.y) };
+			PackedColorArray cols = horiz
+					? PackedColorArray({ c1, c2, c2, c1 })
+					: PackedColorArray({ c1, c1, c2, c2 });
+			draw_polygon(pts, cols);
+		} else if (bt == "image" && bg_tex.is_valid()) {
+			String sm = String(bg_cfg.get("scale_mode", "stretch")).strip_edges().to_lower();
+			Vector2 ts = bg_tex->get_size();
+			if (ts.x > 0.0f && ts.y > 0.0f) {
+				if (sm == "tile" || Math::abs(scroll_offset.x) > 0.01f || Math::abs(scroll_offset.y) > 0.01f ||
+						int(bg_cfg.get("scroll_speed_x", 0)) != 0 || int(bg_cfg.get("scroll_speed_y", 0)) != 0) {
+					float ox = Math::fposmod(scroll_offset.x, ts.x);
+					float oy = Math::fposmod(scroll_offset.y, ts.y);
+					for (float y = oy - ts.y; y < sz.y; y += ts.y) {
+						for (float x = ox - ts.x; x < sz.x; x += ts.x) {
+							draw_texture_rect(bg_tex, Rect2(Vector2(x, y), ts), false);
+						}
+					}
+				} else if (sm == "fit") {
+					float s = MIN(sz.x / ts.x, sz.y / ts.y);
+					Vector2 dsz = ts * s;
+					draw_texture_rect(bg_tex, Rect2((sz - dsz) * 0.5f, dsz), false);
+				} else if (sm == "fill") {
+					float s = MAX(sz.x / ts.x, sz.y / ts.y);
+					Vector2 dsz = ts * s;
+					draw_texture_rect(bg_tex, Rect2((sz - dsz) * 0.5f, dsz), false);
+				} else {
+					draw_texture_rect(bg_tex, Rect2(Vector2(), sz), false);
+				}
+			}
+		}
+	}
+
+public:
+	void configure(const Dictionary &p_bg, const Ref<Texture2D> &p_tex) {
+		bg_cfg = p_bg;
+		bg_tex = p_tex;
+		bool pa = bg_cfg.has("pixel_art") ? bool(bg_cfg["pixel_art"]) : true;
+		set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+		queue_redraw();
+	}
+	void set_scroll_offset(const Vector2 &p_off) {
+		scroll_offset = p_off;
+		queue_redraw();
+	}
+};
+
 static Color _cg_ui_parse_color(const Variant &p_val, const Color &p_default) {
 	if (p_val.get_type() == Variant::COLOR) {
 		return Color(p_val);
@@ -953,6 +1028,187 @@ void ClockGearsUiDesignLayer::clear_elements() {
 	}
 }
 
+Ref<Font> ClockGearsUiDesignLayer::_load_cached_font(const String &p_path) {
+	String p = p_path.strip_edges();
+	if (p.is_empty()) {
+		return Ref<Font>();
+	}
+	if (s_cg_ui_font_cache.has(p)) {
+		return s_cg_ui_font_cache[p];
+	}
+	Ref<Font> f;
+	if (ResourceLoader::exists(p)) {
+		f = ResourceLoader::load(p);
+	}
+	if (f.is_null() && FileAccess::exists(p)) {
+		Ref<FontFile> ff;
+		ff.instantiate();
+		if (ff->load_dynamic_font(p) == OK) {
+			f = ff;
+		}
+	}
+	if (f.is_valid()) {
+		s_cg_ui_font_cache[p] = f;
+	}
+	return f;
+}
+
+void ClockGearsUiDesignLayer::_ensure_background_nodes() {
+	if (!bg_veil_rect) {
+		bg_veil_rect = memnew(ColorRect);
+		bg_veil_rect->set_name("MenuBgVeil");
+		bg_veil_rect->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		bg_veil_rect->set_z_index(-200);
+		bg_veil_rect->hide();
+		add_child(bg_veil_rect);
+	}
+	if (!bg_backdrop_ctrl) {
+		ClockGearsUiBackdropDraw *bd = memnew(ClockGearsUiBackdropDraw);
+		bd->set_name("MenuBgBackdrop");
+		bd->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		bd->set_z_index(-190);
+		bd->hide();
+		add_child(bd);
+		bg_backdrop_ctrl = bd;
+	}
+}
+
+void ClockGearsUiDesignLayer::_apply_screen_background(const Dictionary &p_design, const Size2 &p_vp) {
+	_ensure_background_nodes();
+	Dictionary bg = (p_design.has("background") && p_design["background"].get_type() == Variant::DICTIONARY)
+			? Dictionary(p_design["background"])
+			: Dictionary();
+	bool veil = bool(bg.get("veil_enabled", false));
+	if (bg_veil_rect) {
+		bg_veil_rect->set_visible(veil);
+		if (veil) {
+			bg_veil_rect->set_position(Vector2());
+			bg_veil_rect->set_size(p_vp);
+			bg_veil_rect->set_color(_cg_ui_parse_color(bg.get("veil_color", "#05070ca6"), Color(0.02f, 0.03f, 0.05f, 0.65f)));
+		}
+	}
+	String bt = String(bg.get("type", "none")).strip_edges().to_lower();
+	if (bt == "image") {
+		String ip = String(bg.get("image_path", "")).strip_edges();
+		if (ip != cached_bg_path) {
+			cached_bg_path = ip;
+			cached_bg_texture = ip.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(ip);
+		}
+	} else {
+		cached_bg_texture.unref();
+		cached_bg_path = "";
+	}
+	if (ClockGearsUiBackdropDraw *bd = Object::cast_to<ClockGearsUiBackdropDraw>(bg_backdrop_ctrl)) {
+		bool show_bd = (bt == "color" || bt == "gradient" || (bt == "image" && cached_bg_texture.is_valid()));
+		bd->set_visible(show_bd);
+		bd->set_position(Vector2());
+		bd->set_size(p_vp);
+		bd->configure(bg, cached_bg_texture);
+		bd->set_scroll_offset(bg_scroll_offset);
+	}
+}
+
+float ClockGearsUiDesignLayer::_eval_transition_curve(float p_t) const {
+	float t = CLAMP(p_t, 0.0f, 1.0f);
+	if (transition_curve == "linear") {
+		return t;
+	}
+	if (transition_curve == "ease_in_out") {
+		return t * t * (3.0f - 2.0f * t);
+	}
+	if (transition_curve == "back_out") {
+		const float c1 = 1.70158f;
+		const float c3 = c1 + 1.0f;
+		float u = t - 1.0f;
+		return 1.0f + c3 * u * u * u + c1 * u * u;
+	}
+	// ease_out
+	float u = 1.0f - t;
+	return 1.0f - u * u * u;
+}
+
+void ClockGearsUiDesignLayer::_apply_transition_pose(float p_progress) {
+	float v = _eval_transition_curve(p_progress);
+	if (transition_is_out) {
+		v = 1.0f - v;
+	}
+	Size2 vp = _resolve_effective_viewport_size();
+	set_pivot_offset(vp * 0.5f);
+	set_rotation(0.0f);
+	set_scale(Vector2(1, 1));
+	set_position(Vector2());
+	set_modulate(Color(1, 1, 1, 1));
+
+	if (transition_type == "fade") {
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	} else if (transition_type == "slide_left") {
+		set_position(Vector2((v - 1.0f) * vp.x * 0.35f, 0.0f));
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	} else if (transition_type == "slide_right") {
+		set_position(Vector2((1.0f - v) * vp.x * 0.35f, 0.0f));
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	} else if (transition_type == "slide_top") {
+		set_position(Vector2(0.0f, (v - 1.0f) * vp.y * 0.35f));
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	} else if (transition_type == "slide_bottom") {
+		set_position(Vector2(0.0f, (1.0f - v) * vp.y * 0.35f));
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	} else if (transition_type == "scale") {
+		float sc = Math::lerp(0.78f, 1.0f, v);
+		set_scale(Vector2(sc, sc));
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	} else if (transition_type == "radial_spin") {
+		float sc = Math::lerp(0.65f, 1.0f, v);
+		set_scale(Vector2(sc, sc));
+		if (radial_canvas) {
+			radial_canvas->set_pivot_offset(radial_canvas->get_size() * 0.5f);
+			radial_canvas->set_rotation(Math::deg_to_rad((1.0f - v) * -55.0f));
+		}
+		set_modulate(Color(1, 1, 1, CLAMP(v, 0.0f, 1.0f)));
+	}
+}
+
+void ClockGearsUiDesignLayer::play_transition_in() {
+	Dictionary tr = (active_design.has("transition") && active_design["transition"].get_type() == Variant::DICTIONARY)
+			? Dictionary(active_design["transition"])
+			: Dictionary();
+	String it = String(tr.get("in_type", "none")).strip_edges().to_lower();
+	double dur = double(tr.get("duration_sec", 0.16));
+	if (it == "none" || it.is_empty() || dur <= 0.005 || preview_mode) {
+		transition_active = false;
+		transition_type = "none";
+		_apply_transition_pose(1.0f);
+		return;
+	}
+	transition_type = it;
+	transition_curve = String(tr.get("curve", "ease_out")).strip_edges().to_lower();
+	transition_duration = dur;
+	transition_elapsed = 0.0;
+	transition_is_out = false;
+	transition_active = true;
+	_apply_transition_pose(0.0f);
+}
+
+void ClockGearsUiDesignLayer::play_transition_out() {
+	Dictionary tr = (active_design.has("transition") && active_design["transition"].get_type() == Variant::DICTIONARY)
+			? Dictionary(active_design["transition"])
+			: Dictionary();
+	String ot = String(tr.get("out_type", "none")).strip_edges().to_lower();
+	double dur = double(tr.get("duration_sec", 0.16));
+	if (ot == "none" || ot.is_empty() || dur <= 0.005 || preview_mode) {
+		transition_active = false;
+		transition_type = "none";
+		return;
+	}
+	transition_type = ot;
+	transition_curve = String(tr.get("curve", "ease_out")).strip_edges().to_lower();
+	transition_duration = dur;
+	transition_elapsed = 0.0;
+	transition_is_out = true;
+	transition_active = true;
+	_apply_transition_pose(0.0f);
+}
+
 void ClockGearsUiDesignLayer::apply_screen_design(const String &p_screen_id, const Dictionary &p_design_override) {
 	screen_id = ClockGearsDataManager::normalize_menu_id(p_screen_id);
 	Dictionary design;
@@ -1508,6 +1764,7 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 	last_layout_size = vp_sz;
 	current_stage_rect = compute_stage_rect(vp_sz);
 	current_ui_scale = MAX(0.25f, MIN(vp_sz.x / LOGICAL_WIDTH, vp_sz.y / LOGICAL_HEIGHT));
+	_apply_screen_background(active_design, vp_sz);
 
 	for (int i = 0; i < elements.size(); i++) {
 		ElementEntry &e = elements.write[i];
@@ -1520,13 +1777,27 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 		e.root->set_z_index(e.layer_order);
 		_apply_element_style(e, current_ui_scale);
 
+		String fp = String(e.config.get("font_path", "")).strip_edges();
+		Ref<Font> cfont = !fp.is_empty() ? _load_cached_font(fp) : Ref<Font>();
+
 		if (e.label) {
 			int fsz = MAX(8, int(Math::round(float(e.config.get("font_size", 16)) * current_ui_scale)));
 			e.label->add_theme_font_size_override("font_size", fsz);
+			if (cfont.is_valid()) e.label->add_theme_font_override("font", cfont);
+		}
+		if (e.button) {
+			if (cfont.is_valid()) e.button->add_theme_font_override("font", cfont);
+			if (e.config.has("font_color")) {
+				Color fc = _cg_ui_parse_color(e.config["font_color"], Color(1, 1, 1, 1));
+				e.button->add_theme_color_override("font_color", fc);
+				e.button->add_theme_color_override("font_hover_color", fc);
+				e.button->add_theme_color_override("font_focus_color", fc);
+			}
 		}
 		if (e.bar_label) {
 			int fsz = MAX(8, int(Math::round(float(e.config.get("font_size", 13)) * current_ui_scale)));
 			e.bar_label->add_theme_font_size_override("font_size", fsz);
+			if (cfont.is_valid()) e.bar_label->add_theme_font_override("font", cfont);
 		}
 		if (e.icon_rect) {
 			Size2 csz = e.content_root ? e.content_root->get_size() : er.size;
@@ -1541,6 +1812,43 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 	if (cursor_overlay) {
 		cursor_overlay->configure(active_design.get("cursor", Dictionary()), current_ui_scale);
 	}
+}
+
+bool ClockGearsUiDesignLayer::update_element_geometry_fast(const String &p_elem_id, const Dictionary &p_elem) {
+	String target = p_elem_id.strip_edges().to_lower();
+	if (target.is_empty() || p_elem.is_empty()) {
+		return false;
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id.to_lower() == target) {
+			ElementEntry &e = elements.write[i];
+			bool need_style = (int(e.config.get("corner_radius", 8)) != int(p_elem.get("corner_radius", 8)) ||
+					String(e.config.get("shape", "rect")) != String(p_elem.get("shape", "rect")) ||
+					String(e.config.get("window_style_id", "")) != String(p_elem.get("window_style_id", "")) ||
+					String(e.config.get("fill_color", "")) != String(p_elem.get("fill_color", "")) ||
+					int(e.config.get("border_width", 2)) != int(p_elem.get("border_width", 2)));
+			e.config = p_elem.duplicate(true);
+			e.anchor = String(p_elem.get("anchor", e.anchor));
+			e.offset_x = int(p_elem.get("offset_x", e.offset_x));
+			e.offset_y = int(p_elem.get("offset_y", e.offset_y));
+			e.width = CLAMP(int(p_elem.get("width", e.width)), 16, 960);
+			e.height = CLAMP(int(p_elem.get("height", e.height)), 16, 540);
+			e.layer_order = int(p_elem.get("layer_order", e.layer_order));
+			e.visible = bool(p_elem.get("visible", e.visible));
+			if (e.root) {
+				Rect2 er = compute_element_rect(e.config, current_stage_rect, current_ui_scale);
+				e.root->set_position(er.position);
+				e.root->set_size(er.size);
+				e.root->set_z_index(e.layer_order);
+				e.root->set_visible(e.visible);
+				if (need_style) {
+					_apply_element_style(e, current_ui_scale);
+				}
+			}
+			return true;
+		}
+	}
+	return false;
 }
 
 void ClockGearsUiDesignLayer::refresh_live_values() {
@@ -2042,7 +2350,31 @@ void ClockGearsUiDesignLayer::_notification(int p_what) {
 	} else if (p_what == NOTIFICATION_RESIZED) {
 		_relayout_elements(false);
 	} else if (p_what == NOTIFICATION_PROCESS) {
-		if (is_visible()) {
+		if (!is_visible()) {
+			return;
+		}
+		double dt = get_process_delta_time();
+		if (transition_active) {
+			transition_elapsed += dt;
+			float t = (transition_duration > 0.0001) ? float(transition_elapsed / transition_duration) : 1.0f;
+			if (t >= 1.0f) {
+				t = 1.0f;
+				transition_active = false;
+			}
+			_apply_transition_pose(t);
+		}
+		Dictionary bg = (active_design.has("background") && active_design["background"].get_type() == Variant::DICTIONARY)
+				? Dictionary(active_design["background"])
+				: Dictionary();
+		int sx = int(bg.get("scroll_speed_x", 0));
+		int sy = int(bg.get("scroll_speed_y", 0));
+		if ((sx != 0 || sy != 0) && bg_backdrop_ctrl) {
+			bg_scroll_offset += Vector2(float(sx), float(sy)) * float(dt);
+			if (ClockGearsUiBackdropDraw *bd = Object::cast_to<ClockGearsUiBackdropDraw>(bg_backdrop_ctrl)) {
+				bd->set_scroll_offset(bg_scroll_offset);
+			}
+		}
+		if (!preview_mode) {
 			refresh_live_values();
 		}
 	}
@@ -2063,6 +2395,10 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_action_disabled", "action", "disabled"), &ClockGearsUiDesignLayer::set_action_disabled);
 	ClassDB::bind_method(D_METHOD("clear_disabled_actions"), &ClockGearsUiDesignLayer::clear_disabled_actions);
 	ClassDB::bind_method(D_METHOD("apply_screen_design", "screen_id", "design_override"), &ClockGearsUiDesignLayer::apply_screen_design, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("update_element_geometry_fast", "elem_id", "elem"), &ClockGearsUiDesignLayer::update_element_geometry_fast);
+	ClassDB::bind_method(D_METHOD("play_transition_in"), &ClockGearsUiDesignLayer::play_transition_in);
+	ClassDB::bind_method(D_METHOD("play_transition_out"), &ClockGearsUiDesignLayer::play_transition_out);
+	ClassDB::bind_method(D_METHOD("is_transition_active"), &ClockGearsUiDesignLayer::is_transition_active);
 	ClassDB::bind_method(D_METHOD("clear_elements"), &ClockGearsUiDesignLayer::clear_elements);
 	ClassDB::bind_method(D_METHOD("refresh_live_values"), &ClockGearsUiDesignLayer::refresh_live_values);
 	ClassDB::bind_method(D_METHOD("get_focus_order_actions"), &ClockGearsUiDesignLayer::get_focus_order_actions);

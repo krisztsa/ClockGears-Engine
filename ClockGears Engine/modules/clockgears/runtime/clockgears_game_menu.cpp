@@ -1678,6 +1678,9 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 		custom_ui_layer->set_preview_mode(preview_mode);
 		custom_ui_layer->apply_screen_design(ui_sid);
 		custom_ui_layer->set_visible(true);
+		if (!preview_mode) {
+			custom_ui_layer->play_transition_in();
+		}
 	} else {
 		if (custom_ui_layer) {
 			custom_ui_layer->set_visible(false);
