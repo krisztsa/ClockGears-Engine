@@ -195,7 +195,7 @@ ClockGearsCommandSelector::ClockGearsCommandSelector() {
 	tab4_scroll->add_child(grid4);
 
 	_create_cmd_button(grid4, CG_TR("◆ Mostrar Créditos..."), CMD_SHOW_CREDITS);
-	_create_cmd_button(grid4, CG_TR("◆ Abrir Menú del Juego..."), CMD_OPEN_MENU);
+	_create_cmd_button(grid4, CG_TR("◆ Abrir Menú..."), CMD_OPEN_MENU);
 	_create_cmd_button(grid4, CG_TR("◆ Bloquear / Permitir Menú..."), CMD_CHANGE_MENU_ACCESS);
 	_create_cmd_button(grid4, CG_TR("◆ Ir a la Pantalla de Título..."), CMD_RETURN_TO_TITLE);
 	_create_cmd_button(grid4, CG_TR("◆ Mostrar Game Over..."), CMD_SHOW_GAME_OVER);

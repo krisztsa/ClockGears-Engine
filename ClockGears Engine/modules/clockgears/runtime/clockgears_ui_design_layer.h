@@ -9,12 +9,153 @@
 #include "scene/gui/texture_rect.h"
 
 class ClockGearsDataManager;
+class ClockGearsUiDesignLayer;
 
 // ============================================================================
-// ClockGearsUiDesignLayer — Renderizador Runtime de Diseños Visuales 16:9 (9B Tanda 6A)
-// Renderiza layouts personalizados por pantalla sobre base lógica 960x540 con
-// anclaje de 9 puntos, estilos de ventana, enlaces de datos en vivo y orden
-// de foco configurable para teclado/ratón.
+// ClockGearsShapedClipControl — Contenedor con recorte real a forma geométrica
+// (rect, rounded, pill, circle, ellipse) + overlay de borde/sombra/brillo (3F).
+// ============================================================================
+class ClockGearsShapedClipControl : public Control {
+	GDCLASS(ClockGearsShapedClipControl, Control);
+
+	String shape_type = "rounded";
+	float corner_radius = 8.0f;
+	bool clip_active = false;
+	Color fill_color = Color(0.08f, 0.09f, 0.12f, 0.94f);
+	bool gradient_enabled = false;
+	Color gradient_top = Color(0.16f, 0.13f, 0.10f, 1.0f);
+	Color gradient_bottom = Color(0.08f, 0.07f, 0.05f, 1.0f);
+	String gradient_angle = "vertical";
+	bool pixel_art = true;
+	Ref<Texture2D> fill_texture;
+	bool fill_image_enabled = false;
+
+protected:
+	void _notification(int p_what);
+
+public:
+	void configure(const Dictionary &p_shape, float p_scale, bool p_draw_fill);
+	bool is_clip_active() const { return clip_active; }
+	String get_shape_type() const { return shape_type; }
+	bool contains_local_point(const Vector2 &p_local) const;
+};
+
+class ClockGearsShapedBorderOverlay : public Control {
+	GDCLASS(ClockGearsShapedBorderOverlay, Control);
+
+	String shape_type = "rounded";
+	float corner_radius = 8.0f;
+	int border_width = 2;
+	Color border_color = Color(0.88f, 0.63f, 0.25f, 1.0f);
+	bool shadow_enabled = false;
+	Color shadow_color = Color(0, 0, 0, 0.45f);
+	float shadow_size = 4.0f;
+	Vector2 shadow_offset = Vector2(0, 2);
+	bool glow_enabled = false;
+	Color glow_color = Color(0.96f, 0.74f, 0.33f, 0.40f);
+	float glow_size = 4.0f;
+	bool pixel_art = true;
+
+protected:
+	void _notification(int p_what);
+
+public:
+	void configure(const Dictionary &p_shape, float p_scale);
+};
+
+// ============================================================================
+// ClockGearsRadialCanvas — Menú radial prioritario dibujado con dibujo propio
+// (0 nodos por ranura), estilo anillo de objetos Zelda 3D (3E).
+// ============================================================================
+class ClockGearsRadialCanvas : public Control {
+	GDCLASS(ClockGearsRadialCanvas, Control);
+
+public:
+	struct RadialSlot {
+		String id;
+		String title;
+		String description;
+		String icon_path;
+		bool pixel_art = true;
+		String action;
+		Array actions;
+		String enabled_mode = "always";
+		String enabled_switch;
+		String visibility_mode = "always";
+		String visibility_switch;
+		bool visible = true;
+		bool disabled = false;
+		Ref<Texture2D> cached_icon;
+	};
+
+private:
+	Dictionary layout_cfg;
+	Vector<RadialSlot> all_slots;
+	Vector<int> active_slot_indices;
+	Vector<float> slot_visual_scales;
+	int selected_pos = 0;
+	float ui_scale = 1.0f;
+	bool anim_active = false;
+	bool interactive = true;
+
+	Vector2 _compute_center_local() const;
+	float _compute_radius_px() const;
+	float _compute_slot_angle(int p_visible_idx, int p_count) const;
+	int _pick_slot_by_angle(float p_target_angle) const;
+	void _rebuild_visible_indices();
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	void configure(const Dictionary &p_layout, const Array &p_fallback_elements, float p_scale, bool p_interactive);
+	void refresh_slot_states(const ClockGearsDataManager *p_dm);
+
+	int get_slot_count() const { return active_slot_indices.size(); }
+	int get_selected_index() const { return selected_pos; }
+	bool select_slot(int p_index);
+	bool step_selection(int p_delta);
+	bool select_by_angle_vector(const Vector2 &p_dir_vec);
+	bool select_by_local_point(const Vector2 &p_local_pos);
+	bool activate_selected_slot();
+
+	Vector2 get_slot_local_pos(int p_index) const;
+	float get_slot_visual_scale(int p_index) const;
+	Dictionary get_center_displayed_info() const;
+	Dictionary get_selected_slot_info() const;
+
+	ClockGearsRadialCanvas();
+};
+
+// ============================================================================
+// ClockGearsMenuCursorOverlay — Cursor configurable (forma/imagen/animación 3G)
+// ============================================================================
+class ClockGearsMenuCursorOverlay : public Control {
+	GDCLASS(ClockGearsMenuCursorOverlay, Control);
+
+	Dictionary cursor_cfg;
+	Rect2 target_rect;
+	bool has_target = false;
+	float ui_scale = 1.0f;
+	double anim_phase = 0.0;
+	Ref<Texture2D> cursor_tex;
+
+protected:
+	void _notification(int p_what);
+
+public:
+	void configure(const Dictionary &p_cursor_cfg, float p_scale);
+	void set_target_rect(const Rect2 &p_rect, bool p_visible);
+	Dictionary get_cursor_state() const;
+	ClockGearsMenuCursorOverlay();
+};
+
+// ============================================================================
+// ClockGearsUiDesignLayer — Renderizador Runtime de Diseños Visuales 16:9
+// Ampliado en Etapa 3 con: menús ilimitados, distribuciones (lista/grid/tabs/
+// carrusel/radial propio), formas recortadas, foco espacial y cursor (3D-3G).
 // ============================================================================
 class ClockGearsUiDesignLayer : public Control {
 	GDCLASS(ClockGearsUiDesignLayer, Control);
@@ -38,11 +179,15 @@ private:
 		String window_style_id;
 		String data_binding = "none";
 		String action;
+		Array actions;
 		int focus_order = 0;
 		int array_order = 0;
+		int tab_index = 0;
 		Dictionary config;
 
 		Control *root = nullptr;
+		ClockGearsShapedClipControl *clip_host = nullptr;
+		ClockGearsShapedBorderOverlay *border_overlay = nullptr;
 		PanelContainer *bg_panel = nullptr;
 		Control *content_root = nullptr;
 		Label *label = nullptr;
@@ -72,12 +217,28 @@ private:
 	Rect2 current_stage_rect;
 	float current_ui_scale = 1.0f;
 
+	// Soporte para contenedores 3E (paginación / pestañas / carrusel / radial) y cursor 3G
+	int current_layout_page = 0;
+	int current_layout_tab = 0;
+	int current_carousel_index = 0;
+	Vector<Button *> layout_aux_buttons;
+	ClockGearsRadialCanvas *radial_canvas = nullptr;
+	ClockGearsMenuCursorOverlay *cursor_overlay = nullptr;
+
 	Size2 _resolve_effective_viewport_size() const;
+	void _clear_aux_layout_controls();
 	void _rebuild_from_design(const Dictionary &p_design);
 	void _build_element_entry(ElementEntry &r_entry);
 	void _apply_element_style(ElementEntry &r_entry, float p_scale);
 	void _relayout_elements(bool p_refresh_styles);
+	void _apply_container_layout(const Dictionary &p_layout, float p_scale);
 	void _on_button_pressed(const String &p_action, const String &p_elem_id);
+	void _on_button_focus_changed(ObjectID p_btn_id);
+	void _on_radial_slot_activated(int p_slot_idx);
+	void _on_radial_selection_changed(int p_slot_idx);
+	void _on_layout_page_delta(int p_delta);
+	void _on_layout_tab_selected(int p_tab_idx);
+	void _on_carousel_step(int p_delta);
 
 protected:
 	static void _bind_methods();
@@ -111,10 +272,18 @@ public:
 	void refresh_live_values();
 
 	Vector<Button *> get_focus_ordered_buttons() const;
+	Button *find_next_focus_button(Button *p_current, int p_dir) const;
+	void update_cursor_for_button(Button *p_button);
 	Array get_focus_order_actions() const;
 	Control *get_element_control(const String &p_elem_id) const;
+	Array get_element_actions(const String &p_elem_id) const;
 	String get_element_displayed_text(const String &p_elem_id) const;
 	int get_element_count() const { return elements.size(); }
+
+	ClockGearsRadialCanvas *get_radial_canvas() const { return radial_canvas; }
+	bool is_radial_mode() const { return radial_canvas != nullptr && radial_canvas->is_visible(); }
+	Dictionary get_active_design_copy() const { return active_design.duplicate(true); }
+	Dictionary get_layout_state_info() const;
 
 	bool trigger_action(const String &p_action);
 	Dictionary get_layout_bounds_info(const Vector2 &p_viewport_size = Vector2()) const;

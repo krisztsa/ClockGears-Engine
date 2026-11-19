@@ -3,6 +3,8 @@
 #include "../clockgears_animation.h"
 #include "../clockgears_map.h"
 #include "../core/clockgears_data_manager.h"
+#include "clockgears_audio_manager.h"
+#include "clockgears_credits.h"
 #include "clockgears_cutscene.h"
 #include "clockgears_message_window.h"
 #include "clockgears_runtime.h"
@@ -11,9 +13,11 @@
 #include "clockgears_window_style.h"
 
 #include "core/config/engine.h"
+#include "core/input/input.h"
 #include "core/input/input_event.h"
 #include "core/input/input_map.h"
 #include "core/io/resource_loader.h"
+#include "core/os/keyboard.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/separator.h"
 #include "scene/main/scene_tree.h"
@@ -62,12 +66,26 @@ void ClockGearsGameMenu::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("apply_game_menu_config_preview", "config", "screen_id"), &ClockGearsGameMenu::apply_game_menu_config_preview, DEFVAL(String()));
 
 	ClassDB::bind_method(D_METHOD("can_open_menu"), &ClockGearsGameMenu::can_open_menu);
+	ClassDB::bind_method(D_METHOD("can_open_menu_for_context", "menu_id", "context"), &ClockGearsGameMenu::can_open_menu_for_context, DEFVAL("map"));
 	ClassDB::bind_method(D_METHOD("open_menu"), &ClockGearsGameMenu::open_menu);
+	ClassDB::bind_method(D_METHOD("open_menu_by_id", "menu_id", "from_event", "push_history", "bypass_access"), &ClockGearsGameMenu::open_menu_by_id, DEFVAL(false), DEFVAL(false), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("open_menu_from_event", "initial_subscreen", "close_on_back"), &ClockGearsGameMenu::open_menu_from_event, DEFVAL("main"), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("handle_trigger_input_event", "event", "context"), &ClockGearsGameMenu::handle_trigger_input_event, DEFVAL("map"));
+	ClassDB::bind_method(D_METHOD("trigger_custom_element_by_id", "elem_id"), &ClockGearsGameMenu::trigger_custom_element_by_id);
 	ClassDB::bind_method(D_METHOD("refresh_window_styles"), &ClockGearsGameMenu::refresh_window_styles);
 	ClassDB::bind_method(D_METHOD("close_menu"), &ClockGearsGameMenu::close_menu);
 	ClassDB::bind_method(D_METHOD("is_menu_open"), &ClockGearsGameMenu::is_menu_open);
 	ClassDB::bind_method(D_METHOD("handle_input_key", "keycode"), &ClockGearsGameMenu::handle_input_key);
+	ClassDB::bind_method(D_METHOD("get_active_menu_id"), &ClockGearsGameMenu::get_active_menu_id);
+	ClassDB::bind_method(D_METHOD("get_menu_history_stack"), &ClockGearsGameMenu::get_menu_history_stack);
+	ClassDB::bind_method(D_METHOD("get_menu_history_depth"), &ClockGearsGameMenu::get_menu_history_depth);
+	ClassDB::bind_method(D_METHOD("is_tree_paused_by_menu"), &ClockGearsGameMenu::is_tree_paused_by_menu);
+	ClassDB::bind_method(D_METHOD("get_last_played_menu_sound"), &ClockGearsGameMenu::get_last_played_menu_sound);
+	ClassDB::bind_method(D_METHOD("get_last_common_event_id"), &ClockGearsGameMenu::get_last_common_event_id);
+	ClassDB::bind_method(D_METHOD("get_last_executed_actions"), &ClockGearsGameMenu::get_last_executed_actions);
+	ClassDB::bind_method(D_METHOD("set_auto_quit_tree", "enable"), &ClockGearsGameMenu::set_auto_quit_tree);
+	ClassDB::bind_method(D_METHOD("was_quit_requested"), &ClockGearsGameMenu::was_quit_requested);
+	ClassDB::bind_method(D_METHOD("is_save_panel_load_mode"), &ClockGearsGameMenu::is_save_panel_load_mode);
 	ClassDB::bind_method(D_METHOD("open_subscreen", "id"), &ClockGearsGameMenu::open_subscreen);
 	ClassDB::bind_method(D_METHOD("get_current_subscreen"), &ClockGearsGameMenu::get_current_subscreen);
 	ClassDB::bind_method(D_METHOD("get_visible_entry_ids"), &ClockGearsGameMenu::get_visible_entry_ids);
@@ -110,6 +128,7 @@ ClockGearsGameMenu::ClockGearsGameMenu() {
 	set_layer(105);
 	set_visible(false);
 	set_process_unhandled_input(true);
+	set_process_mode(Node::PROCESS_MODE_ALWAYS);
 	_build_ui();
 }
 
@@ -856,6 +875,190 @@ void ClockGearsGameMenu::apply_game_menu_config_preview(const Dictionary &p_cfg,
 	}
 }
 
+String ClockGearsGameMenu::_map_menu_id_to_subscreen(const String &p_menu_id) const {
+	String s = ClockGearsDataManager::normalize_menu_id(p_menu_id);
+	if (s.is_empty() || s == "main" || s == "menu" || s == "game_menu_main") {
+		return "main";
+	}
+	if (s == "items" || s == "game_menu_items") {
+		return "items";
+	}
+	if (s == "equip" || s == "game_menu_equip") {
+		return "equip";
+	}
+	if (s == "status" || s == "game_menu_status") {
+		return "status";
+	}
+	if (s == "save" || s == "game_menu_save") {
+		return "save";
+	}
+	if (s == "options" || s == "game_menu_options") {
+		return "options";
+	}
+	return s;
+}
+
+Dictionary ClockGearsGameMenu::_get_menu_design(const String &p_menu_id) const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return Dictionary();
+	}
+	String ui_id = _map_subscreen_to_ui_design_id(p_menu_id);
+	if (ui_id.is_empty()) {
+		ui_id = ClockGearsDataManager::normalize_menu_id(p_menu_id);
+	}
+	if (ui_id.is_empty()) {
+		ui_id = "game_menu_main";
+	}
+	if (dm->has_menu(ui_id)) {
+		return dm->get_ui_screen_design(ui_id);
+	}
+	return Dictionary();
+}
+
+void ClockGearsGameMenu::_play_menu_sound(const String &p_event_key) {
+	Dictionary design = _get_menu_design(active_menu_id);
+	Dictionary sounds = design.get("sounds", Dictionary());
+	String path = String(sounds.get(p_event_key, "")).strip_edges();
+	if (path.is_empty()) {
+		return;
+	}
+	last_played_menu_sound = path;
+	if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+		am->play_se(path, 1.0f, 1.0f);
+	}
+}
+
+void ClockGearsGameMenu::_update_pause_state_for_menu(const String &p_menu_id) {
+	Dictionary design = _get_menu_design(p_menu_id);
+	bool want_pause = bool(design.get("pause_on_open", false));
+	if (want_pause && !paused_tree_by_menu) {
+		if (is_inside_tree() && get_tree()) {
+			get_tree()->set_pause(true);
+		}
+		paused_tree_by_menu = true;
+	} else if (!want_pause && paused_tree_by_menu) {
+		if (is_inside_tree() && get_tree()) {
+			get_tree()->set_pause(false);
+		}
+		paused_tree_by_menu = false;
+	}
+}
+
+void ClockGearsGameMenu::_restore_pause_state() {
+	if (paused_tree_by_menu) {
+		if (is_inside_tree() && get_tree()) {
+			get_tree()->set_pause(false);
+		}
+		paused_tree_by_menu = false;
+	}
+}
+
+bool ClockGearsGameMenu::_context_allows_trigger(const String &p_trigger_context, const String &p_runtime_context) const {
+	String tc = p_trigger_context.strip_edges().to_lower();
+	String rc = p_runtime_context.strip_edges().to_lower();
+	if (tc == "any" || rc == "any") {
+		return true;
+	}
+	if (tc == "map_and_battle") {
+		return rc == "map" || rc == "battle";
+	}
+	return rc == "map";
+}
+
+bool ClockGearsGameMenu::_does_trigger_match_event(const Dictionary &p_trigger, const Ref<InputEvent> &p_event) const {
+	if (!p_event.is_valid()) {
+		return false;
+	}
+	String kind = String(p_trigger.get("kind", p_trigger.get("type", "key"))).strip_edges().to_lower();
+	if (kind == "key") {
+		Ref<InputEventKey> k = p_event;
+		if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+			int64_t target_int = int64_t(p_trigger.get("keycode", 0));
+			Key target_kc = (target_int > 0) ? (Key)target_int : Key::NONE;
+			if (target_kc == Key::NONE) {
+				String key_str = String(p_trigger.get("key_name", p_trigger.get("key", p_trigger.get("value", "")))).strip_edges();
+				if (!key_str.is_empty()) {
+					target_kc = find_keycode(key_str);
+				}
+			}
+			if (target_kc != Key::NONE && (k->get_keycode() == target_kc || k->get_physical_keycode() == target_kc)) {
+				return true;
+			}
+		}
+		return false;
+	}
+	if (kind == "joy_button") {
+		Ref<InputEventJoypadButton> jb = p_event;
+		if (jb.is_valid() && jb->is_pressed()) {
+			int btn = int(p_trigger.get("joy_button", p_trigger.get("button", p_trigger.get("value", -1))));
+			return btn >= 0 && int(jb->get_button_index()) == btn;
+		}
+		return false;
+	}
+	if (kind == "mouse_button") {
+		Ref<InputEventMouseButton> mb = p_event;
+		if (mb.is_valid() && mb->is_pressed() && !mb->is_double_click()) {
+			int btn = int(p_trigger.get("mouse_button", p_trigger.get("button", p_trigger.get("value", -1))));
+			return btn > 0 && int(mb->get_button_index()) == btn;
+		}
+		return false;
+	}
+	if (kind == "action") {
+		String act = String(p_trigger.get("action_name", p_trigger.get("action", p_trigger.get("value", "")))).strip_edges();
+		InputMap *im = InputMap::get_singleton();
+		if (!act.is_empty() && im && im->has_action(act) && p_event->is_action_pressed(act)) {
+			return true;
+		}
+		return false;
+	}
+	return false;
+}
+
+bool ClockGearsGameMenu::can_open_menu_for_context(const String &p_menu_id, const String &p_context) const {
+	if (editor_test_popup_mode) {
+		return true;
+	}
+	if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint()) {
+		return false;
+	}
+	if (interpreter) {
+		if (ClockGearsMessageWindow *mw = interpreter->get_message_window()) {
+			if (mw->is_busy() || mw->is_history_open() || mw->is_visible()) {
+				return false;
+			}
+		}
+		if (ClockGearsCutscenePlayer *cp = interpreter->get_cutscene_player()) {
+			if (cp->is_playing()) {
+				return false;
+			}
+		}
+	}
+	Dictionary design = _get_menu_design(p_menu_id);
+	String tc = design.is_empty() ? String("map") : String(design.get("trigger_context", "map")).strip_edges().to_lower();
+	String rc = p_context.strip_edges().to_lower();
+	if (rc.is_empty()) {
+		rc = (interpreter && interpreter->has_active_battle()) ? String("battle") : String("map");
+	}
+	if (!_context_allows_trigger(tc, rc)) {
+		return false;
+	}
+	if (interpreter && interpreter->is_running() && tc != "any") {
+		if (rc == "map" && !interpreter->has_active_battle()) {
+			return false;
+		}
+	}
+	bool respect_acc = design.has("respect_menu_access") ? bool(design["respect_menu_access"]) : true;
+	if (respect_acc) {
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			if (dm->is_game_menu_disabled()) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 bool ClockGearsGameMenu::can_open_menu() const {
 	if (editor_test_popup_mode) {
 		return true;
@@ -890,6 +1093,66 @@ bool ClockGearsGameMenu::can_open_menu() const {
 	return true;
 }
 
+bool ClockGearsGameMenu::open_menu_by_id(const String &p_menu_id, bool p_from_event, bool p_push_history, bool p_bypass_access) {
+	if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint() && !editor_test_popup_mode && !preview_mode) {
+		return false;
+	}
+	String ui_id = _map_subscreen_to_ui_design_id(p_menu_id);
+	if (ui_id.is_empty()) {
+		ui_id = ClockGearsDataManager::normalize_menu_id(p_menu_id);
+	}
+	if (ui_id.is_empty()) {
+		ui_id = "game_menu_main";
+	}
+	if (!p_bypass_access && !p_from_event && !editor_test_popup_mode && !preview_mode) {
+		String rc = (interpreter && interpreter->has_active_battle()) ? String("battle") : String("map");
+		if (!can_open_menu_for_context(ui_id, rc)) {
+			return false;
+		}
+	}
+	if (p_from_event && !p_bypass_access && interpreter && interpreter->has_active_battle()) {
+		Dictionary d = _get_menu_design(ui_id);
+		String tc = String(d.get("trigger_context", "map")).strip_edges().to_lower();
+		if (tc == "map") {
+			return false;
+		}
+	}
+
+	bool was_open = menu_open;
+	String prev_id = active_menu_id;
+	if (p_push_history && was_open && !prev_id.is_empty() && prev_id != ui_id) {
+		menu_history_stack.push_back(prev_id);
+	} else if (!was_open) {
+		menu_history_stack.clear();
+	}
+
+	direct_subscreen_close_on_back = false;
+	save_panel_load_mode = false;
+	menu_open = true;
+	active_menu_id = ui_id;
+	last_returned_to_title = false;
+	set_visible(true);
+	set_process(!preview_mode);
+	_apply_unified_styles();
+	String target_sub = _map_menu_id_to_subscreen(ui_id);
+	bool sub_ok = open_subscreen(target_sub);
+	if (!sub_ok) {
+		if (!was_open) {
+			menu_open = false;
+			set_visible(false);
+			set_process(false);
+		}
+		return false;
+	}
+	_update_pause_state_for_menu(ui_id);
+	_update_responsive_layout();
+	if (!was_open) {
+		_play_menu_sound("open");
+		emit_signal("menu_opened");
+	}
+	return true;
+}
+
 bool ClockGearsGameMenu::open_menu() {
 	if (menu_open) {
 		return true;
@@ -897,36 +1160,26 @@ bool ClockGearsGameMenu::open_menu() {
 	if (!can_open_menu()) {
 		return false;
 	}
-	direct_subscreen_close_on_back = false;
-	menu_open = true;
-	last_returned_to_title = false;
-	set_visible(true);
-	set_process(!preview_mode);
-	_apply_unified_styles();
-	open_subscreen("main");
-	_update_responsive_layout();
-	emit_signal("menu_opened");
-	return true;
+	return open_menu_by_id("game_menu_main", false, false, true);
 }
 
 bool ClockGearsGameMenu::open_menu_from_event(const String &p_initial_subscreen, bool p_close_on_back) {
 	if (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint()) {
 		return false;
 	}
-	if (interpreter && interpreter->has_active_battle()) {
-		return false;
-	}
-	direct_subscreen_close_on_back = p_close_on_back;
-	menu_open = true;
-	last_returned_to_title = false;
-	set_visible(true);
-	set_process(!preview_mode);
-	_apply_unified_styles();
 	String target = p_initial_subscreen.strip_edges().to_lower();
-	open_subscreen(target.is_empty() ? String("main") : target);
-	_update_responsive_layout();
-	emit_signal("menu_opened");
-	return true;
+	if (target.is_empty()) {
+		target = "main";
+	}
+	String ui_id = _map_subscreen_to_ui_design_id(target);
+	if (ui_id.is_empty()) {
+		ui_id = ClockGearsDataManager::normalize_menu_id(target);
+	}
+	bool ok = open_menu_by_id(ui_id, true, false, false);
+	if (ok) {
+		direct_subscreen_close_on_back = p_close_on_back;
+	}
+	return ok;
 }
 
 void ClockGearsGameMenu::refresh_window_styles() {
@@ -949,15 +1202,28 @@ void ClockGearsGameMenu::close_menu() {
 	if (!menu_open) {
 		return;
 	}
+	_play_menu_sound("close");
 	preview_rotation_deg = 0.0f;
 	_apply_preview_rotation(0.0f);
 	preview_is_dragging = false;
 	menu_open = false;
 	direct_subscreen_close_on_back = false;
+	save_panel_load_mode = false;
+	menu_history_stack.clear();
+	active_menu_id = "game_menu_main";
 	current_subscreen = "main";
+	_restore_pause_state();
 	set_visible(false);
 	set_process(false);
 	emit_signal("menu_closed");
+}
+
+PackedStringArray ClockGearsGameMenu::get_menu_history_stack() const {
+	PackedStringArray out;
+	for (int i = 0; i < menu_history_stack.size(); i++) {
+		out.push_back(menu_history_stack[i]);
+	}
+	return out;
 }
 
 Control *ClockGearsGameMenu::_get_active_subscreen_control() const {
@@ -1010,6 +1276,76 @@ Button *ClockGearsGameMenu::get_focused_nav_button() const {
 	return btns[idx];
 }
 
+bool ClockGearsGameMenu::handle_trigger_input_event(const Ref<InputEvent> &p_event, const String &p_context) {
+	if (preview_mode || !p_event.is_valid()) {
+		return false;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return false;
+	}
+	String rc = p_context.strip_edges().to_lower();
+	if (rc.is_empty()) {
+		rc = (interpreter && interpreter->has_active_battle()) ? String("battle") : String("map");
+	}
+
+	// Si ya hay un menú abierto y el usuario vuelve a pulsar la entrada propia de ESE menú (salvo Esc/X), lo cierra.
+	if (menu_open && !active_menu_id.is_empty()) {
+		Dictionary cur_design = _get_menu_design(active_menu_id);
+		Array cur_trigs = cur_design.get("triggers", Array());
+		for (int i = 0; i < cur_trigs.size(); i++) {
+			if (cur_trigs[i].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary td = cur_trigs[i];
+			String key_s = String(td.get("key", "")).strip_edges().to_lower();
+			String act_s = String(td.get("action", "")).strip_edges().to_lower();
+			if (key_s == "escape" || key_s == "x" || act_s == "ui_cancel") {
+				continue;
+			}
+			if (_does_trigger_match_event(td, p_event)) {
+				close_menu();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	Array all_menus = dm->get_all_menus();
+	// Priorizar menús personalizados creados por el usuario antes que los menús del sistema.
+	for (int pass = 0; pass < 2; pass++) {
+		bool want_custom = (pass == 0);
+		for (int m = 0; m < all_menus.size(); m++) {
+			if (all_menus[m].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary md = all_menus[m];
+			bool is_sys = bool(md.get("is_system", false));
+			if ((want_custom && is_sys) || (!want_custom && !is_sys)) {
+				continue;
+			}
+			String mid = String(md.get("id", ""));
+			if (mid.is_empty() || mid == "hud" || mid == "credits" || mid == "title") {
+				continue;
+			}
+			Dictionary design = dm->get_ui_screen_design(mid);
+			Array trigs = design.get("triggers", Array());
+			for (int t = 0; t < trigs.size(); t++) {
+				if (trigs[t].get_type() != Variant::DICTIONARY) {
+					continue;
+				}
+				if (_does_trigger_match_event(Dictionary(trigs[t]), p_event)) {
+					if (can_open_menu_for_context(mid, rc)) {
+						return open_menu_by_id(mid, false, false, true);
+					}
+					return false;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 bool ClockGearsGameMenu::handle_input_key(Key p_keycode) {
 	if (preview_mode) {
 		return false;
@@ -1029,13 +1365,54 @@ bool ClockGearsGameMenu::handle_input_key(Key p_keycode) {
 		return false;
 	}
 	if (is_cancel) {
-		if (current_subscreen != "main" && !direct_subscreen_close_on_back) {
+		_play_menu_sound("cancel");
+		if (!menu_history_stack.is_empty()) {
+			String prev_id = menu_history_stack[menu_history_stack.size() - 1];
+			menu_history_stack.remove_at(menu_history_stack.size() - 1);
+			return open_menu_by_id(prev_id, false, false, true);
+		}
+		if (current_subscreen != "main" && !direct_subscreen_close_on_back && active_menu_id.begins_with("game_menu_")) {
 			open_subscreen("main");
 		} else {
 			close_menu();
 		}
 		return true;
 	}
+
+	// Navegación radial propia (0 nodos por ranura)
+	if (custom_ui_layer && custom_ui_layer->is_visible() && custom_ui_layer->is_radial_mode()) {
+		if (ClockGearsRadialCanvas *rad = custom_ui_layer->get_radial_canvas()) {
+			if (p_keycode == Key::RIGHT || p_keycode == Key::D) {
+				if (rad->step_selection(1)) {
+					_play_menu_sound("move");
+				}
+				return true;
+			}
+			if (p_keycode == Key::LEFT || p_keycode == Key::A) {
+				if (rad->step_selection(-1)) {
+					_play_menu_sound("move");
+				}
+				return true;
+			}
+			if (p_keycode == Key::UP || p_keycode == Key::W) {
+				if (rad->select_by_angle_vector(Vector2(0, -1))) {
+					_play_menu_sound("move");
+				}
+				return true;
+			}
+			if (p_keycode == Key::DOWN || p_keycode == Key::S) {
+				if (rad->select_by_angle_vector(Vector2(0, 1))) {
+					_play_menu_sound("move");
+				}
+				return true;
+			}
+			if (p_keycode == Key::ENTER || p_keycode == Key::KP_ENTER || p_keycode == Key::SPACE) {
+				_play_menu_sound("accept");
+				return rad->activate_selected_slot();
+			}
+		}
+	}
+
 	Vector<Button *> btns;
 	_collect_nav_buttons(_get_active_subscreen_control(), btns);
 	if (btns.is_empty()) {
@@ -1053,23 +1430,44 @@ bool ClockGearsGameMenu::handle_input_key(Key p_keycode) {
 		}
 	}
 	cur_idx = CLAMP(cur_idx, 0, int(btns.size()) - 1);
-	if (p_keycode == Key::DOWN || p_keycode == Key::RIGHT || p_keycode == Key::S || p_keycode == Key::D) {
-		nav_focus_index = (cur_idx + 1) % int(btns.size());
-		if (is_inside_tree()) {
-			btns[nav_focus_index]->grab_focus();
+	Button *cur_btn = btns[cur_idx];
+
+	int dir_code = -1;
+	if (p_keycode == Key::UP || p_keycode == Key::W) dir_code = 0;
+	else if (p_keycode == Key::RIGHT || p_keycode == Key::D) dir_code = 1;
+	else if (p_keycode == Key::DOWN || p_keycode == Key::S) dir_code = 2;
+	else if (p_keycode == Key::LEFT || p_keycode == Key::A) dir_code = 3;
+
+	if (dir_code >= 0) {
+		Button *next_btn = nullptr;
+		if (custom_ui_layer && custom_ui_layer->is_visible()) {
+			next_btn = custom_ui_layer->find_next_focus_button(cur_btn, dir_code);
 		}
-		return true;
-	}
-	if (p_keycode == Key::UP || p_keycode == Key::LEFT || p_keycode == Key::W || p_keycode == Key::A) {
-		nav_focus_index = (cur_idx - 1 + int(btns.size())) % int(btns.size());
-		if (is_inside_tree()) {
-			btns[nav_focus_index]->grab_focus();
+		if (next_btn) {
+			int nidx = btns.find(next_btn);
+			if (nidx >= 0) {
+				nav_focus_index = nidx;
+			}
+		} else {
+			int delta = (dir_code == 1 || dir_code == 2) ? 1 : -1;
+			nav_focus_index = (cur_idx + delta + int(btns.size())) % int(btns.size());
+			next_btn = btns[nav_focus_index];
+		}
+		if (next_btn) {
+			if (is_inside_tree()) {
+				next_btn->grab_focus();
+			}
+			if (custom_ui_layer && custom_ui_layer->is_visible()) {
+				custom_ui_layer->update_cursor_for_button(next_btn);
+			}
+			_play_menu_sound("move");
 		}
 		return true;
 	}
 	if (p_keycode == Key::ENTER || p_keycode == Key::KP_ENTER || p_keycode == Key::SPACE) {
-		Button *target = btns[cur_idx];
+		Button *target = cur_btn;
 		if (target && !target->is_disabled()) {
+			_play_menu_sound("accept");
 			target->emit_signal("pressed");
 			return true;
 		}
@@ -1078,10 +1476,60 @@ bool ClockGearsGameMenu::handle_input_key(Key p_keycode) {
 }
 
 void ClockGearsGameMenu::unhandled_input(const Ref<InputEvent> &p_event) {
-	if (preview_mode) {
+	if (preview_mode || !p_event.is_valid()) {
 		return;
 	}
 	Viewport *active_vp = root_control ? root_control->get_viewport() : nullptr;
+
+	if (!menu_open) {
+		String rc = (interpreter && interpreter->has_active_battle()) ? String("battle") : String("map");
+		if (handle_trigger_input_event(p_event, rc)) {
+			if (active_vp) {
+				active_vp->set_input_as_handled();
+			}
+			return;
+		}
+	}
+
+	// Stick analógico / D-pad / botones del mando mientras el menú está abierto
+	if (menu_open) {
+		if (custom_ui_layer && custom_ui_layer->is_visible() && custom_ui_layer->is_radial_mode()) {
+			Ref<InputEventJoypadMotion> jm = p_event;
+			if (jm.is_valid()) {
+				int dev = jm->get_device();
+				float ax = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_X) : 0.0f;
+				float ay = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_Y) : 0.0f;
+				if (jm->get_axis() == JoyAxis::LEFT_X) ax = jm->get_axis_value();
+				if (jm->get_axis() == JoyAxis::LEFT_Y) ay = jm->get_axis_value();
+				Vector2 stick(ax, ay);
+				if (stick.length() >= 0.55f) {
+					if (ClockGearsRadialCanvas *rad = custom_ui_layer->get_radial_canvas()) {
+						if (rad->select_by_angle_vector(stick)) {
+							_play_menu_sound("move");
+						}
+						if (active_vp) active_vp->set_input_as_handled();
+						return;
+					}
+				}
+			}
+		}
+		Ref<InputEventJoypadButton> jb = p_event;
+		if (jb.is_valid() && jb->is_pressed()) {
+			JoyButton b = jb->get_button_index();
+			Key mapped = Key::NONE;
+			if (b == JoyButton::A) mapped = Key::ENTER;
+			else if (b == JoyButton::B) mapped = Key::ESCAPE;
+			else if (b == JoyButton::DPAD_UP) mapped = Key::UP;
+			else if (b == JoyButton::DPAD_DOWN) mapped = Key::DOWN;
+			else if (b == JoyButton::DPAD_LEFT) mapped = Key::LEFT;
+			else if (b == JoyButton::DPAD_RIGHT) mapped = Key::RIGHT;
+			if (mapped != Key::NONE && handle_input_key(mapped)) {
+				if (active_vp) active_vp->set_input_as_handled();
+				return;
+			}
+		}
+	}
+
 	Ref<InputEventKey> k = p_event;
 	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
 		Key kc = k->get_keycode();
@@ -1114,10 +1562,24 @@ void ClockGearsGameMenu::unhandled_input(const Ref<InputEvent> &p_event) {
 			if (handle_input_key(Key::UP) && active_vp) active_vp->set_input_as_handled();
 			return;
 		}
+		if (im->has_action("ui_left") && p_event->is_action_pressed("ui_left")) {
+			if (handle_input_key(Key::LEFT) && active_vp) active_vp->set_input_as_handled();
+			return;
+		}
+		if (im->has_action("ui_right") && p_event->is_action_pressed("ui_right")) {
+			if (handle_input_key(Key::RIGHT) && active_vp) active_vp->set_input_as_handled();
+			return;
+		}
 		if (im->has_action("ui_accept") && p_event->is_action_pressed("ui_accept")) {
 			if (handle_input_key(Key::ENTER) && active_vp) active_vp->set_input_as_handled();
 			return;
 		}
+	}
+	if (menu_open && handle_trigger_input_event(p_event, "any")) {
+		if (active_vp) {
+			active_vp->set_input_as_handled();
+		}
+		return;
 	}
 	bool menu_action = p_event.is_valid() && im &&
 			((im->has_action("game_menu") && p_event->is_action_pressed("game_menu")) ||
@@ -1195,12 +1657,23 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	String ui_sid = _map_subscreen_to_ui_design_id(current_subscreen);
-	bool use_custom = (dm && !ui_sid.is_empty() && dm->has_custom_ui_design(ui_sid));
+	if (!ui_sid.is_empty()) {
+		active_menu_id = ui_sid;
+		while (!menu_history_stack.is_empty() && menu_history_stack[menu_history_stack.size() - 1] == active_menu_id) {
+			menu_history_stack.remove_at(menu_history_stack.size() - 1);
+		}
+	}
+	bool is_custom_menu_id = (!ui_sid.is_empty() && dm && dm->has_menu(ui_sid) && !ClockGearsDataManager::is_system_menu_id(ui_sid));
+	bool use_custom = (dm && !ui_sid.is_empty() && (dm->has_custom_ui_design(ui_sid) || is_custom_menu_id));
 	if (use_custom && custom_ui_layer) {
 		if (main_view) main_view->set_visible(false);
 		if (items_panel) items_panel->set_visible(false);
 		if (equip_panel) equip_panel->set_visible(false);
 		if (status_panel) status_panel->set_visible(false);
+		if (save_panel) save_panel->set_visible(false);
+		if (options_panel) options_panel->set_visible(false);
+		if (confirm_title_overlay) confirm_title_overlay->set_visible(false);
+		if (confirm_title_panel) confirm_title_panel->set_visible(false);
 		custom_ui_layer->set_window_type_fallback("game_menu");
 		custom_ui_layer->set_preview_mode(preview_mode);
 		custom_ui_layer->apply_screen_design(ui_sid);
@@ -1227,12 +1700,12 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 		}
 	}
 
-	if (current_subscreen == "save") {
+	if (!use_custom && current_subscreen == "save") {
 		if (save_feedback_label) {
 			save_feedback_label->set_text("");
 		}
 		_refresh_save_view();
-	} else if (current_subscreen == "options" && options_box) {
+	} else if (!use_custom && current_subscreen == "options" && options_box) {
 		options_box->sync_from_dm();
 		options_box->apply_button_theme();
 	}
@@ -1240,8 +1713,13 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 
 	Vector<Button *> nav_btns;
 	_collect_nav_buttons(_get_active_subscreen_control(), nav_btns);
-	if (!nav_btns.is_empty() && is_inside_tree()) {
-		nav_btns[0]->grab_focus();
+	if (!nav_btns.is_empty()) {
+		if (is_inside_tree()) {
+			nav_btns[0]->grab_focus();
+		}
+		if (use_custom && custom_ui_layer) {
+			custom_ui_layer->update_cursor_for_button(nav_btns[0]);
+		}
 	}
 
 	emit_signal("subscreen_changed", current_subscreen);
@@ -2130,10 +2608,17 @@ Dictionary ClockGearsGameMenu::get_item_preview_panel_info() const {
 }
 
 void ClockGearsGameMenu::_refresh_save_view() {
-	ClockGearsTitleScreen::populate_save_slots_into(save_slots_box, btn_save_back, true,
+	ClockGearsTitleScreen::populate_save_slots_into(save_slots_box, btn_save_back, !save_panel_load_mode,
 			callable_mp(this, &ClockGearsGameMenu::_on_save_slot_pressed));
 	ClockGearsWindowStyleManager::apply_window_style(save_panel, "save_list");
 	ClockGearsWindowStyleManager::apply_buttons_in_container(save_slots_box, "save_list");
+}
+
+void ClockGearsGameMenu::_open_load_panel() {
+	save_panel_load_mode = true;
+	open_subscreen("save");
+	save_panel_load_mode = true;
+	_refresh_save_view();
 }
 
 Dictionary ClockGearsGameMenu::_build_runtime_save_context() const {
@@ -2159,39 +2644,286 @@ void ClockGearsGameMenu::_on_entry_pressed(const String &p_id) {
 }
 
 String ClockGearsGameMenu::_map_subscreen_to_ui_design_id(const String &p_subscreen) const {
-	String s = p_subscreen.strip_edges().to_lower();
-	if (s == "main" || s == "menu") {
+	String s = ClockGearsDataManager::normalize_menu_id(p_subscreen);
+	if (s == "main" || s == "menu" || s == "game_menu_main") {
 		return "game_menu_main";
 	}
-	if (s == "items") {
+	if (s == "items" || s == "game_menu_items") {
 		return "game_menu_items";
 	}
-	if (s == "equip") {
+	if (s == "equip" || s == "game_menu_equip") {
 		return "game_menu_equip";
 	}
-	if (s == "status") {
+	if (s == "status" || s == "game_menu_status") {
 		return "game_menu_status";
+	}
+	if (s == "save" || s == "game_menu_save") {
+		return "game_menu_save";
+	}
+	if (s == "options" || s == "game_menu_options") {
+		return "game_menu_options";
+	}
+	if (s == "credits" || s == "title") {
+		return s;
+	}
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		if (!s.is_empty() && dm->has_menu(s)) {
+			return s;
+		}
 	}
 	return String();
 }
 
-void ClockGearsGameMenu::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
-	String act = p_action.strip_edges().to_lower();
-	if (act == "close") {
-		close_menu();
-		return;
+bool ClockGearsGameMenu::_execute_button_step(const Dictionary &p_step, const String &p_elem_id) {
+	String step_type = String(p_step.get("type", "")).strip_edges().to_lower();
+	if (step_type.is_empty()) {
+		return true;
 	}
-	if (act == "back") {
-		if (current_subscreen == "main") {
+	last_executed_actions.push_back(step_type);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+
+	if (step_type == "close") {
+		close_menu();
+		return true;
+	}
+	if (step_type == "back") {
+		_on_subscreen_back();
+		return true;
+	}
+	if (step_type == "open_menu") {
+		String target = String(p_step.get("target", p_step.get("menu_id", "game_menu_main"))).strip_edges();
+		if (target.is_empty()) {
+			target = "game_menu_main";
+		}
+		return open_menu_by_id(target, false, true, true);
+	}
+	if (step_type == "open_system_screen" || step_type == "items" || step_type == "equip" ||
+			step_type == "status" || step_type == "save" || step_type == "credits") {
+		String screen = String(p_step.get("screen_id", p_step.get("screen", p_step.get("target", step_type)))).strip_edges().to_lower();
+		if (screen == "credits" && (!dm || !dm->has_custom_ui_design("credits"))) {
+			if (interpreter) {
+				if (ClockGearsCreditsPlayer *cp = interpreter->get_credits_player()) {
+					close_menu();
+					cp->start_credits();
+					return true;
+				}
+			}
+		}
+		return open_menu_by_id(screen, false, true, true);
+	}
+	if (step_type == "options") {
+		return open_menu_by_id("game_menu_options", false, true, true);
+	}
+	if (step_type == "save_game") {
+		int slot = int(p_step.get("slot", 0));
+		if (slot > 0) {
+			return save_to_slot(slot);
+		}
+		return open_menu_by_id("game_menu_save", false, true, true);
+	}
+	if (step_type == "load_game") {
+		int slot = int(p_step.get("slot", 0));
+		if (slot > 0 && dm) {
+			_restore_pause_state();
 			close_menu();
-		} else {
-			_on_subscreen_back();
+			return dm->start_game_from_save(slot, this);
+		}
+		if (!menu_history_stack.is_empty() || !active_menu_id.is_empty()) {
+			if (!active_menu_id.is_empty() && active_menu_id != "game_menu_save") {
+				menu_history_stack.push_back(active_menu_id);
+			}
+		}
+		_open_load_panel();
+		return true;
+	}
+	if (step_type == "continue") {
+		if (dm) {
+			Array slots = dm->list_save_slots();
+			int best_slot = 0;
+			int64_t best_ts = -1;
+			for (int i = 0; i < slots.size(); i++) {
+				Dictionary sd = slots[i];
+				if (bool(sd.get("occupied", false)) || bool(sd.get("exists", false))) {
+					int s_num = int(sd.get("slot", i + 1));
+					int64_t ts = int64_t(sd.get("timestamp", 0));
+					if (best_slot == 0 || ts >= best_ts) {
+						best_slot = s_num;
+						best_ts = ts;
+					}
+				}
+			}
+			if (best_slot > 0) {
+				_restore_pause_state();
+				close_menu();
+				return dm->start_game_from_save(best_slot, this);
+			}
+		}
+		_open_load_panel();
+		return true;
+	}
+	if (step_type == "new_game") {
+		if (!dm) {
+			return false;
+		}
+		dm->reset_runtime_state();
+		Dictionary sys = dm->get_system_config();
+		sys["runtime_has_transfer"] = false;
+		sys.erase("runtime_has_exact_pos");
+		dm->set_system_config(sys);
+		String start_map = String(sys.get("start_map", "")).strip_edges();
+		close_menu();
+		if (is_inside_tree() && get_tree() && !start_map.is_empty() && ResourceLoader::exists(start_map)) {
+			return get_tree()->change_scene_to_file(start_map) == OK;
+		}
+		return !start_map.is_empty();
+	}
+	if (step_type == "to_title") {
+		if (bool(p_step.get("confirm", false))) {
+			return open_menu_by_id("to_title", false, true, true);
+		}
+		return confirm_return_to_title();
+	}
+	if (step_type == "quit") {
+		quit_requested_flag = true;
+		close_menu();
+		if (auto_quit_tree && !preview_mode && !editor_test_popup_mode && is_inside_tree() && get_tree()) {
+			get_tree()->quit();
+		}
+		return true;
+	}
+	if (step_type == "common_event") {
+		int ce_id = int(p_step.get("common_event_id", p_step.get("id", 0)));
+		last_common_event_id = ce_id;
+		if (interpreter && ce_id > 0) {
+			return interpreter->execute_common_event(ce_id);
+		}
+		return ce_id > 0;
+	}
+	if (step_type == "set_switch") {
+		String sw = String(p_step.get("switch_name", p_step.get("switch", p_step.get("name", "")))).strip_edges();
+		Variant raw_v = p_step.get("value", true);
+		if (dm && !sw.is_empty()) {
+			bool val = (raw_v.get_type() == Variant::STRING && String(raw_v).strip_edges().to_lower() == "toggle")
+					? !dm->get_switch(sw)
+					: bool(raw_v);
+			dm->set_switch(sw, val);
+			if (custom_ui_layer && custom_ui_layer->is_visible()) {
+				custom_ui_layer->refresh_live_values();
+			}
+			return true;
+		}
+		return false;
+	}
+	if (step_type == "set_variable") {
+		String var_name = String(p_step.get("variable_name", p_step.get("variable", p_step.get("name", "")))).strip_edges();
+		String op = String(p_step.get("op", "set")).strip_edges().to_lower();
+		int val = int(p_step.get("value", 0));
+		if (dm && !var_name.is_empty()) {
+			int cur = dm->get_variable(var_name);
+			if (op == "+" || op == "add") cur += val;
+			else if (op == "-" || op == "sub") cur -= val;
+			else if (op == "*" || op == "mul") cur *= val;
+			else if ((op == "/" || op == "div") && val != 0) cur /= val;
+			else if ((op == "%" || op == "mod") && val != 0) cur %= val;
+			else cur = val;
+			dm->set_variable(var_name, cur);
+			if (custom_ui_layer && custom_ui_layer->is_visible()) {
+				custom_ui_layer->refresh_live_values();
+			}
+			return true;
+		}
+		return false;
+	}
+	if (step_type == "play_sound") {
+		String spath = String(p_step.get("sound_path", p_step.get("sound", p_step.get("path", "")))).strip_edges();
+		float vol = p_step.has("volume") ? float(p_step["volume"]) : Math::db_to_linear(float(p_step.get("volume_db", 0.0f)));
+		float pitch = float(p_step.get("pitch", 1.0f));
+		if (!spath.is_empty()) {
+			last_played_menu_sound = spath;
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_se(spath, vol, pitch);
+			}
+			return true;
+		}
+		return false;
+	}
+	if (step_type == "hud_visibility") {
+		String scope = String(p_step.get("scope", "all")).strip_edges().to_lower();
+		String widget = String(p_step.get("widget_id", p_step.get("widget", p_step.get("widget_name", "")))).strip_edges();
+		Variant raw_vis = p_step.get("visible", true);
+		if (dm) {
+			bool vis = true;
+			if (raw_vis.get_type() == Variant::STRING && String(raw_vis).strip_edges().to_lower() == "toggle") {
+				vis = widget.is_empty() ? !dm->is_hud_runtime_visible() : !dm->is_hud_widget_runtime_visible(widget);
+			} else {
+				vis = bool(raw_vis);
+			}
+			if ((scope == "widget" || !widget.is_empty()) && !widget.is_empty()) {
+				dm->set_hud_widget_runtime_visible(widget, vis);
+			} else {
+				dm->set_hud_runtime_visible(vis);
+			}
+			return true;
+		}
+		return false;
+	}
+
+	// Compatibilidad: acciones antiguas o ID directo de subpantalla/menú
+	if (dm && dm->has_menu(step_type)) {
+		return open_menu_by_id(step_type, false, true, true);
+	}
+	return open_subscreen(step_type);
+}
+
+void ClockGearsGameMenu::_execute_button_actions(const Array &p_actions, const String &p_fallback_action, const String &p_elem_id) {
+	last_executed_actions.clear();
+	if (!p_actions.is_empty()) {
+		for (int i = 0; i < p_actions.size(); i++) {
+			if (p_actions[i].get_type() == Variant::DICTIONARY) {
+				Dictionary step = p_actions[i];
+				_execute_button_step(step, p_elem_id);
+			}
 		}
 		return;
 	}
+	String act = p_fallback_action.strip_edges().to_lower();
 	if (!act.is_empty()) {
-		open_subscreen(act);
+		Dictionary single;
+		single["type"] = act;
+		_execute_button_step(single, p_elem_id);
 	}
+}
+
+void ClockGearsGameMenu::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	Array multi;
+	if (custom_ui_layer && !p_elem_id.is_empty()) {
+		multi = custom_ui_layer->get_element_actions(p_elem_id);
+	}
+	_execute_button_actions(multi, p_action, p_elem_id);
+}
+
+bool ClockGearsGameMenu::trigger_custom_element_by_id(const String &p_elem_id) {
+	if (!custom_ui_layer) {
+		return false;
+	}
+	Array multi = custom_ui_layer->get_element_actions(p_elem_id);
+	String single;
+	Dictionary design = custom_ui_layer->get_active_design_copy();
+	Array elems = design.get("elements", Array());
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() == Variant::DICTIONARY) {
+			Dictionary ed = elems[i];
+			if (String(ed.get("id", "")) == p_elem_id) {
+				single = String(ed.get("action", ""));
+				break;
+			}
+		}
+	}
+	if (multi.is_empty() && single.is_empty()) {
+		return false;
+	}
+	_execute_button_actions(multi, single, p_elem_id);
+	return true;
 }
 
 bool ClockGearsGameMenu::is_custom_ui_active() const {
@@ -2199,11 +2931,23 @@ bool ClockGearsGameMenu::is_custom_ui_active() const {
 }
 
 void ClockGearsGameMenu::_on_subscreen_back() {
+	while (!menu_history_stack.is_empty()) {
+		String prev_id = menu_history_stack[menu_history_stack.size() - 1];
+		menu_history_stack.remove_at(menu_history_stack.size() - 1);
+		if (prev_id != active_menu_id) {
+			open_menu_by_id(prev_id, false, false, true);
+			return;
+		}
+	}
 	if (direct_subscreen_close_on_back) {
 		close_menu();
 		return;
 	}
-	open_subscreen("main");
+	if (active_menu_id.begins_with("game_menu_") && current_subscreen != "main") {
+		open_subscreen("main");
+		return;
+	}
+	close_menu();
 }
 
 void ClockGearsGameMenu::_on_item_row_pressed(const String &p_key) {
@@ -2273,6 +3017,15 @@ void ClockGearsGameMenu::_on_status_actor_selected(int p_idx) {
 }
 
 void ClockGearsGameMenu::_on_save_slot_pressed(int p_slot) {
+	if (save_panel_load_mode) {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		if (dm) {
+			_restore_pause_state();
+			close_menu();
+			dm->start_game_from_save(p_slot, this);
+		}
+		return;
+	}
 	bool ok = save_to_slot(p_slot);
 	if (save_feedback_label) {
 		save_feedback_label->set_text(ok ? vformat("Partida guardada en Espacio %d.", p_slot) : "Error al guardar.");

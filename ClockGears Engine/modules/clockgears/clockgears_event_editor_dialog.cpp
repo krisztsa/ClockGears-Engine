@@ -893,7 +893,34 @@ void ClockGearsEventEditorDialog::_on_edit_command_pressed() {
 		}
 		dlg_show_game_over->popup_centered(Size2(440, 165) * EDSCALE);
 	} else if (type == "open_menu" && dlg_open_menu) {
-		dlg_open_menu->popup_centered(Size2(400, 150) * EDSCALE);
+		String mid = String(d.get("menu_id", "game_menu_main")).strip_edges();
+		if (mid.is_empty() || mid == "main") {
+			mid = "game_menu_main";
+		}
+		if (open_menu_selector_opt) {
+			open_menu_selector_opt->clear();
+			int sel_idx = 0;
+			Array menus = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->get_all_menus_for_selector() : Array();
+			for (int i = 0; i < menus.size(); i++) {
+				Dictionary md = menus[i];
+				String id = String(md.get("id", ""));
+				if (id == "hud" || id == "title") {
+					continue;
+				}
+				int item_idx = open_menu_selector_opt->get_item_count();
+				open_menu_selector_opt->add_item(String(md.get("name", id)));
+				open_menu_selector_opt->set_item_metadata(item_idx, id);
+				if (id == mid) {
+					sel_idx = item_idx;
+				}
+			}
+			if (open_menu_selector_opt->get_item_count() == 0) {
+				open_menu_selector_opt->add_item(CG_TR("Menú del Juego"));
+				open_menu_selector_opt->set_item_metadata(0, String("game_menu_main"));
+			}
+			open_menu_selector_opt->select(sel_idx);
+		}
+		dlg_open_menu->popup_centered(Size2(430, 175) * EDSCALE);
 	} else if ((type == "change_menu_access" || type == "set_menu_access" || type == "menu_access") && dlg_change_menu_access) {
 		bool allow_menu = true;
 		if (d.has("enabled")) {
@@ -1192,7 +1219,26 @@ void ClockGearsEventEditorDialog::_on_command_id_selected(int p_cmd_id) {
 			break;
 		case CMD_OPEN_MENU:
 			if (dlg_open_menu) {
-				dlg_open_menu->popup_centered(Size2(400, 150) * EDSCALE);
+				if (open_menu_selector_opt) {
+					open_menu_selector_opt->clear();
+					Array menus = ClockGearsDataManager::get_singleton() ? ClockGearsDataManager::get_singleton()->get_all_menus_for_selector() : Array();
+					for (int i = 0; i < menus.size(); i++) {
+						Dictionary md = menus[i];
+						String id = String(md.get("id", ""));
+						if (id == "hud" || id == "title") {
+							continue;
+						}
+						int idx = open_menu_selector_opt->get_item_count();
+						open_menu_selector_opt->add_item(String(md.get("name", id)));
+						open_menu_selector_opt->set_item_metadata(idx, id);
+					}
+					if (open_menu_selector_opt->get_item_count() == 0) {
+						open_menu_selector_opt->add_item(CG_TR("Menú del Juego"));
+						open_menu_selector_opt->set_item_metadata(0, String("game_menu_main"));
+					}
+					open_menu_selector_opt->select(0);
+				}
+				dlg_open_menu->popup_centered(Size2(430, 175) * EDSCALE);
 			}
 			break;
 		case CMD_CHANGE_MENU_ACCESS:
@@ -2217,6 +2263,13 @@ void ClockGearsEventEditorDialog::_on_confirm_open_menu() {
 	Dictionary cmd;
 	cmd["type"] = "open_menu";
 	cmd["code"] = CMD_OPEN_MENU;
+	String mid = "game_menu_main";
+	if (open_menu_selector_opt && open_menu_selector_opt->get_selected() >= 0) {
+		mid = String(open_menu_selector_opt->get_item_metadata(open_menu_selector_opt->get_selected())).strip_edges();
+	}
+	if (!mid.is_empty() && mid != "game_menu_main") {
+		cmd["menu_id"] = mid;
+	}
 	_append_command_to_active_page(cmd);
 }
 
@@ -2374,6 +2427,7 @@ Dictionary ClockGearsEventEditorDialog::get_menu_command_ui_handles() {
 	out["dlg_show_game_over"] = dlg_show_game_over;
 	out["dlg_teleport"] = dlg_teleport;
 	out["dlg_open_menu"] = dlg_open_menu;
+	out["open_menu_selector_opt"] = open_menu_selector_opt;
 	out["dlg_change_menu_access"] = dlg_change_menu_access;
 	out["menu_access_opt"] = menu_access_opt;
 	out["dlg_return_to_title"] = dlg_return_to_title;
@@ -4101,11 +4155,33 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 			CG_TR("Muestra la pantalla de Game Over configurada en Base de Datos → Menús → Game Over.\nPermite Reintentar o Volver al menú."),
 			show_game_over_info_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_show_game_over));
 
-	// Abrir Menú del Juego (CMD_OPEN_MENU)
-	Label *open_menu_lbl = nullptr;
-	make_info_cmd_dialog(dlg_open_menu, CG_TR("Abrir Menú del Juego"),
-			CG_TR("Abre el menú del juego (Objetos / Equipo / Estado / Guardar / Opciones / Salir) desde el evento y espera a que el jugador lo cierre."),
-			open_menu_lbl, callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_open_menu));
+	// Abrir Menú (CMD_OPEN_MENU - 3C selector de cualquier menú)
+	dlg_open_menu = memnew(ConfirmationDialog);
+	dlg_open_menu->set_title(CG_TR("Abrir Menú"));
+	dlg_open_menu->set_ok_button_text(CG_TR("Aceptar"));
+	dlg_open_menu->set_cancel_button_text(CG_TR("Cancelar"));
+	{
+		PanelContainer *card = memnew(PanelContainer);
+		card->add_theme_style_override("panel", _event_card_style());
+		dlg_open_menu->add_child(card);
+		VBoxContainer *vb = memnew(VBoxContainer);
+		vb->add_theme_constant_override("separation", 8);
+		card->add_child(vb);
+		Label *desc = memnew(Label(CG_TR("Abre el menú elegido (sistema o personalizado) desde el evento y espera a que el jugador lo cierre.")));
+		desc->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		vb->add_child(desc);
+		HBoxContainer *hb = memnew(HBoxContainer);
+		hb->add_theme_constant_override("separation", 10);
+		vb->add_child(hb);
+		hb->add_child(memnew(Label(CG_TR("Menú a abrir:"))));
+		open_menu_selector_opt = memnew(OptionButton);
+		open_menu_selector_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		open_menu_selector_opt->add_item(CG_TR("Menú del Juego"));
+		open_menu_selector_opt->set_item_metadata(0, String("game_menu_main"));
+		hb->add_child(open_menu_selector_opt);
+	}
+	dlg_open_menu->connect("confirmed", callable_mp(this, &ClockGearsEventEditorDialog::_on_confirm_open_menu));
+	add_child(dlg_open_menu);
 
 	// Abrir Guardado (CMD_OPEN_SAVE)
 	Label *open_save_lbl = nullptr;
@@ -5290,7 +5366,19 @@ String ClockGearsEventEditorDialog::_format_command_text(const Dictionary &d) co
 	} else if (type == "show_game_over") {
 		return CG_TR("◆ Mostrar Game Over");
 	} else if (type == "open_menu") {
-		return CG_TR("◆ Abrir Menú del Juego");
+		String mid = String(d.get("menu_id", "")).strip_edges();
+		if (mid.is_empty() || mid == "main" || mid == "game_menu_main") {
+			return CG_TR("◆ Abrir Menú del Juego");
+		}
+		String mname = mid;
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			Dictionary meta = dm->get_menu_metadata(mid);
+			String dn = String(meta.get("name", "")).strip_edges();
+			if (!dn.is_empty()) {
+				mname = dn;
+			}
+		}
+		return vformat(CG_TR("◆ Abrir Menú: %s"), mname);
 	} else if (type == "change_menu_access" || type == "set_menu_access" || type == "menu_access") {
 		bool allow_menu = true;
 		if (d.has("enabled")) {

@@ -172,6 +172,7 @@ bool ClockGearsWindowStyleBox::configure_from_surface(const Dictionary &p_surfac
 	style_id = p_style_id.is_empty() ? String(p_surface.get("id", "rounded")) : p_style_id;
 	window_type_id = p_window_type_id;
 	border_type = String(p_surface.get("border_type", "rounded")).strip_edges().to_lower();
+	shape_type = String(p_surface.get("shape_type", "")).strip_edges().to_lower();
 	fill_type = String(p_surface.get("fill_type", "color")).strip_edges().to_lower();
 	center_mode = String(p_surface.get("center_mode", "stretch")).strip_edges().to_lower();
 	pixel_art = p_surface.has("pixel_art") ? bool(p_surface["pixel_art"]) : true;
@@ -182,6 +183,21 @@ bool ClockGearsWindowStyleBox::configure_from_surface(const Dictionary &p_surfac
 	border_color = s_parse_html_color(p_surface.get("border_color", "#e0a040ff"), Color(0.88f, 0.63f, 0.25f, 1.0f));
 	fill_color = s_parse_html_color(p_surface.get("fill_color", "#14171ff0"), Color(0.08f, 0.09f, 0.12f, 0.94f));
 	font_color = s_parse_html_color(p_surface.get("font_color", "#eef2faff"), Color(0.93f, 0.95f, 0.98f, 1.0f));
+
+	gradient_enabled = bool(p_surface.get("gradient_enabled", false));
+	gradient_top_color = s_parse_html_color(p_surface.get("gradient_top_color", "#28221aff"), Color(0.16f, 0.13f, 0.10f, 1.0f));
+	gradient_bottom_color = s_parse_html_color(p_surface.get("gradient_bottom_color", "#14110eff"), Color(0.08f, 0.07f, 0.05f, 1.0f));
+	gradient_angle = String(p_surface.get("gradient_angle", "vertical")).strip_edges().to_lower();
+
+	shadow_enabled = bool(p_surface.get("shadow_enabled", false));
+	shadow_color = s_parse_html_color(p_surface.get("shadow_color", "#00000073"), Color(0.0f, 0.0f, 0.0f, 0.45f));
+	shadow_size = CLAMP(int(p_surface.get("shadow_size", 4)), 0, 32);
+	shadow_offset_x = CLAMP(int(p_surface.get("shadow_offset_x", 0)), -32, 32);
+	shadow_offset_y = CLAMP(int(p_surface.get("shadow_offset_y", 2)), -32, 32);
+
+	glow_enabled = bool(p_surface.get("glow_enabled", false));
+	glow_color = s_parse_html_color(p_surface.get("glow_color", "#f5bc5466"), Color(0.96f, 0.74f, 0.33f, 0.40f));
+	glow_size = CLAMP(int(p_surface.get("glow_size", 4)), 0, 24);
 
 	Dictionary pad = (p_surface.has("padding") && p_surface["padding"].get_type() == Variant::DICTIONARY) ? Dictionary(p_surface["padding"]) : Dictionary();
 	base_padding[SIDE_LEFT] = MAX(0, int(pad.get("left", 12)));
@@ -223,6 +239,82 @@ float ClockGearsWindowStyleBox::get_style_margin(Side p_side) const {
 	return (float)base_padding[p_side] * scale_factor;
 }
 
+String ClockGearsWindowStyleBox::get_effective_shape_type() const {
+	if (!shape_type.is_empty()) {
+		return shape_type;
+	}
+	if (border_type == "image") return "image";
+	if (border_type == "rect") return "rect";
+	if (border_type == "none") return "rect";
+	return "rounded";
+}
+
+Vector<Vector2> ClockGearsWindowStyleBox::build_shape_polygon(const Rect2 &p_rect, const String &p_shape_type, float p_corner_radius, int p_segments) {
+	Vector<Vector2> pts;
+	if (p_rect.size.x <= 0.5f || p_rect.size.y <= 0.5f) {
+		return pts;
+	}
+	String st = p_shape_type.strip_edges().to_lower();
+	int segs = CLAMP(p_segments, 6, 48);
+	float x0 = p_rect.position.x;
+	float y0 = p_rect.position.y;
+	float w = p_rect.size.x;
+	float h = p_rect.size.y;
+
+	if (st == "rect" || st == "image" || st == "none") {
+		pts.push_back(Vector2(x0, y0));
+		pts.push_back(Vector2(x0 + w, y0));
+		pts.push_back(Vector2(x0 + w, y0 + h));
+		pts.push_back(Vector2(x0, y0 + h));
+		return pts;
+	}
+	if (st == "circle") {
+		float rad = MIN(w, h) * 0.5f;
+		Vector2 c(x0 + w * 0.5f, y0 + h * 0.5f);
+		int count = MAX(16, segs);
+		for (int i = 0; i < count; i++) {
+			float a = (float(Math::TAU) * float(i)) / float(count);
+			pts.push_back(c + Vector2(Math::cos(a), Math::sin(a)) * rad);
+		}
+		return pts;
+	}
+	if (st == "ellipse") {
+		float rx = w * 0.5f;
+		float ry = h * 0.5f;
+		Vector2 c(x0 + rx, y0 + ry);
+		int count = MAX(16, segs);
+		for (int i = 0; i < count; i++) {
+			float a = (float(Math::TAU) * float(i)) / float(count);
+			pts.push_back(c + Vector2(Math::cos(a) * rx, Math::sin(a) * ry));
+		}
+		return pts;
+	}
+
+	float r = (st == "pill") ? (MIN(w, h) * 0.5f) : CLAMP(p_corner_radius, 0.0f, MIN(w, h) * 0.5f);
+	if (r <= 0.5f) {
+		pts.push_back(Vector2(x0, y0));
+		pts.push_back(Vector2(x0 + w, y0));
+		pts.push_back(Vector2(x0 + w, y0 + h));
+		pts.push_back(Vector2(x0, y0 + h));
+		return pts;
+	}
+	int arc_steps = MAX(4, segs / 4);
+	Vector2 centers[4] = {
+		Vector2(x0 + w - r, y0 + r),
+		Vector2(x0 + w - r, y0 + h - r),
+		Vector2(x0 + r, y0 + h - r),
+		Vector2(x0 + r, y0 + r)
+	};
+	float start_angles[4] = { -float(Math::PI) * 0.5f, 0.0f, float(Math::PI) * 0.5f, float(Math::PI) };
+	for (int corner = 0; corner < 4; corner++) {
+		for (int s = 0; s <= arc_steps; s++) {
+			float a = start_angles[corner] + (float(Math::PI) * 0.5f) * (float(s) / float(arc_steps));
+			pts.push_back(centers[corner] + Vector2(Math::cos(a), Math::sin(a)) * r);
+		}
+	}
+	return pts;
+}
+
 void ClockGearsWindowStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) const {
 	if (p_rect.size.x <= 0.0f || p_rect.size.y <= 0.0f) {
 		return;
@@ -232,8 +324,15 @@ void ClockGearsWindowStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) cons
 		return;
 	}
 	bool repeat = (center_mode == "repeat");
+	String eff_shape = get_effective_shape_type();
 
-	if (border_type == "image" && frame_texture.is_valid()) {
+	if (border_type == "image" && eff_shape == "image" && frame_texture.is_valid()) {
+		if (shadow_enabled && shadow_size > 0) {
+			Rect2 sr = p_rect;
+			sr.position += Vector2(shadow_offset_x * scale_factor, shadow_offset_y * scale_factor);
+			sr = sr.grow(shadow_size * 0.5f * scale_factor);
+			rs->canvas_item_add_rect(p_canvas_item, sr, shadow_color);
+		}
 		if (fill_type == "image" && fill_texture.is_valid()) {
 			s_draw_texture_piece(p_canvas_item, fill_texture, p_rect, Rect2(Vector2(), fill_texture->get_size()), repeat, scale_factor, Color(1, 1, 1, 1));
 		} else if (fill_color.a > 0.001f) {
@@ -244,6 +343,65 @@ void ClockGearsWindowStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) cons
 				(float)base_nine_slice[SIDE_RIGHT], (float)base_nine_slice[SIDE_BOTTOM],
 				scale_factor, repeat, Color(1, 1, 1, 1));
 		return;
+	}
+
+	const bool custom_shape_or_fx = (eff_shape == "pill" || eff_shape == "circle" || eff_shape == "ellipse" ||
+			gradient_enabled || shadow_enabled || glow_enabled);
+	if (custom_shape_or_fx) {
+		float rad = (eff_shape == "pill") ? (MIN(p_rect.size.x, p_rect.size.y) * 0.5f) : float(scaled_corner_radius);
+		Vector<Vector2> pts = build_shape_polygon(p_rect, eff_shape, rad, 24);
+		if (!pts.is_empty()) {
+			if (shadow_enabled && shadow_size > 0 && shadow_color.a > 0.001f) {
+				Rect2 sr = p_rect;
+				sr.position += Vector2(float(shadow_offset_x) * scale_factor, float(shadow_offset_y) * scale_factor);
+				sr = sr.grow(float(shadow_size) * scale_factor);
+				Vector<Vector2> s_pts = build_shape_polygon(sr, eff_shape, rad + float(shadow_size) * scale_factor, 20);
+				if (!s_pts.is_empty()) {
+					Vector<Color> scols;
+					scols.push_back(shadow_color);
+					rs->canvas_item_add_polygon(p_canvas_item, s_pts, scols);
+				}
+			}
+			if (glow_enabled && glow_size > 0 && glow_color.a > 0.001f) {
+				Rect2 gr = p_rect.grow(float(glow_size) * scale_factor);
+				Vector<Vector2> g_pts = build_shape_polygon(gr, eff_shape, rad + float(glow_size) * scale_factor, 20);
+				if (!g_pts.is_empty()) {
+					Vector<Color> gcols;
+					gcols.push_back(glow_color);
+					rs->canvas_item_add_polygon(p_canvas_item, g_pts, gcols);
+				}
+			}
+
+			if (gradient_enabled) {
+				Vector<Color> vcols;
+				vcols.resize(pts.size());
+				bool horiz = (gradient_angle == "horizontal");
+				for (int i = 0; i < pts.size(); i++) {
+					float t = horiz
+							? CLAMP((pts[i].x - p_rect.position.x) / MAX(1.0f, p_rect.size.x), 0.0f, 1.0f)
+							: CLAMP((pts[i].y - p_rect.position.y) / MAX(1.0f, p_rect.size.y), 0.0f, 1.0f);
+					vcols.write[i] = gradient_top_color.lerp(gradient_bottom_color, t);
+				}
+				rs->canvas_item_add_polygon(p_canvas_item, pts, vcols);
+			} else if (fill_color.a > 0.001f) {
+				Vector<Color> fcols;
+				fcols.push_back(fill_color);
+				rs->canvas_item_add_polygon(p_canvas_item, pts, fcols);
+			}
+
+			if (fill_type == "image" && fill_texture.is_valid()) {
+				s_draw_texture_piece(p_canvas_item, fill_texture, p_rect, Rect2(Vector2(), fill_texture->get_size()), repeat, scale_factor, Color(1, 1, 1, 1));
+			}
+
+			if (scaled_border_width > 0 && border_color.a > 0.001f) {
+				Vector<Vector2> line_pts = pts;
+				line_pts.push_back(pts[0]);
+				Vector<Color> lcols;
+				lcols.push_back(border_color);
+				rs->canvas_item_add_polyline(p_canvas_item, line_pts, lcols, float(scaled_border_width), !pixel_art);
+			}
+			return;
+		}
 	}
 
 	if (fill_type == "image" && fill_texture.is_valid()) {
@@ -276,6 +434,7 @@ void ClockGearsWindowStyleBox::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_style_id"), &ClockGearsWindowStyleBox::get_style_id);
 	ClassDB::bind_method(D_METHOD("get_window_type_id"), &ClockGearsWindowStyleBox::get_window_type_id);
 	ClassDB::bind_method(D_METHOD("get_border_type"), &ClockGearsWindowStyleBox::get_border_type);
+	ClassDB::bind_method(D_METHOD("get_effective_shape_type"), &ClockGearsWindowStyleBox::get_effective_shape_type);
 	ClassDB::bind_method(D_METHOD("get_fill_type"), &ClockGearsWindowStyleBox::get_fill_type);
 	ClassDB::bind_method(D_METHOD("get_center_mode"), &ClockGearsWindowStyleBox::get_center_mode);
 	ClassDB::bind_method(D_METHOD("is_pixel_art"), &ClockGearsWindowStyleBox::is_pixel_art);

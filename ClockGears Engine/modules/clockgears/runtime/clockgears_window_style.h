@@ -39,6 +39,21 @@ private:
 	Ref<Texture2D> fill_texture;
 	Ref<StyleBoxFlat> flat_box;
 
+	// Propiedades extendidas de forma (Etapa 3F)
+	String shape_type;
+	bool gradient_enabled = false;
+	Color gradient_top_color = Color(0.16f, 0.13f, 0.10f, 1.0f);
+	Color gradient_bottom_color = Color(0.08f, 0.07f, 0.05f, 1.0f);
+	String gradient_angle = "vertical";
+	bool shadow_enabled = false;
+	Color shadow_color = Color(0.0f, 0.0f, 0.0f, 0.45f);
+	int shadow_size = 4;
+	int shadow_offset_x = 0;
+	int shadow_offset_y = 2;
+	bool glow_enabled = false;
+	Color glow_color = Color(0.96f, 0.74f, 0.33f, 0.40f);
+	int glow_size = 4;
+
 	void _rebuild_internal();
 
 protected:
@@ -46,6 +61,9 @@ protected:
 	virtual float get_style_margin(Side p_side) const override;
 
 public:
+	static Vector<Vector2> build_shape_polygon(const Rect2 &p_rect, const String &p_shape_type, float p_corner_radius, int p_segments = 24);
+	String get_effective_shape_type() const;
+
 	bool configure_from_surface(const Dictionary &p_surface, float p_vp_scale, const String &p_style_id = "", const String &p_window_type_id = "");
 
 	virtual void draw(RID p_canvas_item, const Rect2 &p_rect) const override;

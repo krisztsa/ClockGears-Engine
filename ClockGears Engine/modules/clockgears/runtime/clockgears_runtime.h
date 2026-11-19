@@ -487,6 +487,7 @@ public:
 
 	void start_event(ClockGearsEvent *p_event);
 	void start_command_list(const Array &p_commands, ClockGearsEvent *p_source_event = nullptr);
+	bool execute_common_event(int p_common_event_id);
 	void advance_message_or_choice(int p_choice_idx = 0);
 	void step_frame();
 

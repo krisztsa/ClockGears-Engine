@@ -379,6 +379,7 @@ private:
 	Label *show_game_over_info_lbl = nullptr;
 
 	ConfirmationDialog *dlg_open_menu = nullptr;
+	OptionButton *open_menu_selector_opt = nullptr;
 
 	ConfirmationDialog *dlg_change_menu_access = nullptr;
 	OptionButton *menu_access_opt = nullptr;

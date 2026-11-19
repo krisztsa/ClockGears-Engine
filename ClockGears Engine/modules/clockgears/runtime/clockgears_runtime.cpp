@@ -2446,6 +2446,7 @@ void ClockGearsEventInterpreter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_last_choice_index"), &ClockGearsEventInterpreter::get_last_choice_index);
 	ClassDB::bind_method(D_METHOD("start_event", "event"), &ClockGearsEventInterpreter::start_event);
 	ClassDB::bind_method(D_METHOD("start_command_list", "commands", "source_event"), &ClockGearsEventInterpreter::start_command_list, DEFVAL(Variant()));
+	ClassDB::bind_method(D_METHOD("execute_common_event", "common_event_id"), &ClockGearsEventInterpreter::execute_common_event);
 	ClassDB::bind_method(D_METHOD("advance_message_or_choice", "choice_idx"), &ClockGearsEventInterpreter::advance_message_or_choice, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("step_frame"), &ClockGearsEventInterpreter::step_frame);
 	ClassDB::bind_method(D_METHOD("get_picture_manager"), &ClockGearsEventInterpreter::get_picture_manager);
@@ -3585,11 +3586,16 @@ bool ClockGearsEventInterpreter::_execute_single_command(const Dictionary &p_cmd
 		return false;
 	}
 
-	// --- Abrir Menú del Juego (9B Tanda 4) ---
+	// --- Abrir Menú (3C: cualquiera o Menú del Juego por defecto) ---
 	if (type == "open_menu" || code == CG_CMD_OPEN_MENU) {
 		_build_runtime_ui();
 		if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
-			gm->open_menu_from_event("main", false);
+			String mid = String(p_cmd.get("menu_id", p_cmd.get("target", ""))).strip_edges();
+			if (mid.is_empty() || mid == "main" || mid == "game_menu_main") {
+				gm->open_menu_from_event("main", false);
+			} else {
+				gm->open_menu_by_id(mid, true, false, true);
+			}
 			if (gm->is_menu_open()) {
 				state = STATE_WAITING_MENU;
 				return false;
@@ -4027,32 +4033,64 @@ void ClockGearsEventInterpreter::_notification(int p_what) {
 	}
 }
 
+bool ClockGearsEventInterpreter::execute_common_event(int p_common_event_id) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || p_common_event_id <= 0) {
+		return false;
+	}
+	Dictionary rec = dm->get_record_by_id(CAT_COMMON_EVENTS, p_common_event_id);
+	if (rec.is_empty()) {
+		return false;
+	}
+	Array cmds = rec.get("commands", Array());
+	if (cmds.is_empty()) {
+		return false;
+	}
+	if (state == STATE_IDLE) {
+		start_command_list(cmds);
+		return true;
+	}
+	InterpreterState prev_state = state;
+	for (int i = 0; i < cmds.size(); i++) {
+		if (cmds[i].get_type() == Variant::DICTIONARY) {
+			_execute_single_command(cmds[i]);
+			state = prev_state;
+		}
+	}
+	return true;
+}
+
 void ClockGearsEventInterpreter::unhandled_input(const Ref<InputEvent> &p_event) {
 	if (game_menu || !p_event.is_valid() || (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint())) {
 		return;
 	}
-	bool want_menu = false;
-	Ref<InputEventKey> k = p_event;
-	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
-		Key kc = k->get_keycode();
-		if (kc == Key::ESCAPE || kc == Key::M) {
-			want_menu = true;
+	String runtime_ctx = has_active_battle() ? String("battle") : String("map");
+	if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
+		if (gm->handle_trigger_input_event(p_event, runtime_ctx)) {
+			if (Viewport *vp = get_viewport()) {
+				vp->set_input_as_handled();
+			}
+			return;
 		}
-	}
-	if (!want_menu) {
-		InputMap *im = InputMap::get_singleton();
-		if (im && ((im->has_action("ui_cancel") && p_event->is_action_pressed("ui_cancel")) ||
-						   (im->has_action("game_menu") && p_event->is_action_pressed("game_menu")) ||
-						   (im->has_action("ui_menu") && p_event->is_action_pressed("ui_menu")))) {
-			want_menu = true;
+		bool want_menu = false;
+		Ref<InputEventKey> k = p_event;
+		if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+			Key kc = k->get_keycode();
+			if (kc == Key::ESCAPE || kc == Key::M) {
+				want_menu = true;
+			}
 		}
-	}
-	if (want_menu) {
-		if (ClockGearsGameMenu *gm = _ensure_game_menu()) {
-			if (gm->open_menu()) {
-				if (Viewport *vp = get_viewport()) {
-					vp->set_input_as_handled();
-				}
+		if (!want_menu) {
+			InputMap *im = InputMap::get_singleton();
+			if (im && ((im->has_action("ui_cancel") && p_event->is_action_pressed("ui_cancel")) ||
+							   (im->has_action("game_menu") && p_event->is_action_pressed("game_menu")) ||
+							   (im->has_action("ui_menu") && p_event->is_action_pressed("ui_menu")))) {
+				want_menu = true;
+			}
+		}
+		if (want_menu && gm->open_menu()) {
+			if (Viewport *vp = get_viewport()) {
+				vp->set_input_as_handled();
 			}
 		}
 	}

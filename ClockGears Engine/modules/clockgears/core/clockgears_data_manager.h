@@ -50,6 +50,7 @@ class ClockGearsDataManager : public Object {
 
 public:
 	static constexpr int CURRENT_SCHEMA_VERSION = 3;
+	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 2;
 	static constexpr int MAX_CUSTOM_MAP_LAYERS = 16;
 
 	static void normalize_record_defaults(int p_category, Dictionary &r_record);
@@ -121,6 +122,7 @@ private:
 	Dictionary headless_clipboard;
 	mutable HashMap<String, Ref<Texture2D>> entry_icon_cache;
 	mutable Vector<String> last_repaired_json_files;
+	mutable Vector<String> last_migrated_files;
 	uint64_t window_styles_generation = 1;
 	mutable uint64_t cached_ws_norm_gen = 0;
 	mutable Dictionary cached_ws_norm;
@@ -252,9 +254,19 @@ public:
 	static constexpr int MAX_UI_DESIGN_UNDO_STEPS = 100;
 	static Array get_ui_design_screens();
 	static PackedStringArray get_ui_design_screen_ids();
+	static PackedStringArray get_system_menu_ids();
+	static bool is_system_menu_id(const String &p_menu_id);
+	static String normalize_menu_id(const String &p_raw_id);
 	static PackedStringArray get_ui_element_types();
 	static Array get_ui_data_bindings();
 	static Array get_ui_button_actions(const String &p_screen_id);
+	static Array get_all_ui_button_action_types();
+	static Array get_menu_layout_modes();
+	static Array get_ui_shape_types();
+	static Array get_menu_trigger_contexts();
+	static Dictionary normalize_menu_trigger(const Dictionary &p_trig);
+	static Dictionary normalize_menu_layout(const Dictionary &p_layout);
+	static Dictionary normalize_ui_shape(const Dictionary &p_shape);
 	static Dictionary make_default_ui_element(const String &p_type = "text", const String &p_screen_id = "title");
 	static Dictionary normalize_ui_element(const Dictionary &p_elem, int p_index_hint = 1, const String &p_screen_id = "title");
 	static Dictionary get_default_ui_screen_design(const String &p_screen_id);
@@ -262,6 +274,23 @@ public:
 	static Dictionary get_default_ui_designs_config();
 	static Dictionary normalize_ui_designs_config(const Dictionary &p_cfg);
 	Dictionary get_default_ui_screen_template(const String &p_screen_id) const;
+
+	// Menús ilimitados, reordenables, entradas configurables y conflictos (Etapa 3)
+	Array get_all_menus() const;
+	PackedStringArray get_custom_menu_ids() const;
+	Array get_all_menus_for_selector() const;
+	bool has_menu(const String &p_menu_id) const;
+	Dictionary get_menu_metadata(const String &p_menu_id) const;
+	String create_custom_menu(const String &p_name, const Dictionary &p_initial_design = Dictionary());
+	bool rename_menu(const String &p_menu_id, const String &p_new_name);
+	String duplicate_menu(const String &p_source_id, const String &p_new_name = "");
+	bool reorder_custom_menu(const String &p_menu_id, int p_new_order);
+	bool move_custom_menu(const String &p_menu_id, int p_delta);
+	bool delete_custom_menu(const String &p_menu_id);
+	bool restore_system_menu_template(const String &p_menu_id, bool p_enable_custom_design = false);
+	Array get_menu_trigger_conflicts() const;
+	PackedStringArray get_last_migrated_files() const;
+	void clear_last_migrated_files() { last_migrated_files.clear(); }
 
 	bool has_custom_ui_design(const String &p_screen_id) const;
 	Dictionary get_ui_screen_design(const String &p_screen_id) const;

@@ -12,6 +12,7 @@
 #include "clockgears_time_manager.h"
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/input/input_map.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
@@ -19,6 +20,7 @@
 #include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
 #include "core/object/undo_redo.h"
+#include "core/os/keyboard.h"
 #include "core/os/time.h"
 #include "scene/gui/color_rect.h"
 #include "scene/main/canvas_layer.h"
@@ -1874,6 +1876,7 @@ bool ClockGearsDataManager::save_all(const String &p_dir_path) {
 
 bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	last_repaired_json_files.clear();
+	last_migrated_files.clear();
 	built_tileset_cache.clear();
 	entry_icon_cache.clear();
 	_invalidate_window_styles_cache();
@@ -2000,10 +2003,28 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 	system_config.erase("hud");
 
-	// Diseños visuales de interfaz por pantalla (ui_designs.json; proyectos antiguos mantienen aspecto por defecto)
+	// Diseños visuales de interfaz y menús ilimitados (ui_designs.json; proyectos antiguos migran conservando .pre_menu_v2.bak y aspecto idéntico)
+	String ui_designs_path = p_dir_path.path_join("ui_designs.json");
 	Variant uid_var;
-	if (_read_json_with_backup(p_dir_path.path_join("ui_designs.json"), uid_var) && uid_var.get_type() == Variant::DICTIONARY) {
-		ui_designs_config = normalize_ui_designs_config(Dictionary(uid_var));
+	if (_read_json_with_backup(ui_designs_path, uid_var) && uid_var.get_type() == Variant::DICTIONARY) {
+		Dictionary raw_uid = Dictionary(uid_var);
+		int raw_ui_schema = int(raw_uid.get("schema_version", 1));
+		ui_designs_config = normalize_ui_designs_config(raw_uid);
+		if (raw_ui_schema < CURRENT_UI_DESIGNS_SCHEMA_VERSION && FileAccess::exists(ui_designs_path)) {
+			String orig_bak = ui_designs_path + ".pre_menu_v2.bak";
+			if (!FileAccess::exists(orig_bak)) {
+				PackedByteArray raw_bytes = FileAccess::get_file_as_bytes(ui_designs_path);
+				Ref<FileAccess> fb = FileAccess::open(orig_bak, FileAccess::WRITE);
+				if (fb.is_valid()) {
+					fb->store_buffer(raw_bytes);
+					fb->flush();
+				}
+			}
+			_write_json_atomic(ui_designs_path, ui_designs_config);
+			if (!last_migrated_files.has(ui_designs_path)) {
+				last_migrated_files.push_back(ui_designs_path);
+			}
+		}
 	} else {
 		ui_designs_config = get_default_ui_designs_config();
 	}
@@ -4688,7 +4709,8 @@ static String _cg_norm_hud_type(const Variant &p_val) {
 static String _cg_norm_ui_elem_type(const Variant &p_val) {
 	String t = String(p_val).strip_edges().to_lower();
 	if (t == "image" || t == "text" || t == "button" || t == "frame" ||
-			t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "variable") {
+			t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "variable" ||
+			t == "container" || t == "radial") {
 		return t;
 	}
 	if (t == "imagen") {
@@ -4715,12 +4737,39 @@ static String _cg_norm_ui_elem_type(const Variant &p_val) {
 	if (t == "objeto" || t == "contador_objetos") {
 		return "item";
 	}
+	if (t == "contenedor") {
+		return "container";
+	}
 	return "text";
+}
+
+static String _cg_slugify_menu_id(const String &p_raw) {
+	String s = p_raw.strip_edges().to_lower();
+	// Plegar vocales acentuadas / ñ comunes al slug del ID (el nombre visible conserva UTF-8 íntegro)
+	s = s.replace(String::utf8("á"), "a").replace(String::utf8("é"), "e").replace(String::utf8("í"), "i")
+			.replace(String::utf8("ó"), "o").replace(String::utf8("ú"), "u").replace(String::utf8("ü"), "u")
+			.replace(String::utf8("ñ"), "n");
+	String out;
+	bool last_us = false;
+	for (int i = 0; i < s.length(); i++) {
+		char32_t c = s[i];
+		if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			out += c;
+			last_us = false;
+		} else if ((c == '_' || c == '-' || c == ' ') && !last_us && !out.is_empty()) {
+			out += '_';
+			last_us = true;
+		}
+	}
+	while (out.ends_with("_")) {
+		out = out.substr(0, out.length() - 1);
+	}
+	return out;
 }
 
 static String _cg_norm_ui_screen_id(const String &p_raw) {
 	String s = p_raw.strip_edges().to_lower();
-	if (s == "title" || s == "titulo" || s == String::utf8("título")) {
+	if (s.is_empty() || s == "title" || s == "titulo" || s == String::utf8("título")) {
 		return "title";
 	}
 	if (s == "game_menu_main" || s == "game_menu" || s == "menu" || s == "main") {
@@ -4735,13 +4784,198 @@ static String _cg_norm_ui_screen_id(const String &p_raw) {
 	if (s == "game_menu_status" || s == "status" || s == "estado") {
 		return "game_menu_status";
 	}
+	if (s == "game_menu_save" || s == "save" || s == "guardar") {
+		return "game_menu_save";
+	}
+	if (s == "game_menu_options" || s == "options" || s == "opciones") {
+		return "game_menu_options";
+	}
 	if (s == "credits" || s == "creditos" || s == String::utf8("créditos")) {
 		return "credits";
 	}
 	if (s == "hud") {
 		return "hud";
 	}
-	return "title";
+	String slug = _cg_slugify_menu_id(s);
+	return slug.is_empty() ? String("menu_custom") : slug;
+}
+
+static bool _cg_is_system_menu_id(const String &p_id) {
+	return p_id == "title" || p_id == "game_menu_main" || p_id == "game_menu_items" ||
+			p_id == "game_menu_equip" || p_id == "game_menu_status" ||
+			p_id == "game_menu_save" || p_id == "game_menu_options" ||
+			p_id == "credits" || p_id == "hud";
+}
+
+static String _cg_default_system_menu_name(const String &p_id) {
+	if (p_id == "title") return String::utf8("Título");
+	if (p_id == "game_menu_main") return String::utf8("Menú del juego: Principal");
+	if (p_id == "game_menu_items") return String::utf8("Menú del juego: Objetos");
+	if (p_id == "game_menu_equip") return String::utf8("Menú del juego: Equipo");
+	if (p_id == "game_menu_status") return String::utf8("Menú del juego: Estado");
+	if (p_id == "game_menu_save") return String::utf8("Menú del juego: Guardar");
+	if (p_id == "game_menu_options") return String::utf8("Menú del juego: Opciones");
+	if (p_id == "credits") return String::utf8("Créditos");
+	if (p_id == "hud") return "HUD";
+	return p_id;
+}
+
+static String _cg_default_system_menu_win_type(const String &p_id) {
+	if (p_id == "title") return "title_buttons";
+	if (p_id == "game_menu_save") return "save_list";
+	if (p_id == "game_menu_options") return "options";
+	if (p_id == "hud") return "hud";
+	return "game_menu";
+}
+
+static String _cg_norm_color_rgba(const Variant &p_val, const String &p_fallback) {
+	if (p_val.get_type() == Variant::COLOR) {
+		return "#" + Color(p_val).to_html(true);
+	}
+	String s = String(p_val).strip_edges();
+	if (!s.is_empty() && Color::html_is_valid(s)) {
+		return "#" + Color::html(s).to_html(true);
+	}
+	return "#" + Color::html(p_fallback).to_html(true);
+}
+
+static String _cg_norm_shape_type(const Variant &p_val) {
+	String s = String(p_val).strip_edges().to_lower();
+	if (s == "rect" || s == "recto" || s == "square") return "rect";
+	if (s == "rounded" || s == "redondeado") return "rounded";
+	if (s == "pill" || s == "pildora" || s == String::utf8("píldora") || s == "capsule") return "pill";
+	if (s == "circle" || s == "circulo" || s == String::utf8("círculo")) return "circle";
+	if (s == "ellipse" || s == "elipse" || s == "oval") return "ellipse";
+	if (s == "image" || s == "imagen" || s == "nine_slice" || s == "9slice") return "image";
+	return "";
+}
+
+static String _cg_norm_trigger_context(const Variant &p_val) {
+	String c = String(p_val).strip_edges().to_lower();
+	if (c == "map_and_battle" || c == "mapa_y_combate" || c == "combat" || c == "battle") {
+		return "map_and_battle";
+	}
+	if (c == "any" || c == "cualquier" || c == "all" || c == "always" || c == "siempre") {
+		return "any";
+	}
+	return "map";
+}
+
+static String _cg_norm_layout_mode(const Variant &p_val) {
+	String m = String(p_val).strip_edges().to_lower();
+	if (m == "vertical_list" || m == "vertical" || m == "list_v" || m == "lista_vertical") return "vertical_list";
+	if (m == "horizontal_list" || m == "horizontal" || m == "list_h" || m == "lista_horizontal") return "horizontal_list";
+	if (m == "grid" || m == "cuadricula" || m == String::utf8("cuadrícula")) return "grid";
+	if (m == "tabs" || m == "pestanas" || m == String::utf8("pestañas")) return "tabs";
+	if (m == "carousel" || m == "carrusel") return "carousel";
+	if (m == "radial" || m == "ring" || m == "anillo") return "radial";
+	return "free";
+}
+
+static Array _cg_default_game_menu_triggers() {
+	Array out;
+	Dictionary t_esc;
+	t_esc["kind"] = "key";
+	t_esc["keycode"] = (int64_t)Key::ESCAPE;
+	t_esc["key_name"] = "Escape";
+	out.push_back(t_esc);
+
+	Dictionary t_m;
+	t_m["kind"] = "key";
+	t_m["keycode"] = (int64_t)Key::M;
+	t_m["key_name"] = "M";
+	out.push_back(t_m);
+
+	Dictionary t_act1;
+	t_act1["kind"] = "action";
+	t_act1["action_name"] = "game_menu";
+	out.push_back(t_act1);
+
+	Dictionary t_act2;
+	t_act2["kind"] = "action";
+	t_act2["action_name"] = "ui_menu";
+	out.push_back(t_act2);
+	return out;
+}
+
+static Dictionary _cg_norm_button_action_step(const Dictionary &p_step) {
+	Dictionary out;
+	String t = String(p_step.get("type", p_step.get("action", ""))).strip_edges().to_lower();
+	if (t == "close_menu") t = "close";
+	if (t == "return_to_title") t = "to_title";
+	if (t == "quit_game" || t == "exit") t = "quit";
+	if (t == "items" || t == "equip" || t == "status" || t == "save" || t == "options" || t == "credits") {
+		out["type"] = "open_system_screen";
+		out["screen_id"] = t;
+		return out;
+	}
+	if (t == "open_system_screen") {
+		out["type"] = "open_system_screen";
+		out["screen_id"] = String(p_step.get("screen_id", p_step.get("target", "items"))).strip_edges().to_lower();
+		return out;
+	}
+	if (t == "open_menu") {
+		out["type"] = "open_menu";
+		out["menu_id"] = _cg_norm_ui_screen_id(String(p_step.get("menu_id", p_step.get("target", "game_menu_main"))));
+		out["push_history"] = p_step.has("push_history") ? bool(p_step["push_history"]) : true;
+		return out;
+	}
+	if (t == "common_event" || t == "run_common_event") {
+		out["type"] = "common_event";
+		out["common_event_id"] = MAX(1, int(p_step.get("common_event_id", p_step.get("id", 1))));
+		return out;
+	}
+	if (t == "set_switch" || t == "switch") {
+		out["type"] = "set_switch";
+		out["switch_name"] = String(p_step.get("switch_name", p_step.get("switch", ""))).strip_edges();
+		Variant v = p_step.get("value", true);
+		if (v.get_type() == Variant::STRING && String(v).strip_edges().to_lower() == "toggle") {
+			out["value"] = "toggle";
+		} else {
+			out["value"] = bool(v);
+		}
+		return out;
+	}
+	if (t == "set_variable" || t == "variable") {
+		out["type"] = "set_variable";
+		out["variable_name"] = String(p_step.get("variable_name", p_step.get("variable", ""))).strip_edges();
+		String op = String(p_step.get("op", "set")).strip_edges().to_lower();
+		if (op == "+" || op == "+=") op = "add";
+		else if (op == "-" || op == "-=") op = "sub";
+		else if (op != "add" && op != "sub" && op != "*" && op != "/" && op != "%") op = "set";
+		out["op"] = op;
+		out["value"] = int(p_step.get("value", 0));
+		return out;
+	}
+	if (t == "play_sound" || t == "play_se") {
+		out["type"] = "play_sound";
+		out["sound_path"] = String(p_step.get("sound_path", p_step.get("sound", p_step.get("path", "")))).strip_edges();
+		out["volume_db"] = float(p_step.get("volume_db", 0.0));
+		return out;
+	}
+	if (t == "hud_visibility" || t == "show_hide_hud") {
+		out["type"] = "hud_visibility";
+		Variant vis = p_step.get("visible", true);
+		if (vis.get_type() == Variant::STRING && String(vis).strip_edges().to_lower() == "toggle") {
+			out["visible"] = "toggle";
+		} else {
+			out["visible"] = bool(vis);
+		}
+		out["scope"] = String(p_step.get("scope", "all")).strip_edges().to_lower();
+		out["widget_id"] = String(p_step.get("widget_id", p_step.get("widget", p_step.get("widget_name", "")))).strip_edges();
+		return out;
+	}
+	if (t == "load_game" || t == "save_game") {
+		out["type"] = t;
+		out["slot"] = MAX(0, int(p_step.get("slot", 0)));
+		return out;
+	}
+	if (t == "close" || t == "back" || t == "new_game" || t == "continue" || t == "to_title" || t == "quit") {
+		out["type"] = t;
+		return out;
+	}
+	out["type"] = t.is_empty() ? String("close") : t;
+	return out;
 }
 
 static String _cg_norm_ui_data_binding(const Variant &p_val) {
@@ -5260,36 +5494,58 @@ Dictionary ClockGearsDataManager::get_hud_runtime_visibility_state() const {
 
 // --- Editor Visual de Interfaz: Diseños por Pantalla, Enlaces, Acciones y Undo/Redo (9B Tanda 6A) ---
 
-Array ClockGearsDataManager::get_ui_design_screens() {
-	Array out;
-	auto push_screen = [&](const String &p_id, const String &p_name, const String &p_win_type, bool p_supports_focus) {
-		Dictionary d;
-		d["id"] = p_id;
-		d["name"] = p_name;
-		d["window_type"] = p_win_type;
-		d["supports_focus"] = p_supports_focus;
-		out.push_back(d);
-	};
-	push_screen("title", String::utf8("Título"), "title_buttons", true);
-	push_screen("game_menu_main", String::utf8("Menú del juego: Principal"), "game_menu", true);
-	push_screen("game_menu_items", String::utf8("Menú del juego: Objetos"), "game_menu", true);
-	push_screen("game_menu_equip", String::utf8("Menú del juego: Equipo"), "game_menu", true);
-	push_screen("game_menu_status", String::utf8("Menú del juego: Estado"), "game_menu", true);
-	push_screen("credits", String::utf8("Créditos"), "game_menu", true);
-	push_screen("hud", "HUD", "hud", false);
-	return out;
-}
-
-PackedStringArray ClockGearsDataManager::get_ui_design_screen_ids() {
+PackedStringArray ClockGearsDataManager::get_system_menu_ids() {
 	PackedStringArray out;
 	out.push_back("title");
 	out.push_back("game_menu_main");
 	out.push_back("game_menu_items");
 	out.push_back("game_menu_equip");
 	out.push_back("game_menu_status");
+	out.push_back("game_menu_save");
+	out.push_back("game_menu_options");
 	out.push_back("credits");
 	out.push_back("hud");
 	return out;
+}
+
+bool ClockGearsDataManager::is_system_menu_id(const String &p_menu_id) {
+	return _cg_is_system_menu_id(_cg_norm_ui_screen_id(p_menu_id));
+}
+
+String ClockGearsDataManager::normalize_menu_id(const String &p_raw_id) {
+	return _cg_norm_ui_screen_id(p_raw_id);
+}
+
+Array ClockGearsDataManager::get_ui_design_screens() {
+	if (singleton) {
+		return singleton->get_all_menus();
+	}
+	Array out;
+	PackedStringArray sids = get_system_menu_ids();
+	for (int i = 0; i < sids.size(); i++) {
+		const String &sid = sids[i];
+		Dictionary d;
+		d["id"] = sid;
+		d["name"] = _cg_default_system_menu_name(sid);
+		d["window_type"] = _cg_default_system_menu_win_type(sid);
+		d["supports_focus"] = (sid != "hud");
+		d["is_system"] = true;
+		d["order"] = i;
+		out.push_back(d);
+	}
+	return out;
+}
+
+PackedStringArray ClockGearsDataManager::get_ui_design_screen_ids() {
+	if (singleton) {
+		PackedStringArray out = get_system_menu_ids();
+		PackedStringArray custom = singleton->get_custom_menu_ids();
+		for (int i = 0; i < custom.size(); i++) {
+			out.push_back(custom[i]);
+		}
+		return out;
+	}
+	return get_system_menu_ids();
 }
 
 PackedStringArray ClockGearsDataManager::get_ui_element_types() {
@@ -5303,6 +5559,223 @@ PackedStringArray ClockGearsDataManager::get_ui_element_types() {
 	out.push_back("currency");
 	out.push_back("item");
 	out.push_back("variable");
+	out.push_back("container");
+	out.push_back("radial");
+	return out;
+}
+
+Array ClockGearsDataManager::get_menu_layout_modes() {
+	Array out;
+	auto add_m = [&](const String &p_id, const String &p_lbl) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_lbl;
+		out.push_back(d);
+	};
+	add_m("free", "Libre (posicionamiento manual)");
+	add_m("vertical_list", "Lista vertical");
+	add_m("horizontal_list", "Lista horizontal");
+	add_m("grid", String::utf8("Cuadrícula"));
+	add_m("tabs", String::utf8("Pestañas"));
+	add_m("carousel", "Carrusel");
+	add_m("radial", "Radial (anillo / arco)");
+	return out;
+}
+
+Array ClockGearsDataManager::get_ui_shape_types() {
+	Array out;
+	auto add_s = [&](const String &p_id, const String &p_lbl) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_lbl;
+		out.push_back(d);
+	};
+	add_s("rect", String::utf8("Rectángulo"));
+	add_s("rounded", String::utf8("Rectángulo redondeado"));
+	add_s("pill", String::utf8("Píldora"));
+	add_s("circle", String::utf8("Círculo"));
+	add_s("ellipse", "Elipse");
+	add_s("image", "Marco con imagen (9 porciones)");
+	return out;
+}
+
+Array ClockGearsDataManager::get_menu_trigger_contexts() {
+	Array out;
+	auto add_c = [&](const String &p_id, const String &p_lbl) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_lbl;
+		out.push_back(d);
+	};
+	add_c("map", "Solo en el mapa");
+	add_c("map_and_battle", "En el mapa y en combate");
+	add_c("any", "En cualquier pantalla");
+	return out;
+}
+
+Array ClockGearsDataManager::get_all_ui_button_action_types() {
+	Array out;
+	auto push_t = [&](const String &p_id, const String &p_lbl) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_lbl;
+		out.push_back(d);
+	};
+	push_t("open_menu", String::utf8("Abrir menú"));
+	push_t("close", String::utf8("Cerrar menú"));
+	push_t("back", "Volver al anterior");
+	push_t("open_system_screen", "Abrir pantalla de sistema");
+	push_t("new_game", "Nueva partida");
+	push_t("continue", "Continuar");
+	push_t("load_game", "Cargar partida");
+	push_t("save_game", "Guardar partida");
+	push_t("options", "Opciones");
+	push_t("to_title", String::utf8("Salir al título"));
+	push_t("quit", "Salir del juego");
+	push_t("common_event", String::utf8("Ejecutar evento común"));
+	push_t("set_switch", "Cambiar interruptor");
+	push_t("set_variable", "Cambiar variable");
+	push_t("play_sound", "Reproducir sonido");
+	push_t("hud_visibility", "Mostrar u ocultar HUD");
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_menu_trigger(const Dictionary &p_trig) {
+	Dictionary out;
+	String kind = String(p_trig.get("kind", p_trig.get("type", "key"))).strip_edges().to_lower();
+	if (kind != "key" && kind != "joy_button" && kind != "mouse_button" && kind != "action") {
+		if ((p_trig.has("action_name") && !String(p_trig["action_name"]).strip_edges().is_empty()) ||
+				(p_trig.has("action") && !String(p_trig["action"]).strip_edges().is_empty())) {
+			kind = "action";
+		} else if (p_trig.has("joy_button")) {
+			kind = "joy_button";
+		} else if (p_trig.has("mouse_button")) {
+			kind = "mouse_button";
+		} else {
+			kind = "key";
+		}
+	}
+	out["kind"] = kind;
+	if (kind == "key") {
+		int64_t kc = int64_t(p_trig.get("keycode", 0));
+		String kname = String(p_trig.get("key_name", p_trig.get("key", p_trig.get("value", "")))).strip_edges();
+		if (kc == 0 && !kname.is_empty()) {
+			kc = (int64_t)find_keycode(kname);
+		}
+		if (kname.is_empty() && kc > 0) {
+			kname = keycode_get_string((Key)kc);
+		}
+		out["keycode"] = kc;
+		out["key_name"] = kname;
+	} else if (kind == "joy_button") {
+		out["joy_button"] = MAX(0, int(p_trig.get("joy_button", p_trig.get("button", p_trig.get("button_index", p_trig.get("value", 0))))));
+	} else if (kind == "mouse_button") {
+		out["mouse_button"] = MAX(1, int(p_trig.get("mouse_button", p_trig.get("button", p_trig.get("button_index", p_trig.get("value", 1))))));
+	} else {
+		out["action_name"] = String(p_trig.get("action_name", p_trig.get("action", p_trig.get("value", "game_menu")))).strip_edges();
+	}
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_menu_layout(const Dictionary &p_layout) {
+	Dictionary out;
+	out["mode"] = _cg_norm_layout_mode(p_layout.get("mode", "free"));
+	out["origin_anchor"] = _cg_norm_hud_anchor(p_layout.get("origin_anchor", "center"));
+	out["offset_x"] = CLAMP(int(p_layout.get("offset_x", 0)), -960, 960);
+	out["offset_y"] = CLAMP(int(p_layout.get("offset_y", 0)), -540, 540);
+	out["width"] = CLAMP(int(p_layout.get("width", 420)), 32, 960);
+	out["height"] = CLAMP(int(p_layout.get("height", 320)), 32, 540);
+	out["spacing_x"] = CLAMP(int(p_layout.get("spacing_x", 10)), 0, 128);
+	out["spacing_y"] = CLAMP(int(p_layout.get("spacing_y", 10)), 0, 128);
+	out["columns"] = CLAMP(int(p_layout.get("columns", 4)), 1, 20);
+	out["rows"] = CLAMP(int(p_layout.get("rows", 0)), 0, 20);
+	out["page_size"] = CLAMP(int(p_layout.get("page_size", 0)), 0, 100);
+	out["scroll_enabled"] = p_layout.has("scroll_enabled") ? bool(p_layout["scroll_enabled"]) : true;
+	out["current_page"] = MAX(0, int(p_layout.get("current_page", 0)));
+	out["active_tab"] = MAX(0, int(p_layout.get("active_tab", 0)));
+	Array tab_labels;
+	if (p_layout.has("tab_labels") && p_layout["tab_labels"].get_type() == Variant::ARRAY) {
+		Array raw_tl = p_layout["tab_labels"];
+		for (int i = 0; i < raw_tl.size(); i++) {
+			tab_labels.push_back(String(raw_tl[i]));
+		}
+	}
+	out["tab_labels"] = tab_labels;
+
+	// Parámetros de anillo / arco radial (prioritario, estilo Zelda 3D)
+	out["radial_center_x"] = CLAMP(int(p_layout.get("radial_center_x", 480)), 0, 960);
+	out["radial_center_y"] = CLAMP(int(p_layout.get("radial_center_y", 270)), 0, 540);
+	out["radial_radius"] = CLAMP(int(p_layout.get("radial_radius", 145)), 48, 250);
+	out["radial_slot_size"] = CLAMP(int(p_layout.get("radial_slot_size", 64)), 28, 140);
+	out["radial_selected_scale"] = CLAMP(float(p_layout.get("radial_selected_scale", 1.28)), 1.0f, 1.8f);
+	out["radial_start_angle_deg"] = float(p_layout.get("radial_start_angle_deg", -90.0));
+	out["radial_sweep_angle_deg"] = CLAMP(float(p_layout.get("radial_sweep_angle_deg", 360.0)), 45.0f, 360.0f);
+	out["radial_clockwise"] = p_layout.has("radial_clockwise") ? bool(p_layout["radial_clockwise"]) : true;
+	out["radial_show_center_info"] = p_layout.has("radial_show_center_info") ? bool(p_layout["radial_show_center_info"]) : true;
+	out["radial_ring_color"] = _cg_norm_color_rgba(p_layout.get("radial_ring_color", "#1a1e2ad9"), "#1a1e2ad9");
+	out["radial_accent_color"] = _cg_norm_color_rgba(p_layout.get("radial_accent_color", "#f5bc54ff"), "#f5bc54ff");
+
+	Array r_slots;
+	if (p_layout.has("radial_slots") && p_layout["radial_slots"].get_type() == Variant::ARRAY) {
+		Array raw_rs = p_layout["radial_slots"];
+		for (int i = 0; i < raw_rs.size(); i++) {
+			if (raw_rs[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary rs = raw_rs[i];
+			Dictionary nrs;
+			nrs["id"] = String(rs.get("id", vformat("slot_%d", i + 1))).strip_edges();
+			nrs["title"] = String(rs.get("title", rs.get("name", nrs["id"])));
+			nrs["description"] = String(rs.get("description", ""));
+			nrs["icon_path"] = String(rs.get("icon_path", rs.get("image_path", ""))).strip_edges();
+			nrs["pixel_art"] = rs.has("pixel_art") ? bool(rs["pixel_art"]) : true;
+			nrs["action"] = String(rs.get("action", "")).strip_edges().to_lower();
+			Array acts;
+			if (rs.has("actions") && rs["actions"].get_type() == Variant::ARRAY) {
+				Array raw_a = rs["actions"];
+				for (int ai = 0; ai < raw_a.size(); ai++) {
+					if (raw_a[ai].get_type() == Variant::DICTIONARY) {
+						acts.push_back(_cg_norm_button_action_step(raw_a[ai]));
+					}
+				}
+			}
+			nrs["actions"] = acts;
+			nrs["enabled_mode"] = String(rs.get("enabled_mode", "always")).strip_edges().to_lower();
+			nrs["enabled_switch"] = String(rs.get("enabled_switch", "")).strip_edges();
+			nrs["visibility_mode"] = String(rs.get("visibility_mode", "always")).strip_edges().to_lower();
+			nrs["visibility_switch"] = String(rs.get("visibility_switch", "")).strip_edges();
+			r_slots.push_back(nrs);
+		}
+	}
+	out["radial_slots"] = r_slots;
+	return out;
+}
+
+Dictionary ClockGearsDataManager::normalize_ui_shape(const Dictionary &p_shape) {
+	Dictionary out;
+	String st = _cg_norm_shape_type(p_shape.get("shape_type", p_shape.get("type", "rounded")));
+	if (st.is_empty()) st = "rounded";
+	out["shape_type"] = st;
+	out["corner_radius"] = CLAMP(int(p_shape.get("corner_radius", 8)), 0, 256);
+	out["clip_content"] = p_shape.has("clip_content") ? bool(p_shape["clip_content"]) : (st == "circle" || st == "ellipse" || st == "pill" || st == "rounded");
+	out["fill_type"] = (String(p_shape.get("fill_type", "color")).strip_edges().to_lower() == "image") ? "image" : "color";
+	out["fill_color"] = _cg_norm_color_rgba(p_shape.get("fill_color", "#14171ff0"), "#14171ff0");
+	out["fill_image_path"] = String(p_shape.get("fill_image_path", "")).strip_edges();
+	out["image_path"] = String(p_shape.get("image_path", "")).strip_edges();
+	out["pixel_art"] = p_shape.has("pixel_art") ? bool(p_shape["pixel_art"]) : true;
+	out["gradient_enabled"] = bool(p_shape.get("gradient_enabled", false));
+	out["gradient_top_color"] = _cg_norm_color_rgba(p_shape.get("gradient_top_color", "#28221aff"), "#28221aff");
+	out["gradient_bottom_color"] = _cg_norm_color_rgba(p_shape.get("gradient_bottom_color", "#14110eff"), "#14110eff");
+	String ga = String(p_shape.get("gradient_angle", "vertical")).strip_edges().to_lower();
+	out["gradient_angle"] = (ga == "horizontal") ? "horizontal" : "vertical";
+	out["border_width"] = CLAMP(int(p_shape.get("border_width", 2)), 0, 24);
+	out["border_color"] = _cg_norm_color_rgba(p_shape.get("border_color", "#e0a040ff"), "#e0a040ff");
+	out["shadow_enabled"] = bool(p_shape.get("shadow_enabled", false));
+	out["shadow_color"] = _cg_norm_color_rgba(p_shape.get("shadow_color", "#00000073"), "#00000073");
+	out["shadow_size"] = CLAMP(int(p_shape.get("shadow_size", 4)), 0, 32);
+	out["shadow_offset_x"] = CLAMP(int(p_shape.get("shadow_offset_x", 0)), -32, 32);
+	out["shadow_offset_y"] = CLAMP(int(p_shape.get("shadow_offset_y", 2)), -32, 32);
+	out["glow_enabled"] = bool(p_shape.get("glow_enabled", false));
+	out["glow_color"] = _cg_norm_color_rgba(p_shape.get("glow_color", "#f5bc5466"), "#f5bc5466");
+	out["glow_size"] = CLAMP(int(p_shape.get("glow_size", 4)), 0, 24);
 	return out;
 }
 
@@ -5351,17 +5824,23 @@ Array ClockGearsDataManager::get_ui_button_actions(const String &p_screen_id) {
 		push_a("options", "Opciones");
 		push_a("to_title", String::utf8("Salir al título"));
 		push_a("back", "Volver");
-	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status") {
+	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "game_menu_options") {
 		push_a("back", "Volver");
 		push_a("items", "Objetos");
 		push_a("equip", "Equipo");
 		push_a("status", "Estado");
+		push_a("save", "Guardar");
+		push_a("options", "Opciones");
 		push_a("close", String::utf8("Cerrar menú"));
 	} else if (sid == "credits") {
 		push_a("back", "Volver");
 		push_a("close", String::utf8("Cerrar créditos"));
 	} else {
-		push_a("back", "Volver");
+		// Menús propios ilimitados: permiten cualquier acción del motor (3D)
+		Array all_acts = get_all_ui_button_action_types();
+		for (int i = 0; i < all_acts.size(); i++) {
+			out.push_back(all_acts[i]);
+		}
 	}
 	return out;
 }
@@ -5377,14 +5856,24 @@ Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, 
 
 	if (etype == "button") {
 		Array actions = get_ui_button_actions(sid);
-		String def_act = (!actions.is_empty() && actions[0].get_type() == Variant::DICTIONARY) ? String(Dictionary(actions[0]).get("id", "")) : String();
+		String def_act = (!actions.is_empty() && actions[0].get_type() == Variant::DICTIONARY) ? String(Dictionary(actions[0]).get("id", "")) : String("close");
 		el["action"] = def_act;
+		el["actions"] = Array();
 		el["focus_order"] = 0;
 		el["window_style_id"] = "";
 	} else if (etype == "frame") {
 		el["name"] = "Marco";
 		el["width"] = 300;
 		el["height"] = 200;
+	} else if (etype == "container" || etype == "radial") {
+		el["name"] = (etype == "radial") ? "Anillo Radial" : "Contenedor";
+		el["width"] = 420;
+		el["height"] = 320;
+		Dictionary lay;
+		if (etype == "radial") {
+			lay["mode"] = "radial";
+		}
+		el["layout"] = normalize_menu_layout(lay);
 	} else if (etype == "text") {
 		el["anchor"] = "top_left";
 		el["offset_x"] = 24;
@@ -5430,6 +5919,13 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	out["pixel_art"] = p_elem.has("pixel_art") ? bool(p_elem["pixel_art"]) : true;
 	out["visibility_mode"] = (String(p_elem.get("visibility_mode", "always")).strip_edges().to_lower() == "switch") ? "switch" : "always";
 	out["visibility_switch"] = String(p_elem.get("visibility_switch", "")).strip_edges();
+	out["visibility_invert"] = bool(p_elem.get("visibility_invert", false));
+	String emode = String(p_elem.get("enabled_mode", "always")).strip_edges().to_lower();
+	if (emode != "switch" && emode != "disabled") {
+		emode = bool(p_elem.get("disabled", false)) ? "disabled" : "always";
+	}
+	out["enabled_mode"] = emode;
+	out["enabled_switch"] = String(p_elem.get("enabled_switch", "")).strip_edges();
 	out["hide_during_messages_and_menus"] = p_elem.has("hide_during_messages_and_menus") ? bool(p_elem["hide_during_messages_and_menus"]) : (sid == "hud");
 
 	String db_def = (etype == "variable") ? "variable" : "none";
@@ -5445,38 +5941,123 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	if ((etype == "text" || etype == "button" || etype == "variable") && !out.has("variable_name")) {
 		out["variable_name"] = String(p_elem.get("variable_name", "")).strip_edges();
 	}
+	if (p_elem.has("tab_index")) {
+		out["tab_index"] = MAX(0, int(p_elem["tab_index"]));
+	}
+	if (p_elem.has("description")) {
+		out["description"] = String(p_elem["description"]);
+	}
+	if (p_elem.has("icon_path") && !out.has("icon_path")) {
+		out["icon_path"] = String(p_elem["icon_path"]).strip_edges();
+	}
+	// Forma avanzada opcional (3F: rect, rounded, pill, circle, ellipse, image + recorte, degradado, sombra, brillo)
+	if (p_elem.has("shape") && p_elem["shape"].get_type() == Variant::DICTIONARY) {
+		out["shape"] = normalize_ui_shape(Dictionary(p_elem["shape"]));
+	}
+	if (etype == "container" || etype == "radial") {
+		Dictionary raw_lay = (p_elem.has("layout") && p_elem["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(p_elem["layout"]) : Dictionary();
+		if (etype == "radial" && !raw_lay.has("mode")) {
+			raw_lay["mode"] = "radial";
+		}
+		out["layout"] = normalize_menu_layout(raw_lay);
+	}
 	if (etype == "button") {
-		Array valid_actions = get_ui_button_actions(sid);
 		String raw_action = String(p_elem.get("action", def.get("action", ""))).strip_edges().to_lower();
-		bool found_action = raw_action.is_empty();
-		for (int i = 0; i < valid_actions.size(); i++) {
-			Dictionary ad = valid_actions[i];
-			if (String(ad.get("id", "")) == raw_action) {
-				found_action = true;
-				break;
+		if (_cg_is_system_menu_id(sid)) {
+			Array valid_actions = get_ui_button_actions(sid);
+			bool found_action = raw_action.is_empty();
+			if (!found_action) {
+				Array all_acts = get_all_ui_button_action_types();
+				for (int i = 0; i < valid_actions.size(); i++) {
+					if (String(Dictionary(valid_actions[i]).get("id", "")) == raw_action) {
+						found_action = true;
+						break;
+					}
+				}
+				if (!found_action) {
+					for (int i = 0; i < all_acts.size(); i++) {
+						if (String(Dictionary(all_acts[i]).get("id", "")) == raw_action) {
+							found_action = true;
+							break;
+						}
+					}
+				}
+			}
+			if (!found_action && !valid_actions.is_empty()) {
+				raw_action = String(Dictionary(valid_actions[0]).get("id", ""));
 			}
 		}
-		if (!found_action && !valid_actions.is_empty()) {
-			raw_action = String(Dictionary(valid_actions[0]).get("id", ""));
-		}
 		out["action"] = raw_action;
+		if (p_elem.has("actions") && p_elem["actions"].get_type() == Variant::ARRAY) {
+			Array acts_in = p_elem["actions"];
+			Array acts_out;
+			for (int ai = 0; ai < acts_in.size(); ai++) {
+				if (acts_in[ai].get_type() == Variant::DICTIONARY) {
+					acts_out.push_back(_cg_norm_button_action_step(Dictionary(acts_in[ai])));
+				}
+			}
+			out["actions"] = acts_out;
+		}
 		out["focus_order"] = CLAMP(int(p_elem.get("focus_order", def.get("focus_order", p_index_hint))), 0, 9999);
+		if (p_elem.has("focus_next_up")) out["focus_next_up"] = String(p_elem["focus_next_up"]).strip_edges();
+		if (p_elem.has("focus_next_down")) out["focus_next_down"] = String(p_elem["focus_next_down"]).strip_edges();
+		if (p_elem.has("focus_next_left")) out["focus_next_left"] = String(p_elem["focus_next_left"]).strip_edges();
+		if (p_elem.has("focus_next_right")) out["focus_next_right"] = String(p_elem["focus_next_right"]).strip_edges();
 	}
 	return out;
 }
 
 Dictionary ClockGearsDataManager::get_default_ui_screen_design(const String &p_screen_id) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
 	Dictionary d;
-	d["screen_id"] = _cg_norm_ui_screen_id(p_screen_id);
-	d["custom_enabled"] = false;
+	d["screen_id"] = sid;
+	d["name"] = _cg_default_system_menu_name(sid);
+	d["is_system"] = _cg_is_system_menu_id(sid);
+	d["order"] = 0;
+	d["window_type"] = _cg_default_system_menu_win_type(sid);
+	d["custom_enabled"] = !bool(d["is_system"]);
 	d["elements"] = Array();
+	d["triggers"] = (sid == "game_menu_main") ? _cg_default_game_menu_triggers() : Array();
+	d["trigger_context"] = "map";
+	d["pause_on_open"] = (sid != "hud");
+	d["respect_menu_access"] = true;
+	d["layout"] = normalize_menu_layout(Dictionary());
+
+	Dictionary cursor;
+	cursor["enabled"] = false;
+	cursor["shape"] = "ring";
+	cursor["image_path"] = "";
+	cursor["pixel_art"] = true;
+	cursor["color"] = "#f5bc54ff";
+	cursor["size"] = 3;
+	cursor["animation"] = "pulse";
+	d["cursor"] = cursor;
+
+	Dictionary sounds;
+	sounds["open"] = "";
+	sounds["close"] = "";
+	sounds["move"] = "";
+	sounds["accept"] = "";
+	sounds["cancel"] = "";
+	d["sounds"] = sounds;
 	return d;
 }
 
 Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_screen_id, const Dictionary &p_design) {
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	bool is_sys = _cg_is_system_menu_id(sid);
 	Dictionary out;
 	out["screen_id"] = sid;
+	String raw_name = String(p_design.get("name", is_sys ? _cg_default_system_menu_name(sid) : sid)).strip_edges();
+	if (raw_name.is_empty()) {
+		raw_name = is_sys ? _cg_default_system_menu_name(sid) : sid;
+	}
+	out["name"] = raw_name;
+	out["is_system"] = is_sys;
+	out["order"] = int(p_design.get("order", 0));
+	String wt = String(p_design.get("window_type", _cg_default_system_menu_win_type(sid))).strip_edges().to_lower();
+	out["window_type"] = wt.is_empty() ? _cg_default_system_menu_win_type(sid) : wt;
+
 	Array norm_elems;
 	HashSet<String> seen_ids;
 	if (p_design.has("elements") && p_design["elements"].get_type() == Variant::ARRAY) {
@@ -5499,23 +6080,72 @@ Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_scr
 	}
 	out["elements"] = norm_elems;
 	if (p_design.has("custom_enabled")) {
-		out["custom_enabled"] = bool(p_design["custom_enabled"]);
+		out["custom_enabled"] = is_sys ? bool(p_design["custom_enabled"]) : true;
 	} else {
-		out["custom_enabled"] = !norm_elems.is_empty();
+		out["custom_enabled"] = is_sys ? !norm_elems.is_empty() : true;
+	}
+
+	Array trigs;
+	if (p_design.has("triggers") && p_design["triggers"].get_type() == Variant::ARRAY) {
+		Array raw_tr = p_design["triggers"];
+		for (int i = 0; i < raw_tr.size(); i++) {
+			if (raw_tr[i].get_type() == Variant::DICTIONARY) {
+				trigs.push_back(normalize_menu_trigger(Dictionary(raw_tr[i])));
+			}
+		}
+	} else if (sid == "game_menu_main") {
+		trigs = _cg_default_game_menu_triggers();
+	}
+	out["triggers"] = trigs;
+	out["trigger_context"] = _cg_norm_trigger_context(p_design.get("trigger_context", "map"));
+	out["pause_on_open"] = p_design.has("pause_on_open") ? bool(p_design["pause_on_open"]) : (sid != "hud");
+	out["respect_menu_access"] = p_design.has("respect_menu_access") ? bool(p_design["respect_menu_access"]) : true;
+
+	Dictionary raw_layout = (p_design.has("layout") && p_design["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(p_design["layout"]) : Dictionary();
+	out["layout"] = normalize_menu_layout(raw_layout);
+
+	Dictionary raw_cur = (p_design.has("cursor") && p_design["cursor"].get_type() == Variant::DICTIONARY) ? Dictionary(p_design["cursor"]) : Dictionary();
+	Dictionary cur;
+	cur["enabled"] = bool(raw_cur.get("enabled", false));
+	String cshape = String(raw_cur.get("shape", "ring")).strip_edges().to_lower();
+	if (cshape != "ring" && cshape != "rect" && cshape != "rounded" && cshape != "pill" && cshape != "arrow" && cshape != "image") cshape = "ring";
+	cur["shape"] = cshape;
+	cur["image_path"] = String(raw_cur.get("image_path", "")).strip_edges();
+	cur["pixel_art"] = raw_cur.has("pixel_art") ? bool(raw_cur["pixel_art"]) : true;
+	cur["color"] = _cg_norm_color_rgba(raw_cur.get("color", "#f5bc54ff"), "#f5bc54ff");
+	cur["size"] = CLAMP(int(raw_cur.get("size", 3)), 1, 24);
+	String canim = String(raw_cur.get("animation", "pulse")).strip_edges().to_lower();
+	if (canim != "none" && canim != "pulse" && canim != "bob" && canim != "spin") canim = "pulse";
+	cur["animation"] = canim;
+	out["cursor"] = cur;
+
+	Dictionary raw_snd = (p_design.has("sounds") && p_design["sounds"].get_type() == Variant::DICTIONARY) ? Dictionary(p_design["sounds"]) : Dictionary();
+	Dictionary snd;
+	snd["open"] = String(raw_snd.get("open", "")).strip_edges();
+	snd["close"] = String(raw_snd.get("close", "")).strip_edges();
+	snd["move"] = String(raw_snd.get("move", "")).strip_edges();
+	snd["accept"] = String(raw_snd.get("accept", "")).strip_edges();
+	snd["cancel"] = String(raw_snd.get("cancel", "")).strip_edges();
+	out["sounds"] = snd;
+
+	if (p_design.has("background") && p_design["background"].get_type() == Variant::DICTIONARY) {
+		out["background"] = Dictionary(p_design["background"]).duplicate(true);
 	}
 	return out;
 }
 
 Dictionary ClockGearsDataManager::get_default_ui_designs_config() {
 	Dictionary out;
-	out["schema_version"] = 1;
+	out["schema_version"] = CURRENT_UI_DESIGNS_SCHEMA_VERSION;
 	Dictionary screens;
-	PackedStringArray sids = get_ui_design_screen_ids();
+	PackedStringArray sids = get_system_menu_ids();
 	for (int i = 0; i < sids.size(); i++) {
 		if (sids[i] == "hud") {
 			continue; // HUD se guarda en hud.json como fuente única de verdad
 		}
-		screens[sids[i]] = get_default_ui_screen_design(sids[i]);
+		Dictionary def = get_default_ui_screen_design(sids[i]);
+		def["order"] = i;
+		screens[sids[i]] = def;
 	}
 	out["screens"] = screens;
 	return out;
@@ -5523,20 +6153,47 @@ Dictionary ClockGearsDataManager::get_default_ui_designs_config() {
 
 Dictionary ClockGearsDataManager::normalize_ui_designs_config(const Dictionary &p_cfg) {
 	Dictionary out;
-	out["schema_version"] = int(p_cfg.get("schema_version", 1));
+	out["schema_version"] = CURRENT_UI_DESIGNS_SCHEMA_VERSION;
 	Dictionary screens;
 	Dictionary raw_screens = (p_cfg.has("screens") && p_cfg["screens"].get_type() == Variant::DICTIONARY)
 			? Dictionary(p_cfg["screens"])
 			: Dictionary();
-	PackedStringArray sids = get_ui_design_screen_ids();
-	for (int i = 0; i < sids.size(); i++) {
-		if (sids[i] == "hud") {
+	PackedStringArray sys_sids = get_system_menu_ids();
+	HashSet<String> seen_keys;
+	for (int i = 0; i < sys_sids.size(); i++) {
+		const String &sid = sys_sids[i];
+		if (sid == "hud") {
 			continue;
 		}
-		Dictionary sd = raw_screens.has(sids[i]) && raw_screens[sids[i]].get_type() == Variant::DICTIONARY
-				? Dictionary(raw_screens[sids[i]])
+		seen_keys.insert(sid);
+		Dictionary sd = raw_screens.has(sid) && raw_screens[sid].get_type() == Variant::DICTIONARY
+				? Dictionary(raw_screens[sid])
 				: Dictionary();
-		screens[sids[i]] = normalize_ui_screen_design(sids[i], sd);
+		Dictionary norm = normalize_ui_screen_design(sid, sd);
+		norm["order"] = i;
+		screens[sid] = norm;
+	}
+
+	// Preservar e incluir TODOS los menús propios ilimitados
+	Array raw_keys = raw_screens.keys();
+	int next_custom_order = 0;
+	for (int i = 0; i < raw_keys.size(); i++) {
+		String raw_k = String(raw_keys[i]);
+		String sid = _cg_norm_ui_screen_id(raw_k);
+		if (sid == "hud" || seen_keys.has(sid)) {
+			continue;
+		}
+		if (raw_screens[raw_keys[i]].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		seen_keys.insert(sid);
+		Dictionary sd = Dictionary(raw_screens[raw_keys[i]]);
+		Dictionary norm = normalize_ui_screen_design(sid, sd);
+		if (!sd.has("order")) {
+			norm["order"] = next_custom_order;
+		}
+		next_custom_order = MAX(next_custom_order + 1, int(norm["order"]) + 1);
+		screens[sid] = norm;
 	}
 	out["screens"] = screens;
 	return out;
@@ -5609,7 +6266,19 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			elems.push_back(b);
 			y_cursor += 42;
 		}
-	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status") {
+	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "game_menu_options") {
+		Dictionary hdr = make_default_ui_element("text", sid);
+		hdr["id"] = "sub_heading";
+		hdr["name"] = "Encabezado";
+		hdr["text"] = _cg_default_system_menu_name(sid);
+		hdr["anchor"] = "top_left";
+		hdr["offset_x"] = 24;
+		hdr["offset_y"] = 20;
+		hdr["width"] = 480;
+		hdr["height"] = 40;
+		hdr["font_size"] = 22;
+		elems.push_back(hdr);
+
 		Dictionary back_b = make_default_ui_element("button", sid);
 		back_b["id"] = "btn_back";
 		back_b["name"] = "Volver";
@@ -5635,12 +6304,380 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		back_b["height"] = 36;
 		back_b["focus_order"] = 0;
 		elems.push_back(back_b);
+	} else {
+		Dictionary close_b = make_default_ui_element("button", sid);
+		close_b["id"] = "btn_close";
+		close_b["name"] = "Cerrar";
+		close_b["text"] = "Cerrar";
+		close_b["action"] = "close";
+		close_b["anchor"] = "bottom_right";
+		close_b["offset_x"] = -24;
+		close_b["offset_y"] = -24;
+		close_b["width"] = 140;
+		close_b["height"] = 36;
+		close_b["focus_order"] = 0;
+		elems.push_back(close_b);
 	}
 	Dictionary out;
 	out["screen_id"] = sid;
 	out["custom_enabled"] = true;
 	out["elements"] = elems;
 	return normalize_ui_screen_design(sid, out);
+}
+
+Array ClockGearsDataManager::get_all_menus() const {
+	Array out;
+	PackedStringArray sys_sids = get_system_menu_ids();
+	for (int i = 0; i < sys_sids.size(); i++) {
+		const String &sid = sys_sids[i];
+		Dictionary meta = get_menu_metadata(sid);
+		meta["supports_focus"] = (sid != "hud");
+		out.push_back(meta);
+	}
+	PackedStringArray custom_ids = get_custom_menu_ids();
+	for (int i = 0; i < custom_ids.size(); i++) {
+		Dictionary meta = get_menu_metadata(custom_ids[i]);
+		meta["supports_focus"] = true;
+		out.push_back(meta);
+	}
+	return out;
+}
+
+PackedStringArray ClockGearsDataManager::get_custom_menu_ids() const {
+	Dictionary screens = ui_designs_config.get("screens", Dictionary());
+	struct CustomItem {
+		String id;
+		int order = 0;
+	};
+	Vector<CustomItem> list;
+	Array keys = screens.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		String sid = _cg_norm_ui_screen_id(String(keys[i]));
+		if (_cg_is_system_menu_id(sid)) {
+			continue;
+		}
+		Dictionary d = screens[keys[i]].get_type() == Variant::DICTIONARY ? Dictionary(screens[keys[i]]) : Dictionary();
+		CustomItem it;
+		it.id = sid;
+		it.order = int(d.get("order", i));
+		list.push_back(it);
+	}
+	struct OrderCmp {
+		bool operator()(const CustomItem &a, const CustomItem &b) const {
+			if (a.order != b.order) return a.order < b.order;
+			return a.id < b.id;
+		}
+	};
+	list.sort_custom<OrderCmp>();
+	PackedStringArray out;
+	for (int i = 0; i < list.size(); i++) {
+		out.push_back(list[i].id);
+	}
+	return out;
+}
+
+Array ClockGearsDataManager::get_all_menus_for_selector() const {
+	return get_all_menus();
+}
+
+bool ClockGearsDataManager::has_menu(const String &p_menu_id) const {
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	if (sid.is_empty()) {
+		return false;
+	}
+	if (_cg_is_system_menu_id(sid)) {
+		return true;
+	}
+	Dictionary screens = ui_designs_config.get("screens", Dictionary());
+	return screens.has(sid);
+}
+
+Dictionary ClockGearsDataManager::get_menu_metadata(const String &p_menu_id) const {
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	Dictionary d = get_ui_screen_design(sid);
+	Dictionary out;
+	out["id"] = sid;
+	out["screen_id"] = sid;
+	out["name"] = String(d.get("name", _cg_is_system_menu_id(sid) ? _cg_default_system_menu_name(sid) : sid));
+	out["is_system"] = _cg_is_system_menu_id(sid);
+	out["order"] = int(d.get("order", 0));
+	out["window_type"] = String(d.get("window_type", _cg_default_system_menu_win_type(sid)));
+	out["custom_enabled"] = bool(d.get("custom_enabled", false));
+	out["triggers"] = Array(d.get("triggers", Array())).duplicate(true);
+	out["trigger_context"] = String(d.get("trigger_context", "map"));
+	out["pause_on_open"] = bool(d.get("pause_on_open", sid != "hud"));
+	out["respect_menu_access"] = bool(d.get("respect_menu_access", true));
+	Dictionary lay = d.get("layout", Dictionary());
+	out["layout_mode"] = String(lay.get("mode", "free"));
+	return out;
+}
+
+String ClockGearsDataManager::create_custom_menu(const String &p_name, const Dictionary &p_initial_design) {
+	String nm = p_name.strip_edges();
+	if (nm.is_empty()) {
+		nm = String::utf8("Menú personalizado");
+	}
+	if (!ui_designs_config.has("screens") || ui_designs_config["screens"].get_type() != Variant::DICTIONARY) {
+		ui_designs_config = normalize_ui_designs_config(ui_designs_config);
+	}
+	Dictionary screens = Dictionary(ui_designs_config["screens"]).duplicate(true);
+
+	String base = _cg_slugify_menu_id(nm);
+	if (base.is_empty() || _cg_is_system_menu_id(base)) {
+		base = base.is_empty() ? String("menu_propio") : ("custom_" + base);
+	}
+	String uid = base;
+	int suffix = 2;
+	while (screens.has(uid) || _cg_is_system_menu_id(uid)) {
+		uid = base + "_" + itos(suffix++);
+	}
+
+	PackedStringArray existing_custom = get_custom_menu_ids();
+	int max_order = -1;
+	for (int i = 0; i < existing_custom.size(); i++) {
+		Dictionary m = get_ui_screen_design(existing_custom[i]);
+		max_order = MAX(max_order, int(m.get("order", i)));
+	}
+
+	Dictionary cfg = p_initial_design.duplicate(true);
+	cfg["screen_id"] = uid;
+	cfg["name"] = nm;
+	cfg["is_system"] = false;
+	cfg["custom_enabled"] = true;
+	if (!cfg.has("order")) {
+		cfg["order"] = max_order + 1;
+	}
+	Dictionary norm = normalize_ui_screen_design(uid, cfg);
+	screens[uid] = norm;
+	ui_designs_config["screens"] = screens;
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	emit_signal("runtime_state_changed", "ui_design", uid);
+	return uid;
+}
+
+bool ClockGearsDataManager::rename_menu(const String &p_menu_id, const String &p_new_name) {
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	String nm = p_new_name.strip_edges();
+	if (nm.is_empty() || sid == "hud") {
+		return false;
+	}
+	Dictionary d = get_ui_screen_design(sid);
+	d["name"] = nm;
+	set_ui_screen_design(sid, d, true);
+	return true;
+}
+
+String ClockGearsDataManager::duplicate_menu(const String &p_source_id, const String &p_new_name) {
+	String src_id = _cg_norm_ui_screen_id(p_source_id);
+	Dictionary src = get_ui_screen_design(src_id);
+	String nn = p_new_name.strip_edges();
+	if (nn.is_empty()) {
+		nn = String(src.get("name", src_id)) + " (Copia)";
+	}
+	Dictionary copy = src.duplicate(true);
+	copy["screen_id"] = "";
+	copy["name"] = nn;
+	copy["is_system"] = false;
+	copy["custom_enabled"] = true;
+	copy.erase("order");
+	return create_custom_menu(nn, copy);
+}
+
+bool ClockGearsDataManager::reorder_custom_menu(const String &p_menu_id, int p_new_order) {
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	if (_cg_is_system_menu_id(sid)) {
+		return false;
+	}
+	PackedStringArray cids = get_custom_menu_ids();
+	int cur_idx = -1;
+	for (int i = 0; i < cids.size(); i++) {
+		if (cids[i] == sid) {
+			cur_idx = i;
+			break;
+		}
+	}
+	if (cur_idx < 0) {
+		return false;
+	}
+	Vector<String> ordered;
+	for (int i = 0; i < cids.size(); i++) {
+		if (i != cur_idx) ordered.push_back(cids[i]);
+	}
+	int dst = CLAMP(p_new_order, 0, ordered.size());
+	ordered.insert(dst, sid);
+
+	Dictionary screens = Dictionary(ui_designs_config.get("screens", Dictionary())).duplicate(true);
+	for (int i = 0; i < ordered.size(); i++) {
+		Dictionary d = normalize_ui_screen_design(ordered[i], Dictionary(screens.get(ordered[i], Dictionary())));
+		d["order"] = i;
+		screens[ordered[i]] = d;
+	}
+	ui_designs_config["screens"] = screens;
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	return true;
+}
+
+bool ClockGearsDataManager::move_custom_menu(const String &p_menu_id, int p_delta) {
+	if (p_delta == 0) {
+		return false;
+	}
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	PackedStringArray cids = get_custom_menu_ids();
+	int idx = -1;
+	for (int i = 0; i < cids.size(); i++) {
+		if (cids[i] == sid) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx < 0) {
+		return false;
+	}
+	int target = CLAMP(idx + p_delta, 0, cids.size() - 1);
+	if (target == idx) {
+		return false;
+	}
+	return reorder_custom_menu(sid, target);
+}
+
+bool ClockGearsDataManager::delete_custom_menu(const String &p_menu_id) {
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	if (_cg_is_system_menu_id(sid)) {
+		return false; // Los menús del sistema no se pueden borrar (3A)
+	}
+	if (!ui_designs_config.has("screens") || ui_designs_config["screens"].get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	Dictionary screens = Dictionary(ui_designs_config["screens"]).duplicate(true);
+	if (!screens.has(sid)) {
+		return false;
+	}
+	screens.erase(sid);
+	ui_designs_config["screens"] = screens;
+	ui_design_undo_stacks.erase(sid);
+	ui_design_redo_stacks.erase(sid);
+	dirty = true;
+	emit_signal("data_changed", "ui_designs", 0);
+	emit_signal("runtime_state_changed", "ui_design", sid);
+	return true;
+}
+
+bool ClockGearsDataManager::restore_system_menu_template(const String &p_menu_id, bool p_enable_custom_design) {
+	String sid = _cg_norm_ui_screen_id(p_menu_id);
+	if (!_cg_is_system_menu_id(sid)) {
+		return false;
+	}
+	if (p_enable_custom_design) {
+		Dictionary tpl = get_default_ui_screen_template(sid);
+		set_ui_screen_design(sid, tpl, true);
+	} else {
+		reset_ui_screen_design_to_default(sid, true);
+	}
+	return true;
+}
+
+static bool _cg_menu_contexts_overlap(const String &p_a, const String &p_b) {
+	if (p_a == "any" || p_b == "any" || p_a == p_b) {
+		return true;
+	}
+	if ((p_a == "map" && p_b == "map_and_battle") || (p_b == "map" && p_a == "map_and_battle")) {
+		return true;
+	}
+	return false;
+}
+
+static String _cg_trigger_signature(const Dictionary &p_trig, String &r_label) {
+	String kind = String(p_trig.get("kind", "key"));
+	if (kind == "key") {
+		int64_t kc = int64_t(p_trig.get("keycode", 0));
+		String kn = String(p_trig.get("key_name", ""));
+		if (kn.is_empty() && kc > 0) kn = keycode_get_string((Key)kc);
+		r_label = "Tecla " + kn;
+		return (kc > 0) ? ("key:" + String::num_int64(kc)) : String();
+	}
+	if (kind == "joy_button") {
+		int jb = int(p_trig.get("joy_button", 0));
+		r_label = vformat("Mando B%d", jb);
+		return "joy:" + itos(jb);
+	}
+	if (kind == "mouse_button") {
+		int mb = int(p_trig.get("mouse_button", 1));
+		r_label = vformat(String::utf8("Ratón B%d"), mb);
+		return "mouse:" + itos(mb);
+	}
+	String an = String(p_trig.get("action_name", "")).strip_edges();
+	r_label = vformat(String::utf8("Acción '%s'"), an);
+	return an.is_empty() ? String() : ("action:" + an.to_lower());
+}
+
+Array ClockGearsDataManager::get_menu_trigger_conflicts() const {
+	Array menus = get_all_menus();
+	struct MenuTrigEntry {
+		String menu_id;
+		String menu_name;
+		String context;
+		String sig;
+		String label;
+	};
+	Vector<MenuTrigEntry> entries;
+	for (int i = 0; i < menus.size(); i++) {
+		Dictionary m = menus[i];
+		String mid = String(m.get("id", ""));
+		String mname = String(m.get("name", mid));
+		String mctx = String(m.get("trigger_context", "map"));
+		Array trigs = m.get("triggers", Array());
+		for (int t = 0; t < trigs.size(); t++) {
+			if (trigs[t].get_type() != Variant::DICTIONARY) continue;
+			String lbl;
+			String sig = _cg_trigger_signature(Dictionary(trigs[t]), lbl);
+			if (sig.is_empty()) continue;
+			entries.push_back({ mid, mname, mctx, sig, lbl });
+		}
+	}
+
+	Array conflicts;
+	HashSet<String> reported_pairs;
+	for (int i = 0; i < entries.size(); i++) {
+		for (int j = i + 1; j < entries.size(); j++) {
+			if (entries[i].menu_id == entries[j].menu_id) continue;
+			if (entries[i].sig != entries[j].sig) continue;
+			if (!_cg_menu_contexts_overlap(entries[i].context, entries[j].context)) continue;
+
+			String a = entries[i].menu_id < entries[j].menu_id ? entries[i].menu_id : entries[j].menu_id;
+			String b = entries[i].menu_id < entries[j].menu_id ? entries[j].menu_id : entries[i].menu_id;
+			String pkey = a + "|" + b + "|" + entries[i].sig;
+			if (reported_pairs.has(pkey)) continue;
+			reported_pairs.insert(pkey);
+
+			Dictionary c;
+			Array mids;
+			mids.push_back(entries[i].menu_id);
+			mids.push_back(entries[j].menu_id);
+			Array mnames;
+			mnames.push_back(entries[i].menu_name);
+			mnames.push_back(entries[j].menu_name);
+			c["signature"] = entries[i].sig;
+			c["trigger_label"] = entries[i].label;
+			c["menu_ids"] = mids;
+			c["menu_names"] = mnames;
+			c["context_a"] = entries[i].context;
+			c["context_b"] = entries[j].context;
+			c["message"] = vformat(String::utf8("Conflicto de entrada (%s): '%s' y '%s' comparten entrada en el mismo contexto."),
+					entries[i].label, entries[i].menu_name, entries[j].menu_name);
+			conflicts.push_back(c);
+		}
+	}
+	return conflicts;
+}
+
+PackedStringArray ClockGearsDataManager::get_last_migrated_files() const {
+	PackedStringArray out;
+	for (int i = 0; i < last_migrated_files.size(); i++) {
+		out.push_back(last_migrated_files[i]);
+	}
+	return out;
 }
 
 bool ClockGearsDataManager::has_custom_ui_design(const String &p_screen_id) const {
@@ -6158,7 +7195,35 @@ static Dictionary s_normalize_surface_props(const Dictionary &p_raw, const Dicti
 	bool pa = p_raw.has("pixel_art") ? bool(p_raw["pixel_art"]) : bool(p_fallback.get("pixel_art", true));
 	String tcol = s_normalize_color_html(p_raw.get("font_color", p_fallback.get("font_color", "#eef2faff")), String(p_fallback.get("font_color", "#eef2faff")));
 
-	return s_make_surface_props(bt, bw, cr, bcol, ft, fcol, fimg, pad, img, slice, cm, pa, tcol);
+	Dictionary out = s_make_surface_props(bt, bw, cr, bcol, ft, fcol, fimg, pad, img, slice, cm, pa, tcol);
+	// Preservar propiedades avanzadas de forma/degradado/sombra/brillo (3F) solo si están presentes
+	if (p_raw.has("shape_type") || p_fallback.has("shape_type")) {
+		String st = _cg_norm_shape_type(p_raw.get("shape_type", p_fallback.get("shape_type", "")));
+		if (!st.is_empty()) out["shape_type"] = st;
+	}
+	if (p_raw.has("clip_content") || p_fallback.has("clip_content")) {
+		out["clip_content"] = p_raw.has("clip_content") ? bool(p_raw["clip_content"]) : bool(p_fallback["clip_content"]);
+	}
+	if (p_raw.has("gradient_enabled") || p_fallback.has("gradient_enabled")) {
+		out["gradient_enabled"] = p_raw.has("gradient_enabled") ? bool(p_raw["gradient_enabled"]) : bool(p_fallback["gradient_enabled"]);
+		out["gradient_top_color"] = s_normalize_color_html(p_raw.get("gradient_top_color", p_fallback.get("gradient_top_color", "#28221aff")), "#28221aff");
+		out["gradient_bottom_color"] = s_normalize_color_html(p_raw.get("gradient_bottom_color", p_fallback.get("gradient_bottom_color", "#14110eff")), "#14110eff");
+		String ga = String(p_raw.get("gradient_angle", p_fallback.get("gradient_angle", "vertical"))).strip_edges().to_lower();
+		out["gradient_angle"] = (ga == "horizontal") ? "horizontal" : "vertical";
+	}
+	if (p_raw.has("shadow_enabled") || p_fallback.has("shadow_enabled")) {
+		out["shadow_enabled"] = p_raw.has("shadow_enabled") ? bool(p_raw["shadow_enabled"]) : bool(p_fallback["shadow_enabled"]);
+		out["shadow_color"] = s_normalize_color_html(p_raw.get("shadow_color", p_fallback.get("shadow_color", "#00000073")), "#00000073");
+		out["shadow_size"] = CLAMP(int(p_raw.get("shadow_size", p_fallback.get("shadow_size", 4))), 0, 32);
+		out["shadow_offset_x"] = CLAMP(int(p_raw.get("shadow_offset_x", p_fallback.get("shadow_offset_x", 0))), -32, 32);
+		out["shadow_offset_y"] = CLAMP(int(p_raw.get("shadow_offset_y", p_fallback.get("shadow_offset_y", 2))), -32, 32);
+	}
+	if (p_raw.has("glow_enabled") || p_fallback.has("glow_enabled")) {
+		out["glow_enabled"] = p_raw.has("glow_enabled") ? bool(p_raw["glow_enabled"]) : bool(p_fallback["glow_enabled"]);
+		out["glow_color"] = s_normalize_color_html(p_raw.get("glow_color", p_fallback.get("glow_color", "#f5bc5466")), "#f5bc5466");
+		out["glow_size"] = CLAMP(int(p_raw.get("glow_size", p_fallback.get("glow_size", 4))), 0, 24);
+	}
+	return out;
 }
 
 static Dictionary s_make_builtin_style_rounded() {
@@ -7352,9 +8417,19 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_hud_runtime_visibility_state"), &ClockGearsDataManager::get_hud_runtime_visibility_state);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_design_screens"), &ClockGearsDataManager::get_ui_design_screens);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_design_screen_ids"), &ClockGearsDataManager::get_ui_design_screen_ids);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_system_menu_ids"), &ClockGearsDataManager::get_system_menu_ids);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("is_system_menu_id", "menu_id"), &ClockGearsDataManager::is_system_menu_id);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_menu_id", "raw_id"), &ClockGearsDataManager::normalize_menu_id);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_element_types"), &ClockGearsDataManager::get_ui_element_types);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_data_bindings"), &ClockGearsDataManager::get_ui_data_bindings);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_button_actions", "screen_id"), &ClockGearsDataManager::get_ui_button_actions);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_all_ui_button_action_types"), &ClockGearsDataManager::get_all_ui_button_action_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_menu_layout_modes"), &ClockGearsDataManager::get_menu_layout_modes);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_shape_types"), &ClockGearsDataManager::get_ui_shape_types);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_menu_trigger_contexts"), &ClockGearsDataManager::get_menu_trigger_contexts);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_menu_trigger", "trig"), &ClockGearsDataManager::normalize_menu_trigger);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_menu_layout", "layout"), &ClockGearsDataManager::normalize_menu_layout);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_shape", "shape"), &ClockGearsDataManager::normalize_ui_shape);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("make_default_ui_element", "type", "screen_id"), &ClockGearsDataManager::make_default_ui_element, DEFVAL("text"), DEFVAL("title"));
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_element", "elem", "index_hint", "screen_id"), &ClockGearsDataManager::normalize_ui_element, DEFVAL(1), DEFVAL("title"));
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_ui_screen_design", "screen_id"), &ClockGearsDataManager::get_default_ui_screen_design);
@@ -7362,6 +8437,21 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_default_ui_designs_config"), &ClockGearsDataManager::get_default_ui_designs_config);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_designs_config", "cfg"), &ClockGearsDataManager::normalize_ui_designs_config);
 	ClassDB::bind_method(D_METHOD("get_default_ui_screen_template", "screen_id"), &ClockGearsDataManager::get_default_ui_screen_template);
+	ClassDB::bind_method(D_METHOD("get_all_menus"), &ClockGearsDataManager::get_all_menus);
+	ClassDB::bind_method(D_METHOD("get_custom_menu_ids"), &ClockGearsDataManager::get_custom_menu_ids);
+	ClassDB::bind_method(D_METHOD("get_all_menus_for_selector"), &ClockGearsDataManager::get_all_menus_for_selector);
+	ClassDB::bind_method(D_METHOD("has_menu", "menu_id"), &ClockGearsDataManager::has_menu);
+	ClassDB::bind_method(D_METHOD("get_menu_metadata", "menu_id"), &ClockGearsDataManager::get_menu_metadata);
+	ClassDB::bind_method(D_METHOD("create_custom_menu", "name", "initial_design"), &ClockGearsDataManager::create_custom_menu, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("rename_menu", "menu_id", "new_name"), &ClockGearsDataManager::rename_menu);
+	ClassDB::bind_method(D_METHOD("duplicate_menu", "source_id", "new_name"), &ClockGearsDataManager::duplicate_menu, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("reorder_custom_menu", "menu_id", "new_order"), &ClockGearsDataManager::reorder_custom_menu);
+	ClassDB::bind_method(D_METHOD("move_custom_menu", "menu_id", "delta"), &ClockGearsDataManager::move_custom_menu);
+	ClassDB::bind_method(D_METHOD("delete_custom_menu", "menu_id"), &ClockGearsDataManager::delete_custom_menu);
+	ClassDB::bind_method(D_METHOD("restore_system_menu_template", "menu_id", "enable_custom_design"), &ClockGearsDataManager::restore_system_menu_template, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_menu_trigger_conflicts"), &ClockGearsDataManager::get_menu_trigger_conflicts);
+	ClassDB::bind_method(D_METHOD("get_last_migrated_files"), &ClockGearsDataManager::get_last_migrated_files);
+	ClassDB::bind_method(D_METHOD("clear_last_migrated_files"), &ClockGearsDataManager::clear_last_migrated_files);
 	ClassDB::bind_method(D_METHOD("has_custom_ui_design", "screen_id"), &ClockGearsDataManager::has_custom_ui_design);
 	ClassDB::bind_method(D_METHOD("get_ui_screen_design", "screen_id"), &ClockGearsDataManager::get_ui_screen_design);
 	ClassDB::bind_method(D_METHOD("set_ui_screen_design", "screen_id", "design", "record_undo"), &ClockGearsDataManager::set_ui_screen_design, DEFVAL(true));

@@ -134,6 +134,15 @@ private:
 
 	bool menu_open = false;
 	String current_subscreen = "main";
+	String active_menu_id = "game_menu_main";
+	Vector<String> menu_history_stack;
+	bool paused_tree_by_menu = false;
+	bool save_panel_load_mode = false;
+	bool auto_quit_tree = true;
+	bool quit_requested_flag = false;
+	String last_played_menu_sound;
+	int last_common_event_id = 0;
+	Array last_executed_actions;
 	PackedStringArray visible_entry_ids;
 	PackedStringArray visible_entry_texts;
 
@@ -181,6 +190,16 @@ private:
 	void _on_entry_pressed(const String &p_id);
 	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
 	String _map_subscreen_to_ui_design_id(const String &p_subscreen) const;
+	String _map_menu_id_to_subscreen(const String &p_menu_id) const;
+	Dictionary _get_menu_design(const String &p_menu_id) const;
+	void _play_menu_sound(const String &p_event_key);
+	void _update_pause_state_for_menu(const String &p_menu_id);
+	void _restore_pause_state();
+	bool _execute_button_step(const Dictionary &p_step, const String &p_elem_id);
+	void _execute_button_actions(const Array &p_actions, const String &p_fallback_action, const String &p_elem_id);
+	bool _does_trigger_match_event(const Dictionary &p_trigger, const Ref<InputEvent> &p_event) const;
+	bool _context_allows_trigger(const String &p_trigger_context, const String &p_runtime_context) const;
+	void _open_load_panel();
 	void _on_subscreen_back();
 	void _on_item_row_pressed(const String &p_key);
 	void _on_item_row_hovered(const String &p_key);
@@ -219,12 +238,27 @@ public:
 	void apply_game_menu_config_preview(const Dictionary &p_cfg, const String &p_screen_id = "");
 
 	bool can_open_menu() const;
+	bool can_open_menu_for_context(const String &p_menu_id, const String &p_context = "map") const;
 	bool open_menu();
+	bool open_menu_by_id(const String &p_menu_id, bool p_from_event = false, bool p_push_history = false, bool p_bypass_access = false);
 	bool open_menu_from_event(const String &p_initial_subscreen = "main", bool p_close_on_back = false);
+	bool handle_trigger_input_event(const Ref<InputEvent> &p_event, const String &p_context = "map");
+	bool trigger_custom_element_by_id(const String &p_elem_id);
 	void refresh_window_styles();
 	void close_menu();
 	bool is_menu_open() const { return menu_open; }
 	bool handle_input_key(Key p_keycode);
+
+	String get_active_menu_id() const { return active_menu_id; }
+	PackedStringArray get_menu_history_stack() const;
+	int get_menu_history_depth() const { return menu_history_stack.size(); }
+	bool is_tree_paused_by_menu() const { return paused_tree_by_menu; }
+	String get_last_played_menu_sound() const { return last_played_menu_sound; }
+	int get_last_common_event_id() const { return last_common_event_id; }
+	Array get_last_executed_actions() const { return last_executed_actions.duplicate(true); }
+	void set_auto_quit_tree(bool p_enable) { auto_quit_tree = p_enable; }
+	bool was_quit_requested() const { return quit_requested_flag; }
+	bool is_save_panel_load_mode() const { return save_panel_load_mode; }
 
 	bool open_subscreen(const String &p_id);
 	String get_current_subscreen() const { return current_subscreen; }

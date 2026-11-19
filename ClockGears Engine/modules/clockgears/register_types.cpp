@@ -200,6 +200,10 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsGameOverScreen);
 		GDREGISTER_CLASS(ClockGearsGameMenu);
 		GDREGISTER_CLASS(ClockGearsHudOverlay);
+		GDREGISTER_CLASS(ClockGearsShapedClipControl);
+		GDREGISTER_CLASS(ClockGearsShapedBorderOverlay);
+		GDREGISTER_CLASS(ClockGearsRadialCanvas);
+		GDREGISTER_CLASS(ClockGearsMenuCursorOverlay);
 		GDREGISTER_CLASS(ClockGearsUiDesignLayer);
 		GDREGISTER_CLASS(ClockGearsWindowStyleBox);
 		GDREGISTER_CLASS(ClockGearsWindowStyleManager);
