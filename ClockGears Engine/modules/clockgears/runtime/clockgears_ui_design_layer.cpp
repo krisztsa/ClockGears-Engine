@@ -1584,6 +1584,22 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			body->set_text(hint);
 			vb->add_child(body);
 		}
+	} else if (r_entry.type == "radial") {
+		PanelContainer *card = memnew(PanelContainer);
+		card->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		card->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		ClockGearsWindowStyleManager::apply_window_style(card, window_type_fallback);
+		content->add_child(card);
+
+		Label *rlbl = memnew(Label);
+		rlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		rlbl->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		rlbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		rlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+		rlbl->set_text(String::utf8("◎ Rueda radial"));
+		rlbl->add_theme_color_override("font_color", Color(0.96f, 0.80f, 0.40f, 1.0f));
+		card->add_child(rlbl);
+		r_entry.label = rlbl;
 	} else {
 		Label *lbl = memnew(Label);
 		lbl->set_name("TextLabel");

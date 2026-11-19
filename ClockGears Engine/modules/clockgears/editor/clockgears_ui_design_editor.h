@@ -87,12 +87,16 @@ private:
 	bool drag_changed = false;
 	String hover_elem_id;
 	HandleType hover_handle = HANDLE_NONE;
-	bool show_grid_overlay = true;
+	bool show_grid_overlay = false;
 	bool snap_to_grid = false;
-	int grid_step = 8;
+	int grid_step = 16;
 	bool show_smart_guides = true;
 	Vector<float> guide_lines_x;
 	Vector<float> guide_lines_y;
+	bool marquee_selecting = false;
+	Vector2 marquee_start;
+	Vector2 marquee_end;
+	HashMap<String, Dictionary> drag_multi_initial;
 
 	Rect2 _get_handle_rect(const Rect2 &p_elem_rect, HandleType p_handle) const;
 	HandleType _hit_test_handle(const Rect2 &p_elem_rect, const Vector2 &p_pt) const;
@@ -117,8 +121,17 @@ public:
 	bool is_snap_enabled() const { return snap_to_grid; }
 	void set_grid_step(int p_step) { grid_step = CLAMP(p_step, 4, 64); queue_redraw(); }
 	int get_grid_step() const { return grid_step; }
-	void set_smart_guides_enabled(bool p_en) { show_smart_guides = p_en; queue_redraw(); }
+	void set_smart_guides_enabled(bool p_en) {
+		show_smart_guides = p_en;
+		if (!show_smart_guides) {
+			guide_lines_x.clear();
+			guide_lines_y.clear();
+		}
+		queue_redraw();
+	}
 	bool is_smart_guides_enabled() const { return show_smart_guides; }
+	bool is_marquee_selecting() const { return marquee_selecting; }
+	int get_active_guide_line_count() const { return guide_lines_x.size() + guide_lines_y.size(); }
 };
 
 // Lista de capas de dibujo propio para listas largas (> 32 capas, 0 nodos extra por fila) (5C)
@@ -163,6 +176,7 @@ private:
 	ClockGearsDatabaseDialog *owner_db = nullptr;
 	String current_screen_id = "title";
 	String selected_elem_id;
+	PackedStringArray selected_elem_ids;
 	int canvas_zoom = 1;
 	Vector2i preview_resolution = Vector2i(960, 540);
 	bool updating_ui = false;
@@ -183,8 +197,9 @@ private:
 	Button *templates_btn = nullptr;
 	Label *screen_status_lbl = nullptr;
 
-	// Barra de edición rápida (rejilla, imán, guías, alinear, distribuir, duplicar, copiar/pegar)
+	// Barra de edición rápida (rejilla, paso, imán, guías, alinear, distribuir, duplicar, copiar/pegar)
 	CheckBox *grid_chk = nullptr;
+	OptionButton *grid_step_opt = nullptr;
 	CheckBox *snap_chk = nullptr;
 	CheckBox *guides_chk = nullptr;
 	Button *align_center_h_btn = nullptr;
@@ -274,6 +289,7 @@ private:
 	SpinBox *prop_h_spin = nullptr;
 	SpinBox *prop_layer_spin = nullptr;
 	CheckBox *prop_visible_chk = nullptr;
+	CheckBox *prop_locked_chk = nullptr;
 	CheckBox *prop_show_bg_chk = nullptr;
 	OptionButton *prop_style_opt = nullptr;
 
@@ -540,6 +556,7 @@ private:
 	static int _anchor_index_by_key(const String &p_key);
 
 	void _on_screen_selected(int p_idx);
+	void _on_grid_step_selected(int p_idx);
 	void _on_zoom_pressed(int p_zoom);
 	void _on_undo_pressed();
 	void _on_redo_pressed();
@@ -578,6 +595,14 @@ public:
 	void refresh_from_data_manager();
 	void refresh_geometry_fast(bool p_refresh_props = true);
 	void update_dragged_element_fast(const String &p_elem_id, const Dictionary &p_elem);
+	void update_multi_dragged_elements_fast(const Array &p_pairs);
+	void set_grid_step(int p_step);
+	int get_grid_step() const;
+	bool select_elements(const PackedStringArray &p_ids, const String &p_primary_id = "");
+	bool toggle_element_in_selection(const String &p_elem_id);
+	PackedStringArray get_selected_element_ids() const { return selected_elem_ids; }
+	bool is_element_selected(const String &p_elem_id) const;
+	Dictionary get_canvas_draw_stats() const;
 	void adapt_to_width(int p_window_width);
 
 	// API pública clara para interacción directa y pruebas automatizadas (Etapa 4)
