@@ -50,6 +50,7 @@ static Button *_cg_make_menu_button(const String &p_text, const String &p_style_
 	b->set_disabled(p_disabled);
 	b->set_custom_minimum_size(Size2(140, 32));
 	b->set_focus_mode(Control::FOCUS_ALL);
+	b->set_clip_text(true);
 	b->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	if (p_pressed_cb.is_valid()) {
 		b->connect("pressed", p_pressed_cb);
@@ -1838,7 +1839,6 @@ void ClockGearsGameMenu::_refresh_main_view() {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	visible_entry_ids.clear();
 	visible_entry_texts.clear();
-	_cg_clear_box_children(entries_box);
 
 	Dictionary cfg = _get_effective_game_menu_config();
 	Array raw_entries = cfg.get("entries", Array());
@@ -1861,17 +1861,53 @@ void ClockGearsGameMenu::_refresh_main_view() {
 	};
 	sorted_entries.sort_custom<EntryOrderCmp>();
 
+	bool can_reuse_entries = (entries_box && entries_box->get_child_count() == sorted_entries.size());
+	if (can_reuse_entries) {
+		for (int i = 0; i < sorted_entries.size(); i++) {
+			Button *existing = Object::cast_to<Button>(entries_box->get_child(i));
+			if (!existing || !existing->has_meta("cg_entry_id") || String(existing->get_meta("cg_entry_id")) != String(sorted_entries[i].get("id", ""))) {
+				can_reuse_entries = false;
+				break;
+			}
+		}
+	}
+
 	Button *first_btn = nullptr;
-	for (int i = 0; i < sorted_entries.size(); i++) {
-		const Dictionary &e = sorted_entries[i];
-		String eid = String(e.get("id", ""));
-		String txt = String(e.get("text", eid));
-		visible_entry_ids.push_back(eid);
-		visible_entry_texts.push_back(txt);
-		Button *b = _cg_make_menu_button(txt, "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_entry_pressed).bind(eid));
-		entries_box->add_child(b);
-		if (!first_btn) {
-			first_btn = b;
+	if (can_reuse_entries) {
+		for (int i = 0; i < sorted_entries.size(); i++) {
+			const Dictionary &e = sorted_entries[i];
+			String eid = String(e.get("id", ""));
+			String txt = String(e.get("text", eid));
+			visible_entry_ids.push_back(eid);
+			visible_entry_texts.push_back(txt);
+			Button *b = Object::cast_to<Button>(entries_box->get_child(i));
+			if (b->get_text() != txt) {
+				b->set_text(txt);
+			}
+			uint64_t bgen = b->has_meta("cg_style_gen") ? uint64_t(b->get_meta("cg_style_gen")) : 0;
+			if (bgen != applied_styles_generation) {
+				ClockGearsWindowStyleManager::apply_button_style(b, "game_menu");
+				b->set_meta("cg_style_gen", applied_styles_generation);
+			}
+			if (!first_btn) {
+				first_btn = b;
+			}
+		}
+	} else {
+		_cg_clear_box_children(entries_box);
+		for (int i = 0; i < sorted_entries.size(); i++) {
+			const Dictionary &e = sorted_entries[i];
+			String eid = String(e.get("id", ""));
+			String txt = String(e.get("text", eid));
+			visible_entry_ids.push_back(eid);
+			visible_entry_texts.push_back(txt);
+			Button *b = _cg_make_menu_button(txt, "game_menu", callable_mp(this, &ClockGearsGameMenu::_on_entry_pressed).bind(eid));
+			b->set_meta("cg_entry_id", eid);
+			b->set_meta("cg_style_gen", applied_styles_generation);
+			entries_box->add_child(b);
+			if (!first_btn) {
+				first_btn = b;
+			}
 		}
 	}
 	if (first_btn && is_inside_tree()) {
@@ -2818,7 +2854,10 @@ bool ClockGearsGameMenu::_execute_button_step(const Dictionary &p_step, const St
 		return false;
 	}
 	if (step_type == "set_variable") {
-		String var_name = String(p_step.get("variable_name", p_step.get("variable", p_step.get("name", "")))).strip_edges();
+		String var_name = String(p_step.get("variable_name", "")).strip_edges();
+		if (var_name.is_empty()) {
+			var_name = String(p_step.get("var_name", p_step.get("variable", p_step.get("name", "")))).strip_edges();
+		}
 		String op = String(p_step.get("op", "set")).strip_edges().to_lower();
 		int val = int(p_step.get("value", 0));
 		if (dm && !var_name.is_empty()) {

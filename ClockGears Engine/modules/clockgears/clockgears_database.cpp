@@ -1351,9 +1351,12 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		_setup_ui_design_editor_ui();
 	}
 	if (ui_design_editor_panel) {
+		bool was_vis = ui_design_editor_panel->is_visible();
 		ui_design_editor_panel->set_visible(is_ui_designer);
-		if (is_ui_designer) {
+		if (is_ui_designer && was_vis) {
 			ui_design_editor_panel->refresh_from_data_manager();
+		}
+		if (is_ui_designer) {
 			ui_design_editor_panel->adapt_to_width(int(get_size().x));
 		}
 	}

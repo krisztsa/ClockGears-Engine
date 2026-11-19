@@ -1219,21 +1219,35 @@ void ClockGearsUiDesignLayer::apply_screen_design(const String &p_screen_id, con
 	} else {
 		design = ClockGearsDataManager::get_default_ui_screen_design(screen_id);
 	}
-	active_design = design;
+	apply_prebuilt_screen_design(screen_id, design);
+}
+
+void ClockGearsUiDesignLayer::apply_prebuilt_screen_design(const String &p_screen_id, const Dictionary &p_norm_design) {
+	screen_id = ClockGearsDataManager::normalize_menu_id(p_screen_id);
+	active_design = p_norm_design;
 	current_layout_page = 0;
-	Dictionary lay = design.get("layout", Dictionary());
+	Dictionary lay = p_norm_design.get("layout", Dictionary());
 	current_layout_tab = MAX(0, int(lay.get("active_tab", 0)));
 	current_carousel_index = 0;
-	_rebuild_from_design(design);
+	_rebuild_from_design(p_norm_design);
 	last_layout_size = Vector2(-1, -1);
 	_relayout_elements(true);
 	refresh_live_values();
 }
 
 void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
-	clear_elements();
+	_clear_aux_layout_controls();
 	Dictionary lay = p_design.get("layout", Dictionary());
 	String lmode = String(lay.get("mode", "free")).strip_edges().to_lower();
+
+	// Reutilización en sitio de nodos simples existentes (text / frame sin recorte) para cambios instantáneos (5C)
+	Vector<ElementEntry> reusable = elements;
+	elements.clear();
+	Vector<bool> used;
+	used.resize(reusable.size());
+	for (int i = 0; i < used.size(); i++) {
+		used.write[i] = false;
+	}
 
 	Array raw = p_design.get("elements", Array());
 	if (lmode == "radial") {
@@ -1272,10 +1286,63 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.focus_order = int(cfg.get("focus_order", i));
 		entry.array_order = i;
 		entry.tab_index = MAX(0, int(cfg.get("tab_index", 0)));
-		entry.config = cfg.duplicate(true);
+		entry.config = cfg;
 
-		_build_element_entry(entry);
+		bool has_shape = cfg.has("shape") && cfg["shape"].get_type() == Variant::DICTIONARY;
+		bool reused_ok = false;
+		if (!has_shape && (etype == "text" || etype == "frame")) {
+			for (int r = 0; r < reusable.size(); r++) {
+				if (!used[r] && reusable[r].root && reusable[r].type == etype && !reusable[r].clip_host) {
+					used.write[r] = true;
+					entry.root = reusable[r].root;
+					entry.bg_panel = reusable[r].bg_panel;
+					entry.content_root = reusable[r].content_root;
+					entry.label = reusable[r].label;
+					String target_name = vformat("UiElem_%s", entry.id);
+					if (entry.root->get_name() != target_name) {
+						entry.root->set_name(target_name);
+					}
+					if (entry.root->get_z_index() != entry.layer_order) {
+						entry.root->set_z_index(entry.layer_order);
+					}
+					if (entry.root->is_visible() != entry.visible) {
+						entry.root->set_visible(entry.visible);
+					}
+					if (entry.bg_panel) {
+						Color bg_mod(1, 1, 1, etype == "frame" ? CLAMP(float(cfg.get("opacity", 1.0)), 0.0f, 1.0f) : 1.0f);
+						if (entry.bg_panel->get_modulate() != bg_mod) {
+							entry.bg_panel->set_modulate(bg_mod);
+						}
+					}
+					if (entry.label) {
+						String al = String(cfg.get("align", "left"));
+						HorizontalAlignment ha = (al == "center") ? HORIZONTAL_ALIGNMENT_CENTER : ((al == "right") ? HORIZONTAL_ALIGNMENT_RIGHT : HORIZONTAL_ALIGNMENT_LEFT);
+						if (entry.label->get_horizontal_alignment() != ha) {
+							entry.label->set_horizontal_alignment(ha);
+						}
+						Color fcol = _cg_ui_parse_color(cfg.get("font_color", "#FFFFFFFF"), Color(1, 1, 1, 1));
+						if (!entry.label->has_theme_color_override("font_color") || entry.label->get_theme_color("font_color") != fcol) {
+							entry.label->add_theme_color_override("font_color", fcol);
+						}
+					}
+					reused_ok = true;
+					break;
+				}
+			}
+		}
+		if (!reused_ok) {
+			_build_element_entry(entry);
+		}
 		elements.push_back(entry);
+	}
+
+	for (int r = 0; r < reusable.size(); r++) {
+		if (!used[r] && reusable[r].root) {
+			if (reusable[r].root->get_parent() == this) {
+				remove_child(reusable[r].root);
+			}
+			memdelete(reusable[r].root);
+		}
 	}
 
 	if (!cursor_overlay) {
@@ -1345,6 +1412,7 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		btn->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 		btn->set_text(String(r_entry.config.get("text", r_entry.name)));
 		btn->set_clip_text(true);
+		btn->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		btn->set_mouse_filter(preview_mode ? MOUSE_FILTER_IGNORE : MOUSE_FILTER_STOP);
 		btn->set_focus_mode(preview_mode ? FOCUS_NONE : FOCUS_ALL);
 		btn->set_meta("ui_elem_id", r_entry.id);
@@ -1535,9 +1603,16 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	String sid = r_entry.window_style_id;
 	bool force_panel = (r_entry.type == "frame") || has_shape;
 	if (!force_panel && (sid.is_empty() || sid == "none")) {
-		r_entry.bg_panel->set_visible(false);
-		r_entry.content_root->set_position(Vector2());
-		r_entry.content_root->set_size(r_entry.root->get_size());
+		if (r_entry.bg_panel->is_visible()) {
+			r_entry.bg_panel->set_visible(false);
+		}
+		if (r_entry.content_root->get_position() != Vector2()) {
+			r_entry.content_root->set_position(Vector2());
+		}
+		Size2 rsz = r_entry.root->get_size();
+		if (r_entry.content_root->get_size() != rsz) {
+			r_entry.content_root->set_size(rsz);
+		}
 		return;
 	}
 
@@ -1693,6 +1768,8 @@ void ClockGearsUiDesignLayer::_apply_container_layout(const Dictionary &p_layout
 			Button *tb = memnew(Button);
 			String tname = (t < labels.size()) ? String(labels[t]) : vformat(String::utf8("Pestaña %d"), t + 1);
 			tb->set_text(tname);
+			tb->set_clip_text(true);
+			tb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 			tb->set_toggle_mode(true);
 			tb->set_pressed_no_signal(t == current_layout_tab);
 			tb->set_position(box.position + Vector2(float(t) * (tw + spx), 0.0f));
@@ -1772,9 +1849,15 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 			continue;
 		}
 		Rect2 er = compute_element_rect(e.config, current_stage_rect, current_ui_scale);
-		e.root->set_position(er.position);
-		e.root->set_size(er.size);
-		e.root->set_z_index(e.layer_order);
+		if (e.root->get_position() != er.position) {
+			e.root->set_position(er.position);
+		}
+		if (e.root->get_size() != er.size) {
+			e.root->set_size(er.size);
+		}
+		if (e.root->get_z_index() != e.layer_order) {
+			e.root->set_z_index(e.layer_order);
+		}
 		_apply_element_style(e, current_ui_scale);
 
 		String fp = String(e.config.get("font_path", "")).strip_edges();
@@ -1782,7 +1865,9 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 
 		if (e.label) {
 			int fsz = MAX(8, int(Math::round(float(e.config.get("font_size", 16)) * current_ui_scale)));
-			e.label->add_theme_font_size_override("font_size", fsz);
+			if (!e.label->has_theme_font_size_override("font_size") || e.label->get_theme_font_size("font_size") != fsz) {
+				e.label->add_theme_font_size_override("font_size", fsz);
+			}
 			if (cfont.is_valid()) e.label->add_theme_font_override("font", cfont);
 		}
 		if (e.button) {
@@ -1883,14 +1968,19 @@ void ClockGearsUiDesignLayer::refresh_live_values() {
 
 		if (e.type == "text" || e.type == "variable") {
 			if (e.label) {
-				e.label->set_text(resolve_element_text(e.config, dm));
+				String nt = resolve_element_text(e.config, dm);
+				if (e.label->get_text() != nt) {
+					e.label->set_text(nt);
+				}
 			}
 		} else if (e.type == "button") {
 			if (e.button) {
 				String btxt = (e.data_binding != "none" && !e.data_binding.is_empty())
 						? resolve_element_text(e.config, dm)
 						: String(e.config.get("text", e.name));
-				e.button->set_text(btxt);
+				if (e.button->get_text() != btxt) {
+					e.button->set_text(btxt);
+				}
 				String emode = String(e.config.get("enabled_mode", "always")).strip_edges().to_lower();
 				bool is_dis = (emode == "disabled") || bool(e.config.get("disabled", false)) ||
 						(!e.action.is_empty() && bool(disabled_actions.get(e.action, false)));
@@ -2231,7 +2321,18 @@ Array ClockGearsUiDesignLayer::get_element_actions(const String &p_elem_id) cons
 	String target = p_elem_id.strip_edges().to_lower();
 	for (int i = 0; i < elements.size(); i++) {
 		if (elements[i].id.to_lower() == target) {
-			return elements[i].actions.duplicate(true);
+			if (!elements[i].actions.is_empty()) {
+				return elements[i].actions.duplicate(true);
+			}
+			String act = elements[i].action.strip_edges().to_lower();
+			if (!act.is_empty() && act != "none") {
+				Dictionary step = elements[i].config.duplicate(true);
+				step["type"] = act;
+				Array single;
+				single.push_back(step);
+				return single;
+			}
+			return Array();
 		}
 	}
 	if (radial_canvas) {

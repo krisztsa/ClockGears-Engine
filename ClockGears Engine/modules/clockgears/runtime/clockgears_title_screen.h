@@ -13,6 +13,7 @@
 #include "scene/gui/texture_rect.h"
 
 class ClockGearsCreditsPlayer;
+class ClockGearsGameMenu;
 class ClockGearsUiDesignLayer;
 
 // ============================================================================
@@ -100,6 +101,7 @@ private:
 	Button *btn_options_back = nullptr;
 	ClockGearsCreditsPlayer *credits_player = nullptr;
 	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
+	ClockGearsGameMenu *custom_sub_menu = nullptr;
 	bool custom_ui_active = false;
 	bool syncing_options_ui = false;
 
@@ -130,6 +132,9 @@ private:
 	void _on_reset_options_pressed();
 	void _on_entry_button_pressed(const String &p_id);
 	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
+	bool _execute_title_step(const Dictionary &p_step);
+	ClockGearsGameMenu *_ensure_custom_sub_menu();
+	void _on_custom_sub_menu_closed();
 	bool _execute_title_action(const String &p_action);
 	void _on_save_slot_pressed(int p_slot);
 	void _on_title_credits_finished(bool p_cancelled);

@@ -4940,7 +4940,7 @@ static Dictionary _cg_norm_button_action_step(const Dictionary &p_step) {
 	}
 	if (t == "set_variable" || t == "variable") {
 		out["type"] = "set_variable";
-		out["variable_name"] = String(p_step.get("variable_name", p_step.get("variable", ""))).strip_edges();
+		out["variable_name"] = String(p_step.get("variable_name", p_step.get("var_name", p_step.get("variable", "")))).strip_edges();
 		String op = String(p_step.get("op", "set")).strip_edges().to_lower();
 		if (op == "+" || op == "+=") op = "add";
 		else if (op == "-" || op == "-=") op = "sub";
@@ -5883,11 +5883,19 @@ Array ClockGearsDataManager::get_ui_button_actions(const String &p_screen_id) {
 	} else if (sid == "credits") {
 		push_a("back", "Volver");
 		push_a("close", String::utf8("Cerrar créditos"));
-	} else {
-		// Menús propios ilimitados: permiten cualquier acción del motor (3D)
-		Array all_acts = get_all_ui_button_action_types();
-		for (int i = 0; i < all_acts.size(); i++) {
-			out.push_back(all_acts[i]);
+	}
+	// Ampliar con todas las acciones configurables de 3D en cualquier pantalla rediseñable (5A)
+	Array all_acts = get_all_ui_button_action_types();
+	HashSet<String> seen;
+	for (int i = 0; i < out.size(); i++) {
+		seen.insert(String(Dictionary(out[i]).get("id", "")));
+	}
+	for (int i = 0; i < all_acts.size(); i++) {
+		Dictionary ad = all_acts[i];
+		String aid = String(ad.get("id", ""));
+		if (!aid.is_empty() && !seen.has(aid)) {
+			seen.insert(aid);
+			out.push_back(ad);
 		}
 	}
 	return out;
@@ -5987,7 +5995,7 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 		out["item_key"] = String(p_elem.get("item_key", "")).strip_edges();
 	}
 	if ((etype == "text" || etype == "button" || etype == "variable") && !out.has("variable_name")) {
-		out["variable_name"] = String(p_elem.get("variable_name", "")).strip_edges();
+		out["variable_name"] = String(p_elem.get("variable_name", p_elem.get("var_name", p_elem.get("variable", "")))).strip_edges();
 	}
 	if (p_elem.has("tab_index")) {
 		out["tab_index"] = MAX(0, int(p_elem["tab_index"]));
@@ -6031,7 +6039,7 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 		String raw_action = String(p_elem.get("action", def.get("action", ""))).strip_edges().to_lower();
 		if (_cg_is_system_menu_id(sid)) {
 			Array valid_actions = get_ui_button_actions(sid);
-			bool found_action = raw_action.is_empty();
+			bool found_action = raw_action.is_empty() || raw_action == "none";
 			if (!found_action) {
 				Array all_acts = get_all_ui_button_action_types();
 				for (int i = 0; i < valid_actions.size(); i++) {
@@ -6054,6 +6062,11 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 			}
 		}
 		out["action"] = raw_action;
+		for (const char *pk : { "switch_name", "switch", "variable_name", "var_name", "variable", "value", "op", "menu_id", "target", "screen_id", "screen", "common_event_id", "sound_path", "sound", "slot", "visible", "scope", "widget_id", "widget", "pitch" }) {
+			if (p_elem.has(pk)) {
+				out[pk] = p_elem[pk];
+			}
+		}
 		if (p_elem.has("actions") && p_elem["actions"].get_type() == Variant::ARRAY) {
 			Array acts_in = p_elem["actions"];
 			Array acts_out;
@@ -6199,6 +6212,10 @@ Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_scr
 	}
 	if (p_design.has("transition") && p_design["transition"].get_type() == Variant::DICTIONARY) {
 		out["transition"] = normalize_ui_transition(Dictionary(p_design["transition"]));
+	}
+	String bgm_p = String(p_design.get("bgm_path", "")).strip_edges();
+	if (!bgm_p.is_empty()) {
+		out["bgm_path"] = bgm_p;
 	}
 	return out;
 }
@@ -6478,7 +6495,21 @@ bool ClockGearsDataManager::has_menu(const String &p_menu_id) const {
 
 Dictionary ClockGearsDataManager::get_menu_metadata(const String &p_menu_id) const {
 	String sid = _cg_norm_ui_screen_id(p_menu_id);
-	Dictionary d = get_ui_screen_design(sid);
+	Dictionary d;
+	if (sid == "hud") {
+		d["name"] = _cg_default_system_menu_name(sid);
+		d["window_type"] = _cg_default_system_menu_win_type(sid);
+		Array w = hud_config.get("widgets", Array());
+		d["custom_enabled"] = !w.is_empty();
+		d["pause_on_open"] = false;
+	} else {
+		Dictionary screens = ui_designs_config.get("screens", Dictionary());
+		if (screens.has(sid) && screens[sid].get_type() == Variant::DICTIONARY) {
+			d = screens[sid];
+		} else {
+			d = get_default_ui_screen_design(sid);
+		}
+	}
 	Dictionary out;
 	out["id"] = sid;
 	out["screen_id"] = sid;
@@ -6792,7 +6823,7 @@ Dictionary ClockGearsDataManager::get_ui_screen_design(const String &p_screen_id
 	}
 	Dictionary screens = ui_designs_config.get("screens", Dictionary());
 	if (screens.has(sid) && screens[sid].get_type() == Variant::DICTIONARY) {
-		return normalize_ui_screen_design(sid, Dictionary(screens[sid]));
+		return Dictionary(screens[sid]).duplicate(true);
 	}
 	return get_default_ui_screen_design(sid);
 }

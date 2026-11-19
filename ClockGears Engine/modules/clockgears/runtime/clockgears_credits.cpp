@@ -9,6 +9,7 @@
 #include "core/input/input_map.h"
 #include "core/object/callable_mp.h"
 #include "scene/gui/label.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 
 static HorizontalAlignment _cg_h_align(const String &p_align) {
@@ -245,6 +246,9 @@ void ClockGearsCreditsPlayer::_rebuild_from_config(const Dictionary &p_cfg) {
 			custom_ui_layer->set_preview_mode(preview_mode);
 			custom_ui_layer->apply_screen_design("credits");
 			custom_ui_layer->set_visible(true);
+			if (!preview_mode) {
+				custom_ui_layer->play_transition_in();
+			}
 		} else {
 			custom_ui_layer->set_visible(false);
 			custom_ui_layer->clear_elements();
@@ -370,7 +374,7 @@ void ClockGearsCreditsPlayer::start_credits(const Dictionary &p_cfg_override) {
 		}
 	}
 
-	if (content_height <= 0.0f) {
+	if (content_height <= 0.0f && !(custom_ui_layer && custom_ui_layer->is_visible())) {
 		_finish(false);
 	}
 }
@@ -438,9 +442,54 @@ void ClockGearsCreditsPlayer::step_credits(float p_delta) {
 }
 
 void ClockGearsCreditsPlayer::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
-	String act = p_action.strip_edges().to_lower();
-	if (act == "back" || act == "close") {
-		_finish(true);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Array steps;
+	if (custom_ui_layer && !p_elem_id.is_empty()) {
+		steps = custom_ui_layer->get_element_actions(p_elem_id);
+	}
+	if (steps.is_empty()) {
+		String act = p_action.strip_edges().to_lower();
+		if (!act.is_empty()) {
+			Dictionary d;
+			d["type"] = act;
+			steps.push_back(d);
+		}
+	}
+	for (int i = 0; i < steps.size(); i++) {
+		if (steps[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary st = steps[i];
+		String tp = String(st.get("type", "")).strip_edges().to_lower();
+		if (tp == "back" || tp == "close" || tp == "close_menu") {
+			_finish(true);
+			return;
+		} else if (tp == "quit") {
+			if (!preview_mode && get_tree()) get_tree()->quit();
+			return;
+		} else if (tp == "set_switch" && dm) {
+			String sw = String(st.get("switch_name", st.get("switch", ""))).strip_edges();
+			if (!sw.is_empty()) {
+				bool val = (String(st.get("value", true)).to_lower() == "toggle") ? !dm->get_switch(sw) : bool(st.get("value", true));
+				dm->set_switch(sw, val);
+			}
+		} else if (tp == "set_variable" && dm) {
+			String vn = String(st.get("variable_name", "")).strip_edges();
+			if (vn.is_empty()) {
+				vn = String(st.get("var_name", st.get("variable", st.get("name", "")))).strip_edges();
+			}
+			if (!vn.is_empty()) {
+				dm->set_variable(vn, int(st.get("value", 0)));
+			}
+		} else if (tp == "play_sound") {
+			String sp = String(st.get("sound_path", st.get("sound", ""))).strip_edges();
+			if (!sp.is_empty()) {
+				if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+					am->play_se(sp, 1.0f, 1.0f);
+				}
+			}
+		}
+	}
+	if (custom_ui_layer && custom_ui_layer->is_visible()) {
+		custom_ui_layer->refresh_live_values();
 	}
 }
 

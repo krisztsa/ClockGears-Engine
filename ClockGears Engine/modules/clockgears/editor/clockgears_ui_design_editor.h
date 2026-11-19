@@ -20,6 +20,7 @@
 #include "scene/gui/spin_box.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
+#include "scene/resources/style_box_flat.h"
 
 class AspectRatioContainer;
 class ClockGearsCreditsPlayer;
@@ -119,6 +120,33 @@ public:
 	bool is_smart_guides_enabled() const { return show_smart_guides; }
 };
 
+// Lista de capas de dibujo propio para listas largas (> 32 capas, 0 nodos extra por fila) (5C)
+class ClockGearsLayersCanvas : public Control {
+	GDCLASS(ClockGearsLayersCanvas, Control);
+
+public:
+	struct Row {
+		String elem_id;
+		String label;
+		bool visible = true;
+		bool selected = false;
+	};
+
+private:
+	ClockGearsUiDesignEditor *owner_editor = nullptr;
+	Vector<Row> rows;
+	float row_height = 28.0f;
+
+protected:
+	void _notification(int p_what);
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	void set_owner_editor(ClockGearsUiDesignEditor *p_owner) { owner_editor = p_owner; }
+	void set_rows(const Vector<Row> &p_rows, float p_row_height);
+	int get_row_count() const { return rows.size(); }
+};
+
 // ============================================================================
 // ClockGearsUiDesignEditor — Categoría "Diseño de interfaz" (9B Tanda 6B-1)
 // Reutiliza exclusivamente ClockGearsDataManager (Tanda 6A) y ClockGearsUiDesignLayer.
@@ -216,6 +244,7 @@ private:
 
 	// Lista de capas con ojo de visibilidad y reordenado
 	VBoxContainer *layers_list_vbox = nullptr;
+	ClockGearsLayersCanvas *layers_long_canvas = nullptr;
 	Button *layer_up_btn = nullptr;
 	Button *layer_down_btn = nullptr;
 	Button *layer_del_btn = nullptr;
@@ -296,6 +325,18 @@ private:
 	LineEdit *menu_snd_move_edit = nullptr;
 	LineEdit *menu_snd_accept_edit = nullptr;
 	LineEdit *menu_snd_cancel_edit = nullptr;
+	LineEdit *menu_bgm_edit = nullptr;
+
+	// Cachés de rendimiento (5C)
+	String cached_opts_screen_id;
+	int cached_opts_styles_cnt = -1;
+	int cached_opts_vars_cnt = -1;
+	int cached_opts_items_cnt = -1;
+	bool cached_fonts_scanned = false;
+	bool cached_thumbs_scanned = false;
+	Ref<StyleBoxFlat> cached_action_sb_normal;
+	Ref<StyleBoxFlat> cached_action_sb_hover;
+	Ref<StyleBoxFlat> cached_action_sb_pressed;
 
 	// Condiciones por interruptor y constructor multi-acción (3D / 4C)
 	OptionButton *prop_vis_mode_opt = nullptr;
@@ -468,6 +509,10 @@ private:
 	void _on_test_window_input(const Ref<InputEvent> &p_event);
 	void _on_layer_eye_toggled(const String &p_elem_id);
 	void _on_layer_row_pressed(const String &p_elem_id);
+	void _on_pooled_layer_eye_toggled(Button *p_btn);
+	void _on_pooled_layer_row_pressed(Button *p_btn);
+	void _on_pooled_menu_btn_pressed(Button *p_btn);
+	void _apply_rounded_btn_style(Button *p_btn);
 	void _on_layer_move_pressed(int p_delta);
 	void _on_layer_delete_pressed();
 	void _on_anchor_btn_pressed(int p_idx);

@@ -287,6 +287,7 @@ public:
 	void clear_disabled_actions();
 
 	void apply_screen_design(const String &p_screen_id, const Dictionary &p_design_override = Dictionary());
+	void apply_prebuilt_screen_design(const String &p_screen_id, const Dictionary &p_norm_design);
 	bool update_element_geometry_fast(const String &p_elem_id, const Dictionary &p_elem);
 	void play_transition_in();
 	void play_transition_out();
