@@ -226,7 +226,7 @@ func _initialize() -> void:
 	header_vbox.add_child(top_bar)
 	await _step_frames(2)
 
-	# Contar indicadores de capa activa en toda la jerarquía (title_bar_row + top_bar + layers_dlg)
+	# Contar indicadores de capa activa en toda la jerarquía (0 en toolbar, 0 en panel, 0 etiqueta final duplicada; solo el menú Capas en MainMenuBar)
 	var indicators_in_title_bar := 0
 	var indicators_in_toolbar := 0
 	var indicators_in_layers_panel := 0
@@ -248,13 +248,18 @@ func _initialize() -> void:
 			elif layers_dlg.is_ancestor_of(cur_n):
 				indicators_in_layers_panel += 1
 
+	var mbar_top: MenuBar = ui_handles_top.get("main_menu_bar", null) as MenuBar
+	var layers_menu_idx := -1
+	if mbar_top != null:
+		for mi in range(mbar_top.get_menu_count()):
+			if mbar_top.get_menu_title(mi).begins_with("Capas"):
+				layers_menu_idx = mi
+				break
+
 	_check(indicators_in_toolbar == 0, "Barra de herramientas (ClockGearsTopBar) tiene 0 indicadores de capa (eliminado de la barra de herramientas)")
 	_check(indicators_in_layers_panel == 0, "Panel de Capas no repite el indicador de texto de capa actual (0 duplicados en paneles)")
-	_check(indicators_in_title_bar == 1, "El indicador de capa actual aparece UNA SOLA VEZ, arriba en la barra superior (conteo=" + str(indicators_in_title_bar) + ")")
-
-	var top_indicator: Button = ui_handles_top.get("active_indicator", null) as Button
-	_check(top_indicator != null and title_bar_row.is_ancestor_of(top_indicator), "El único indicador cuelga de la barra superior (arriba)")
-	_check(top_indicator != null and top_indicator.global_position.y < top_bar.global_position.y, "El indicador está físicamente arriba de la barra de herramientas (y_arriba=" + str(top_indicator.global_position.y if top_indicator else -1.0) + " < y_toolbar=" + str(top_bar.global_position.y) + ")")
+	_check(indicators_in_title_bar == 0 and ui_handles_top.get("active_indicator", null) == null, "Etiqueta final 'Capa: ...' eliminada sin duplicados")
+	_check(mbar_top != null and layers_menu_idx >= 0 and mbar_top.global_position.y < top_bar.global_position.y, "El menú 'Capas' en MainMenuBar muestra la capa arriba de la barra de herramientas")
 
 	# Comparar captura pixel a pixel de ClockGearsTopBar contra una captura de referencia previa a Etapa 1 (sin ningún elemento extra)
 	var tb_vp_a := SubViewport.new()
@@ -293,11 +298,12 @@ func _initialize() -> void:
 	tb_vp_a.queue_free()
 	tb_vp_b.queue_free()
 
-	# Verificar actualización del indicador de arriba por las DOS vías:
+	# Verificar actualización del menú Capas en MainMenuBar por las DOS vías:
 	# Vía 1: Desde el menú Capas (ClockGearsLayersDialog)
 	layers_dlg.select_layer_from_ui(id_mid)
 	await _step_frames(1)
-	_check(top_indicator != null and top_indicator.text.find("Puente Ñandú Renovado") >= 0, "Vía 1 (Menú Capas): indicador de arriba cambia a '" + (top_indicator.text if top_indicator else "") + "'")
+	var cap_txt_mid := mbar_top.get_menu_title(layers_menu_idx) if (mbar_top != null and layers_menu_idx >= 0) else ""
+	_check(cap_txt_mid.begins_with("Capas · Puente Ñandú"), "Vía 1 (Menú Capas): botón Capas arriba cambia a '" + cap_txt_mid + "'")
 	var any_base_btn_pressed := false
 	for bi in range(4):
 		var lb: Button = top_bar.get_layer_button(bi)
@@ -306,20 +312,20 @@ func _initialize() -> void:
 	_check(not any_base_btn_pressed, "Al seleccionar capa personalizada desde menú Capas, los botones 1..4 se desmarcan")
 
 	# Vía 2: Con los botones 1 a 4 de la barra de herramientas
-	var expected_base_texts := ["Capa 1: Suelo", "Capa 2: Decoración", "Capa 3: Objetos", "Capa 4: Techo"]
+	var expected_base_texts := ["Capas · Suelo", "Capas · Decoración", "Capas · Objetos", "Capas · Techo"]
 	var all_4_buttons_ok := true
 	for bi in range(4):
 		top_bar.select_layer_button(bi + 1)
 		await _step_frames(1)
 		var lb: Button = top_bar.get_layer_button(bi)
-		var txt_now: String = top_indicator.text if top_indicator else ""
+		var txt_now: String = mbar_top.get_menu_title(layers_menu_idx) if (mbar_top != null and layers_menu_idx >= 0) else ""
 		if txt_now.find(expected_base_texts[bi]) < 0 or lb == null or not lb.button_pressed:
 			all_4_buttons_ok = false
-	_check(all_4_buttons_ok and dm.get_editor_custom_layer().is_empty(), "Vía 2 (Botones 1 a 4): indicador de arriba cambia en las 4 capas base ('" + (top_indicator.text if top_indicator else "") + "')")
+	_check(all_4_buttons_ok and dm.get_editor_custom_layer().is_empty(), "Vía 2 (Botones 1 a 4): menú Capas arriba cambia en las 4 capas base ('" + (mbar_top.get_menu_title(layers_menu_idx) if (mbar_top != null and layers_menu_idx >= 0) else "") + "')")
 	top_bar.select_layer_button(1)
 	await _step_frames(1)
 
-	# Verificar que el indicador de arriba y la barra se ven completos, sin cortes ni solapes, en 960x540, 1366x768 y 1920x1080
+	# Verificar que la barra superior completa se ve sin cortes ni solapes, en 960x540, 1366x768 y 1920x1080
 	var menu_bar_node: Control = title_bar_row.get_node("MainMenuBar") as Control
 	for res_v in [Vector2i(960, 540), Vector2i(1366, 768), Vector2i(1920, 1080)]:
 		header_vp.size = Vector2i(res_v.x, 120)
@@ -329,10 +335,8 @@ func _initialize() -> void:
 		layers_dlg.select_layer_from_ui(id_high)
 		await _step_frames(2)
 		var mb_rect: Rect2 = menu_bar_node.get_global_rect()
-		var ind_rect: Rect2 = top_indicator.get_global_rect()
-		var no_overlap: bool = ind_rect.position.x >= mb_rect.end.x - 0.5
-		var no_clip: bool = ind_rect.end.x <= float(res_v.x) and ind_rect.position.y >= 0.0 and ind_rect.end.y <= title_bar_row.get_global_rect().end.y + 0.5 and ind_rect.size.x > 60.0 and ind_rect.size.y > 16.0
-		_check(no_overlap and no_clip, "Indicador arriba completo, sin cortes ni solapes en " + str(res_v.x) + "x" + str(res_v.y) + " (menu_end=" + str(snapped(mb_rect.end.x, 0.1)) + ", ind_rect=" + str(ind_rect) + ")")
+		var no_clip: bool = mb_rect.end.x <= float(res_v.x) and mb_rect.position.y >= 0.0 and mb_rect.end.y <= title_bar_row.get_global_rect().end.y + 0.5 and mb_rect.size.x > 100.0 and mb_rect.size.y > 16.0
+		_check(no_clip, "Barra superior arriba completa, sin cortes ni solapes en " + str(res_v.x) + "x" + str(res_v.y) + " (mb_rect=" + str(mb_rect) + ")")
 	top_bar.select_layer_button(1)
 	await _step_frames(1)
 

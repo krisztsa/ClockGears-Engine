@@ -1087,6 +1087,8 @@ public:
 	MenuButton *get_clockgears_main_menu_button() const { return main_menu_button; }
 	Button *get_clockgears_active_layer_indicator() const { return clockgears_active_layer_indicator; }
 	void sync_clockgears_active_layer_indicator();
+	static String format_clockgears_layers_menu_title();
+	static void style_clockgears_main_menu_bar(MenuBar *p_mbar);
 	static void style_and_populate_clockgears_active_layer_indicator(Button *p_btn);
 	static void sync_clockgears_active_layer_indicator_all();
 	static Button *get_active_clockgears_layer_indicator();

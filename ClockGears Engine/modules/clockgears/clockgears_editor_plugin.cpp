@@ -23,6 +23,7 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/flow_container.h"
 #include "scene/gui/margin_container.h"
+#include "scene/gui/menu_bar.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/split_container.h"
@@ -786,15 +787,16 @@ int ClockGearsLayersDialog::get_row_count() const {
 Dictionary ClockGearsLayersDialog::get_ui_handles() const {
 	Dictionary d;
 	d["dialog"] = const_cast<ClockGearsLayersDialog *>(this);
-	Button *ind = EditorNode::get_active_clockgears_layer_indicator();
-	if (!ind) {
+	MenuBar *mbar = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_clockgears_main_menu_bar() : nullptr;
+	if (!mbar) {
 		HBoxContainer *row = EditorNode::create_clockgears_top_bar_row();
 		d["title_bar_row"] = row;
-		ind = EditorNode::get_active_clockgears_layer_indicator();
-	} else if (ind->get_parent()) {
-		d["title_bar_row"] = ind->get_parent()->get_parent();
+		mbar = Object::cast_to<MenuBar>(row->get_node_or_null(NodePath("MainMenuBar")));
+	} else if (mbar->get_parent()) {
+		d["title_bar_row"] = mbar->get_parent();
 	}
-	d["active_indicator"] = ind;
+	d["main_menu_bar"] = mbar;
+	d["active_indicator"] = Variant();
 	d["count_label"] = count_label;
 	d["scale_box"] = scale_buttons_box;
 	d["create_name_edit"] = new_name_edit;

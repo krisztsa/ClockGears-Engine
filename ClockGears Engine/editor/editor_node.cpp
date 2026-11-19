@@ -8453,6 +8453,8 @@ void EditorNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("update_node_reference", "value", "node", "remove"), &EditorNode::update_node_reference, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_clockgears_active_layer_indicator"), &EditorNode::get_clockgears_active_layer_indicator);
 	ClassDB::bind_method(D_METHOD("sync_clockgears_active_layer_indicator"), &EditorNode::sync_clockgears_active_layer_indicator);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("format_clockgears_layers_menu_title"), &EditorNode::format_clockgears_layers_menu_title);
+	ClassDB::bind_static_method("EditorNode", D_METHOD("style_clockgears_main_menu_bar", "menu_bar"), &EditorNode::style_clockgears_main_menu_bar);
 	ClassDB::bind_static_method("EditorNode", D_METHOD("style_and_populate_clockgears_active_layer_indicator", "button"), &EditorNode::style_and_populate_clockgears_active_layer_indicator);
 	ClassDB::bind_static_method("EditorNode", D_METHOD("sync_clockgears_active_layer_indicator_all"), &EditorNode::sync_clockgears_active_layer_indicator_all);
 	ClassDB::bind_static_method("EditorNode", D_METHOD("get_active_clockgears_layer_indicator"), &EditorNode::get_active_clockgears_layer_indicator);
@@ -8648,6 +8650,7 @@ void EditorNode::populate_clockgears_layers_menu(PopupMenu *p_menu) {
 }
 
 static ObjectID _cg_preview_indicator_id;
+static ObjectID _cg_preview_menubar_id;
 
 static String _cg_truncate_layer_label(const String &p_text, int p_max_chars) {
 	if (p_max_chars <= 0 || p_text.length() <= p_max_chars) {
@@ -8659,73 +8662,159 @@ static String _cg_truncate_layer_label(const String &p_text, int p_max_chars) {
 	return p_text.substr(0, p_max_chars - 1) + String::utf8("…");
 }
 
+static String _cg_extract_layer_short_name(const String &p_full_name, int p_layer_fallback) {
+	String s = p_full_name.strip_edges();
+	int colon = s.find(":");
+	if (colon > 0) {
+		String prefix = s.substr(0, colon).strip_edges().to_lower();
+		if (prefix.begins_with("capa")) {
+			s = s.substr(colon + 1).strip_edges();
+		}
+	}
+	// Eliminar prefijos redundantes como "Capa " o "Capas " para no duplicar la palabra "Capa".
+	for (int iter = 0; iter < 4; iter++) {
+		String low = s.to_lower();
+		if (low == "capa" || low == "capas") {
+			s = "";
+			break;
+		} else if (low.begins_with("capas:")) {
+			s = s.substr(6).strip_edges();
+		} else if (low.begins_with("capas ")) {
+			s = s.substr(6).strip_edges();
+		} else if (low.begins_with("capa:")) {
+			s = s.substr(5).strip_edges();
+		} else if (low.begins_with("capa ")) {
+			s = s.substr(5).strip_edges();
+		} else {
+			break;
+		}
+	}
+	if (s.is_empty()) {
+		s = itos(MAX(1, p_layer_fallback));
+	}
+	return _cg_truncate_layer_label(s, 20);
+}
+
+String EditorNode::format_clockgears_layers_menu_title() {
+	Object *dm = Engine::get_singleton() ? Engine::get_singleton()->get_singleton_object("ClockGearsDataManager") : nullptr;
+	String full_name = (dm && dm->has_method("get_active_editor_layer_display_name")) ? String(dm->call("get_active_editor_layer_display_name")) : String::utf8("Capa 1: Suelo");
+	int active_layer = (dm && dm->has_method("get_editor_layer")) ? int(dm->call("get_editor_layer")) : 1;
+	String short_name = _cg_extract_layer_short_name(full_name, active_layer);
+	return String::utf8("Capas · ") + short_name;
+}
+
+static void _cg_sync_menubar_layers_title(MenuBar *p_mbar, PopupMenu *p_layers_popup) {
+	if (!p_mbar) {
+		return;
+	}
+	String title_str = EditorNode::format_clockgears_layers_menu_title();
+	Object *dm = Engine::get_singleton() ? Engine::get_singleton()->get_singleton_object("ClockGearsDataManager") : nullptr;
+	String full_name = (dm && dm->has_method("get_active_editor_layer_display_name")) ? String(dm->call("get_active_editor_layer_display_name")) : String::utf8("Capa 1: Suelo");
+	String tip_str = vformat(String::utf8("Capas del mapa (actual: %s)"), full_name);
+
+	for (int i = 0; i < p_mbar->get_menu_count(); i++) {
+		PopupMenu *pm = p_mbar->get_menu_popup(i);
+		String cur_t = p_mbar->get_menu_title(i);
+		if ((p_layers_popup && pm == p_layers_popup) || (pm && pm->get_name() == "Capas") || cur_t == "Capas" || cur_t.begins_with(String::utf8("Capas ·")) || cur_t.begins_with("Capas ")) {
+			if (p_mbar->get_menu_title(i) != title_str) {
+				p_mbar->set_menu_title(i, title_str);
+			}
+			p_mbar->set_menu_tooltip(i, tip_str);
+			break;
+		}
+	}
+}
+
+void EditorNode::style_clockgears_main_menu_bar(MenuBar *p_mbar) {
+	if (!p_mbar) {
+		return;
+	}
+	p_mbar->set_flat(false);
+	Ref<Theme> th = p_mbar->get_theme();
+	bool is_brass = th.is_valid() && th->has_meta("_cg_is_brass");
+	const float sc = MAX(1.0f, EDSCALE);
+
+	if (is_brass) {
+		const char *sb_keys[6] = { "normal", "hover", "pressed", "hover_pressed", "disabled", nullptr };
+		for (int i = 0; sb_keys[i]; i++) {
+			if (p_mbar->has_theme_stylebox_override(StringName(sb_keys[i]))) {
+				p_mbar->remove_theme_style_override(StringName(sb_keys[i]));
+			}
+		}
+		const char *col_keys[5] = { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", nullptr };
+		for (int i = 0; col_keys[i]; i++) {
+			if (p_mbar->has_theme_color_override(StringName(col_keys[i]))) {
+				p_mbar->remove_theme_color_override(StringName(col_keys[i]));
+			}
+		}
+		p_mbar->add_theme_constant_override("h_separation", int(Math::round(6.0 * sc)));
+		p_mbar->queue_redraw();
+		return;
+	}
+
+	Ref<StyleBoxFlat> pill_n;
+	pill_n.instantiate();
+	pill_n->set_anti_aliased(true);
+	pill_n->set_bg_color(Color(0.14f, 0.16f, 0.21f, 0.92f));
+	pill_n->set_border_width_all(1);
+	pill_n->set_border_color(Color(0.88f, 0.63f, 0.25f, 0.62f));
+	pill_n->set_corner_radius_all(int(Math::round(6.0f * sc)));
+	pill_n->set_content_margin_individual(10.0f * sc, 2.5f * sc, 10.0f * sc, 2.5f * sc);
+
+	Ref<StyleBoxFlat> pill_h = pill_n->duplicate();
+	pill_h->set_bg_color(Color(0.21f, 0.24f, 0.31f, 0.96f));
+	pill_h->set_border_color(Color(0.96f, 0.74f, 0.32f, 0.94f));
+	pill_h->set_shadow_color(Color(0.95f, 0.72f, 0.30f, 0.22f));
+	pill_h->set_shadow_size(int(Math::round(3.0f * sc)));
+
+	Ref<StyleBoxFlat> pill_p = pill_n->duplicate();
+	pill_p->set_bg_color(Color(0.29f, 0.22f, 0.13f, 0.98f));
+	pill_p->set_border_color(Color(1.0f, 0.78f, 0.34f, 1.0f));
+	pill_p->set_shadow_color(Color(0.98f, 0.75f, 0.30f, 0.28f));
+	pill_p->set_shadow_size(int(Math::round(3.0f * sc)));
+
+	p_mbar->add_theme_style_override("normal", pill_n);
+	p_mbar->add_theme_style_override("hover", pill_h);
+	p_mbar->add_theme_style_override("pressed", pill_p);
+	p_mbar->add_theme_style_override("hover_pressed", pill_p);
+	p_mbar->add_theme_style_override("disabled", pill_n);
+
+	p_mbar->add_theme_color_override("font_color", Color(0.95f, 0.87f, 0.68f));
+	p_mbar->add_theme_color_override("font_hover_color", Color(1.0f, 0.94f, 0.78f));
+	p_mbar->add_theme_color_override("font_pressed_color", Color(1.0f, 0.92f, 0.68f));
+	p_mbar->add_theme_color_override("font_hover_pressed_color", Color(1.0f, 0.96f, 0.78f));
+	p_mbar->add_theme_constant_override("h_separation", int(Math::round(6.0 * sc)));
+	p_mbar->queue_redraw();
+}
+
 void EditorNode::style_and_populate_clockgears_active_layer_indicator(Button *p_btn) {
 	if (!p_btn) {
 		return;
 	}
-	p_btn->set_focus_mode(Control::FOCUS_NONE);
-	p_btn->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-	if (!p_btn->has_meta("_cg_styled")) {
-		p_btn->set_meta("_cg_styled", true);
-		const float sc = MAX(1.0f, EDSCALE);
-		Ref<StyleBoxFlat> badge_n;
-		badge_n.instantiate();
-		badge_n->set_anti_aliased(true);
-		badge_n->set_bg_color(Color(0.14f, 0.16f, 0.21f, 0.92f));
-		badge_n->set_border_width_all(1);
-		badge_n->set_border_color(Color(0.88f, 0.63f, 0.25f, 0.55f));
-		badge_n->set_corner_radius_all(int(Math::round(6.0f * sc)));
-		badge_n->set_content_margin_individual(10.0f * sc, 2.0f * sc, 10.0f * sc, 2.0f * sc);
-
-		Ref<StyleBoxFlat> badge_h = badge_n->duplicate();
-		badge_h->set_bg_color(Color(0.20f, 0.23f, 0.30f, 0.96f));
-		badge_h->set_border_color(Color(0.95f, 0.72f, 0.30f, 0.92f));
-
-		Ref<StyleBoxEmpty> badge_focus;
-		badge_focus.instantiate();
-
-		p_btn->add_theme_style_override("normal", badge_n);
-		p_btn->add_theme_style_override("hover", badge_h);
-		p_btn->add_theme_style_override("pressed", badge_h);
-		p_btn->add_theme_style_override("focus", badge_focus);
-		p_btn->add_theme_color_override("font_color", Color(0.95f, 0.87f, 0.68f));
-		p_btn->add_theme_color_override("font_hover_color", Color(1.0f, 0.94f, 0.78f));
-	}
-
-	Object *dm = Engine::get_singleton() ? Engine::get_singleton()->get_singleton_object("ClockGearsDataManager") : nullptr;
-	String full_name = (dm && dm->has_method("get_active_editor_layer_display_name")) ? String(dm->call("get_active_editor_layer_display_name")) : String::utf8("Capa 1: Suelo");
-	String trimmed = _cg_truncate_layer_label(full_name, 22);
-	p_btn->set_text(vformat(String::utf8("Capa: %s"), trimmed));
-	p_btn->set_tooltip_text(vformat(String::utf8("Capa activa actual: %s"), full_name));
+	p_btn->hide();
 }
 
 void EditorNode::sync_clockgears_active_layer_indicator() {
-	if (clockgears_active_layer_indicator) {
-		style_and_populate_clockgears_active_layer_indicator(clockgears_active_layer_indicator);
+	if (main_menu_bar) {
+		_cg_sync_menubar_layers_title(main_menu_bar, layers_menu);
 	}
 }
 
 void EditorNode::sync_clockgears_active_layer_indicator_all() {
-	if (singleton && singleton->clockgears_active_layer_indicator) {
-		style_and_populate_clockgears_active_layer_indicator(singleton->clockgears_active_layer_indicator);
+	if (singleton && singleton->main_menu_bar) {
+		_cg_sync_menubar_layers_title(singleton->main_menu_bar, singleton->layers_menu);
 	}
-	if (_cg_preview_indicator_id.is_valid()) {
-		Button *b = Object::cast_to<Button>(ObjectDB::get_instance(_cg_preview_indicator_id));
-		if (b) {
-			style_and_populate_clockgears_active_layer_indicator(b);
+	if (_cg_preview_menubar_id.is_valid()) {
+		MenuBar *mb = Object::cast_to<MenuBar>(ObjectDB::get_instance(_cg_preview_menubar_id));
+		if (mb) {
+			_cg_sync_menubar_layers_title(mb, nullptr);
 		} else {
-			_cg_preview_indicator_id = ObjectID();
+			_cg_preview_menubar_id = ObjectID();
 		}
 	}
 }
 
 Button *EditorNode::get_active_clockgears_layer_indicator() {
-	if (singleton && singleton->clockgears_active_layer_indicator) {
-		return singleton->clockgears_active_layer_indicator;
-	}
-	if (_cg_preview_indicator_id.is_valid()) {
-		return Object::cast_to<Button>(ObjectDB::get_instance(_cg_preview_indicator_id));
-	}
 	return nullptr;
 }
 
@@ -8737,6 +8826,7 @@ HBoxContainer *EditorNode::create_clockgears_top_bar_row() {
 
 	MenuBar *mbar = memnew(MenuBar);
 	mbar->set_name("MainMenuBar");
+	mbar->set_theme_type_variation("MainMenuBar");
 	mbar->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 	mbar->set_switch_on_hover(true);
 
@@ -8754,22 +8844,11 @@ HBoxContainer *EditorNode::create_clockgears_top_bar_row() {
 		mbar->add_child(pm);
 	}
 	mbar->set_menu_hidden(1, true);
+	style_clockgears_main_menu_bar(mbar);
+	_cg_sync_menubar_layers_title(mbar, nullptr);
+	_cg_preview_menubar_id = mbar->get_instance_id();
+	_cg_preview_indicator_id = ObjectID();
 	row->add_child(mbar);
-
-	MarginContainer *mc = memnew(MarginContainer);
-	mc->set_name("ClockGearsActiveLayerWrap");
-	mc->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-	mc->add_theme_constant_override("margin_left", int(Math::round(10.0 * MAX(1.0f, EDSCALE))));
-	mc->add_theme_constant_override("margin_right", int(Math::round(4.0 * MAX(1.0f, EDSCALE))));
-	mc->add_theme_constant_override("margin_top", 0);
-	mc->add_theme_constant_override("margin_bottom", 0);
-
-	Button *ind = memnew(Button);
-	ind->set_name("ClockGearsActiveLayerIndicator");
-	style_and_populate_clockgears_active_layer_indicator(ind);
-	_cg_preview_indicator_id = ind->get_instance_id();
-	mc->add_child(ind);
-	row->add_child(mc);
 
 	Control *right_sp = memnew(Control);
 	right_sp->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -8861,7 +8940,7 @@ Dictionary EditorNode::inspect_clockgears_menus(EditorNode *p_en) {
 				edit_hidden = hid;
 			} else if (t == "Herramientas") {
 				tools_idx = i;
-			} else if (t == "Capas") {
+			} else if (t == "Capas" || t.begins_with(String::utf8("Capas ·")) || t.begins_with("Capas ")) {
 				layers_idx = i;
 			} else if (t == "Juego") {
 				game_idx = i;
@@ -9286,26 +9365,16 @@ void EditorNode::_update_main_menu_type() {
 		title_bar->move_child(main_menu_bar, left_menu_spacer ? left_menu_spacer->get_index() + 1 : 0);
 	}
 
-	if (!clockgears_active_layer_wrap) {
-		MarginContainer *mc = memnew(MarginContainer);
-		mc->set_name("ClockGearsActiveLayerWrap");
-		mc->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-		mc->add_theme_constant_override("margin_left", int(Math::round(10.0 * EDSCALE)));
-		mc->add_theme_constant_override("margin_right", int(Math::round(4.0 * EDSCALE)));
-		mc->add_theme_constant_override("margin_top", 0);
-		mc->add_theme_constant_override("margin_bottom", 0);
-
-		clockgears_active_layer_indicator = memnew(Button);
-		clockgears_active_layer_indicator->set_name("ClockGearsActiveLayerIndicator");
-		style_and_populate_clockgears_active_layer_indicator(clockgears_active_layer_indicator);
-		clockgears_active_layer_indicator->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_on_clockgears_active_layer_indicator_pressed));
-		mc->add_child(clockgears_active_layer_indicator);
-		clockgears_active_layer_wrap = mc;
-		title_bar->add_child(clockgears_active_layer_wrap);
+	if (clockgears_active_layer_wrap) {
+		if (clockgears_active_layer_wrap->get_parent()) {
+			clockgears_active_layer_wrap->get_parent()->remove_child(clockgears_active_layer_wrap);
+		}
+		memdelete(clockgears_active_layer_wrap);
+		clockgears_active_layer_wrap = nullptr;
+		clockgears_active_layer_indicator = nullptr;
 	}
-	if (clockgears_active_layer_wrap && clockgears_active_layer_wrap->get_parent() == title_bar) {
-		int anchor_idx = main_menu_bar ? main_menu_bar->get_index() : (main_menu_button ? main_menu_button->get_index() : 0);
-		title_bar->move_child(clockgears_active_layer_wrap, MIN(anchor_idx + 1, title_bar->get_child_count() - 1));
+	if (main_menu_bar) {
+		style_clockgears_main_menu_bar(main_menu_bar);
 	}
 	sync_clockgears_active_layer_indicator();
 

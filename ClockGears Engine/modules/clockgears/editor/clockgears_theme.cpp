@@ -625,11 +625,28 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_stylebox("normal", "MenuBar", sb_menubar);
 	th->set_stylebox("hover", "MenuBar", sb_menubar_hov);
 	th->set_stylebox("pressed", "MenuBar", sb_menubar_prs);
+	th->set_stylebox("hover_pressed", "MenuBar", sb_menubar_prs);
 	th->set_stylebox("disabled", "MenuBar", sb_menubar);
 	th->set_color("font_color", "MenuBar", txt);
 	th->set_color("font_hover_color", "MenuBar", txt_bright);
 	th->set_color("font_pressed_color", "MenuBar", accent);
+	th->set_color("font_hover_pressed_color", "MenuBar", txt_bright);
 	th->set_color("font_disabled_color", "MenuBar", txt_dis);
+	th->set_constant("h_separation", "MenuBar", int(Math::round(6 * p_scale)));
+
+	th->set_type_variation("MainMenuBar", "MenuBar");
+	th->set_stylebox("normal", "MainMenuBar", sb_menubar);
+	th->set_stylebox("hover", "MainMenuBar", sb_menubar_hov);
+	th->set_stylebox("pressed", "MainMenuBar", sb_menubar_prs);
+	th->set_stylebox("hover_pressed", "MainMenuBar", sb_menubar_prs);
+	th->set_stylebox("disabled", "MainMenuBar", sb_menubar);
+	th->set_color("font_color", "MainMenuBar", txt);
+	th->set_color("font_hover_color", "MainMenuBar", txt_bright);
+	th->set_color("font_pressed_color", "MainMenuBar", accent);
+	th->set_color("font_hover_pressed_color", "MainMenuBar", txt_bright);
+	th->set_color("font_disabled_color", "MainMenuBar", txt_dis);
+	th->set_constant("h_separation", "MainMenuBar", int(Math::round(6 * p_scale)));
+	th->set_meta("_cg_is_brass", true);
 
 	// 2. AcceptDialog / ConfirmationDialog / FileDialog / Window (sombra suave bajo diálogos y borde latón)
 	Ref<ClockGearsBrassStyleBox> sb_win;
@@ -1495,8 +1512,13 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 					Ref<Theme> orig_th = mb->get_meta("_cg_pre_brass_theme");
 					mb->remove_meta("_cg_has_pre_brass_theme");
 					mb->remove_meta("_cg_pre_brass_theme");
-					mb->set_theme(orig_th.is_valid() ? target_theme : Ref<Theme>());
+					mb->set_theme(orig_th.is_valid() ? orig_th : Ref<Theme>());
 				}
+#ifdef TOOLS_ENABLED
+				if (mb->get_theme_type_variation() == StringName("MainMenuBar") || mb->get_name() == "MainMenuBar") {
+					EditorNode::style_clockgears_main_menu_bar(mb);
+				}
+#endif
 			}
 		}
 
