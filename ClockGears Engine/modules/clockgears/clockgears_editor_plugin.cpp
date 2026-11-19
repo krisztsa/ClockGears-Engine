@@ -1013,6 +1013,7 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		Button *vis_btn = memnew(Button);
 		vis_btn->set_name("LayerVisibleBtn");
 		vis_btn->set_text(lvis ? CG_TR("Visible") : CG_TR("Oculta"));
+		vis_btn->set_tooltip_text(lvis ? CG_TR("Ocultar esta capa en el editor y juego") : CG_TR("Mostrar esta capa en el editor y juego"));
 		vis_btn->set_focus_mode(Control::FOCUS_NONE);
 		vis_btn->add_theme_style_override("normal", _cg_layer_card_style(lvis ? Color(0.16f, 0.34f, 0.22f, 0.55f) : Color(0.28f, 0.16f, 0.16f, 0.65f), Color(1, 1, 1, 0.18f), 6, 8, 4));
 		vis_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_visible_pressed).bind(lid, !lvis));
@@ -1021,6 +1022,7 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		Button *lck_btn = memnew(Button);
 		lck_btn->set_name("LayerLockBtn");
 		lck_btn->set_text(llck ? CG_TR("Bloqueada") : CG_TR("Libre"));
+		lck_btn->set_tooltip_text(llck ? CG_TR("Desbloquear capa para permitir edición") : CG_TR("Bloquear capa para evitar cambios accidentales"));
 		lck_btn->set_focus_mode(Control::FOCUS_NONE);
 		lck_btn->add_theme_style_override("normal", _cg_layer_card_style(llck ? Color(0.45f, 0.25f, 0.14f, 0.70f) : Color(1, 1, 1, 0.06f), Color(1, 1, 1, 0.18f), 6, 8, 4));
 		lck_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_locked_pressed).bind(lid, !llck));
@@ -1029,6 +1031,7 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		Button *dup_btn = memnew(Button);
 		dup_btn->set_name("LayerDuplicateBtn");
 		dup_btn->set_text(CG_TR("Duplicar"));
+		dup_btn->set_tooltip_text(CG_TR("Duplicar esta capa con sus tiles"));
 		dup_btn->set_disabled(!can_duplicate);
 		dup_btn->set_focus_mode(Control::FOCUS_NONE);
 		dup_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(1, 1, 1, 0.06f), Color(1, 1, 1, 0.18f), 6, 8, 4));
@@ -1038,6 +1041,7 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		Button *del_btn = memnew(Button);
 		del_btn->set_name("LayerDeleteBtn");
 		del_btn->set_text(CG_TR("Eliminar"));
+		del_btn->set_tooltip_text(CG_TR("Eliminar esta capa"));
 		del_btn->set_focus_mode(Control::FOCUS_NONE);
 		del_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(0.42f, 0.14f, 0.14f, 0.55f), Color(0.9f, 0.35f, 0.35f, 0.55f), 6, 8, 4));
 		del_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_delete_pressed).bind(lid));

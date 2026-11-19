@@ -414,7 +414,13 @@ ClockGearsSwitchVarPickerButton::ClockGearsSwitchVarPickerButton(bool p_variable
 	pick_button->connect("pressed", callable_mp(this, &ClockGearsSwitchVarPickerButton::_on_pick_pressed));
 	add_child(pick_button);
 
-	clear_button = memnew(Button("X"));
+	clear_button = memnew(Button);
+	Ref<Texture2D> clear_ic = ClockGearsIcons::get_singleton() ? ClockGearsIcons::get_singleton()->get_icon("remove", CG_WSCALE) : Ref<Texture2D>();
+	if (clear_ic.is_valid()) {
+		clear_button->set_button_icon(clear_ic);
+	} else {
+		clear_button->set_text("X");
+	}
 	clear_button->set_tooltip_text(String::utf8("Limpiar selección"));
 	clear_button->connect("pressed", callable_mp(this, &ClockGearsSwitchVarPickerButton::_on_clear_pressed));
 	add_child(clear_button);

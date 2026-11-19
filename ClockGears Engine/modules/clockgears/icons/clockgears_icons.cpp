@@ -218,6 +218,76 @@ void ClockGearsIcons::_register_builtin_svgs() {
 			"<path fill=\"#e0a040\" d=\"M10 2h4l.8 3.2 2 .8 2.6-2 2.8 2.8-2 2.6.8 2L24 12.2v3.6l-3 .8-.8 2 2 2.6-2.8 2.8-2.6-2-2 .8L14 26h-4l-.8-3.2-2-.8-2.6 2-2.8-2.8 2-2.6-.8-2L0 15.8v-3.6l3-.8.8-2-2-2.6L4.6 4l2.6 2 2-.8z\" transform=\"scale(0.85) translate(2,0)\"/>"
 			"<circle cx=\"12\" cy=\"12\" r=\"4\" fill=\"#1b1d23\"/>"
 			"</svg>";
+
+	// Iconos del editor de interfaz (Punto 3 9B)
+	svg_sources["ui_undo"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 4L2.5 7.5 6 11M3 7.5h6.5a4 4 0 1 1 0 8\"/>"
+			"</svg>";
+	svg_sources["ui_redo"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M10 4l3.5 3.5L10 11M13 7.5H6.5a4 4 0 1 0 0 8\"/>"
+			"</svg>";
+	svg_sources["ui_duplicate"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<rect x=\"2\" y=\"5\" width=\"8\" height=\"9\" rx=\"1.2\" fill=\"none\" stroke=\"#9aa0ab\" stroke-width=\"1.4\"/>"
+			"<rect x=\"6\" y=\"2\" width=\"8\" height=\"9\" rx=\"1.2\" fill=\"#1b1d23\" stroke=\"#e0a040\" stroke-width=\"1.5\"/>"
+			"</svg>";
+	svg_sources["ui_layer_up"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.5 10.5L8 5.5l4.5 5\"/>"
+			"</svg>";
+	svg_sources["ui_layer_down"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.5 5.5L8 10.5l4.5-5\"/>"
+			"</svg>";
+	svg_sources["ui_align_ch"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path stroke=\"#9aa0ab\" stroke-width=\"1.4\" d=\"M8 1.5v13\"/>"
+			"<rect x=\"3.5\" y=\"4\" width=\"9\" height=\"3\" rx=\"1\" fill=\"#e0a040\"/>"
+			"<rect x=\"5\" y=\"9\" width=\"6\" height=\"3\" rx=\"1\" fill=\"#e6e6e6\"/>"
+			"</svg>";
+	svg_sources["ui_align_cv"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path stroke=\"#9aa0ab\" stroke-width=\"1.4\" d=\"M1.5 8h13\"/>"
+			"<rect x=\"4\" y=\"3.5\" width=\"3\" height=\"9\" rx=\"1\" fill=\"#e0a040\"/>"
+			"<rect x=\"9\" y=\"5\" width=\"3\" height=\"6\" rx=\"1\" fill=\"#e6e6e6\"/>"
+			"</svg>";
+	svg_sources["ui_dist_v"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<rect x=\"3\" y=\"2\" width=\"10\" height=\"2.5\" rx=\"1\" fill=\"#e0a040\"/>"
+			"<rect x=\"4\" y=\"6.8\" width=\"8\" height=\"2.5\" rx=\"1\" fill=\"#e6e6e6\"/>"
+			"<rect x=\"3\" y=\"11.5\" width=\"10\" height=\"2.5\" rx=\"1\" fill=\"#e0a040\"/>"
+			"</svg>";
+	svg_sources["ui_reset"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e5534b\" stroke-width=\"1.8\" stroke-linecap=\"round\" d=\"M12.5 5A5 5 0 1 0 13 9\"/>"
+			"<path fill=\"#e5534b\" d=\"M13 2v4H9z\"/>"
+			"</svg>";
+	svg_sources["ui_play"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"#4cc38a\" d=\"M4 2.5L13.5 8 4 13.5z\"/>"
+			"</svg>";
+	svg_sources["ui_templates"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<rect x=\"2\" y=\"2\" width=\"5\" height=\"5\" rx=\"1\" fill=\"#e0a040\"/>"
+			"<rect x=\"9\" y=\"2\" width=\"5\" height=\"5\" rx=\"1\" fill=\"#9aa0ab\"/>"
+			"<rect x=\"2\" y=\"9\" width=\"12\" height=\"5\" rx=\"1\" fill=\"#9aa0ab\"/>"
+			"</svg>";
+	svg_sources["ui_wizard"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"#4cc38a\" d=\"M8 1.5l1.4 3.4 3.6.3-2.8 2.4.9 3.6L8 9.3l-3.1 1.9.9-3.6L3 5.2l3.6-.3z\"/>"
+			"</svg>";
+	svg_sources["ui_eye_on"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#e0a040\" stroke-width=\"1.5\" d=\"M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4z\"/>"
+			"<circle cx=\"8\" cy=\"8\" r=\"2\" fill=\"#e6e6e6\"/>"
+			"</svg>";
+	svg_sources["ui_eye_off"] =
+			"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\">"
+			"<path fill=\"none\" stroke=\"#9aa0ab\" stroke-width=\"1.4\" d=\"M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4z\"/>"
+			"<path stroke=\"#e5534b\" stroke-width=\"1.7\" stroke-linecap=\"round\" d=\"M2.5 13.5l11-11\"/>"
+			"</svg>";
 }
 
 Ref<Texture2D> ClockGearsIcons::_get_fallback_icon() const {

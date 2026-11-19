@@ -954,18 +954,38 @@ void ClockGearsUiDesignEditor::_refresh_theme_icons() {
 			p_btn->add_theme_constant_override("icon_max_width", icon_px);
 		}
 	};
-	assign_btn_icon(undo_btn, SNAME("UndoRedo"), "deshacer_icono");
-	assign_btn_icon(redo_btn, SNAME("Redo"), "rehacer_icono");
-	assign_btn_icon(dup_elem_btn, SNAME("Duplicate"), "copy");
+	assign_btn_icon(new_menu_wizard_btn, SNAME("Add"), "ui_wizard");
+	assign_btn_icon(templates_btn, SNAME("FileList"), "ui_templates");
+	assign_btn_icon(undo_btn, SNAME("UndoRedo"), "ui_undo");
+	assign_btn_icon(redo_btn, SNAME("Redo"), "ui_redo");
+	assign_btn_icon(reset_btn, SNAME("Reload"), "ui_reset");
+	assign_btn_icon(test_btn, SNAME("Play"), "ui_play");
+	assign_btn_icon(align_center_h_btn, SNAME("AlignHorizontalCenter"), "ui_align_ch");
+	assign_btn_icon(align_center_v_btn, SNAME("AlignVerticalCenter"), "ui_align_cv");
+	assign_btn_icon(dist_v_btn, SNAME("VBoxContainer"), "ui_dist_v");
+	assign_btn_icon(dup_elem_btn, SNAME("Duplicate"), "ui_duplicate");
 	assign_btn_icon(copy_elem_btn, SNAME("ActionCopy"), "copy");
 	assign_btn_icon(paste_elem_btn, SNAME("ActionPaste"), "paste");
-	assign_btn_icon(layer_up_btn, SNAME("MoveUp"), "");
-	assign_btn_icon(layer_down_btn, SNAME("MoveDown"), "");
+	assign_btn_icon(layer_up_btn, SNAME("MoveUp"), "ui_layer_up");
+	assign_btn_icon(layer_down_btn, SNAME("MoveDown"), "ui_layer_down");
 	assign_btn_icon(layer_del_btn, SNAME("Remove"), "remove");
-	assign_btn_icon(menu_dup_btn, SNAME("Duplicate"), "copy");
-	assign_btn_icon(menu_up_btn, SNAME("MoveUp"), "");
-	assign_btn_icon(menu_down_btn, SNAME("MoveDown"), "");
+	assign_btn_icon(menu_dup_btn, SNAME("Duplicate"), "ui_duplicate");
+	assign_btn_icon(menu_up_btn, SNAME("MoveUp"), "ui_layer_up");
+	assign_btn_icon(menu_down_btn, SNAME("MoveDown"), "ui_layer_down");
 	assign_btn_icon(menu_del_btn, SNAME("Remove"), "remove");
+
+	if (layers_list_vbox) {
+		for (int i = 0; i < layers_list_vbox->get_child_count(); i++) {
+			HBoxContainer *row = Object::cast_to<HBoxContainer>(layers_list_vbox->get_child(i));
+			if (row && row->get_child_count() >= 1) {
+				if (Button *eb = Object::cast_to<Button>(row->get_child(0))) {
+					bool vis = eb->is_pressed();
+					assign_btn_icon(eb, vis ? SNAME("GuiVisibilityVisible") : SNAME("GuiVisibilityHidden"), vis ? "ui_eye_on" : "ui_eye_off");
+					eb->set_text(eb->get_button_icon().is_valid() ? String() : (vis ? "Ver" : "Ocul"));
+				}
+			}
+		}
+	}
 }
 
 void ClockGearsUiDesignEditor::_notification(int p_what) {
@@ -1499,14 +1519,17 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	can_hdr_flow->add_child(can_hdr);
 
 	grid_chk = memnew(CheckBox("Rejilla"));
+	grid_chk->set_tooltip_text(String::utf8("Mostrar u ocultar la cuadrícula de alineación sobre el lienzo."));
 	grid_chk->set_pressed(false);
 	can_hdr_flow->add_child(grid_chk);
 
 	snap_chk = memnew(CheckBox(String::utf8("Imán")));
+	snap_chk->set_tooltip_text(String::utf8("Ajustar movimiento y tamaño a la cuadrícula al arrastrar."));
 	snap_chk->set_pressed(false);
 	can_hdr_flow->add_child(snap_chk);
 
 	guides_chk = memnew(CheckBox(String::utf8("Guías")));
+	guides_chk->set_tooltip_text(String::utf8("Mostrar guías inteligentes de bordes y centro mientras arrastras."));
 	guides_chk->set_pressed(true);
 	can_hdr_flow->add_child(guides_chk);
 
@@ -1802,10 +1825,16 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	_register_prop_filter_row(anc_row, "anclaje posicion esquina centro", false);
 
 	static const char *k_anc_glyphs[9] = { "NO", "N", "NE", "O", "C", "E", "SO", "S", "SE" };
+	static const char *k_anc_tips[9] = {
+		"Anclar arriba a la izquierda", "Anclar arriba centrado", "Anclar arriba a la derecha",
+		"Anclar centro izquierda", "Anclar en el centro", "Anclar centro derecha",
+		"Anclar abajo a la izquierda", "Anclar abajo centrado", "Anclar abajo a la derecha"
+	};
 	for (int i = 0; i < 9; i++) {
 		Button *ab = memnew(Button(k_anc_glyphs[i]));
 		ab->set_toggle_mode(true);
 		ab->set_custom_minimum_size(Size2(32 * EDSCALE, 24 * EDSCALE));
+		ab->set_tooltip_text(String::utf8(k_anc_tips[i]));
 		s_make_rounded_action_btn(ab);
 		ab->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_anchor_btn_pressed).bind(i));
 		anc_grid->add_child(ab);
@@ -3247,8 +3276,22 @@ void ClockGearsUiDesignEditor::_refresh_layers_list() {
 			}
 
 			eye_btn->set_pressed_no_signal(vis);
-			eye_btn->set_tooltip_text(vis ? String::utf8("Ocultar capa") : String::utf8("Mostrar capa"));
-			eye_btn->set_text(vis ? "Ver" : "---");
+			eye_btn->set_tooltip_text(vis ? String::utf8("Ocultar elemento en esta capa") : String::utf8("Mostrar elemento en esta capa"));
+			Ref<Texture2D> eye_ic;
+			StringName ed_eye = vis ? SNAME("GuiVisibilityVisible") : SNAME("GuiVisibilityHidden");
+			if (is_inside_tree() && eye_btn->is_inside_tree() && eye_btn->has_theme_icon(ed_eye, SNAME("EditorIcons"))) {
+				eye_ic = eye_btn->get_theme_icon(ed_eye, SNAME("EditorIcons"));
+			}
+			if (eye_ic.is_null() && ClockGearsIcons::get_singleton()) {
+				eye_ic = ClockGearsIcons::get_singleton()->get_icon(vis ? "ui_eye_on" : "ui_eye_off", float(ClockGearsIcons::get_editor_icon_scale(this)));
+			}
+			if (eye_ic.is_valid()) {
+				eye_btn->set_button_icon(eye_ic);
+				eye_btn->add_theme_constant_override("icon_max_width", int(16 * EDSCALE));
+				eye_btn->set_text(String());
+			} else {
+				eye_btn->set_text(vis ? "Ver" : "Ocul");
+			}
 			eye_btn->set_meta("cg_elem_id", eid);
 
 			sel_btn->set_text(ename + " [C" + itos(lo) + "]");
@@ -5372,6 +5415,16 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["layer_up_btn"] = layer_up_btn;
 	out["layer_down_btn"] = layer_down_btn;
 	out["layer_del_btn"] = layer_del_btn;
+	out["align_center_h_btn"] = align_center_h_btn;
+	out["align_center_v_btn"] = align_center_v_btn;
+	out["dist_v_btn"] = dist_v_btn;
+	out["dup_elem_btn"] = dup_elem_btn;
+	out["copy_elem_btn"] = copy_elem_btn;
+	out["paste_elem_btn"] = paste_elem_btn;
+	out["menu_dup_btn"] = menu_dup_btn;
+	out["menu_up_btn"] = menu_up_btn;
+	out["menu_down_btn"] = menu_down_btn;
+	out["menu_del_btn"] = menu_del_btn;
 	out["prop_name_edit"] = prop_name_edit;
 	out["prop_ox_spin"] = prop_ox_spin;
 	out["prop_oy_spin"] = prop_oy_spin;
