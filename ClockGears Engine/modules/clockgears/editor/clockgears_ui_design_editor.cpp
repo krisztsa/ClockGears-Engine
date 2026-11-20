@@ -3084,15 +3084,15 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wizard_step_panels[1]->add_child(wiz_chk_grid);
 	struct WizBtnDef { const char *label; const char *act; bool def_on; };
 	static const WizBtnDef k_wbtns[9] = {
-		{ "Inventario", "open_items", true },
-		{ "Estado", "open_status", true },
-		{ "Equipo", "open_equip", false },
-		{ "Guardar", "open_save", true },
-		{ "Opciones", "open_options", true },
-		{ "Cerrar", "close_menu", true },
-		{ "Continuar", "continue_game", false },
+		{ "Inventario", "items", true },
+		{ "Estado", "status", true },
+		{ "Equipo", "equip", false },
+		{ "Guardar", "save", true },
+		{ "Opciones", "options", true },
+		{ "Cerrar", "close", true },
+		{ "Continuar", "continue", false },
 		{ "Nueva partida", "new_game", false },
-		{ "Salir al t\xC3\xADtulo", "return_title", false }
+		{ "Salir al t\xC3\xADtulo", "to_title", false }
 	};
 	for (int i = 0; i < 9; i++) {
 		CheckBox *cb = memnew(CheckBox(String::utf8(k_wbtns[i].label)));
@@ -5905,6 +5905,9 @@ void ClockGearsUiDesignEditor::_open_menu_wizard() {
 	if (wizard_tpl_grid) {
 		s_clear_container_children(wizard_tpl_grid);
 		Array tpls = ClockGearsDataManager::get_ui_templates_for_system(current_screen_id);
+		if (!tpls.is_empty() && tpls[0].get_type() == Variant::DICTIONARY) {
+			wizard_selected_template_id = String(Dictionary(tpls[0]).get("id", "classic_jrpg"));
+		}
 		for (int i = 0; i < tpls.size(); i++) {
 			Dictionary t = tpls[i];
 			String tid = String(t.get("id", ""));
@@ -5922,6 +5925,7 @@ void ClockGearsUiDesignEditor::_open_menu_wizard() {
 			sb->set_toggle_mode(true);
 			sb->set_pressed(tid == wizard_selected_template_id);
 			sb->set_clip_text(true);
+			sb->set_meta("tpl_id", tid);
 			s_make_rounded_action_btn(sb);
 			sb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_wizard_tpl_selected).bind(tid));
 			vb->add_child(sb);
@@ -5940,8 +5944,7 @@ void ClockGearsUiDesignEditor::_on_wizard_tpl_selected(const String &p_tpl_id) {
 			PanelContainer *card = Object::cast_to<PanelContainer>(wizard_tpl_grid->get_child(i));
 			if (card && card->get_child_count() > 0 && card->get_child(0)->get_child_count() > 1) {
 				Button *b = Object::cast_to<Button>(card->get_child(0)->get_child(1));
-				Dictionary t = ClockGearsDataManager::get_builtin_template_by_id(p_tpl_id);
-				if (b) b->set_pressed(b->get_text() == String(t.get("name", p_tpl_id)));
+				if (b) b->set_pressed_no_signal(String(b->get_meta("tpl_id", "")) == p_tpl_id);
 			}
 		}
 	}
@@ -6009,6 +6012,10 @@ void ClockGearsUiDesignEditor::_on_wizard_finish_pressed() {
 
 void ClockGearsUiDesignEditor::_populate_template_gallery() {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Array sys_tpls = ClockGearsDataManager::get_ui_templates_for_system(current_screen_id);
+	if (selected_gallery_template_id.is_empty() && !sys_tpls.is_empty() && sys_tpls[0].get_type() == Variant::DICTIONARY) {
+		selected_gallery_template_id = String(Dictionary(sys_tpls[0]).get("id", ""));
+	}
 	auto fill_grid = [&](GridContainer *p_grid, const Array &p_list) {
 		if (!p_grid) return;
 		s_clear_container_children(p_grid);
@@ -6029,13 +6036,14 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			sb->set_toggle_mode(true);
 			sb->set_pressed(tid == selected_gallery_template_id);
 			sb->set_clip_text(true);
+			sb->set_meta("tpl_id", tid);
 			s_make_rounded_action_btn(sb);
 			sb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_card_selected).bind(tid));
 			vb->add_child(sb);
 			p_grid->add_child(card);
 		}
 	};
-	fill_grid(tpl_screen_grid, ClockGearsDataManager::get_ui_templates_for_system(current_screen_id));
+	fill_grid(tpl_screen_grid, sys_tpls);
 	fill_grid(tpl_comp_grid, ClockGearsDataManager::get_builtin_component_templates());
 	fill_grid(tpl_user_grid, dm ? dm->get_user_menu_templates() : Array());
 }
@@ -6045,11 +6053,27 @@ void ClockGearsUiDesignEditor::_on_templates_btn_pressed() {
 		return;
 	}
 	_populate_template_gallery();
+	if (!selected_gallery_template_id.is_empty()) {
+		_on_tpl_card_selected(selected_gallery_template_id);
+	}
 	template_gallery_dialog->popup_centered();
 }
 
 void ClockGearsUiDesignEditor::_on_tpl_card_selected(const String &p_tpl_id) {
 	selected_gallery_template_id = p_tpl_id;
+	auto sync_grid = [&](GridContainer *p_grid) {
+		if (!p_grid) return;
+		for (int i = 0; i < p_grid->get_child_count(); i++) {
+			PanelContainer *card = Object::cast_to<PanelContainer>(p_grid->get_child(i));
+			if (card && card->get_child_count() > 0 && card->get_child(0)->get_child_count() > 1) {
+				Button *b = Object::cast_to<Button>(card->get_child(0)->get_child(1));
+				if (b) b->set_pressed_no_signal(String(b->get_meta("tpl_id", "")) == p_tpl_id);
+			}
+		}
+	};
+	sync_grid(tpl_screen_grid);
+	sync_grid(tpl_comp_grid);
+	sync_grid(tpl_user_grid);
 	Dictionary t = ClockGearsDataManager::get_builtin_template_by_id(p_tpl_id);
 	if (t.is_empty() && ClockGearsDataManager::get_singleton()) {
 		Array ut = ClockGearsDataManager::get_singleton()->get_user_menu_templates();
@@ -7400,7 +7424,14 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["templates_btn"] = templates_btn;
 	out["menus_list_vbox"] = menus_list_vbox;
 	out["menu_wizard_dialog"] = menu_wizard_dialog;
+	out["wizard_tpl_grid"] = wizard_tpl_grid;
+	out["wizard_name_edit"] = wizard_name_edit;
+	out["wizard_next_btn"] = wizard_next_btn;
+	out["wizard_finish_btn"] = wizard_finish_btn;
 	out["template_gallery_dialog"] = template_gallery_dialog;
+	out["tpl_screen_grid"] = tpl_screen_grid;
+	out["tpl_apply_btn"] = tpl_apply_btn;
+	out["template_apply_confirm_dialog"] = template_apply_confirm_dialog;
 	out["props_mode_simple_btn"] = props_mode_simple_btn;
 	out["props_mode_adv_btn"] = props_mode_adv_btn;
 	out["props_search_edit"] = props_search_edit;

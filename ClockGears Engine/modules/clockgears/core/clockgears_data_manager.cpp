@@ -8652,19 +8652,35 @@ String ClockGearsDataManager::create_menu_from_wizard(const Dictionary &p_opts) 
 	}
 
 	// Personalizar botones elegidos en paso 2 del asistente
+	Array sel_btns;
 	if (p_opts.has("selected_buttons") && p_opts["selected_buttons"].get_type() == Variant::ARRAY) {
-		Array sel_btns = p_opts["selected_buttons"];
-		if (!sel_btns.is_empty()) {
-			Dictionary lay = d.get("layout", Dictionary());
-			if (String(lay.get("mode", "")) == "radial") {
-				Array rslots;
-				for (int i = 0; i < sel_btns.size(); i++) {
-					Dictionary sb = sel_btns[i];
-					Dictionary rs;
-					rs["id"] = vformat("wiz_slot_%d", i + 1);
-					rs["title"] = String(sb.get("label", sb.get("text", vformat(String::utf8("Opción %d"), i + 1))));
-					rs["description"] = String(sb.get("description", ""));
-					String act = String(sb.get("action", "close")).strip_edges().to_lower();
+		sel_btns = p_opts["selected_buttons"];
+	} else if (p_opts.has("buttons") && p_opts["buttons"].get_type() == Variant::ARRAY) {
+		sel_btns = p_opts["buttons"];
+	}
+	if (!sel_btns.is_empty()) {
+		auto norm_wiz_act = [](const String &p_a) -> String {
+			String a = p_a.strip_edges().to_lower();
+			if (a == "open_items") return "items";
+			if (a == "open_equip") return "equip";
+			if (a == "open_status") return "status";
+			if (a == "open_save") return "save";
+			if (a == "open_options") return "options";
+			if (a == "close_menu") return "close";
+			if (a == "continue_game") return "continue";
+			if (a == "return_title") return "to_title";
+			return a;
+		};
+		Dictionary lay = d.get("layout", Dictionary());
+		if (String(lay.get("mode", "")) == "radial") {
+			Array rslots;
+			for (int i = 0; i < sel_btns.size(); i++) {
+				Dictionary sb = sel_btns[i];
+				Dictionary rs;
+				rs["id"] = vformat("wiz_slot_%d", i + 1);
+				rs["title"] = String(sb.get("label", sb.get("text", vformat(String::utf8("Opción %d"), i + 1))));
+				rs["description"] = String(sb.get("description", ""));
+				String act = norm_wiz_act(String(sb.get("action", "close")));
 					rs["action"] = act;
 					Dictionary st;
 					st["type"] = act;
@@ -8696,8 +8712,13 @@ String ClockGearsDataManager::create_menu_from_wizard(const Dictionary &p_opts) 
 				for (int i = 0; i < sel_btns.size(); i++) {
 					Dictionary sb = sel_btns[i];
 					String lbl = String(sb.get("label", sb.get("text", vformat(String::utf8("Botón %d"), i + 1))));
-					String act = String(sb.get("action", "close")).strip_edges().to_lower();
+					String act = norm_wiz_act(String(sb.get("action", "close")));
 					Dictionary nb = _cg_make_tpl_btn(vformat("wiz_btn_%d", i + 1), lbl, act, bx, by + i * (bh + 10), bw, bh, banc, bshape, bshape == "pill" ? bh / 2 : 8);
+					Dictionary st;
+					st["type"] = act;
+					Array ba;
+					ba.push_back(st);
+					nb["actions"] = ba;
 					nb["focus_order"] = i;
 					nb["layer_order"] = 2;
 					kept_els.push_back(nb);
@@ -8705,7 +8726,6 @@ String ClockGearsDataManager::create_menu_from_wizard(const Dictionary &p_opts) 
 				d["elements"] = kept_els;
 			}
 		}
-	}
 
 	set_ui_screen_design(mid, d, false);
 	return mid;
