@@ -1479,7 +1479,21 @@ protected:
 	virtual void cancel_pressed() override;
 
 public:
-	enum { DB_CAT_MAIN_MENU = CAT_MAX, DB_CAT_WINDOW_STYLES = CAT_MAX + 1, DB_CAT_GAME_MENU = CAT_MAX + 2, DB_CAT_CREDITS = CAT_MAX + 3, DB_CAT_HUD = CAT_MAX + 4, DB_CAT_UI_DESIGNER = CAT_MAX + 5, DB_CAT_GAME_OVER = CAT_MAX + 6 };
+	enum {
+		DB_CAT_MAIN_MENU = CAT_MAX,
+		DB_CAT_WINDOW_STYLES = CAT_MAX + 1,
+		DB_CAT_GAME_MENU = CAT_MAX + 2,
+		DB_CAT_CREDITS = CAT_MAX + 3,
+		DB_CAT_HUD = CAT_MAX + 4,
+		DB_CAT_UI_DESIGNER = CAT_MAX + 5,
+		DB_CAT_GAME_OVER = CAT_MAX + 6,
+		DB_CAT_MENU_OPTIONS = CAT_MAX + 7,
+		DB_CAT_MENU_SAVES = CAT_MAX + 8,
+		DB_CAT_MENU_INVENTORY = CAT_MAX + 9,
+		DB_CAT_MENU_EQUIP = CAT_MAX + 10,
+		DB_CAT_MENU_STATUS = CAT_MAX + 11,
+		DB_CAT_MENU_MESSAGES_BATTLE = CAT_MAX + 12
+	};
 	void open_database();
 	void select_category(int p_category);
 	int add_tileset_record(const String &p_name = "");

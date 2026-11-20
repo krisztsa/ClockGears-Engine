@@ -174,6 +174,7 @@ public:
 
 private:
 	ClockGearsDatabaseDialog *owner_db = nullptr;
+	String system_scope_root;
 	String current_screen_id = "title";
 	String selected_elem_id;
 	PackedStringArray selected_elem_ids;
@@ -194,6 +195,8 @@ private:
 	Button *reset_btn = nullptr;
 	Button *test_btn = nullptr;
 	Button *new_menu_wizard_btn = nullptr;
+	Button *add_submenu_btn = nullptr;
+	Button *add_button_bar_btn = nullptr;
 	Button *templates_btn = nullptr;
 	Label *screen_status_lbl = nullptr;
 
@@ -514,6 +517,8 @@ private:
 	void _on_wizard_next_pressed();
 	void _on_wizard_finish_pressed();
 	void _on_wizard_capture_key_pressed();
+	void _on_add_submenu_pressed();
+	void _on_add_button_bar_pressed();
 	void _on_templates_btn_pressed();
 	void _on_tpl_card_selected(const String &p_tpl_id);
 	void _on_tpl_apply_pressed();
@@ -606,7 +611,11 @@ public:
 	Dictionary get_canvas_draw_stats() const;
 	void adapt_to_width(int p_window_width);
 
-	// API pública clara para interacción directa y pruebas automatizadas (Etapa 4)
+	// API pública clara para interacción directa y pruebas automatizadas (Etapa 4 + Reconst 9B P6)
+	void set_system_scope(const String &p_root_screen_id);
+	String get_system_scope() const { return system_scope_root; }
+	String add_submenu_to_current(const String &p_name = "");
+	String quick_add_button_element(const String &p_text = "");
 	void select_screen(const String &p_screen_id);
 	String get_current_screen() const { return current_screen_id; }
 	void set_props_advanced_mode(bool p_adv);

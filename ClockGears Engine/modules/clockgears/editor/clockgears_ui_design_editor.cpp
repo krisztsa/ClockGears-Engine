@@ -1004,6 +1004,10 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("refresh_from_data_manager"), &ClockGearsUiDesignEditor::refresh_from_data_manager);
 	ClassDB::bind_method(D_METHOD("adapt_to_width", "window_width"), &ClockGearsUiDesignEditor::adapt_to_width);
+	ClassDB::bind_method(D_METHOD("set_system_scope", "root_screen_id"), &ClockGearsUiDesignEditor::set_system_scope);
+	ClassDB::bind_method(D_METHOD("get_system_scope"), &ClockGearsUiDesignEditor::get_system_scope);
+	ClassDB::bind_method(D_METHOD("add_submenu_to_current", "name"), &ClockGearsUiDesignEditor::add_submenu_to_current, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("quick_add_button_element", "text"), &ClockGearsUiDesignEditor::quick_add_button_element, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("select_screen", "screen_id"), &ClockGearsUiDesignEditor::select_screen);
 	ClassDB::bind_method(D_METHOD("get_current_screen"), &ClockGearsUiDesignEditor::get_current_screen);
 	ClassDB::bind_method(D_METHOD("set_props_advanced_mode", "advanced"), &ClockGearsUiDesignEditor::set_props_advanced_mode);
@@ -1073,10 +1077,13 @@ void ClockGearsUiDesignEditor::_refresh_theme_icons() {
 		}
 	};
 	assign_btn_icon(new_menu_wizard_btn, SNAME("Add"), "ui_wizard");
+	assign_btn_icon(add_submenu_btn, SNAME("Add"), "ui_wizard");
+	assign_btn_icon(add_button_bar_btn, SNAME("Add"), "add");
 	assign_btn_icon(templates_btn, SNAME("FileList"), "ui_templates");
 	assign_btn_icon(undo_btn, SNAME("UndoRedo"), "ui_undo");
 	assign_btn_icon(redo_btn, SNAME("Redo"), "ui_redo");
 	assign_btn_icon(reset_btn, SNAME("Reload"), "ui_reset");
+	assign_btn_icon(menu_restore_btn, SNAME("Reload"), "ui_reset");
 	assign_btn_icon(test_btn, SNAME("Play"), "ui_play");
 	assign_btn_icon(align_center_h_btn, SNAME("AlignHorizontalCenter"), "ui_align_ch");
 	assign_btn_icon(align_center_v_btn, SNAME("AlignVerticalCenter"), "ui_align_cv");
@@ -1359,12 +1366,26 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	screen_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_screen_selected));
 	top_bar->add_child(screen_opt);
 
-	new_menu_wizard_btn = memnew(Button(String::utf8("+ Nuevo menú")));
+	new_menu_wizard_btn = memnew(Button(String::utf8("+ Nuevo diseño")));
 	new_menu_wizard_btn->set_custom_minimum_size(Size2(0, row_h));
-	new_menu_wizard_btn->set_tooltip_text(String::utf8("Abre el asistente guiado de 3 pasos para crear un menú nuevo."));
+	new_menu_wizard_btn->set_tooltip_text(String::utf8("Abre el asistente guiado de 3 pasos para crear un diseño nuevo."));
 	s_make_rounded_action_btn(new_menu_wizard_btn);
 	new_menu_wizard_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_open_menu_wizard));
 	top_bar->add_child(new_menu_wizard_btn);
+
+	add_submenu_btn = memnew(Button(String::utf8("+ Añadir submenú")));
+	add_submenu_btn->set_custom_minimum_size(Size2(0, row_h));
+	add_submenu_btn->set_tooltip_text(String::utf8("Crea un submenú propio anidado bajo la pantalla o rama actual."));
+	s_make_rounded_action_btn(add_submenu_btn);
+	add_submenu_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_add_submenu_pressed));
+	top_bar->add_child(add_submenu_btn);
+
+	add_button_bar_btn = memnew(Button(String::utf8("+ Añadir botón")));
+	add_button_bar_btn->set_custom_minimum_size(Size2(0, row_h));
+	add_button_bar_btn->set_tooltip_text(String::utf8("Añade un botón interactivo listo para asignar acción y sonido al lienzo."));
+	s_make_rounded_action_btn(add_button_bar_btn);
+	add_button_bar_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_add_button_bar_pressed));
+	top_bar->add_child(add_button_bar_btn);
 
 	templates_btn = memnew(Button(String::utf8("Plantillas…")));
 	templates_btn->set_custom_minimum_size(Size2(0, row_h));
@@ -1428,9 +1449,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	redo_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_redo_pressed));
 	act_hb->add_child(redo_btn);
 
-	reset_btn = memnew(Button(String::utf8("Restablecer a diseño por defecto")));
+	reset_btn = memnew(Button(String::utf8("Restaurar plantilla original")));
 	reset_btn->set_custom_minimum_size(Size2(0, row_h));
-	reset_btn->set_tooltip_text(String::utf8("Restaura la pantalla actual a su diseño por defecto."));
+	reset_btn->set_tooltip_text(String::utf8("Restaura la pantalla actual a su plantilla original por defecto."));
 	s_make_rounded_action_btn(reset_btn);
 	reset_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_reset_pressed));
 	act_hb->add_child(reset_btn);
@@ -3111,9 +3132,9 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 		Dictionary hud_preview = dm->get_default_ui_screen_template("hud");
 		design_layer->apply_prebuilt_screen_design(current_screen_id, hud_preview);
 		design_layer->show();
-	} else if (current_screen_id == "game_over" && !has_custom) {
-		Dictionary go_preview = dm->get_default_ui_screen_template("game_over");
-		design_layer->apply_prebuilt_screen_design(current_screen_id, go_preview);
+	} else if ((current_screen_id == "game_over" || current_screen_id == "messages_battle") && !has_custom) {
+		Dictionary sys_preview = dm->get_default_ui_screen_template(current_screen_id);
+		design_layer->apply_prebuilt_screen_design(current_screen_id, sys_preview);
 		design_layer->show();
 	} else if (current_screen_id == "hud" || has_custom) {
 		design_layer->apply_prebuilt_screen_design(current_screen_id, design);
@@ -3134,18 +3155,43 @@ void ClockGearsUiDesignEditor::_refresh_screen_dropdown() {
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	Array menus = dm ? dm->get_all_menus_for_selector() : ClockGearsDataManager::get_ui_design_screens();
+	auto belongs_to_scope = [&](const Dictionary &p_sd) -> bool {
+		if (system_scope_root.is_empty()) {
+			return true;
+		}
+		String id = String(p_sd.get("id", ""));
+		if (id == system_scope_root) {
+			return true;
+		}
+		String sg = String(p_sd.get("system_group", ""));
+		if (sg == system_scope_root) {
+			return true;
+		}
+		if (dm && dm->get_menu_system_group(id) == system_scope_root) {
+			return true;
+		}
+		return false;
+	};
 	bool prev = updating_ui;
 	updating_ui = true;
 	screen_opt->clear();
 	int sel_idx = 0;
 	for (int i = 0; i < menus.size(); i++) {
 		Dictionary sd = menus[i];
+		if (!belongs_to_scope(sd)) {
+			continue;
+		}
 		String id = String(sd.get("id", ""));
 		String lbl = String(sd.get("label", sd.get("name", id)));
-		screen_opt->add_item(lbl, i);
-		screen_opt->set_item_metadata(i, id);
+		String pid = String(sd.get("parent_id", ""));
+		if (!pid.is_empty() && !ClockGearsDataManager::is_system_menu_id(id)) {
+			lbl = String::utf8("↳ ") + lbl;
+		}
+		int item_i = screen_opt->get_item_count();
+		screen_opt->add_item(lbl, item_i);
+		screen_opt->set_item_metadata(item_i, id);
 		if (id == current_screen_id) {
-			sel_idx = i;
+			sel_idx = item_i;
 		}
 	}
 	if (screen_opt->get_item_count() > 0) {
@@ -3223,13 +3269,15 @@ void ClockGearsUiDesignEditor::_refresh_menus_list() {
 
 	if (screens_tree) {
 		Vector<Dictionary> custom_list;
-		String sig = "base";
+		HashMap<String, Dictionary> custom_by_id;
+		String sig = "scope=" + system_scope_root;
 		for (int i = 0; i < menus.size(); i++) {
 			Dictionary md = menus[i];
 			String mid = String(md.get("id", ""));
-			if (!mid.is_empty() && !ClockGearsDataManager::is_system_menu_id(mid) && mid != "game_over") {
+			if (!mid.is_empty() && !ClockGearsDataManager::is_system_menu_id(mid)) {
 				custom_list.push_back(md);
-				sig += "|" + mid + ":" + String(md.get("name", md.get("label", mid)));
+				custom_by_id[mid] = md;
+				sig += "|" + mid + ":" + String(md.get("name", md.get("label", mid))) + "@" + String(md.get("parent_id", "")) + "#" + String(md.get("system_group", ""));
 			}
 		}
 
@@ -3241,6 +3289,7 @@ void ClockGearsUiDesignEditor::_refresh_menus_list() {
 			screens_tree->clear();
 			TreeItem *root_item = screens_tree->create_item();
 			if (root_item) {
+				HashMap<String, TreeItem *> items_by_id;
 				auto add_tree_screen = [&](TreeItem *p_parent, const String &p_label, const String &p_id, const String &p_tip) -> TreeItem * {
 					TreeItem *it = screens_tree->create_item(p_parent);
 					if (!it) {
@@ -3249,40 +3298,100 @@ void ClockGearsUiDesignEditor::_refresh_menus_list() {
 					it->set_text(0, p_label);
 					it->set_metadata(0, p_id);
 					it->set_tooltip_text(0, p_tip);
+					it->set_collapsed(false);
+					items_by_id[p_id] = it;
 					if (p_id == current_screen_id) {
 						to_select = it;
 					}
 					return it;
 				};
-				add_tree_screen(root_item, String::utf8("Título"), "title", String::utf8("Pantalla de título del juego, logo, música y entradas."));
-				add_tree_screen(root_item, "Opciones", "game_menu_options", String::utf8("Pantalla de volumen, pantalla completa y controles."));
-				add_tree_screen(root_item, "Lista de partidas", "game_menu_save", String::utf8("Ranuras para guardar y cargar partidas."));
+				if (system_scope_root.is_empty()) {
+					add_tree_screen(root_item, String::utf8("Menú de inicio"), "title", String::utf8("Pantalla de título del juego, logo, música y entradas."));
+					add_tree_screen(root_item, "Opciones", "game_menu_options", String::utf8("Pantalla de volumen, pantalla completa y controles."));
+					add_tree_screen(root_item, "Partidas", "game_menu_save", String::utf8("Ranuras para guardar y cargar partidas."));
 
-				TreeItem *gm_branch = screens_tree->create_item(root_item);
-				if (gm_branch) {
-					gm_branch->set_text(0, String::utf8("Menú del juego"));
-					gm_branch->set_selectable(0, false);
-					gm_branch->set_tooltip_text(0, String::utf8("Menú de pausa y sus subpantallas principales."));
-					gm_branch->set_collapsed(false);
-					add_tree_screen(gm_branch, "Principal", "game_menu_main", String::utf8("Entradas y diseño principal del menú de pausa."));
-					add_tree_screen(gm_branch, "Objetos", "game_menu_items", String::utf8("Inventario del grupo y vista previa de objetos."));
-					add_tree_screen(gm_branch, "Equipo", "game_menu_equip", String::utf8("Ranuras de equipo y estadísticas del personaje."));
-					add_tree_screen(gm_branch, "Estado", "game_menu_status", String::utf8("Atributos, nivel y estado detallado del grupo."));
+					TreeItem *gm_branch = screens_tree->create_item(root_item);
+					if (gm_branch) {
+						gm_branch->set_text(0, String::utf8("Menú del juego"));
+						gm_branch->set_selectable(0, false);
+						gm_branch->set_tooltip_text(0, String::utf8("Menú de pausa y sus subpantallas principales."));
+						gm_branch->set_collapsed(false);
+						add_tree_screen(gm_branch, "Principal", "game_menu_main", String::utf8("Entradas y diseño principal del menú de pausa."));
+						add_tree_screen(gm_branch, "Inventario", "game_menu_items", String::utf8("Inventario del grupo y vista previa de objetos."));
+						add_tree_screen(gm_branch, "Equipo", "game_menu_equip", String::utf8("Ranuras de equipo y estadísticas del personaje."));
+						add_tree_screen(gm_branch, "Estado", "game_menu_status", String::utf8("Atributos, nivel y estado detallado del grupo."));
+					}
+
+					add_tree_screen(root_item, String::utf8("Créditos"), "credits", String::utf8("Lista de créditos, desplazamiento y música."));
+					add_tree_screen(root_item, "Game Over", "game_over", String::utf8("Pantalla de Game Over, música y botones de reintento."));
+					add_tree_screen(root_item, "HUD", "hud", String::utf8("Indicadores en pantalla durante el juego (PV, oro, widgets)."));
+					add_tree_screen(root_item, "Mensajes y batalla", "messages_battle", String::utf8("Cuadros de diálogo y comandos de batalla."));
+				} else {
+					Dictionary root_meta = dm ? dm->get_menu_metadata(system_scope_root) : Dictionary();
+					String root_lbl = String(root_meta.get("name", system_scope_root));
+					add_tree_screen(root_item, root_lbl, system_scope_root, String::utf8("Diseño principal de este sistema."));
 				}
 
-				add_tree_screen(root_item, String::utf8("Créditos"), "credits", String::utf8("Lista de créditos, desplazamiento y música."));
-				add_tree_screen(root_item, "HUD", "hud", String::utf8("Indicadores en pantalla durante el juego (PV, oro, widgets)."));
-				add_tree_screen(root_item, "Fin del Juego", "game_over", String::utf8("Pantalla de Game Over, música y botones de reintento."));
+				// Adjuntar submenús propios recursivamente bajo su padre o grupo de sistema
+				HashSet<String> attached;
+				for (int pass = 0; pass < 8; pass++) {
+					bool progress = false;
+					for (int i = 0; i < custom_list.size(); i++) {
+						Dictionary md = custom_list[i];
+						String mid = String(md.get("id", ""));
+						if (attached.has(mid)) {
+							continue;
+						}
+						String sg = String(md.get("system_group", ""));
+						if (sg.is_empty() && dm) {
+							sg = dm->get_menu_system_group(mid);
+						}
+						if (!system_scope_root.is_empty() && sg != system_scope_root && String(md.get("parent_id", "")) != system_scope_root) {
+							continue;
+						}
+						String pid = String(md.get("parent_id", ""));
+						if (!pid.is_empty() && items_by_id.has(pid)) {
+							String mname = String(md.get("name", md.get("label", mid)));
+							add_tree_screen(items_by_id[pid], mname, mid, String::utf8("Submenú o variante personalizada anidada."));
+							attached.insert(mid);
+							progress = true;
+						}
+					}
+					if (!progress) {
+						break;
+					}
+				}
 
-				if (!custom_list.is_empty()) {
+				Vector<Dictionary> leftover_custom;
+				for (int i = 0; i < custom_list.size(); i++) {
+					Dictionary md = custom_list[i];
+					String mid = String(md.get("id", ""));
+					if (attached.has(mid)) {
+						continue;
+					}
+					String sg = String(md.get("system_group", ""));
+					if (sg.is_empty() && dm) {
+						sg = dm->get_menu_system_group(mid);
+					}
+					if (!system_scope_root.is_empty()) {
+						if (sg == system_scope_root) {
+							if (TreeItem *rp = items_by_id.has(system_scope_root) ? items_by_id[system_scope_root] : root_item) {
+								add_tree_screen(rp, String(md.get("name", md.get("label", mid))), mid, String::utf8("Diseño propio dentro de este sistema."));
+							}
+						}
+					} else {
+						leftover_custom.push_back(md);
+					}
+				}
+				if (system_scope_root.is_empty() && !leftover_custom.is_empty()) {
 					TreeItem *cust_branch = screens_tree->create_item(root_item);
 					if (cust_branch) {
 						cust_branch->set_text(0, String::utf8("Menús propios"));
 						cust_branch->set_selectable(0, false);
 						cust_branch->set_collapsed(false);
-						for (int i = 0; i < custom_list.size(); i++) {
-							String mid = String(custom_list[i].get("id", ""));
-							String mname = String(custom_list[i].get("name", custom_list[i].get("label", mid)));
+						for (int i = 0; i < leftover_custom.size(); i++) {
+							String mid = String(leftover_custom[i].get("id", ""));
+							String mname = String(leftover_custom[i].get("name", leftover_custom[i].get("label", mid)));
 							add_tree_screen(cust_branch, mname, mid, String::utf8("Menú personalizado creado en el proyecto."));
 						}
 					}
@@ -4017,6 +4126,67 @@ void ClockGearsUiDesignEditor::_on_screens_tree_selected() {
 	}
 }
 
+void ClockGearsUiDesignEditor::set_system_scope(const String &p_root_screen_id) {
+	String trimmed = p_root_screen_id.strip_edges().to_lower();
+	String norm_root = trimmed.is_empty() ? String("") : ClockGearsDataManager::normalize_menu_id(trimmed);
+	system_scope_root = norm_root;
+	_trace_log("system_scope", "root=" + (norm_root.is_empty() ? String("all") : norm_root));
+	if (!system_scope_root.is_empty()) {
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		bool same_sys = (current_screen_id == system_scope_root);
+		if (!same_sys && dm) {
+			same_sys = (dm->get_menu_system_group(current_screen_id) == system_scope_root);
+		}
+		if (!same_sys) {
+			select_screen(system_scope_root);
+			return;
+		}
+	}
+	refresh_from_data_manager();
+}
+
+String ClockGearsUiDesignEditor::add_submenu_to_current(const String &p_name) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return String();
+	}
+	String parent = current_screen_id;
+	if (parent.is_empty()) {
+		parent = system_scope_root.is_empty() ? String("game_menu_main") : system_scope_root;
+	}
+	String sid = dm->create_submenu_design(parent, p_name);
+	if (!sid.is_empty()) {
+		_trace_log("add_submenu", "parent=" + parent + " new=" + sid);
+		select_screen(sid);
+		_notify_data_mutated(true);
+	}
+	return sid;
+}
+
+void ClockGearsUiDesignEditor::_on_add_submenu_pressed() {
+	add_submenu_to_current("");
+}
+
+String ClockGearsUiDesignEditor::quick_add_button_element(const String &p_text) {
+	String bid = add_element_at("button", Vector2i(-1, -1));
+	if (!bid.is_empty() && !p_text.strip_edges().is_empty()) {
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			Dictionary el = dm->get_ui_element(current_screen_id, bid);
+			if (!el.is_empty()) {
+				el["name"] = p_text.strip_edges();
+				el["text"] = p_text.strip_edges();
+				dm->update_ui_element(current_screen_id, bid, el, false);
+				refresh_from_data_manager();
+			}
+		}
+	}
+	return bid;
+}
+
+void ClockGearsUiDesignEditor::_on_add_button_bar_pressed() {
+	quick_add_button_element(String::utf8("Nuevo botón"));
+}
+
 void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	String norm_sid = (p_screen_id.strip_edges().to_lower() == "game_over") ? String("game_over") : ClockGearsDataManager::normalize_menu_id(p_screen_id);
@@ -4025,6 +4195,12 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 		Array menus = dm->get_all_menus_for_selector();
 		if (!menus.is_empty()) {
 			norm_sid = String(Dictionary(menus[0]).get("id", "title"));
+		}
+	}
+	if (!system_scope_root.is_empty() && dm) {
+		String sg = dm->get_menu_system_group(norm_sid);
+		if (norm_sid != system_scope_root && sg != system_scope_root) {
+			system_scope_root = sg;
 		}
 	}
 	current_screen_id = norm_sid;
@@ -4760,7 +4936,7 @@ void ClockGearsUiDesignEditor::_open_menu_wizard() {
 	wizard_triggers.clear();
 	if (wizard_tpl_grid) {
 		s_clear_container_children(wizard_tpl_grid);
-		Array tpls = ClockGearsDataManager::get_builtin_menu_templates();
+		Array tpls = ClockGearsDataManager::get_ui_templates_for_system(current_screen_id);
 		for (int i = 0; i < tpls.size(); i++) {
 			Dictionary t = tpls[i];
 			String tid = String(t.get("id", ""));
@@ -4822,7 +4998,16 @@ String ClockGearsUiDesignEditor::create_menu_via_wizard(const Dictionary &p_opts
 	if (!dm) {
 		return String();
 	}
-	String nid = dm->create_menu_from_wizard(p_opts);
+	Dictionary opts = p_opts.duplicate(true);
+	if (!system_scope_root.is_empty()) {
+		if (!opts.has("parent_id")) {
+			opts["parent_id"] = current_screen_id.is_empty() ? system_scope_root : current_screen_id;
+		}
+		if (!opts.has("system_group")) {
+			opts["system_group"] = system_scope_root;
+		}
+	}
+	String nid = dm->create_menu_from_wizard(opts);
 	if (!nid.is_empty()) {
 		select_screen(nid);
 		_notify_data_mutated(true);
@@ -4882,7 +5067,7 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			p_grid->add_child(card);
 		}
 	};
-	fill_grid(tpl_screen_grid, ClockGearsDataManager::get_builtin_menu_templates());
+	fill_grid(tpl_screen_grid, ClockGearsDataManager::get_ui_templates_for_system(current_screen_id));
 	fill_grid(tpl_comp_grid, ClockGearsDataManager::get_builtin_component_templates());
 	fill_grid(tpl_user_grid, dm ? dm->get_user_menu_templates() : Array());
 }
@@ -5719,7 +5904,10 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	Dictionary out;
 	out["panel"] = this;
 	out["screen_opt"] = screen_opt;
+	out["system_scope_root"] = system_scope_root;
 	out["new_menu_wizard_btn"] = new_menu_wizard_btn;
+	out["add_submenu_btn"] = add_submenu_btn;
+	out["add_button_bar_btn"] = add_button_bar_btn;
 	out["templates_btn"] = templates_btn;
 	out["menus_list_vbox"] = menus_list_vbox;
 	out["menu_wizard_dialog"] = menu_wizard_dialog;
@@ -6332,6 +6520,11 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 		s_ss_populate_window_styles(gws_opt, dm, String(gcfg.get("window_style_id", "default")), String::utf8("Por defecto"));
 		gws_opt->connect("item_selected", cb.unbind(1));
 		s_ss_add_row(screen_settings_body, "Estilo:", String::utf8("Estilo visual aplicado a la ventana de Fin del Juego."), gws_opt, EDSCALE);
+	} else if (current_screen_id == "messages_battle") {
+		Label *mb_info = memnew(Label(String::utf8("Cuadro de diálogo inferior, retrato, nombre de hablante y comandos de batalla. Arrastra o personaliza cualquier elemento en el lienzo.")));
+		mb_info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		mb_info->add_theme_color_override("font_color", Color(0.80f, 0.84f, 0.92f));
+		screen_settings_body->add_child(mb_info);
 	} else {
 		Label *info = memnew(Label(String::utf8("Personaliza fondo, animaciones, entradas y elementos visuales desde el lienzo y las secciones de abajo.")));
 		info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);

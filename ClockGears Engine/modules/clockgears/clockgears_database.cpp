@@ -214,13 +214,8 @@ static bool s_is_arpg_shape_category(int p_category) {
 }
 
 static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
-	if (p_category == ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_WINDOW_STYLES ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_CREDITS ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_HUD ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_UI_DESIGNER ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_OVER) {
+	if (p_category >= ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU &&
+			p_category <= ClockGearsDatabaseDialog::DB_CAT_MENU_MESSAGES_BATTLE) {
 		return true;
 	}
 	if (p_combat_mode == COMBAT_MODE_ACTION_RPG) {
@@ -723,11 +718,21 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 		case CAT_ARPG_ACCESSORIES:
 			return CG_DB_TR("Accesorios ARPG");
 		case DB_CAT_MAIN_MENU:
-			return CG_DB_TR("Menú principal");
+			return CG_DB_TR("Menú de inicio");
+		case DB_CAT_MENU_OPTIONS:
+			return CG_DB_TR("Opciones");
+		case DB_CAT_MENU_SAVES:
+			return CG_DB_TR("Partidas");
 		case DB_CAT_WINDOW_STYLES:
 			return CG_DB_TR("Estilos de ventana");
 		case DB_CAT_GAME_MENU:
 			return CG_DB_TR("Menú del juego");
+		case DB_CAT_MENU_INVENTORY:
+			return CG_DB_TR("Inventario");
+		case DB_CAT_MENU_EQUIP:
+			return CG_DB_TR("Equipo");
+		case DB_CAT_MENU_STATUS:
+			return CG_DB_TR("Estado");
 		case DB_CAT_CREDITS:
 			return CG_DB_TR("Créditos");
 		case DB_CAT_HUD:
@@ -736,6 +741,8 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 			return CG_DB_TR("Interfaz");
 		case DB_CAT_GAME_OVER:
 			return CG_DB_TR("Game Over");
+		case DB_CAT_MENU_MESSAGES_BATTLE:
+			return CG_DB_TR("Mensajes y batalla");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -1076,7 +1083,19 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 	add_chap("Animaciones", { CAT_ANIMATIONS });
 	add_chap("Mundo", { CAT_TILESETS, CAT_FLORA, CAT_FAUNA, CAT_COMMON_EVENTS });
 	add_chap("Sistema", { CAT_SYSTEM, CAT_TYPES, CAT_VOCABULARY, CAT_SWITCHES_VARS });
-	add_chap("Menús", { DB_CAT_UI_DESIGNER, DB_CAT_WINDOW_STYLES, DB_CAT_MAIN_MENU, DB_CAT_GAME_MENU, DB_CAT_CREDITS, DB_CAT_HUD, DB_CAT_GAME_OVER });
+	add_chap("Menús", {
+			DB_CAT_MAIN_MENU,
+			DB_CAT_MENU_OPTIONS,
+			DB_CAT_MENU_SAVES,
+			DB_CAT_GAME_MENU,
+			DB_CAT_MENU_INVENTORY,
+			DB_CAT_MENU_EQUIP,
+			DB_CAT_MENU_STATUS,
+			DB_CAT_CREDITS,
+			DB_CAT_GAME_OVER,
+			DB_CAT_HUD,
+			DB_CAT_MENU_MESSAGES_BATTLE,
+			DB_CAT_WINDOW_STYLES });
 
 	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
 	for (int c = 0; c < CAT_MAX; c++) {
@@ -1094,6 +1113,9 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 }
 
 int ClockGearsDatabaseDialog::_find_chapter_for_category(int p_category) const {
+	if (p_category == DB_CAT_UI_DESIGNER) {
+		p_category = DB_CAT_MAIN_MENU;
+	}
 	for (int i = 0; i < chapters.size(); i++) {
 		if (chapters[i].categories.has(p_category)) {
 			return i;
@@ -1103,11 +1125,36 @@ int ClockGearsDatabaseDialog::_find_chapter_for_category(int p_category) const {
 }
 
 static bool _cg_is_consolidated_legacy_menu_cat(int p_category) {
-	return p_category == ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_MENU ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_CREDITS ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_HUD ||
-			p_category == ClockGearsDatabaseDialog::DB_CAT_GAME_OVER;
+	return p_category == ClockGearsDatabaseDialog::DB_CAT_UI_DESIGNER;
+}
+
+static String _cg_get_system_scope_for_category(int p_category) {
+	switch (p_category) {
+		case ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU:
+			return "title";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_OPTIONS:
+			return "game_menu_options";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_SAVES:
+			return "game_menu_save";
+		case ClockGearsDatabaseDialog::DB_CAT_GAME_MENU:
+			return "game_menu_main";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_INVENTORY:
+			return "game_menu_items";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_EQUIP:
+			return "game_menu_equip";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_STATUS:
+			return "game_menu_status";
+		case ClockGearsDatabaseDialog::DB_CAT_CREDITS:
+			return "credits";
+		case ClockGearsDatabaseDialog::DB_CAT_GAME_OVER:
+			return "game_over";
+		case ClockGearsDatabaseDialog::DB_CAT_HUD:
+			return "hud";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_MESSAGES_BATTLE:
+			return "messages_battle";
+		default:
+			return "";
+	}
 }
 
 void ClockGearsDatabaseDialog::_update_chapter_and_category_visibility() {
@@ -1210,7 +1257,7 @@ void ClockGearsDatabaseDialog::_save_editor_ui_state() {
 }
 
 void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
-	if (p_category < 0 || (p_category >= CAT_MAX && p_category != DB_CAT_MAIN_MENU && p_category != DB_CAT_WINDOW_STYLES && p_category != DB_CAT_GAME_MENU && p_category != DB_CAT_CREDITS && p_category != DB_CAT_HUD && p_category != DB_CAT_UI_DESIGNER && p_category != DB_CAT_GAME_OVER)) {
+	if (p_category < 0 || (p_category >= CAT_MAX && !(p_category >= DB_CAT_MAIN_MENU && p_category <= DB_CAT_MENU_MESSAGES_BATTLE))) {
 		return;
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -1251,14 +1298,15 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	}
 
 	bool is_system = (current_category == CAT_SYSTEM);
-	bool is_main_menu = (current_category == DB_CAT_MAIN_MENU);
 	bool is_window_styles = (current_category == DB_CAT_WINDOW_STYLES);
-	bool is_game_menu = (current_category == DB_CAT_GAME_MENU);
-	bool is_credits = (current_category == DB_CAT_CREDITS);
-	bool is_hud = (current_category == DB_CAT_HUD);
-	bool is_ui_designer = (current_category == DB_CAT_UI_DESIGNER);
-	bool is_game_over = (current_category == DB_CAT_GAME_OVER);
-	bool hide_record_col = (is_system || is_main_menu || is_game_menu || is_credits || is_hud || is_ui_designer || is_game_over);
+	String ui_scope_root = _cg_get_system_scope_for_category(current_category);
+	bool is_ui_designer = (current_category == DB_CAT_UI_DESIGNER || !ui_scope_root.is_empty());
+	bool is_main_menu = false;
+	bool is_game_menu = false;
+	bool is_credits = false;
+	bool is_hud = false;
+	bool is_game_over = false;
+	bool hide_record_col = (is_system || is_ui_designer);
 	bool is_tileset = (current_category == CAT_TILESETS);
 	bool is_troops = (current_category == CAT_TROOPS);
 	bool is_enemy = (current_category == CAT_ENEMIES);
@@ -1363,12 +1411,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		_setup_ui_design_editor_ui();
 	}
 	if (ui_design_editor_panel) {
-		bool was_vis = ui_design_editor_panel->is_visible();
 		ui_design_editor_panel->set_visible(is_ui_designer);
-		if (is_ui_designer && was_vis) {
-			ui_design_editor_panel->refresh_from_data_manager();
-		}
 		if (is_ui_designer) {
+			ui_design_editor_panel->set_system_scope(ui_scope_root);
 			ui_design_editor_panel->adapt_to_width(int(get_size().x));
 		}
 	}
@@ -5656,7 +5701,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cats_panel->add_child(cats_bar);
 
 	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
-	for (int i = 0; i <= DB_CAT_UI_DESIGNER; i++) {
+	for (int i = 0; i <= DB_CAT_MENU_MESSAGES_BATTLE; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_theme_type_variation("ClockGearsTabButton");
 		btn->set_toggle_mode(true);
@@ -8244,8 +8289,11 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Dictionary init_ui_state = _load_editor_ui_state();
 	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
-	if (init_cat < 0 || init_cat > DB_CAT_UI_DESIGNER) {
+	if (init_cat < 0 || init_cat > DB_CAT_MENU_MESSAGES_BATTLE) {
 		init_cat = CAT_ACTORS;
+	}
+	if (init_cat == DB_CAT_UI_DESIGNER) {
+		init_cat = DB_CAT_MAIN_MENU;
 	}
 	_on_category_selected(init_cat);
 }
@@ -8337,8 +8385,8 @@ void ClockGearsDatabaseDialog::open_database() {
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
 	int last_cat = int(ui_state.get("last_category", current_category));
-	if (last_cat >= 0 && last_cat <= DB_CAT_GAME_OVER) {
-		current_category = _cg_is_consolidated_legacy_menu_cat(last_cat) ? DB_CAT_UI_DESIGNER : last_cat;
+	if (last_cat >= 0 && last_cat <= DB_CAT_MENU_MESSAGES_BATTLE) {
+		current_category = (last_cat == DB_CAT_UI_DESIGNER) ? DB_CAT_MAIN_MENU : last_cat;
 	}
 	_on_category_selected(current_category);
 	if (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass") {
@@ -12681,10 +12729,20 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 			String ckey;
 			if (cid == DB_CAT_MAIN_MENU) {
 				ckey = "main_menu";
+			} else if (cid == DB_CAT_MENU_OPTIONS) {
+				ckey = "menu_options";
+			} else if (cid == DB_CAT_MENU_SAVES) {
+				ckey = "menu_saves";
 			} else if (cid == DB_CAT_WINDOW_STYLES) {
 				ckey = "window_styles";
 			} else if (cid == DB_CAT_GAME_MENU) {
 				ckey = "game_menu";
+			} else if (cid == DB_CAT_MENU_INVENTORY) {
+				ckey = "menu_inventory";
+			} else if (cid == DB_CAT_MENU_EQUIP) {
+				ckey = "menu_equip";
+			} else if (cid == DB_CAT_MENU_STATUS) {
+				ckey = "menu_status";
 			} else if (cid == DB_CAT_CREDITS) {
 				ckey = "credits";
 			} else if (cid == DB_CAT_HUD) {
@@ -12693,6 +12751,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 				ckey = "ui_designer";
 			} else if (cid == DB_CAT_GAME_OVER) {
 				ckey = "game_over";
+			} else if (cid == DB_CAT_MENU_MESSAGES_BATTLE) {
+				ckey = "messages_battle";
 			} else {
 				ckey = ClockGearsDataManager::get_category_key(cid);
 			}
@@ -12715,10 +12775,20 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 	out["current_category"] = current_category;
 	if (current_category == DB_CAT_MAIN_MENU) {
 		out["current_category_key"] = String("main_menu");
+	} else if (current_category == DB_CAT_MENU_OPTIONS) {
+		out["current_category_key"] = String("menu_options");
+	} else if (current_category == DB_CAT_MENU_SAVES) {
+		out["current_category_key"] = String("menu_saves");
 	} else if (current_category == DB_CAT_WINDOW_STYLES) {
 		out["current_category_key"] = String("window_styles");
 	} else if (current_category == DB_CAT_GAME_MENU) {
 		out["current_category_key"] = String("game_menu");
+	} else if (current_category == DB_CAT_MENU_INVENTORY) {
+		out["current_category_key"] = String("menu_inventory");
+	} else if (current_category == DB_CAT_MENU_EQUIP) {
+		out["current_category_key"] = String("menu_equip");
+	} else if (current_category == DB_CAT_MENU_STATUS) {
+		out["current_category_key"] = String("menu_status");
 	} else if (current_category == DB_CAT_CREDITS) {
 		out["current_category_key"] = String("credits");
 	} else if (current_category == DB_CAT_HUD) {
@@ -12727,6 +12797,8 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 		out["current_category_key"] = String("ui_designer");
 	} else if (current_category == DB_CAT_GAME_OVER) {
 		out["current_category_key"] = String("game_over");
+	} else if (current_category == DB_CAT_MENU_MESSAGES_BATTLE) {
+		out["current_category_key"] = String("messages_battle");
 	} else {
 		out["current_category_key"] = ClockGearsDataManager::get_category_key(current_category);
 	}
@@ -12739,12 +12811,32 @@ void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
 		_on_category_selected(DB_CAT_MAIN_MENU);
 		return;
 	}
+	if (p_key == "menu_options") {
+		_on_category_selected(DB_CAT_MENU_OPTIONS);
+		return;
+	}
+	if (p_key == "menu_saves") {
+		_on_category_selected(DB_CAT_MENU_SAVES);
+		return;
+	}
 	if (p_key == "window_styles") {
 		_on_category_selected(DB_CAT_WINDOW_STYLES);
 		return;
 	}
 	if (p_key == "game_menu") {
 		_on_category_selected(DB_CAT_GAME_MENU);
+		return;
+	}
+	if (p_key == "menu_inventory") {
+		_on_category_selected(DB_CAT_MENU_INVENTORY);
+		return;
+	}
+	if (p_key == "menu_equip") {
+		_on_category_selected(DB_CAT_MENU_EQUIP);
+		return;
+	}
+	if (p_key == "menu_status") {
+		_on_category_selected(DB_CAT_MENU_STATUS);
 		return;
 	}
 	if (p_key == "credits") {
@@ -12761,6 +12853,10 @@ void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
 	}
 	if (p_key == "game_over") {
 		_on_category_selected(DB_CAT_GAME_OVER);
+		return;
+	}
+	if (p_key == "messages_battle") {
+		_on_category_selected(DB_CAT_MENU_MESSAGES_BATTLE);
 		return;
 	}
 	for (int i = 0; i < CAT_MAX; i++) {

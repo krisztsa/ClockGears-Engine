@@ -276,13 +276,15 @@ public:
 	static Dictionary normalize_ui_designs_config(const Dictionary &p_cfg);
 	Dictionary get_default_ui_screen_template(const String &p_screen_id) const;
 
-	// Menús ilimitados, reordenables, entradas configurables y conflictos (Etapa 3)
+	// Menús ilimitados, reordenables, entradas configurables y conflictos (Etapa 3 + 9B Reconst)
 	Array get_all_menus() const;
 	PackedStringArray get_custom_menu_ids() const;
 	Array get_all_menus_for_selector() const;
 	bool has_menu(const String &p_menu_id) const;
+	String get_menu_system_group(const String &p_menu_id) const;
 	Dictionary get_menu_metadata(const String &p_menu_id) const;
 	String create_custom_menu(const String &p_name, const Dictionary &p_initial_design = Dictionary());
+	String create_submenu_design(const String &p_parent_id, const String &p_name = "", const Dictionary &p_initial_design = Dictionary());
 	bool rename_menu(const String &p_menu_id, const String &p_new_name);
 	String duplicate_menu(const String &p_source_id, const String &p_new_name = "");
 	bool reorder_custom_menu(const String &p_menu_id, int p_new_order);
@@ -310,6 +312,7 @@ public:
 	static Dictionary normalize_ui_background(const Dictionary &p_bg);
 	static Dictionary normalize_ui_transition(const Dictionary &p_tr);
 	static Array get_builtin_menu_templates();
+	static Array get_ui_templates_for_system(const String &p_screen_id);
 	static Array get_builtin_component_templates();
 	static Dictionary get_builtin_template_by_id(const String &p_template_id);
 	Array get_user_menu_templates() const;
