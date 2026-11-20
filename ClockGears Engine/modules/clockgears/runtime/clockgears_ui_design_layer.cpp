@@ -165,7 +165,11 @@ void ClockGearsShapedClipControl::configure(const Dictionary &p_shape, float p_s
 	fill_image_enabled = p_draw_fill && (String(p_shape.get("fill_type", "color")).strip_edges().to_lower() == "image") && !fimg.is_empty();
 	fill_texture = fill_image_enabled ? ClockGearsWindowStyleManager::load_texture_safe(fimg) : Ref<Texture2D>();
 	set_texture_filter(pixel_art ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
-	set_clip_children_mode(clip_active ? CLIP_CHILDREN_AND_DRAW : CLIP_CHILDREN_DISABLED);
+	if (clip_active) {
+		set_clip_children_mode(p_draw_fill ? CLIP_CHILDREN_AND_DRAW : CLIP_CHILDREN_ONLY);
+	} else {
+		set_clip_children_mode(CLIP_CHILDREN_DISABLED);
+	}
 	queue_redraw();
 }
 
@@ -236,13 +240,25 @@ void ClockGearsShapedBorderOverlay::_notification(int p_what) {
 		if (r.size.x <= 1.0f || r.size.y <= 1.0f) {
 			return;
 		}
+		if (shadow_enabled && shadow_size > 0.5f && shadow_color.a > 0.001f) {
+			float sh_expand = float(border_width) * 0.5f + shadow_size * 0.5f;
+			Rect2 sr = r.grow(sh_expand);
+			sr.position += shadow_offset;
+			Vector<Vector2> spts = ClockGearsWindowStyleBox::build_shape_polygon(sr, shape_type, corner_radius + sh_expand, 24);
+			if (spts.size() >= 3) {
+				Vector<Vector2> closed = spts;
+				closed.push_back(spts[0]);
+				draw_polyline(closed, shadow_color, shadow_size * 1.25f, !pixel_art);
+			}
+		}
 		if (glow_enabled && glow_size > 0.5f && glow_color.a > 0.001f) {
-			Rect2 gr = r.grow(glow_size * 0.5f);
-			Vector<Vector2> gpts = ClockGearsWindowStyleBox::build_shape_polygon(gr, shape_type, corner_radius + glow_size * 0.5f, 24);
+			float gl_expand = float(border_width) * 0.5f + glow_size * 0.6f;
+			Rect2 gr = r.grow(gl_expand);
+			Vector<Vector2> gpts = ClockGearsWindowStyleBox::build_shape_polygon(gr, shape_type, corner_radius + gl_expand, 24);
 			if (gpts.size() >= 3) {
 				Vector<Vector2> closed = gpts;
 				closed.push_back(gpts[0]);
-				draw_polyline(closed, glow_color, glow_size, !pixel_art);
+				draw_polyline(closed, glow_color, glow_size * 1.4f, !pixel_art);
 			}
 		}
 		if (border_width > 0 && border_color.a > 0.001f) {
@@ -1384,9 +1400,10 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.config = cfg;
 
 		bool has_shape = cfg.has("shape") && cfg["shape"].get_type() == Variant::DICTIONARY;
-		bool can_reuse_frame = (etype == "frame" && String(cfg.get("image_path", "")).strip_edges().is_empty());
-		bool reused_ok = false;
-		if (!has_shape && (etype == "text" || can_reuse_frame)) {
+	bool can_reuse_frame = (etype == "frame" && String(cfg.get("image_path", "")).strip_edges().is_empty());
+	bool can_reuse_txt = (etype == "text" && !bool(cfg.get("show_background", false)) && String(cfg.get("window_style_id", "")).strip_edges().is_empty());
+	bool reused_ok = false;
+	if (!has_shape && (can_reuse_txt || can_reuse_frame)) {
 			for (int r = 0; r < reusable.size(); r++) {
 				if (!used[r] && reusable[r].root && reusable[r].type == etype && !reusable[r].clip_host && (etype != "frame" || String(reusable[r].config.get("image_path", "")).strip_edges().is_empty())) {
 					used.write[r] = true;
@@ -1501,8 +1518,6 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 	TextureFilter tf = bool(r_entry.config.get("pixel_art", true)) ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR;
 
 	if (r_entry.type == "frame") {
-		float op = CLAMP(float(r_entry.config.get("opacity", 1.0)), 0.0f, 1.0f);
-		bg->set_modulate(Color(1, 1, 1, op));
 		String fip = String(r_entry.config.get("image_path", "")).strip_edges();
 		if (!fip.is_empty()) {
 			Ref<Texture2D> ftex = ClockGearsWindowStyleManager::load_texture_safe(fip);
@@ -1520,7 +1535,6 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 					np->set_patch_margin(SIDE_RIGHT, margin);
 					np->set_patch_margin(SIDE_BOTTOM, margin);
 					np->set_texture_filter(tf);
-					np->set_modulate(Color(1, 1, 1, op));
 					content->add_child(np);
 				} else {
 					TextureRect *fimg = memnew(TextureRect);
@@ -1530,7 +1544,6 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 					fimg->set_texture_filter(tf);
 					fimg->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 					fimg->set_stretch_mode(sm == "fit" ? TextureRect::STRETCH_KEEP_ASPECT_CENTERED : (sm == "fill" ? TextureRect::STRETCH_KEEP_ASPECT_COVERED : (sm == "tile" ? TextureRect::STRETCH_TILE : TextureRect::STRETCH_SCALE)));
-					fimg->set_modulate(Color(1, 1, 1, op));
 					fimg->set_texture(ftex);
 					content->add_child(fimg);
 					r_entry.image_rect = fimg;
@@ -1564,7 +1577,6 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		r_entry.button = btn;
 	} else if (r_entry.type == "image") {
 		String sm = String(r_entry.config.get("scale_mode", "fit")).strip_edges().to_lower();
-		float op = CLAMP(float(r_entry.config.get("opacity", 1.0)), 0.0f, 1.0f);
 		String ip = String(r_entry.config.get("image_path", "")).strip_edges();
 		Ref<Texture2D> tex = ip.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(ip);
 		if (sm == "nine_slice") {
@@ -1578,7 +1590,6 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			np->set_patch_margin(SIDE_TOP, margin);
 			np->set_patch_margin(SIDE_RIGHT, margin);
 			np->set_patch_margin(SIDE_BOTTOM, margin);
-			np->set_modulate(Color(1, 1, 1, op));
 			if (tex.is_valid()) np->set_texture(tex);
 			content->add_child(np);
 		} else {
@@ -1603,7 +1614,6 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 				img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 				img->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
 			}
-			img->set_modulate(Color(1, 1, 1, op));
 			if (tex.is_valid()) {
 				img->set_texture(tex);
 			}
@@ -1678,8 +1688,10 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			PanelContainer *card = memnew(PanelContainer);
 			card->set_mouse_filter(MOUSE_FILTER_IGNORE);
 			card->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
-			ClockGearsWindowStyleManager::apply_window_style(card, window_type_fallback);
-			card->set_modulate(Color(1, 1, 1, 0.92f));
+			Ref<StyleBoxEmpty> transp_sb;
+			transp_sb.instantiate();
+			transp_sb->set_content_margin_all(4.0f);
+			card->add_theme_style_override("panel", transp_sb);
 			content->add_child(card);
 
 			VBoxContainer *vb = memnew(VBoxContainer);
@@ -1769,17 +1781,28 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	if (!r_entry.bg_panel || !r_entry.content_root || !r_entry.root) {
 		return;
 	}
+	float elem_op = CLAMP(float(r_entry.config.get("opacity", 1.0)), 0.0f, 1.0f);
+	r_entry.root->set_modulate(Color(1.0f, 1.0f, 1.0f, elem_op));
 	const bool has_shape = r_entry.config.has("shape") && r_entry.config["shape"].get_type() == Variant::DICTIONARY;
 	Dictionary shape_cfg = has_shape ? Dictionary(r_entry.config["shape"]) : Dictionary();
+	auto merge_shape_into = [&](Dictionary &r_target) {
+		Array keys = shape_cfg.keys();
+		for (int k = 0; k < keys.size(); k++) {
+			r_target[keys[k]] = shape_cfg[keys[k]];
+		}
+		String st_str = String(shape_cfg.get("shape_type", "")).strip_edges().to_lower();
+		if (st_str == "rect") {
+			r_target["border_type"] = "rect";
+		} else if (st_str == "rounded" || st_str == "pill" || st_str == "circle" || st_str == "ellipse") {
+			r_target["border_type"] = "rounded";
+		}
+	};
 
 	if (r_entry.clip_host && has_shape) {
 		r_entry.bg_panel->set_visible(false);
 		r_entry.clip_host->set_position(Vector2());
 		r_entry.clip_host->set_size(r_entry.root->get_size());
-		bool draw_fill = (r_entry.type == "frame" || r_entry.type == "button" || !r_entry.window_style_id.is_empty());
-		if (r_entry.type == "image") {
-			draw_fill = false; // Para imagen recortada, solo la máscara recorta (y mantenemos el alpha del sprite si es transparente o dibujamos su contenido encima)
-		}
+		bool draw_fill = (r_entry.type != "image") || !r_entry.window_style_id.is_empty() || bool(r_entry.config.get("show_background", false));
 		r_entry.clip_host->configure(shape_cfg, p_scale, draw_fill);
 		if (r_entry.border_overlay) {
 			r_entry.border_overlay->set_position(Vector2());
@@ -1805,16 +1828,13 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 
 	if (r_entry.type == "button" && r_entry.button) {
 		Dictionary b_over;
-		if (!r_entry.window_style_id.is_empty() && r_entry.window_style_id != "none") {
+		if (!r_entry.window_style_id.is_empty() && r_entry.window_style_id != "default") {
 			if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
 				b_over = dm->get_window_style(r_entry.window_style_id);
 			}
 		}
 		if (has_shape) {
-			Array keys = shape_cfg.keys();
-			for (int k = 0; k < keys.size(); k++) {
-				b_over[keys[k]] = shape_cfg[keys[k]];
-			}
+			merge_shape_into(b_over);
 		}
 		ClockGearsWindowStyleManager::apply_button_style(r_entry.button, window_type_fallback, b_over);
 		String img_norm = String(r_entry.config.get("image_normal", "")).strip_edges();
@@ -1848,7 +1868,7 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	}
 
 	String sid = r_entry.window_style_id;
-	bool force_panel = (r_entry.type == "frame") || has_shape;
+	bool force_panel = (r_entry.type == "frame" || r_entry.type == "widget") || has_shape || bool(r_entry.config.get("show_background", false));
 	if (!force_panel && (sid.is_empty() || sid == "none")) {
 		if (r_entry.bg_panel->is_visible()) {
 			r_entry.bg_panel->set_visible(false);
@@ -1878,7 +1898,7 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 
 	r_entry.bg_panel->set_visible(true);
 	Dictionary surface_overrides;
-	if (!sid.is_empty() && sid != "none" && sid != "default") {
+	if (!sid.is_empty() && sid != "default") {
 		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
 			Dictionary specific = dm->get_window_style(sid);
 			if (!specific.is_empty()) {
@@ -1887,10 +1907,7 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 		}
 	}
 	if (has_shape) {
-		Array keys = shape_cfg.keys();
-		for (int k = 0; k < keys.size(); k++) {
-			surface_overrides[keys[k]] = shape_cfg[keys[k]];
-		}
+		merge_shape_into(surface_overrides);
 	}
 	ClockGearsWindowStyleManager::apply_window_style(r_entry.bg_panel, window_type_fallback, surface_overrides);
 	Ref<StyleBox> sb = r_entry.bg_panel->get_theme_stylebox("panel");
@@ -2142,10 +2159,21 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 			if (!e.label->has_theme_font_size_override("font_size") || e.label->get_theme_font_size("font_size") != fsz) {
 				e.label->add_theme_font_size_override("font_size", fsz);
 			}
-			if (cfont.is_valid()) e.label->add_theme_font_override("font", cfont);
+			if (cfont.is_valid()) {
+				e.label->add_theme_font_override("font", cfont);
+			} else if (e.label->has_theme_font_override("font")) {
+				e.label->remove_theme_font_override("font");
+			}
+			if (e.config.has("font_color")) {
+				e.label->add_theme_color_override("font_color", _cg_ui_parse_color(e.config["font_color"], Color(1, 1, 1, 1)));
+			}
 		}
 		if (e.button) {
-			if (cfont.is_valid()) e.button->add_theme_font_override("font", cfont);
+			if (cfont.is_valid()) {
+				e.button->add_theme_font_override("font", cfont);
+			} else if (e.button->has_theme_font_override("font")) {
+				e.button->remove_theme_font_override("font");
+			}
 			if (e.config.has("font_color")) {
 				Color fc = _cg_ui_parse_color(e.config["font_color"], Color(1, 1, 1, 1));
 				e.button->add_theme_color_override("font_color", fc);
@@ -2153,10 +2181,23 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 				e.button->add_theme_color_override("font_focus_color", fc);
 			}
 		}
+		if (e.bar_bg_rect) {
+			e.bar_bg_rect->set_color(_cg_ui_parse_color(e.config.get("bg_color", "#1A1E2ECC"), Color(0.1f, 0.12f, 0.18f, 0.8f)));
+		}
+		if (e.bar_fill_rect) {
+			e.bar_fill_rect->set_color(_cg_ui_parse_color(e.config.get("fill_color", "#D93B3BFF"), Color(0.85f, 0.23f, 0.23f, 1.0f)));
+		}
 		if (e.bar_label) {
 			int fsz = MAX(8, int(Math::round(float(e.config.get("font_size", 13)) * current_ui_scale)));
 			e.bar_label->add_theme_font_size_override("font_size", fsz);
-			if (cfont.is_valid()) e.bar_label->add_theme_font_override("font", cfont);
+			if (cfont.is_valid()) {
+				e.bar_label->add_theme_font_override("font", cfont);
+			} else if (e.bar_label->has_theme_font_override("font")) {
+				e.bar_label->remove_theme_font_override("font");
+			}
+			if (e.config.has("font_color")) {
+				e.bar_label->add_theme_color_override("font_color", _cg_ui_parse_color(e.config["font_color"], Color(1, 1, 1, 1)));
+			}
 		}
 		if (e.icon_rect) {
 			Size2 csz = e.content_root ? e.content_root->get_size() : er.size;
@@ -2181,12 +2222,16 @@ bool ClockGearsUiDesignLayer::update_element_geometry_fast(const String &p_elem_
 	for (int i = 0; i < elements.size(); i++) {
 		if (elements[i].id.to_lower() == target) {
 			ElementEntry &e = elements.write[i];
-			bool need_style = (int(e.config.get("corner_radius", 8)) != int(p_elem.get("corner_radius", 8)) ||
-					String(e.config.get("shape", "rect")) != String(p_elem.get("shape", "rect")) ||
+			if ((e.config.has("shape") && e.config["shape"].get_type() == Variant::DICTIONARY) != (p_elem.has("shape") && p_elem["shape"].get_type() == Variant::DICTIONARY)) {
+				return false;
+			}
+			bool need_style = (e.config.get("shape", Variant()) != p_elem.get("shape", Variant()) ||
 					String(e.config.get("window_style_id", "")) != String(p_elem.get("window_style_id", "")) ||
 					String(e.config.get("fill_color", "")) != String(p_elem.get("fill_color", "")) ||
-					int(e.config.get("border_width", 2)) != int(p_elem.get("border_width", 2)));
+					float(e.config.get("opacity", 1.0)) != float(p_elem.get("opacity", 1.0)) ||
+					bool(e.config.get("show_background", false)) != bool(p_elem.get("show_background", false)));
 			e.config = p_elem.duplicate(true);
+			e.window_style_id = String(p_elem.get("window_style_id", "")).strip_edges().to_lower();
 			e.anchor = String(p_elem.get("anchor", e.anchor));
 			e.offset_x = int(p_elem.get("offset_x", e.offset_x));
 			e.offset_y = int(p_elem.get("offset_y", e.offset_y));

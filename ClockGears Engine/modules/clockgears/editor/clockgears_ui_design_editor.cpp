@@ -1433,7 +1433,7 @@ void ClockGearsUiDesignEditor::forward_canvas_wheel(const Vector2 &p_delta, bool
 	}
 }
 
-void ClockGearsUiDesignEditor::_register_prop_filter_row(Control *p_row, const String &p_keywords, bool p_advanced_only) {
+void ClockGearsUiDesignEditor::_register_prop_filter_row(Control *p_row, const String &p_keywords, bool p_advanced_only, const String &p_elem_types) {
 	if (!p_row) {
 		return;
 	}
@@ -1441,6 +1441,7 @@ void ClockGearsUiDesignEditor::_register_prop_filter_row(Control *p_row, const S
 	ent.row = p_row;
 	ent.search_text = p_keywords.to_lower();
 	ent.advanced_only = p_advanced_only;
+	ent.elem_types = p_elem_types.strip_edges().to_lower();
 	prop_filter_entries.push_back(ent);
 }
 
@@ -2111,7 +2112,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	props_fields_box->hide();
 	props_scroll_vb->add_child(props_fields_box);
 
-	auto make_prop_row = [&](VBoxContainer *p_parent, const String &p_lbl, const String &p_tip, const String &p_kw, bool p_adv, Control *p_ctrl) {
+	auto make_prop_row = [&](VBoxContainer *p_parent, const String &p_lbl, const String &p_tip, const String &p_kw, bool p_adv, Control *p_ctrl, const String &p_elem_types = String()) {
 		HBoxContainer *hb = memnew(HBoxContainer);
 		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
@@ -2126,7 +2127,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		s_clamp_narrow_controls(p_ctrl, EDSCALE);
 		hb->add_child(p_ctrl);
 		p_parent->add_child(hb);
-		_register_prop_filter_row(hb, p_lbl + " " + p_kw, p_adv);
+		_register_prop_filter_row(hb, p_lbl + " " + p_kw, p_adv, p_elem_types);
 	};
 
 	auto add_prop_section = [&](VBoxContainer *p_parent, const String &p_title, bool p_adv_section, VBoxContainer *&r_body) {
@@ -2250,9 +2251,24 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	make_prop_row(shape_body, "Radio:", String::utf8("Redondeo instantáneo de esquinas."), "radio esquina redondeo", true, rad_hb);
 
 	prop_fill_color_btn = memnew(ColorPickerButton);
+	prop_fill_color_btn->set_edit_alpha(true);
 	prop_fill_color_btn->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
 	prop_fill_color_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(shape_body, "Color relleno:", String::utf8("Color principal del fondo del elemento."), "color relleno fondo", true, prop_fill_color_btn);
+
+	HBoxContainer *op_hb = memnew(HBoxContainer);
+	prop_opacity_slider = memnew(HSlider);
+	prop_opacity_slider->set_min(0);
+	prop_opacity_slider->set_max(100);
+	prop_opacity_slider->set_step(5);
+	prop_opacity_slider->set_value(100);
+	prop_opacity_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_opacity_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	op_hb->add_child(prop_opacity_slider);
+	prop_opacity_val_lbl = memnew(Label("100%"));
+	prop_opacity_val_lbl->set_custom_minimum_size(Size2(38 * EDSCALE, 0));
+	op_hb->add_child(prop_opacity_val_lbl);
+	make_prop_row(shape_body, "Opacidad:", String::utf8("Transparencia general del elemento (0-100%)."), "opacidad transparencia alpha", false, op_hb);
 
 	prop_recent_colors_box = memnew(HBoxContainer);
 	prop_recent_colors_box->add_theme_constant_override("separation", int(3 * EDSCALE));
@@ -2265,10 +2281,12 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	HBoxContainer *grad_cols = memnew(HBoxContainer);
 	grad_cols->add_theme_constant_override("separation", int(4 * EDSCALE));
 	prop_grad_top_btn = memnew(ColorPickerButton);
+	prop_grad_top_btn->set_edit_alpha(true);
 	prop_grad_top_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_grad_top_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	grad_cols->add_child(prop_grad_top_btn);
 	prop_grad_bot_btn = memnew(ColorPickerButton);
+	prop_grad_bot_btn->set_edit_alpha(true);
 	prop_grad_bot_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_grad_bot_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	grad_cols->add_child(prop_grad_bot_btn);
@@ -2282,6 +2300,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	make_prop_row(shape_body, "Grosor borde:", String::utf8("Anchura del borde en píxeles."), "borde grosor", true, prop_border_w_slider);
 
 	prop_border_col_btn = memnew(ColorPickerButton);
+	prop_border_col_btn->set_edit_alpha(true);
 	prop_border_col_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(shape_body, "Color borde:", String::utf8("Color del borde del elemento."), "color borde", true, prop_border_col_btn);
 
@@ -2293,6 +2312,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_glow_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	fx_hb->add_child(prop_glow_chk);
 	prop_glow_col_btn = memnew(ColorPickerButton);
+	prop_glow_col_btn->set_edit_alpha(true);
 	prop_glow_col_btn->set_custom_minimum_size(Size2(34 * EDSCALE, 24 * EDSCALE));
 	prop_glow_col_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	fx_hb->add_child(prop_glow_col_btn);
@@ -2315,7 +2335,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_text_edit->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
 	prop_text_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	prop_text_row->add_child(prop_text_edit);
-	_register_prop_filter_row(prop_text_row, "texto etiqueta titulo", false);
+	_register_prop_filter_row(prop_text_row, "texto etiqueta titulo", false, "text,button,variable,bar");
 
 	HBoxContainer *fnt_hb = memnew(HBoxContainer);
 	fnt_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
@@ -2329,18 +2349,18 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	s_make_rounded_action_btn(prop_font_import_btn);
 	prop_font_import_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_font_import_pressed));
 	fnt_hb->add_child(prop_font_import_btn);
-	make_prop_row(sec_texto_body, "Fuente:", String::utf8("Fuente importada (.ttf/.otf) para el texto."), "fuente ttf otf tipografia", true, fnt_hb);
+	make_prop_row(sec_texto_body, "Fuente:", String::utf8("Fuente importada (.ttf/.otf) para el texto."), "fuente ttf otf tipografia", true, fnt_hb, "text,button,variable,bar,currency,item");
 
 	prop_font_size_slider = memnew(HSlider);
 	prop_font_size_slider->set_min(10);
 	prop_font_size_slider->set_max(64);
 	prop_font_size_slider->set_step(1);
 	prop_font_size_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
-	make_prop_row(sec_texto_body, String::utf8("Tamaño fuente:"), String::utf8("Tamaño de letra en píxeles."), "tamano fuente letra", true, prop_font_size_slider);
+	make_prop_row(sec_texto_body, String::utf8("Tamaño fuente:"), String::utf8("Tamaño de letra en píxeles."), "tamano fuente letra", true, prop_font_size_slider, "text,button,variable,bar,currency,item");
 
 	prop_font_color_btn = memnew(ColorPickerButton);
 	prop_font_color_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
-	make_prop_row(sec_texto_body, "Color texto:", String::utf8("Color del texto."), "color texto fuente", true, prop_font_color_btn);
+	make_prop_row(sec_texto_body, "Color texto:", String::utf8("Color del texto."), "color texto fuente", true, prop_font_color_btn, "text,button,variable,bar,currency,item");
 
 	// Enlace de datos (desde catálogo)
 	prop_binding_row = memnew(VBoxContainer);
@@ -2378,7 +2398,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_item_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_item_opt_selected));
 	s_clamp_narrow_controls(prop_item_opt, EDSCALE);
 	prop_item_row->add_child(prop_item_opt);
-	_register_prop_filter_row(prop_binding_row, "enlace datos vida mana oro nivel variable objeto", false);
+	_register_prop_filter_row(prop_binding_row, "enlace datos vida mana oro nivel variable objeto", false, "text,button,variable,item,bar");
 
 	// Sección 4: Imagen
 	VBoxContainer *sec_imagen_body = nullptr;
@@ -2461,11 +2481,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		shb->add_child(sb_clr);
 		prop_btn_state_imgs_box->add_child(shb);
 	}
-	_register_prop_filter_row(prop_image_row, "imagen textura sprite icono estado normal encima pulsado desactivado", false);
+	_register_prop_filter_row(prop_image_row, "imagen textura sprite icono estado normal encima pulsado desactivado", false, "image,frame,button,currency,item");
 
 	prop_pixel_art_chk = memnew(CheckBox("Pixelado (Nearest)"));
 	prop_pixel_art_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
-	make_prop_row(sec_imagen_body, "Filtro imagen:", String::utf8("Pixelado (Nearest) o Suave interpolado (desactivado)."), "pixel art filtro imagen suave pixelado", false, prop_pixel_art_chk);
+	make_prop_row(sec_imagen_body, "Filtro imagen:", String::utf8("Pixelado (Nearest) o Suave interpolado (desactivado)."), "pixel art filtro imagen suave pixelado", false, prop_pixel_art_chk, "image,frame,button,currency,item,hearts");
 
 	// Sección 5: Acciones
 	VBoxContainer *sec_acciones_body = nullptr;
@@ -2560,7 +2580,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_vis_sw_edit->set_placeholder("interruptor");
 	prop_vis_sw_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	vis_sw_hb->add_child(prop_vis_sw_edit);
-	make_prop_row(sec_acciones_body, "Cond. visible:", String::utf8("Visibilidad según interruptor del juego."), "condicion interruptor visible", true, vis_sw_hb);
+	make_prop_row(sec_acciones_body, "Cond. visible:", String::utf8("Visibilidad según interruptor del juego."), "condicion interruptor visible", true, vis_sw_hb, "button");
 
 	HBoxContainer *en_sw_hb = memnew(HBoxContainer);
 	prop_en_mode_opt = memnew(OptionButton);
@@ -2574,8 +2594,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_en_sw_edit->set_placeholder("interruptor");
 	prop_en_sw_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	en_sw_hb->add_child(prop_en_sw_edit);
-	make_prop_row(sec_acciones_body, "Cond. activo:", String::utf8("Habilita o desactiva el botón según interruptor."), "condicion interruptor activo", true, en_sw_hb);
-	_register_prop_filter_row(prop_action_row, "accion boton foco secuencia evento", false);
+	make_prop_row(sec_acciones_body, "Cond. activo:", String::utf8("Habilita o desactiva el botón según interruptor."), "condicion interruptor activo", true, en_sw_hb, "button");
+	_register_prop_filter_row(prop_action_row, "accion boton foco secuencia evento", false, "button");
 
 	// Sección 6: Animación del elemento
 	VBoxContainer *sec_anim_body = nullptr;
@@ -4277,16 +4297,54 @@ void ClockGearsUiDesignEditor::_refresh_multi_actions_ui(const Dictionary &p_ele
 	}
 }
 
+static Dictionary s_extract_elem_shape_ui_state(ClockGearsDataManager *p_dm, const Dictionary &p_el) {
+	Dictionary sh;
+	if (p_el.has("shape") && p_el["shape"].get_type() == Variant::DICTIONARY) {
+		sh = Dictionary(p_el["shape"]).duplicate(true);
+	}
+	String ws_id = String(p_el.get("window_style_id", "")).strip_edges().to_lower();
+	Dictionary ws;
+	if (p_dm) {
+		if (!ws_id.is_empty() && ws_id != "default") {
+			ws = p_dm->get_window_style(ws_id);
+		} else {
+			ws = p_dm->get_window_style("rounded");
+		}
+	}
+	String def_shape = String(ws.get("shape_type", ws.get("border_type", "rounded"))).strip_edges().to_lower();
+	if (def_shape.is_empty() || def_shape == "none") {
+		def_shape = "rect";
+	}
+	Dictionary out;
+	out["shape_type"] = sh.has("shape_type") ? String(sh["shape_type"]) : (p_el.get("shape", Variant()).get_type() == Variant::STRING ? String(p_el["shape"]) : def_shape);
+	out["corner_radius"] = sh.has("corner_radius") ? int(sh["corner_radius"]) : int(p_el.get("corner_radius", ws.get("corner_radius", 8)));
+	out["fill_color"] = sh.has("fill_color") ? String(sh["fill_color"]) : String(p_el.get("fill_color", ws.get("fill_color", "#14171ff0")));
+	out["gradient_enabled"] = sh.has("gradient_enabled") ? bool(sh["gradient_enabled"]) : bool(p_el.get("use_gradient", ws.get("gradient_enabled", false)));
+	out["gradient_top_color"] = sh.has("gradient_top_color") ? String(sh["gradient_top_color"]) : String(p_el.get("gradient_top", ws.get("gradient_top_color", "#2b3348ff")));
+	out["gradient_bottom_color"] = sh.has("gradient_bottom_color") ? String(sh["gradient_bottom_color"]) : String(p_el.get("gradient_bottom", ws.get("gradient_bottom_color", "#181d2aff")));
+	out["border_width"] = sh.has("border_width") ? int(sh["border_width"]) : int(p_el.get("border_width", ws.get("border_width", 2)));
+	out["border_color"] = sh.has("border_color") ? String(sh["border_color"]) : String(p_el.get("border_color", ws.get("border_color", "#e0a040ff")));
+	out["shadow_enabled"] = sh.has("shadow_enabled") ? bool(sh["shadow_enabled"]) : bool(p_el.get("shadow", ws.get("shadow_enabled", false)));
+	out["glow_enabled"] = sh.has("glow_enabled") ? bool(sh["glow_enabled"]) : bool(p_el.get("glow", ws.get("glow_enabled", false)));
+	out["glow_color"] = sh.has("glow_color") ? String(sh["glow_color"]) : String(p_el.get("glow_color", ws.get("glow_color", "#f0b44cff")));
+	String eff_st = String(out["shape_type"]).strip_edges().to_lower();
+	bool def_clip = (eff_st == "circle" || eff_st == "ellipse" || eff_st == "pill" || eff_st == "rounded");
+	out["clip_content"] = sh.has("clip_content") ? bool(sh["clip_content"]) : (p_el.has("clip_content") ? bool(p_el["clip_content"]) : def_clip);
+	return out;
+}
+
 void ClockGearsUiDesignEditor::_apply_properties_filter() {
 	String q = props_search_query.strip_edges().to_lower();
+	String et = current_selected_elem_type.strip_edges().to_lower();
 	for (int i = 0; i < prop_filter_entries.size(); i++) {
 		const PropRowFilterEntry &ent = prop_filter_entries[i];
 		if (!ent.row) {
 			continue;
 		}
+		bool ok_type = ent.elem_types.is_empty() || et.is_empty() || ent.elem_types.split(",").has(et);
 		bool ok_mode = props_advanced_mode || !ent.advanced_only || !q.is_empty();
 		bool ok_query = q.is_empty() || ent.search_text.contains(q);
-		ent.row->set_visible(ok_mode && ok_query);
+		ent.row->set_visible(ok_type && ok_mode && ok_query);
 	}
 	for (int i = 0; i < prop_sections.size(); i++) {
 		const PropSectionGroup &sg = prop_sections[i];
@@ -4344,6 +4402,7 @@ void ClockGearsUiDesignEditor::_on_props_search_changed(const String &p_text) {
 void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	Dictionary el = _get_selected_element_copy();
 	if (el.is_empty()) {
+		current_selected_elem_type = "";
 		if (props_sel_lbl) {
 			props_sel_lbl->set_text(String::utf8("Selecciona un elemento o ajusta el menú abajo."));
 		}
@@ -4358,6 +4417,7 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	updating_ui = true;
 
 	String etype = String(el.get("type", "text"));
+	current_selected_elem_type = etype;
 	if (props_sel_lbl) {
 		props_sel_lbl->set_text("Tipo: " + etype + "  |  ID: " + String(el.get("id", "")));
 	}
@@ -4386,36 +4446,43 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	}
 	s_select_option_meta(prop_style_opt, String(el.get("window_style_id", "")));
 
-	s_select_option_meta(prop_shape_opt, String(el.get("shape", "rect")));
-	int crad = int(el.get("corner_radius", 8));
+	Dictionary st_ui = s_extract_elem_shape_ui_state(ClockGearsDataManager::get_singleton(), el);
+	s_select_option_meta(prop_shape_opt, String(st_ui.get("shape_type", "rounded")));
+	int crad = int(st_ui.get("corner_radius", 8));
 	if (prop_radius_slider) prop_radius_slider->set_value(crad);
 	if (prop_radius_val_lbl) prop_radius_val_lbl->set_text(itos(crad) + "px");
-	String fcol = String(el.get("fill_color", "#232a3a"));
+	int op_pct = int(Math::round(CLAMP(float(el.get("opacity", 1.0)), 0.0f, 1.0f) * 100.0f));
+	if (prop_opacity_slider) prop_opacity_slider->set_value(op_pct);
+	if (prop_opacity_val_lbl) prop_opacity_val_lbl->set_text(itos(op_pct) + "%");
+	String fcol = String(st_ui.get("fill_color", "#232a3aff"));
 	if (prop_fill_color_btn && Color::html_is_valid(fcol)) prop_fill_color_btn->set_pick_color(Color::html(fcol));
-	if (prop_grad_chk) prop_grad_chk->set_pressed(bool(el.get("use_gradient", false)));
-	String gt = String(el.get("gradient_top", "#2b3348"));
-	String gb = String(el.get("gradient_bottom", "#181d2a"));
+	if (prop_grad_chk) prop_grad_chk->set_pressed(bool(st_ui.get("gradient_enabled", false)));
+	String gt = String(st_ui.get("gradient_top_color", "#2b3348ff"));
+	String gb = String(st_ui.get("gradient_bottom_color", "#181d2aff"));
 	if (prop_grad_top_btn && Color::html_is_valid(gt)) prop_grad_top_btn->set_pick_color(Color::html(gt));
 	if (prop_grad_bot_btn && Color::html_is_valid(gb)) prop_grad_bot_btn->set_pick_color(Color::html(gb));
-	if (prop_border_w_slider) prop_border_w_slider->set_value(int(el.get("border_width", 2)));
-	String bcol = String(el.get("border_color", "#d8a040"));
+	if (prop_border_w_slider) prop_border_w_slider->set_value(int(st_ui.get("border_width", 2)));
+	String bcol = String(st_ui.get("border_color", "#d8a040ff"));
 	if (prop_border_col_btn && Color::html_is_valid(bcol)) prop_border_col_btn->set_pick_color(Color::html(bcol));
-	if (prop_shadow_chk) prop_shadow_chk->set_pressed(bool(el.get("shadow", false)));
-	if (prop_glow_chk) prop_glow_chk->set_pressed(bool(el.get("glow", false)));
-	String gcol = String(el.get("glow_color", "#f0b44c"));
+	if (prop_shadow_chk) prop_shadow_chk->set_pressed(bool(st_ui.get("shadow_enabled", false)));
+	if (prop_glow_chk) prop_glow_chk->set_pressed(bool(st_ui.get("glow_enabled", false)));
+	String gcol = String(st_ui.get("glow_color", "#f0b44cff"));
 	if (prop_glow_col_btn && Color::html_is_valid(gcol)) prop_glow_col_btn->set_pick_color(Color::html(gcol));
-	if (prop_clip_chk) prop_clip_chk->set_pressed(bool(el.get("clip_content", false)));
+	if (prop_clip_chk) prop_clip_chk->set_pressed(bool(st_ui.get("clip_content", false)));
 	if (prop_pixel_art_chk) prop_pixel_art_chk->set_pressed(bool(el.get("pixel_art", true)));
 	if (prop_anim_opt) s_select_option_meta(prop_anim_opt, String(el.get("in_anim", "none")));
 	_refresh_recent_colors_palette();
 
 	bool has_text = (etype == "text" || etype == "button" || etype == "variable" || etype == "bar");
+	bool has_font = (has_text || etype == "currency" || etype == "item");
 	prop_text_row->set_visible(has_text);
 	if (has_text) {
 		prop_text_edit->set_text(etype == "bar" ? String(el.get("label_text", "")) : String(el.get("text", "")));
+	}
+	if (has_font) {
 		s_select_option_meta(prop_font_opt, String(el.get("font_path", "")));
 		if (prop_font_size_slider) prop_font_size_slider->set_value(int(el.get("font_size", 16)));
-		String tcol = String(el.get("font_color", "#f5f2ea"));
+		String tcol = String(el.get("font_color", "#f5f2eaff"));
 		if (prop_font_color_btn && Color::html_is_valid(tcol)) prop_font_color_btn->set_pick_color(Color::html(tcol));
 	}
 
@@ -6236,7 +6303,8 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 			old_vis == prop_visible_chk->is_pressed() &&
 			(!prop_locked_chk || bool(el.get("locked", false)) == prop_locked_chk->is_pressed()) &&
 			was_custom &&
-			(!prop_show_bg_chk || bool(el.get("show_background", true)) == prop_show_bg_chk->is_pressed()));
+			(!prop_show_bg_chk || bool(el.get("show_background", false)) == prop_show_bg_chk->is_pressed()) &&
+			(!prop_opacity_slider || int(Math::round(float(el.get("opacity", 1.0)) * 100.0f)) == int(Math::round(prop_opacity_slider->get_value()))));
 	el["name"] = prop_name_edit->get_text();
 	el["offset_x"] = int(Math::round(prop_ox_spin->get_value()));
 	el["offset_y"] = int(Math::round(prop_oy_spin->get_value()));
@@ -6250,46 +6318,82 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 	if (prop_show_bg_chk) {
 		el["show_background"] = prop_show_bg_chk->is_pressed();
 	}
+	if (prop_opacity_slider) {
+		int op_pct = CLAMP(int(Math::round(prop_opacity_slider->get_value())), 0, 100);
+		el["opacity"] = double(op_pct) / 100.0;
+		if (prop_opacity_val_lbl) prop_opacity_val_lbl->set_text(itos(op_pct) + "%");
+	}
+	bool style_changed = false;
 	if (prop_style_opt && prop_style_opt->get_selected() >= 0) {
 		String next_ws = String(prop_style_opt->get_item_metadata(prop_style_opt->get_selected()));
 		if (String(el.get("window_style_id", "")) != next_ws) {
 			only_geom = false;
+			style_changed = true;
 		}
 		el["window_style_id"] = next_ws;
 	}
+	Dictionary base_sh = s_extract_elem_shape_ui_state(dm, el);
+	Dictionary next_sh = base_sh.duplicate(true);
 	if (prop_shape_opt && prop_shape_opt->get_selected() >= 0) {
-		String nsh = String(prop_shape_opt->get_item_metadata(prop_shape_opt->get_selected()));
-		if (String(el.get("shape", "rect")) != nsh) only_geom = false;
-		el["shape"] = nsh;
+		next_sh["shape_type"] = String(prop_shape_opt->get_item_metadata(prop_shape_opt->get_selected()));
 	}
 	if (prop_radius_slider) {
 		int nr = int(Math::round(prop_radius_slider->get_value()));
-		if (int(el.get("corner_radius", 8)) != nr) only_geom = false;
-		el["corner_radius"] = nr;
+		next_sh["corner_radius"] = nr;
 		if (prop_radius_val_lbl) prop_radius_val_lbl->set_text(itos(nr) + "px");
 	}
 	if (prop_fill_color_btn) {
-		String fc = "#" + prop_fill_color_btn->get_pick_color().to_html(false);
-		if (String(el.get("fill_color", "")) != fc) {
-			only_geom = false;
+		String fc = "#" + prop_fill_color_btn->get_pick_color().to_html(true);
+		if (String(base_sh.get("fill_color", "")) != fc) {
 			dm->record_recent_ui_color(fc);
+			if (etype == "bar") {
+				el["fill_color"] = fc;
+				only_geom = false;
+			}
 		}
-		el["fill_color"] = fc;
+		next_sh["fill_color"] = fc;
 	}
-	if (prop_grad_chk) {
-		bool ng = prop_grad_chk->is_pressed();
-		if (bool(el.get("use_gradient", false)) != ng) only_geom = false;
-		el["use_gradient"] = ng;
+	if (prop_grad_chk) next_sh["gradient_enabled"] = prop_grad_chk->is_pressed();
+	if (prop_grad_top_btn) next_sh["gradient_top_color"] = "#" + prop_grad_top_btn->get_pick_color().to_html(true);
+	if (prop_grad_bot_btn) next_sh["gradient_bottom_color"] = "#" + prop_grad_bot_btn->get_pick_color().to_html(true);
+	if (prop_border_w_slider) next_sh["border_width"] = int(Math::round(prop_border_w_slider->get_value()));
+	if (prop_border_col_btn) next_sh["border_color"] = "#" + prop_border_col_btn->get_pick_color().to_html(true);
+	if (prop_shadow_chk) next_sh["shadow_enabled"] = prop_shadow_chk->is_pressed();
+	if (prop_glow_chk) next_sh["glow_enabled"] = prop_glow_chk->is_pressed();
+	if (prop_glow_col_btn) next_sh["glow_color"] = "#" + prop_glow_col_btn->get_pick_color().to_html(true);
+	if (prop_clip_chk) next_sh["clip_content"] = prop_clip_chk->is_pressed();
+	if (prop_pixel_art_chk) {
+		bool pa = prop_pixel_art_chk->is_pressed();
+		if (bool(el.get("pixel_art", true)) != pa) only_geom = false;
+		el["pixel_art"] = pa;
+		next_sh["pixel_art"] = pa;
 	}
-	if (prop_grad_top_btn) el["gradient_top"] = "#" + prop_grad_top_btn->get_pick_color().to_html(false);
-	if (prop_grad_bot_btn) el["gradient_bottom"] = "#" + prop_grad_bot_btn->get_pick_color().to_html(false);
-	if (prop_border_w_slider) el["border_width"] = int(Math::round(prop_border_w_slider->get_value()));
-	if (prop_border_col_btn) el["border_color"] = "#" + prop_border_col_btn->get_pick_color().to_html(false);
-	if (prop_shadow_chk) el["shadow"] = prop_shadow_chk->is_pressed();
-	if (prop_glow_chk) el["glow"] = prop_glow_chk->is_pressed();
-	if (prop_glow_col_btn) el["glow_color"] = "#" + prop_glow_col_btn->get_pick_color().to_html(false);
-	if (prop_clip_chk) el["clip_content"] = prop_clip_chk->is_pressed();
-	if (prop_pixel_art_chk) el["pixel_art"] = prop_pixel_art_chk->is_pressed();
+	if (style_changed) {
+		// Al cambiar de Estilo del tema, limpiar la forma personalizada anterior salvo que el usuario la esté editando aparte
+		el.erase("shape");
+		only_geom = false;
+	} else {
+		bool shape_touched = (el.has("shape") && el["shape"].get_type() == Variant::DICTIONARY);
+		if (!shape_touched) {
+			Array s_keys = next_sh.keys();
+			for (int k = 0; k < s_keys.size(); k++) {
+				Variant kk = s_keys[k];
+				if (kk == "pixel_art") continue;
+				if (base_sh.get(kk, Variant()) != next_sh.get(kk, Variant())) {
+					shape_touched = true;
+					break;
+				}
+			}
+		}
+		if (shape_touched) {
+			Dictionary prev_sh = (el.has("shape") && el["shape"].get_type() == Variant::DICTIONARY) ? Dictionary(el["shape"]) : Dictionary();
+			Dictionary norm_sh = ClockGearsDataManager::normalize_ui_shape(next_sh);
+			if (prev_sh != norm_sh) {
+				only_geom = false;
+			}
+			el["shape"] = norm_sh;
+		}
+	}
 	if (prop_anim_opt && prop_anim_opt->get_selected() >= 0) {
 		el["in_anim"] = String(prop_anim_opt->get_item_metadata(prop_anim_opt->get_selected()));
 	}
@@ -6302,17 +6406,22 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 			if (String(el.get("text", "")) != prop_text_edit->get_text()) only_geom = false;
 			el["text"] = prop_text_edit->get_text();
 		}
+	}
+	if (etype == "text" || etype == "button" || etype == "variable" || etype == "bar" || etype == "currency" || etype == "item") {
 		if (prop_font_opt && prop_font_opt->get_selected() >= 0) {
-			el["font_path"] = String(prop_font_opt->get_item_metadata(prop_font_opt->get_selected()));
-			only_geom = false;
+			String nf = String(prop_font_opt->get_item_metadata(prop_font_opt->get_selected()));
+			if (String(el.get("font_path", "")) != nf) only_geom = false;
+			el["font_path"] = nf;
 		}
 		if (prop_font_size_slider) {
-			el["font_size"] = int(Math::round(prop_font_size_slider->get_value()));
-			only_geom = false;
+			int nfs = int(Math::round(prop_font_size_slider->get_value()));
+			if (int(el.get("font_size", 16)) != nfs) only_geom = false;
+			el["font_size"] = nfs;
 		}
 		if (prop_font_color_btn) {
-			el["font_color"] = "#" + prop_font_color_btn->get_pick_color().to_html(false);
-			only_geom = false;
+			String nfc = "#" + prop_font_color_btn->get_pick_color().to_html(true);
+			if (String(el.get("font_color", "")) != nfc) only_geom = false;
+			el["font_color"] = nfc;
 		}
 	}
 	if (prop_image_row->is_visible()) {
@@ -6880,6 +6989,25 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["props_search_edit"] = props_search_edit;
 	out["prop_shape_opt"] = prop_shape_opt;
 	out["prop_radius_slider"] = prop_radius_slider;
+	out["prop_opacity_slider"] = prop_opacity_slider;
+	out["prop_fill_color_btn"] = prop_fill_color_btn;
+	out["prop_grad_chk"] = prop_grad_chk;
+	out["prop_grad_top_btn"] = prop_grad_top_btn;
+	out["prop_grad_bot_btn"] = prop_grad_bot_btn;
+	out["prop_border_w_slider"] = prop_border_w_slider;
+	out["prop_border_col_btn"] = prop_border_col_btn;
+	out["prop_shadow_chk"] = prop_shadow_chk;
+	out["prop_glow_chk"] = prop_glow_chk;
+	out["prop_glow_col_btn"] = prop_glow_col_btn;
+	out["prop_clip_chk"] = prop_clip_chk;
+	out["prop_show_bg_chk"] = prop_show_bg_chk;
+	out["prop_font_opt"] = prop_font_opt;
+	out["prop_font_size_slider"] = prop_font_size_slider;
+	out["prop_font_color_btn"] = prop_font_color_btn;
+	out["prop_text_row"] = prop_text_row;
+	out["prop_image_row"] = prop_image_row;
+	out["prop_action_row"] = prop_action_row;
+	out["prop_binding_row"] = prop_binding_row;
 	out["menu_props_box"] = menu_props_box;
 	out["zoom_1_btn"] = zoom_btns[0];
 	out["zoom_2_btn"] = zoom_btns[1];

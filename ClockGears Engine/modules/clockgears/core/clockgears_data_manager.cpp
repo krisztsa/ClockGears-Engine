@@ -6030,9 +6030,6 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	out["visible"] = p_elem.has("visible") ? bool(p_elem["visible"]) : true;
 
 	String ws = String(p_elem.get("window_style_id", def.get("window_style_id", ""))).strip_edges().to_lower();
-	if (ws == "none") {
-		ws = "";
-	}
 	out["window_style_id"] = ws;
 	out["pixel_art"] = p_elem.has("pixel_art") ? bool(p_elem["pixel_art"]) : true;
 	String vis_m = String(p_elem.get("visibility_mode", "always")).strip_edges().to_lower();
@@ -6112,6 +6109,12 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	}
 	if (p_elem.has("locked")) {
 		out["locked"] = bool(p_elem["locked"]);
+	}
+	if (p_elem.has("opacity") || !out.has("opacity")) {
+		out["opacity"] = CLAMP(double(p_elem.get("opacity", out.get("opacity", 1.0))), 0.0, 1.0);
+	}
+	if (p_elem.has("show_background")) {
+		out["show_background"] = bool(p_elem["show_background"]);
 	}
 	if (etype == "widget") {
 		String wk = String(p_elem.get("widget_kind", def.get("widget_kind", "party_list"))).strip_edges().to_lower();

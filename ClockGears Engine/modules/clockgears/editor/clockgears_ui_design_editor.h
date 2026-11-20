@@ -276,6 +276,7 @@ private:
 	// Panel de propiedades (4C: Simple/Avanzado, Buscador, Secciones plegables, Sliders, Selectores)
 	bool props_advanced_mode = false;
 	String props_search_query;
+	String current_selected_elem_type;
 	Button *props_mode_simple_btn = nullptr;
 	Button *props_mode_adv_btn = nullptr;
 	LineEdit *props_search_edit = nullptr;
@@ -285,6 +286,7 @@ private:
 		Control *row = nullptr;
 		String search_text;
 		bool advanced_only = false;
+		String elem_types; // CSV de tipos aplicables; vacío = todos
 	};
 	struct PropSectionGroup {
 		Button *header = nullptr;
@@ -321,6 +323,8 @@ private:
 	OptionButton *prop_shape_opt = nullptr;
 	HSlider *prop_radius_slider = nullptr;
 	Label *prop_radius_val_lbl = nullptr;
+	HSlider *prop_opacity_slider = nullptr;
+	Label *prop_opacity_val_lbl = nullptr;
 	ColorPickerButton *prop_fill_color_btn = nullptr;
 	HBoxContainer *prop_recent_colors_box = nullptr;
 	CheckBox *prop_grad_chk = nullptr;
@@ -538,7 +542,7 @@ private:
 	void _refresh_recent_colors_palette();
 	void _refresh_image_thumbs_gallery();
 	void _apply_properties_filter();
-	void _register_prop_filter_row(Control *p_row, const String &p_keywords, bool p_advanced_only);
+	void _register_prop_filter_row(Control *p_row, const String &p_keywords, bool p_advanced_only, const String &p_elem_types = String());
 	void _refresh_style_binding_action_options();
 	void _refresh_undo_redo_buttons();
 	void _notify_data_mutated(bool p_mark_dirty = true);
