@@ -1430,6 +1430,9 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 			ui_design_editor_panel->adapt_to_width(int(get_size().x));
 		}
 	}
+	if (main_editor_tabs) {
+		main_editor_tabs->set_visible(!is_ui_designer);
+	}
 	if (is_game_over) {
 		_setup_game_over_editor_ui();
 	}
@@ -5741,7 +5744,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	// ========================================================================
 	// MAIN AREA: SOLO DOS COLUMNAS (Columna 1: Lista | Columna 2: Editor)
 	// ========================================================================
-	HBoxContainer *two_col_hbox = memnew(HBoxContainer);
+	two_col_hbox = memnew(HBoxContainer);
 	two_col_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	two_col_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	two_col_hbox->add_theme_constant_override("separation", int(12 * EDSCALE));
@@ -21903,16 +21906,21 @@ Dictionary ClockGearsDatabaseDialog::get_hud_editor_ui_handles() {
 }
 
 void ClockGearsDatabaseDialog::_setup_ui_design_editor_ui() {
-	if (ui_design_editor_panel || !col2_box) {
+	if (ui_design_editor_panel || !two_col_hbox) {
 		return;
 	}
 	ui_design_editor_panel = memnew(ClockGearsUiDesignEditor);
 	ui_design_editor_panel->set_owner_database(this);
+	ui_design_editor_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ui_design_editor_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	ui_design_editor_panel->hide();
 	ui_design_editor_panel->connect("design_modified", callable_mp(this, &ClockGearsDatabaseDialog::_on_ui_designer_modified));
-	col2_box->add_child(ui_design_editor_panel);
+	two_col_hbox->add_child(ui_design_editor_panel);
 	if (menus_common_preview_res != Vector2i(960, 540)) {
 		ui_design_editor_panel->set_preview_resolution(menus_common_preview_res.x, menus_common_preview_res.y, false);
+	}
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_control(ui_design_editor_panel);
 	}
 }
 

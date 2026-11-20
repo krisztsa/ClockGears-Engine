@@ -95,8 +95,20 @@ else:
     prog = env.add_program("#bin/clockgears", sources, PROGSUFFIX=env["PROGSUFFIX"])
 arrange_program_clean(prog)
 
-env.AddPostAction(prog, Copy("#ClockGears Engine.exe", prog[0]))
-env.AddPostAction(prog, Copy("#ClockGears.exe", prog[0]))
+def _cg_try_copy_root_binary(dst_name):
+    def _action(target, source, env):
+        import shutil
+        src_path = target[0].get_abspath()
+        dst_path = File(dst_name).get_abspath()
+        try:
+            shutil.copy2(src_path, dst_path)
+        except OSError as err:
+            print(f"[AVISO] No se pudo copiar a {dst_path} (archivo en uso): {err}. Ejecuta tests desde bin\\clockgears.windows.editor.x86_64.console.exe")
+        return 0
+    return _action
+
+env.AddPostAction(prog, Action(_cg_try_copy_root_binary("#ClockGears Engine.exe"), None))
+env.AddPostAction(prog, Action(_cg_try_copy_root_binary("#ClockGears.exe"), None))
 
 env.Depends(prog, "godot.manifest")
 if env.msvc:

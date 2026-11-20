@@ -96,6 +96,8 @@ private:
 
 	void _on_brass_control_hover_entered(ObjectID p_id);
 	void _on_brass_tab_changed(int p_tab, ObjectID p_id);
+	void _on_input_hover_entered(ObjectID p_id);
+	void _on_input_hover_exited(ObjectID p_id);
 
 protected:
 	static void _bind_methods();
@@ -136,6 +138,7 @@ public:
 	static float compute_contrast_ratio(const Color &p_fg, const Color &p_bg);
 	Dictionary inspect_theme_metrics(const String &p_theme_id = "");
 	Dictionary check_tree_legibility_and_layout(Node *p_root, const Vector2i &p_viewport_size = Vector2i(1366, 768));
+	Dictionary audit_inputs_and_popups_in_tree(Node *p_root);
 
 	static Ref<StyleBoxFlat> make_card_stylebox(float p_scale = 1.0f);
 	static Ref<StyleBoxFlat> make_input_stylebox(bool p_has_error, bool p_focused, float p_scale = 1.0f);

@@ -54,7 +54,7 @@ void ClockGearsFormulaLineEdit::_update_visual_state() {
 			set_right_icon(ClockGearsIcons::get_singleton()->get_icon("ok", CG_WSCALE));
 		}
 	} else {
-		add_theme_color_override("font_color", is_brass ? Color::html("#ff9e96") : ClockGearsTheme::color_error());
+		add_theme_color_override("font_color", Color::html("#ff9e96"));
 		set_tooltip_text(vformat(String::utf8("Error de sintaxis: %s"), last_error_message));
 		if (ClockGearsIcons::get_singleton()) {
 			set_right_icon(ClockGearsIcons::get_singleton()->get_icon("error", CG_WSCALE));

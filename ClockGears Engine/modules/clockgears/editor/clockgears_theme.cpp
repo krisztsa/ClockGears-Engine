@@ -122,6 +122,8 @@ Ref<StyleBoxFlat> ClockGearsTheme::make_card_stylebox(float p_scale) {
 
 Ref<StyleBoxFlat> ClockGearsTheme::make_input_stylebox(bool p_has_error, bool p_focused, float p_scale) {
 	const bool is_brass = (singleton && singleton->get_active_theme_id() == "brass");
+	const Color copper = is_brass ? color_brass_border() : color_accent_amber();
+	const Color copper_bright = color_brass_accent();
 	Ref<StyleBoxFlat> sb;
 	sb.instantiate();
 	sb->set_anti_aliased(true);
@@ -129,10 +131,20 @@ Ref<StyleBoxFlat> ClockGearsTheme::make_input_stylebox(bool p_has_error, bool p_
 		sb->set_bg_color(is_brass ? Color(0.19f, 0.07f, 0.07f, 1.0f) : Color(0.28f, 0.12f, 0.12f, 1.0f));
 		sb->set_border_width_all(1);
 		sb->set_border_color(is_brass ? Color::html("#ff8278") : color_error());
+		if (p_focused) {
+			sb->set_shadow_color(Color(color_error().r, color_error().g, color_error().b, 0.36f));
+			sb->set_shadow_size(int(4 * p_scale));
+			sb->set_shadow_offset(Vector2(0, 0));
+		}
 	} else {
-		sb->set_bg_color(is_brass ? color_brass_input() : Color::html("#16181d"));
+		sb->set_bg_color(is_brass ? color_brass_input() : color_panel());
 		sb->set_border_width_all(1);
-		sb->set_border_color(p_focused ? (is_brass ? color_brass_accent() : color_accent_amber()) : (is_brass ? Color(color_brass_border().r, color_brass_border().g, color_brass_border().b, 0.45f) : Color(1.0f, 1.0f, 1.0f, 0.14f)));
+		sb->set_border_color(p_focused ? copper_bright : Color(copper.r, copper.g, copper.b, 0.58f));
+		if (p_focused) {
+			sb->set_shadow_color(Color(copper_bright.r, copper_bright.g, copper_bright.b, 0.36f));
+			sb->set_shadow_size(int(4 * p_scale));
+			sb->set_shadow_offset(Vector2(0, 0));
+		}
 	}
 	sb->set_corner_radius_all(int(6 * p_scale));
 	sb->set_content_margin_individual(int(8 * p_scale), int(6 * p_scale), int(8 * p_scale), int(6 * p_scale));
@@ -289,23 +301,27 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 		th->set_constant("h_separation", ctype, m8);
 	}
 
-	// 3c. PopupMenu (desplegables y menús)
+	// 3c. PopupMenu (desplegables, contextuales y menú Juego: fondo panel azulado y borde cobrizo redondeado)
+	const Color copper = p_light ? Color(0.75f, 0.50f, 0.16f, 0.72f) : Color(accent.r, accent.g, accent.b, 0.68f);
 	Ref<StyleBoxFlat> pop_panel;
 	pop_panel.instantiate();
 	pop_panel->set_anti_aliased(true);
-	pop_panel->set_bg_color(p_light ? Color::html("#ffffff") : Color::html("#1d2028"));
+	pop_panel->set_bg_color(p_light ? Color::html("#ffffff") : color_panel());
 	pop_panel->set_corner_radius_all(r6);
 	pop_panel->set_border_width_all(1);
-	pop_panel->set_border_color(p_light ? Color(0, 0, 0, 0.18f) : Color(1, 1, 1, 0.14f));
+	pop_panel->set_border_color(copper);
 	pop_panel->set_content_margin_all(m6);
+	pop_panel->set_shadow_color(Color(0.0f, 0.0f, 0.0f, 0.36f));
+	pop_panel->set_shadow_size(int(5 * p_scale));
+	pop_panel->set_shadow_offset(Vector2(0, 2 * p_scale));
 
 	Ref<StyleBoxFlat> pop_hover;
 	pop_hover.instantiate();
 	pop_hover->set_anti_aliased(true);
-	pop_hover->set_bg_color(Color(accent.r, accent.g, accent.b, 0.20f));
+	pop_hover->set_bg_color(Color(accent.r, accent.g, accent.b, 0.22f));
 	pop_hover->set_corner_radius_all(r6);
 	pop_hover->set_border_width_all(1);
-	pop_hover->set_border_color(Color(accent.r, accent.g, accent.b, 0.70f));
+	pop_hover->set_border_color(Color(accent.r, accent.g, accent.b, 0.85f));
 	pop_hover->set_content_margin_individual(m8, m4, m8, m4);
 
 	th->set_stylebox("panel", "PopupMenu", pop_panel);
@@ -315,63 +331,103 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_color("font_disabled_color", "PopupMenu", txt_dis);
 	th->set_color("font_accelerator_color", "PopupMenu", txt_sec);
 
-	// 4. LineEdit, TextEdit & SpinBox
-	Ref<StyleBoxFlat> le_normal = make_input_stylebox(false, false, p_scale);
-	if (p_light) {
-		le_normal->set_bg_color(Color::html("#ffffff"));
-		le_normal->set_border_color(Color(0, 0, 0, 0.18f));
-	}
-	Ref<StyleBoxFlat> le_focus = make_input_stylebox(false, true, p_scale);
-	if (p_light) {
-		le_focus->set_bg_color(Color::html("#ffffff"));
-	}
+	// 3d. TooltipPanel + TooltipLabel (mismo borde redondeado cobrizo y fondo de paneles)
+	Ref<StyleBoxFlat> tt_panel = pop_panel->duplicate();
+	tt_panel->set_content_margin_all(m8);
+	tt_panel->set_shadow_size(int(4 * p_scale));
+	th->set_type_variation("TooltipPanel", "PopupPanel");
+	th->set_stylebox("panel", "TooltipPanel", tt_panel);
+	th->set_type_variation("TooltipLabel", "Label");
+	th->set_color("font_color", "TooltipLabel", txt);
+	th->set_color("font_shadow_color", "TooltipLabel", Color(0, 0, 0, 0));
+
+	// 4. LineEdit, TextEdit & SpinBox (normal, hover, focus + resplandor, disabled, read_only; contraste >= 4.5:1)
+	const Color in_bg = p_light ? Color::html("#f4f6fa") : color_panel();
+	const Color in_hover_bg = p_light ? Color::html("#ffffff") : Color::html("#2a2e38");
+	const Color in_ro_bg = p_light ? Color::html("#e8ebf2") : Color::html("#1b1e25");
+	const Color in_dis_bg = p_light ? Color::html("#eef0f5") : Color::html("#181a20");
+	const Color in_help_col = p_light ? Color::html("#4d5462") : Color::html("#a2a9b5");
+	const Color copper_norm = p_light ? Color(0.75f, 0.50f, 0.16f, 0.65f) : Color(accent.r, accent.g, accent.b, 0.58f);
+	const Color copper_hov = p_light ? Color(0.82f, 0.55f, 0.18f, 0.90f) : Color(accent.r, accent.g, accent.b, 0.88f);
+	const Color copper_foc = color_brass_accent();
+
+	Ref<StyleBoxFlat> le_normal;
+	le_normal.instantiate();
+	le_normal->set_anti_aliased(true);
+	le_normal->set_bg_color(in_bg);
+	le_normal->set_border_width_all(1);
+	le_normal->set_border_color(copper_norm);
+	le_normal->set_corner_radius_all(r6);
+	le_normal->set_content_margin_individual(m8, m6, m8, m6);
+
+	Ref<StyleBoxFlat> le_hover = le_normal->duplicate();
+	le_hover->set_bg_color(in_hover_bg);
+	le_hover->set_border_color(copper_hov);
+
+	Ref<StyleBoxFlat> le_focus = le_normal->duplicate();
+	le_focus->set_bg_color(in_bg);
+	le_focus->set_border_color(copper_foc);
+	le_focus->set_shadow_color(Color(copper_foc.r, copper_foc.g, copper_foc.b, 0.36f));
+	le_focus->set_shadow_size(int(4 * p_scale));
+	le_focus->set_shadow_offset(Vector2(0, 0));
+
 	Ref<StyleBoxFlat> le_ro = le_normal->duplicate();
-	le_ro->set_bg_color(p_light ? Color::html("#eef0f4") : Color::html("#13151a"));
-	le_ro->set_border_color(Color(1, 1, 1, 0.08f));
+	le_ro->set_bg_color(in_ro_bg);
+	le_ro->set_border_color(Color(accent.r, accent.g, accent.b, 0.30f));
+
+	Ref<StyleBoxFlat> le_dis = le_normal->duplicate();
+	le_dis->set_bg_color(in_dis_bg);
+	le_dis->set_border_color(Color(accent.r, accent.g, accent.b, 0.20f));
 
 	th->set_stylebox("normal", "LineEdit", le_normal);
+	th->set_stylebox("hover", "LineEdit", le_hover);
 	th->set_stylebox("focus", "LineEdit", le_focus);
 	th->set_stylebox("read_only", "LineEdit", le_ro);
+	th->set_stylebox("disabled", "LineEdit", le_dis);
 	th->set_color("font_color", "LineEdit", txt);
-	th->set_color("font_uneditable_color", "LineEdit", txt_sec);
-	th->set_color("font_placeholder_color", "LineEdit", txt_sec);
-	th->set_color("caret_color", "LineEdit", accent);
+	th->set_color("font_uneditable_color", "LineEdit", in_help_col);
+	th->set_color("font_placeholder_color", "LineEdit", in_help_col);
+	th->set_color("caret_color", "LineEdit", copper_foc);
 	th->set_color("selection_color", "LineEdit", Color(accent.r, accent.g, accent.b, 0.32f));
 
 	th->set_stylebox("normal", "TextEdit", le_normal);
+	th->set_stylebox("hover", "TextEdit", le_hover);
 	th->set_stylebox("focus", "TextEdit", le_focus);
 	th->set_stylebox("read_only", "TextEdit", le_ro);
+	th->set_stylebox("disabled", "TextEdit", le_dis);
 	th->set_color("font_color", "TextEdit", txt);
-	th->set_color("font_readonly_color", "TextEdit", txt_sec);
-	th->set_color("caret_color", "TextEdit", accent);
+	th->set_color("font_readonly_color", "TextEdit", in_help_col);
+	th->set_color("font_placeholder_color", "TextEdit", in_help_col);
+	th->set_color("caret_color", "TextEdit", copper_foc);
+	th->set_color("selection_color", "TextEdit", Color(accent.r, accent.g, accent.b, 0.32f));
 
-	Ref<StyleBoxFlat> sb_up_norm = btn_normal->duplicate();
+	Ref<StyleBoxFlat> sb_up_norm = le_normal->duplicate();
 	sb_up_norm->set_corner_radius_all(0);
 	sb_up_norm->set_corner_radius(CORNER_TOP_RIGHT, r6);
 	sb_up_norm->set_content_margin_all(m4);
 	Ref<StyleBoxFlat> sb_up_hov = sb_up_norm->duplicate();
-	sb_up_hov->set_bg_color(btn_hover->get_bg_color());
-	sb_up_hov->set_border_color(Color(accent.r, accent.g, accent.b, 0.65f));
+	sb_up_hov->set_bg_color(in_hover_bg);
+	sb_up_hov->set_border_color(copper_hov);
 	Ref<StyleBoxFlat> sb_up_prs = sb_up_norm->duplicate();
 	sb_up_prs->set_bg_color(btn_pressed->get_bg_color());
-	sb_up_prs->set_border_color(accent);
+	sb_up_prs->set_border_color(copper_foc);
 	Ref<StyleBoxFlat> sb_up_dis = sb_up_norm->duplicate();
-	sb_up_dis->set_bg_color(btn_disabled->get_bg_color());
-	sb_up_dis->set_border_color(btn_disabled->get_border_color());
+	sb_up_dis->set_bg_color(in_dis_bg);
+	sb_up_dis->set_border_color(Color(accent.r, accent.g, accent.b, 0.20f));
 
-	Ref<StyleBoxFlat> sb_dn_norm = btn_normal->duplicate();
+	Ref<StyleBoxFlat> sb_dn_norm = le_normal->duplicate();
 	sb_dn_norm->set_corner_radius_all(0);
 	sb_dn_norm->set_corner_radius(CORNER_BOTTOM_RIGHT, r6);
 	sb_dn_norm->set_content_margin_all(m4);
 	Ref<StyleBoxFlat> sb_dn_hov = sb_dn_norm->duplicate();
-	sb_dn_hov->set_bg_color(btn_hover->get_bg_color());
-	sb_dn_hov->set_border_color(Color(accent.r, accent.g, accent.b, 0.65f));
+	sb_dn_hov->set_bg_color(in_hover_bg);
+	sb_dn_hov->set_border_color(copper_hov);
 	Ref<StyleBoxFlat> sb_dn_prs = sb_dn_norm->duplicate();
 	sb_dn_prs->set_bg_color(btn_pressed->get_bg_color());
-	sb_dn_prs->set_border_color(accent);
+	sb_dn_prs->set_border_color(copper_foc);
 	Ref<StyleBoxFlat> sb_dn_dis = sb_dn_norm->duplicate();
-	sb_dn_dis->set_bg_color(btn_disabled->get_bg_color());
-	sb_dn_dis->set_border_color(btn_disabled->get_border_color());
+	sb_dn_dis->set_bg_color(in_dis_bg);
+	sb_dn_dis->set_border_color(Color(accent.r, accent.g, accent.b, 0.20f));
 
 	th->set_stylebox("up_background", "SpinBox", sb_up_norm);
 	th->set_stylebox("up_background_hovered", "SpinBox", sb_up_hov);
@@ -835,29 +891,48 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_color("font_disabled_color", "PopupMenu", txt_dis);
 	th->set_color("font_accelerator_color", "PopupMenu", txt_sec);
 
-	// 4. LineEdit, TextEdit & SpinBox (campos redondeados, hundimiento suave y resplandor al enfocar)
+	// 3d. TooltipPanel + TooltipLabel (mismo estilo Latón)
+	Ref<ClockGearsBrassStyleBox> tt_brass = pop_panel->duplicate();
+	tt_brass->set_content_margin_all(m8);
+	th->set_type_variation("TooltipPanel", "PopupPanel");
+	th->set_stylebox("panel", "TooltipPanel", tt_brass);
+	th->set_type_variation("TooltipLabel", "Label");
+	th->set_color("font_color", "TooltipLabel", txt);
+	th->set_color("font_shadow_color", "TooltipLabel", Color(0, 0, 0, 0));
+
+	// 4. LineEdit, TextEdit & SpinBox (normal, hover, focus + resplandor, read_only, disabled)
 	Ref<ClockGearsBrassStyleBox> le_normal;
 	le_normal.instantiate();
 	le_normal->set_anti_aliased(true);
 	le_normal->set_bg_color(input_col);
 	le_normal->set_corner_radius_all(r6);
 	le_normal->set_border_width_all(1);
-	le_normal->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.45f));
+	le_normal->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.58f));
 	le_normal->set_content_margin_individual(m8, m6, m8, m6);
 	le_normal->set_sunken_style(true);
 
+	Ref<ClockGearsBrassStyleBox> le_hover = le_normal->duplicate();
+	le_hover->set_bg_color(Color::html("#1d1914"));
+	le_hover->set_border_color(Color(accent.r, accent.g, accent.b, 0.86f));
+
 	Ref<ClockGearsBrassStyleBox> le_focus = le_normal->duplicate();
 	le_focus->set_border_color(accent);
-	le_focus->set_shadow_color(Color(accent.r, accent.g, accent.b, 0.36f));
+	le_focus->set_shadow_color(Color(accent.r, accent.g, accent.b, 0.38f));
 	le_focus->set_shadow_size(int(4 * p_scale));
 
 	Ref<ClockGearsBrassStyleBox> le_ro = le_normal->duplicate();
 	le_ro->set_bg_color(Color::html("#110f0c"));
-	le_ro->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.22f));
+	le_ro->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.28f));
+
+	Ref<ClockGearsBrassStyleBox> le_dis = le_normal->duplicate();
+	le_dis->set_bg_color(Color::html("#100e0b"));
+	le_dis->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.18f));
 
 	th->set_stylebox("normal", "LineEdit", le_normal);
+	th->set_stylebox("hover", "LineEdit", le_hover);
 	th->set_stylebox("focus", "LineEdit", le_focus);
 	th->set_stylebox("read_only", "LineEdit", le_ro);
+	th->set_stylebox("disabled", "LineEdit", le_dis);
 	th->set_color("font_color", "LineEdit", txt);
 	th->set_color("font_uneditable_color", "LineEdit", txt_sec);
 	th->set_color("font_placeholder_color", "LineEdit", txt_sec);
@@ -865,10 +940,13 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_color("selection_color", "LineEdit", Color(accent.r, accent.g, accent.b, 0.36f));
 
 	th->set_stylebox("normal", "TextEdit", le_normal);
+	th->set_stylebox("hover", "TextEdit", le_hover);
 	th->set_stylebox("focus", "TextEdit", le_focus);
 	th->set_stylebox("read_only", "TextEdit", le_ro);
+	th->set_stylebox("disabled", "TextEdit", le_dis);
 	th->set_color("font_color", "TextEdit", txt);
 	th->set_color("font_readonly_color", "TextEdit", txt_sec);
+	th->set_color("font_placeholder_color", "TextEdit", txt_sec);
 	th->set_color("caret_color", "TextEdit", accent);
 	th->set_color("selection_color", "TextEdit", Color(accent.r, accent.g, accent.b, 0.36f));
 
@@ -1415,6 +1493,41 @@ void ClockGearsTheme::_on_brass_tab_changed(int p_tab, ObjectID p_id) {
 	}
 }
 
+void ClockGearsTheme::_on_input_hover_entered(ObjectID p_id) {
+	Control *c = Object::cast_to<Control>(ObjectDB::get_instance(p_id));
+	if (!c || !c->is_inside_tree()) {
+		return;
+	}
+	LineEdit *le = Object::cast_to<LineEdit>(c);
+	TextEdit *te = Object::cast_to<TextEdit>(c);
+	if ((le && !le->is_editable()) || (te && !te->is_editable())) {
+		return;
+	}
+	if (c->has_meta("_cg_orig_sb_normal")) {
+		return;
+	}
+	Ref<Theme> th = get_active_theme();
+	if (th.is_null()) {
+		return;
+	}
+	StringName type_n = le ? StringName("LineEdit") : StringName("TextEdit");
+	if (th->has_stylebox("hover", type_n)) {
+		c->set_meta("_cg_in_hover_active", true);
+		c->add_theme_style_override("normal", th->get_stylebox("hover", type_n));
+	}
+}
+
+void ClockGearsTheme::_on_input_hover_exited(ObjectID p_id) {
+	Control *c = Object::cast_to<Control>(ObjectDB::get_instance(p_id));
+	if (!c || !c->has_meta("_cg_in_hover_active")) {
+		return;
+	}
+	c->remove_meta("_cg_in_hover_active");
+	if (c->has_theme_stylebox_override("normal")) {
+		c->remove_theme_style_override("normal");
+	}
+}
+
 void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 	if (!p_root) {
 		return;
@@ -1461,14 +1574,10 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 		}
 	}
 
-	// Si el nodo aún no fue cambiado a Latón y estamos en el tema por defecto ("dark" / "light"),
-	// no hace falta recorrer todos sus hijos salvo que ya tuviera overrides de Latón aplicados antes.
-	if (!is_brass && !p_root->has_meta("_cg_brass_tree_applied")) {
-		return;
-	}
+	const bool had_brass_before = p_root->has_meta("_cg_brass_tree_applied");
 	if (is_brass) {
 		p_root->set_meta("_cg_brass_tree_applied", true);
-	} else {
+	} else if (had_brass_before) {
 		p_root->remove_meta("_cg_brass_tree_applied");
 	}
 
@@ -1499,7 +1608,9 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 					Ref<Theme> orig_th = cw->get_meta("_cg_pre_brass_theme");
 					cw->remove_meta("_cg_has_pre_brass_theme");
 					cw->remove_meta("_cg_pre_brass_theme");
-					cw->set_theme(orig_th.is_valid() ? target_theme : Ref<Theme>());
+					cw->set_theme(orig_th.is_valid() ? target_theme : target_theme);
+				} else {
+					cw->set_theme(target_theme);
 				}
 			} else if (MenuBar *mb = Object::cast_to<MenuBar>(n)) {
 				if (is_brass) {
@@ -1512,7 +1623,9 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 					Ref<Theme> orig_th = mb->get_meta("_cg_pre_brass_theme");
 					mb->remove_meta("_cg_has_pre_brass_theme");
 					mb->remove_meta("_cg_pre_brass_theme");
-					mb->set_theme(orig_th.is_valid() ? orig_th : Ref<Theme>());
+					mb->set_theme(orig_th.is_valid() ? orig_th : target_theme);
+				} else {
+					mb->set_theme(target_theme);
 				}
 #ifdef TOOLS_ENABLED
 				if (mb->get_theme_type_variation() == StringName("MainMenuBar") || mb->get_name() == "MainMenuBar") {
@@ -1524,6 +1637,16 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 
 		Control *c = Object::cast_to<Control>(n);
 		if (!c) {
+			continue;
+		}
+
+		if ((Object::cast_to<LineEdit>(c) || Object::cast_to<TextEdit>(c)) && !c->has_meta("_cg_in_hov_conn")) {
+			c->set_meta("_cg_in_hov_conn", true);
+			c->connect(SceneStringName(mouse_entered), callable_mp(this, &ClockGearsTheme::_on_input_hover_entered).bind(c->get_instance_id()));
+			c->connect(SceneStringName(mouse_exited), callable_mp(this, &ClockGearsTheme::_on_input_hover_exited).bind(c->get_instance_id()));
+		}
+
+		if (!is_brass && !had_brass_before) {
 			continue;
 		}
 
@@ -1795,22 +1918,12 @@ void ClockGearsTheme::refresh_all_themed_roots() {
 
 void ClockGearsTheme::apply_to_control(Control *p_control) {
 	ERR_FAIL_NULL(p_control);
-	register_themed_root(p_control);
-	if (active_theme_id == "brass" || p_control->has_meta("_cg_brass_tree_applied")) {
-		apply_theme_to_node_tree(p_control);
-	} else {
-		p_control->set_theme(get_theme(use_light_mode));
-	}
+	apply_theme_to_node_tree(p_control);
 }
 
 void ClockGearsTheme::apply_to_window(Window *p_window) {
 	ERR_FAIL_NULL(p_window);
-	register_themed_root(p_window);
-	if (active_theme_id == "brass" || p_window->has_meta("_cg_brass_tree_applied")) {
-		apply_theme_to_node_tree(p_window);
-	} else {
-		p_window->set_theme(get_theme(use_light_mode));
-	}
+	apply_theme_to_node_tree(p_window);
 }
 
 static float _cg_srgb_channel_to_linear(float p_c) {
@@ -1859,6 +1972,7 @@ Dictionary ClockGearsTheme::inspect_theme_metrics(const String &p_theme_id) {
 	Color bg_tab_s = get_sb_bg("tab_selected", "TabContainer", color_panel());
 	Color bg_tab_u = get_sb_bg("tab_unselected", "TabContainer", color_bg_dark());
 	Color bg_pop = get_sb_bg("panel", "PopupMenu", color_bg_dark());
+	Color bg_tt = get_sb_bg("panel", "TooltipPanel", color_panel());
 
 	Dictionary contrasts;
 	contrasts["label_on_panel"] = compute_contrast_ratio(th->get_color("font_color", "Label"), bg_panel);
@@ -1877,6 +1991,7 @@ Dictionary ClockGearsTheme::inspect_theme_metrics(const String &p_theme_id) {
 	contrasts["tab_unselected"] = compute_contrast_ratio(th->get_color("font_unselected_color", "TabContainer"), bg_tab_u);
 	contrasts["popup_normal"] = compute_contrast_ratio(th->get_color("font_color", "PopupMenu"), bg_pop);
 	contrasts["popup_accelerator"] = compute_contrast_ratio(th->get_color("font_accelerator_color", "PopupMenu"), bg_pop);
+	contrasts["tooltip_normal"] = compute_contrast_ratio(th->get_color("font_color", "TooltipLabel"), bg_tt);
 
 	float min_contrast = 100.0f;
 	String min_key;
@@ -2013,6 +2128,113 @@ Dictionary ClockGearsTheme::check_tree_legibility_and_layout(Node *p_root, const
 	return res;
 }
 
+Dictionary ClockGearsTheme::audit_inputs_and_popups_in_tree(Node *p_root) {
+	Dictionary out;
+	if (!p_root) {
+		out["ok"] = false;
+		return out;
+	}
+	int line_edits = 0;
+	int text_edits = 0;
+	int spin_boxes = 0;
+	int popup_menus = 0;
+	int passed = 0;
+	int failed = 0;
+	Array failures;
+
+	Ref<Theme> active = get_active_theme();
+	Ref<StyleBoxFlat> ref_btn = active.is_valid() ? Ref<StyleBoxFlat>(active->get_stylebox("normal", "Button")) : Ref<StyleBoxFlat>();
+	int btn_r = ref_btn.is_valid() ? ref_btn->get_corner_radius(CORNER_TOP_LEFT) : -1;
+
+	Vector<Node *> stack;
+	stack.push_back(p_root);
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		if (_cg_is_in_game_preview_node(n)) {
+			continue;
+		}
+		for (int i = 0; i < n->get_child_count(); i++) {
+			stack.push_back(n->get_child(i));
+		}
+		if (LineEdit *le = Object::cast_to<LineEdit>(n)) {
+			line_edits++;
+			Ref<StyleBoxFlat> sb_n = le->get_theme_stylebox("normal");
+			Ref<StyleBoxFlat> sb_f = le->get_theme_stylebox("focus");
+			Ref<StyleBoxFlat> sb_r = le->get_theme_stylebox("read_only");
+			Color fc = le->get_theme_color("font_color");
+			Color ph = le->get_theme_color("font_placeholder_color");
+			bool ok = sb_n.is_valid() && sb_f.is_valid() && sb_r.is_valid() &&
+					sb_n->get_border_width(SIDE_LEFT) >= 1 &&
+					sb_n->get_corner_radius(CORNER_TOP_LEFT) == btn_r &&
+					sb_f->get_shadow_size() > 0 &&
+					compute_contrast_ratio(fc, sb_n->get_bg_color()) >= 4.5f &&
+					compute_contrast_ratio(ph, sb_n->get_bg_color()) >= 4.5f;
+			if (ok) passed++;
+			else {
+				failed++;
+				String reason;
+				if (!sb_n.is_valid()) reason += "no_sbn ";
+				else {
+					if (sb_n->get_border_width(SIDE_LEFT) < 1) reason += vformat("bw=%d ", sb_n->get_border_width(SIDE_LEFT));
+					if (sb_n->get_corner_radius(CORNER_TOP_LEFT) != btn_r) reason += vformat("cr=%d!=%d ", sb_n->get_corner_radius(CORNER_TOP_LEFT), btn_r);
+					if (compute_contrast_ratio(fc, sb_n->get_bg_color()) < 4.5f) reason += vformat("fc_c=%.2f ", compute_contrast_ratio(fc, sb_n->get_bg_color()));
+					if (compute_contrast_ratio(ph, sb_n->get_bg_color()) < 4.5f) reason += vformat("ph_c=%.2f ", compute_contrast_ratio(ph, sb_n->get_bg_color()));
+				}
+				if (!sb_f.is_valid() || sb_f->get_shadow_size() <= 0) reason += "no_glow ";
+				failures.push_back("LineEdit:" + le->get_name() + "(" + reason.strip_edges() + ")");
+			}
+		} else if (TextEdit *te = Object::cast_to<TextEdit>(n)) {
+			text_edits++;
+			Ref<StyleBoxFlat> sb_n = te->get_theme_stylebox("normal");
+			Ref<StyleBoxFlat> sb_f = te->get_theme_stylebox("focus");
+			Ref<StyleBoxFlat> sb_r = te->get_theme_stylebox("read_only");
+			Color fc = te->get_theme_color("font_color");
+			bool ok = sb_n.is_valid() && sb_f.is_valid() && sb_r.is_valid() &&
+					sb_n->get_corner_radius(CORNER_TOP_LEFT) == btn_r &&
+					sb_f->get_shadow_size() > 0 &&
+					compute_contrast_ratio(fc, sb_n->get_bg_color()) >= 4.5f;
+			if (ok) passed++;
+			else {
+				failed++;
+				failures.push_back("TextEdit:" + te->get_name());
+			}
+		} else if (SpinBox *sp = Object::cast_to<SpinBox>(n)) {
+			spin_boxes++;
+			Ref<StyleBoxFlat> sb_u = sp->get_theme_stylebox("up_background");
+			bool ok = sb_u.is_valid() && sb_u->get_corner_radius(CORNER_TOP_RIGHT) == btn_r && sp->get_line_edit() != nullptr;
+			if (ok) passed++;
+			else {
+				failed++;
+				failures.push_back("SpinBox:" + sp->get_name());
+			}
+		} else if (PopupMenu *pm = Object::cast_to<PopupMenu>(n)) {
+			popup_menus++;
+			Ref<StyleBoxFlat> sb_p = pm->get_theme_stylebox("panel");
+			bool ok = sb_p.is_valid() && sb_p->get_corner_radius(CORNER_TOP_LEFT) == btn_r && sb_p->get_border_width(SIDE_LEFT) >= 1;
+			if (ok) passed++;
+			else {
+				failed++;
+				failures.push_back("PopupMenu:" + pm->get_name());
+			}
+		}
+	}
+	Ref<StyleBoxFlat> tt_sb = active.is_valid() ? Ref<StyleBoxFlat>(active->get_stylebox("panel", "TooltipPanel")) : Ref<StyleBoxFlat>();
+	bool tt_ok = tt_sb.is_valid() && tt_sb->get_corner_radius(CORNER_TOP_LEFT) == btn_r && tt_sb->get_border_width(SIDE_LEFT) >= 1 &&
+			compute_contrast_ratio(active->get_color("font_color", "TooltipLabel"), tt_sb->get_bg_color()) >= 4.5f;
+
+	out["line_edits"] = line_edits;
+	out["text_edits"] = text_edits;
+	out["spin_boxes"] = spin_boxes;
+	out["popup_menus"] = popup_menus;
+	out["tooltip_ok"] = tt_ok;
+	out["passed"] = passed;
+	out["failed"] = failed;
+	out["failures"] = failures;
+	out["ok"] = (failed == 0 && tt_ok);
+	return out;
+}
+
 void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_theme", "light_mode"), &ClockGearsTheme::get_theme, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_brass_theme"), &ClockGearsTheme::get_brass_theme);
@@ -2040,6 +2262,7 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("compute_contrast_ratio", "fg", "bg"), &ClockGearsTheme::compute_contrast_ratio);
 	ClassDB::bind_method(D_METHOD("inspect_theme_metrics", "theme_id"), &ClockGearsTheme::inspect_theme_metrics, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("check_tree_legibility_and_layout", "root", "viewport_size"), &ClockGearsTheme::check_tree_legibility_and_layout, DEFVAL(Vector2i(1366, 768)));
+	ClassDB::bind_method(D_METHOD("audit_inputs_and_popups_in_tree", "root"), &ClockGearsTheme::audit_inputs_and_popups_in_tree);
 
 	ADD_SIGNAL(MethodInfo("theme_changed", PropertyInfo(Variant::STRING, "theme_id")));
 }

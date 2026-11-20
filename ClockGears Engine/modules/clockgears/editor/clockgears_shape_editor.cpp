@@ -990,13 +990,6 @@ void ClockGearsShapeEditor::_apply_spinbox_round_style(SpinBox *p_sb) {
 		return;
 	}
 	p_sb->set_custom_minimum_size(Size2(76.0f * CG_SE_EDSCALE, 28.0f * CG_SE_EDSCALE));
-	if (LineEdit *le = p_sb->get_line_edit()) {
-		Ref<StyleBoxFlat> sb = _make_rounded_btn_style(Color(0.13f, 0.15f, 0.20f, 0.96f), Color(0.32f, 0.37f, 0.48f, 0.85f), 6);
-		sb->set_content_margin(SIDE_LEFT, 6.0f * CG_SE_EDSCALE);
-		sb->set_content_margin(SIDE_RIGHT, 6.0f * CG_SE_EDSCALE);
-		le->add_theme_style_override("normal", sb);
-		le->add_theme_style_override("focus", _make_rounded_btn_style(Color(0.14f, 0.16f, 0.22f, 1.0f), Color(0.35f, 0.62f, 0.95f, 1.0f), 6));
-	}
 }
 
 void ClockGearsShapeEditor::_bind_methods() {

@@ -163,6 +163,23 @@ public:
 	int get_row_count() const { return rows.size(); }
 };
 
+class ClockGearsLayersTree : public Tree {
+	GDCLASS(ClockGearsLayersTree, Tree);
+
+	ClockGearsUiDesignEditor *owner_editor = nullptr;
+	String last_click_id;
+	uint64_t last_click_msec = 0;
+
+protected:
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	void set_owner_editor(ClockGearsUiDesignEditor *p_owner) { owner_editor = p_owner; }
+	virtual Variant get_drag_data(const Point2 &p_point) override;
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
+};
+
 // ============================================================================
 // ClockGearsUiDesignEditor — Categoría "Diseño de interfaz" (9B Tanda 6B-1)
 // Reutiliza exclusivamente ClockGearsDataManager (Tanda 6A) y ClockGearsUiDesignLayer.
@@ -267,9 +284,15 @@ private:
 	PopupMenu *canvas_context_menu = nullptr;
 	Vector2 canvas_context_pos;
 
-	// Lista de capas con ojo de visibilidad y reordenado
+	// Lista de capas con árbol jerárquico, carpetas, ojo, bloqueo y reordenado
+	ClockGearsLayersTree *layers_tree = nullptr;
+	HashMap<String, TreeItem *> layer_tree_items;
+	PopupMenu *layer_context_menu = nullptr;
 	VBoxContainer *layers_list_vbox = nullptr;
 	ClockGearsLayersCanvas *layers_long_canvas = nullptr;
+	Button *layer_add_folder_btn = nullptr;
+	Button *layer_group_btn = nullptr;
+	Button *layer_ungroup_btn = nullptr;
 	Button *layer_up_btn = nullptr;
 	Button *layer_down_btn = nullptr;
 	Button *layer_del_btn = nullptr;
@@ -661,6 +684,16 @@ private:
 	void _on_pooled_layer_eye_toggled(Button *p_btn);
 	void _on_pooled_layer_row_pressed(Button *p_btn);
 	void _on_pooled_menu_btn_pressed(Button *p_btn);
+	void _on_layers_tree_multi_selected(Object *p_item, int p_col, bool p_selected);
+	void _sync_selection_from_layers_tree();
+	void _on_layers_tree_button_clicked(Object *p_item, int p_column, int p_id, int p_mouse_button_index);
+	void _on_layers_tree_item_edited();
+	void _on_layers_tree_item_collapsed(Object *p_item);
+	void _on_layers_tree_item_mouse_selected(const Vector2 &p_pos, int p_mouse_button_index);
+	void _on_layer_context_menu_id(int p_id);
+	void _on_layer_add_folder_pressed();
+	void _on_layer_group_pressed();
+	void _on_layer_ungroup_pressed();
 	void _apply_rounded_btn_style(Button *p_btn);
 	void _refresh_theme_icons();
 	void _on_layer_move_pressed(int p_delta);
@@ -740,6 +773,17 @@ public:
 	String get_selected_element_id() const { return selected_elem_id; }
 	bool delete_selected_element();
 	bool toggle_element_visibility(const String &p_elem_id);
+	bool toggle_element_locked(const String &p_elem_id);
+	bool rename_element_inline(const String &p_elem_id, const String &p_new_name);
+	bool begin_selected_tree_rename();
+	String create_folder_element(const String &p_name = "", const String &p_parent_id = "");
+	String group_selected_into_folder(const String &p_name = "");
+	bool ungroup_selected_folder();
+	bool reorder_layer_tree(const PackedStringArray &p_elem_ids, const String &p_target_id, int p_drop_section);
+	bool can_drop_in_layer_tree(const PackedStringArray &p_elem_ids, const String &p_target_id, int p_drop_section) const;
+	void show_layer_context_menu(const Vector2 &p_screen_pos);
+	bool set_element_collapsed(const String &p_elem_id, bool p_collapsed);
+	Array get_layer_tree_info() const;
 	bool move_selected_layer(int p_delta);
 
 	bool apply_undo();

@@ -128,6 +128,7 @@ private:
 	void _on_editor_settings_changed();
 
 	// Editor Tabs (Enemigos: General | Combate | Animaciones; Actores: General | Animaciones; Resto: General sin pestañas)
+	HBoxContainer *two_col_hbox = nullptr;
 	TabContainer *main_editor_tabs = nullptr;
 	VBoxContainer *combat_tab_vbox = nullptr;
 	ScrollContainer *event_tab_scroll = nullptr;

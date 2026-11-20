@@ -4712,8 +4712,11 @@ static String _cg_norm_ui_elem_type(const Variant &p_val) {
 	String t = String(p_val).strip_edges().to_lower();
 	if (t == "image" || t == "text" || t == "button" || t == "frame" ||
 			t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "variable" ||
-			t == "container" || t == "radial" || t == "widget") {
+			t == "container" || t == "radial" || t == "widget" || t == "folder") {
 		return t;
+	}
+	if (t == "carpeta") {
+		return "folder";
 	}
 	if (t == "imagen") {
 		return "image";
@@ -5598,6 +5601,7 @@ PackedStringArray ClockGearsDataManager::get_ui_element_types() {
 	out.push_back("variable");
 	out.push_back("container");
 	out.push_back("radial");
+	out.push_back("folder");
 	return out;
 }
 
@@ -6063,7 +6067,17 @@ Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, 
 		el["anchor"] = "top_left";
 		el["offset_x"] = 24;
 		el["offset_y"] = 24;
+	} else if (etype == "folder") {
+		el["name"] = "Carpeta";
+		el["anchor"] = "top_left";
+		el["offset_x"] = 0;
+		el["offset_y"] = 0;
+		el["width"] = 0;
+		el["height"] = 0;
 	}
+	el["parent_id"] = "";
+	el["locked"] = false;
+	el["collapsed"] = false;
 	return el;
 }
 
@@ -6088,13 +6102,16 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	out["id"] = raw_id;
 	out["name"] = raw_name;
 	out["type"] = etype;
+	out["parent_id"] = String(p_elem.get("parent_id", def.get("parent_id", ""))).strip_edges();
 	out["anchor"] = _cg_norm_hud_anchor(p_elem.get("anchor", def["anchor"]));
 	out["offset_x"] = CLAMP(int(p_elem.get("offset_x", def["offset_x"])), -960, 960);
 	out["offset_y"] = CLAMP(int(p_elem.get("offset_y", def["offset_y"])), -540, 540);
-	out["width"] = CLAMP(int(p_elem.get("width", def["width"])), 16, 960);
-	out["height"] = CLAMP(int(p_elem.get("height", def["height"])), 16, 540);
+	out["width"] = (etype == "folder") ? CLAMP(int(p_elem.get("width", 0)), 0, 960) : CLAMP(int(p_elem.get("width", def["width"])), 16, 960);
+	out["height"] = (etype == "folder") ? CLAMP(int(p_elem.get("height", 0)), 0, 540) : CLAMP(int(p_elem.get("height", def["height"])), 16, 540);
 	out["layer_order"] = CLAMP(int(p_elem.get("layer_order", def["layer_order"])), -100, 1000);
 	out["visible"] = p_elem.has("visible") ? bool(p_elem["visible"]) : true;
+	out["locked"] = p_elem.has("locked") ? bool(p_elem["locked"]) : false;
+	out["collapsed"] = p_elem.has("collapsed") ? bool(p_elem["collapsed"]) : false;
 
 	String ws = String(p_elem.get("window_style_id", def.get("window_style_id", ""))).strip_edges().to_lower();
 	out["window_style_id"] = ws;
@@ -6346,6 +6363,41 @@ Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_scr
 			norm_elems.push_back(ne);
 		}
 	}
+	// Validar parent_id (existencia + evitar ciclos / autoreferencias)
+	HashMap<String, int> id_to_idx;
+	for (int i = 0; i < norm_elems.size(); i++) {
+		Dictionary ne = norm_elems[i];
+		id_to_idx[String(ne.get("id", "")).to_lower()] = i;
+	}
+	for (int i = 0; i < norm_elems.size(); i++) {
+		Dictionary ne = norm_elems[i];
+		String pid = String(ne.get("parent_id", "")).strip_edges();
+		if (pid.is_empty()) {
+			continue;
+		}
+		String pid_low = pid.to_lower();
+		if (!id_to_idx.has(pid_low)) {
+			ne["parent_id"] = "";
+			norm_elems[i] = ne;
+			continue;
+		}
+		String self_low = String(ne.get("id", "")).to_lower();
+		HashSet<String> visited;
+		visited.insert(self_low);
+		String cur = pid_low;
+		bool valid = true;
+		String canonical_pid = String(Dictionary(norm_elems[id_to_idx[pid_low]]).get("id", pid));
+		while (!cur.is_empty()) {
+			if (visited.has(cur) || !id_to_idx.has(cur)) {
+				valid = false;
+				break;
+			}
+			visited.insert(cur);
+			cur = String(Dictionary(norm_elems[id_to_idx[cur]]).get("parent_id", "")).strip_edges().to_lower();
+		}
+		ne["parent_id"] = valid ? canonical_pid : String("");
+		norm_elems[i] = ne;
+	}
 	out["elements"] = norm_elems;
 	bool can_toggle_default = is_sys || (sid == "game_over");
 	if (p_design.has("custom_enabled")) {
@@ -6571,6 +6623,11 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		add_box("menu_frame", "Panel Comandos", 24, 20, 220, 384, 0);
 		add_txt("menu_heading", String::utf8("Título Menú"), String::utf8("Menú"), 36, 30, 196, 28, 18, "left", "none", 1);
+		if (!elems.is_empty()) {
+			Dictionary mh = elems[elems.size() - 1];
+			mh["parent_id"] = "menu_frame";
+			elems[elems.size() - 1] = mh;
+		}
 
 		Array entries = get_visible_game_menu_entries();
 		int y_cursor = 66;
@@ -6579,6 +6636,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			Dictionary b = make_default_ui_element("button", sid);
 			String act = String(e.get("id", ""));
 			b["id"] = "menu_btn_" + act;
+			b["parent_id"] = "menu_frame";
 			b["name"] = String(e.get("text", act));
 			b["text"] = String(e.get("text", act));
 			b["action"] = act;
@@ -6594,6 +6652,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		}
 		Dictionary close_b = make_default_ui_element("button", sid);
 		close_b["id"] = "menu_btn_close";
+		close_b["parent_id"] = "menu_frame";
 		close_b["name"] = "Cerrar (Esc)";
 		close_b["text"] = "Cerrar (Esc)";
 		close_b["action"] = "close";
@@ -6609,6 +6668,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		add_box("currency_time_frame", "Tarjeta Moneda y Tiempo", 24, 414, 220, 106, 0);
 		Dictionary gold_el = make_default_ui_element("currency", sid);
 		gold_el["id"] = "menu_gold";
+		gold_el["parent_id"] = "currency_time_frame";
 		gold_el["name"] = "Monedas";
 		gold_el["data_binding"] = "gold";
 		gold_el["anchor"] = "top_left";
@@ -6619,10 +6679,25 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		gold_el["layer_order"] = 1;
 		elems.push_back(gold_el);
 		add_txt("menu_playtime", "Tiempo jugado", "Tiempo: 00:00:00", 36, 468, 196, 26, 13, "right", "playtime", 1);
+		{
+			Dictionary mp = elems[elems.size() - 1];
+			mp["parent_id"] = "currency_time_frame";
+			elems[elems.size() - 1] = mp;
+		}
 
 		add_box("party_frame", "Panel Grupo", 260, 20, 676, 500, 0);
 		add_txt("party_heading", String::utf8("Título Grupo"), "Grupo", 276, 30, 240, 28, 18, "left", "none", 1);
+		{
+			Dictionary ph = elems[elems.size() - 1];
+			ph["parent_id"] = "party_frame";
+			elems[elems.size() - 1] = ph;
+		}
 		add_wid("party_list", "Lista del grupo", "party_list", 274, 68, 648, 438, 1);
+		{
+			Dictionary pl = elems[elems.size() - 1];
+			pl["parent_id"] = "party_frame";
+			elems[elems.size() - 1] = pl;
+		}
 	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "game_menu_options") {
 		auto add_panel = [&](const String &p_id, const String &p_name, int p_x, int p_y, int p_w, int p_h, int p_layer) {
 			Dictionary f = make_default_ui_element("frame", sid);
@@ -6636,9 +6711,18 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			f["layer_order"] = p_layer;
 			elems.push_back(f);
 		};
-		auto add_hdr = [&](const String &p_id, const String &p_name, const String &p_text, int p_x, int p_y, int p_w, int p_h, int p_fsz, int p_layer) {
+		auto add_folder = [&](const String &p_id, const String &p_name, const String &p_parent_id, int p_layer) {
+			Dictionary fl = make_default_ui_element("folder", sid);
+			fl["id"] = p_id;
+			fl["name"] = p_name;
+			fl["parent_id"] = p_parent_id;
+			fl["layer_order"] = p_layer;
+			elems.push_back(fl);
+		};
+		auto add_hdr = [&](const String &p_id, const String &p_name, const String &p_text, int p_x, int p_y, int p_w, int p_h, int p_fsz, int p_layer, const String &p_parent_id = "") {
 			Dictionary h = make_default_ui_element("text", sid);
 			h["id"] = p_id;
+			h["parent_id"] = p_parent_id;
 			h["name"] = p_name;
 			h["text"] = p_text;
 			h["anchor"] = "top_left";
@@ -6650,9 +6734,10 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			h["layer_order"] = p_layer;
 			elems.push_back(h);
 		};
-		auto add_widget = [&](const String &p_id, const String &p_name, const String &p_kind, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+		auto add_widget = [&](const String &p_id, const String &p_name, const String &p_kind, int p_x, int p_y, int p_w, int p_h, int p_layer, const String &p_parent_id = "") {
 			Dictionary w = make_default_ui_element("widget", sid);
 			w["id"] = p_id;
+			w["parent_id"] = p_parent_id;
 			w["name"] = p_name;
 			w["widget_kind"] = p_kind;
 			w["anchor"] = "top_left";
@@ -6663,9 +6748,10 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			w["layer_order"] = p_layer;
 			elems.push_back(w);
 		};
-		auto add_act_btn = [&](const String &p_id, const String &p_text, const String &p_act, int p_x, int p_y, int p_w, int p_h, int p_focus) {
+		auto add_act_btn = [&](const String &p_id, const String &p_text, const String &p_act, int p_x, int p_y, int p_w, int p_h, int p_focus, const String &p_parent_id = "") {
 			Dictionary b = make_default_ui_element("button", sid);
 			b["id"] = p_id;
+			b["parent_id"] = p_parent_id;
 			b["name"] = p_text;
 			b["text"] = p_text;
 			b["action"] = p_act;
@@ -6681,44 +6767,48 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		if (sid == "game_menu_items") {
 			add_panel("items_panel_frame", "Panel Objetos", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Objetos", 40, 32, 150, 34, 22, 1);
-			add_widget("items_target_selector", "Selector de objetivo", "items_target", 200, 32, 320, 34, 1);
-			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 2);
-			add_widget("items_list", "Lista de objetos", "items_list", 40, 78, 568, 426, 1);
-			add_widget("item_preview", "Vista previa del objeto", "item_preview", 620, 78, 300, 140, 1);
-			add_widget("item_details", String::utf8("Descripción del objeto"), "item_details", 620, 226, 300, 228, 1);
-			add_act_btn("btn_item_use", "Usar", "item_use", 632, 462, 132, 36, 0);
-			add_act_btn("btn_item_discard", "Tirar", "item_discard", 776, 462, 132, 36, 1);
+			add_hdr("sub_heading", "Encabezado", "Objetos", 40, 32, 150, 34, 22, 1, "items_panel_frame");
+			add_widget("items_target_selector", "Selector de objetivo", "items_target", 200, 32, 320, 34, 1, "items_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 2, "items_panel_frame");
+			add_widget("items_list", "Lista de objetos", "items_list", 40, 78, 568, 426, 1, "items_panel_frame");
+			add_folder("col_items_details", "Columna detalles", "items_panel_frame", 1);
+			add_widget("item_preview", "Vista previa del objeto", "item_preview", 620, 78, 300, 140, 1, "col_items_details");
+			add_widget("item_details", String::utf8("Descripción del objeto"), "item_details", 620, 226, 300, 228, 1, "col_items_details");
+			add_act_btn("btn_item_use", "Usar", "item_use", 632, 462, 132, 36, 0, "col_items_details");
+			add_act_btn("btn_item_discard", "Tirar", "item_discard", 776, 462, 132, 36, 1, "col_items_details");
 		} else if (sid == "game_menu_equip") {
 			add_panel("equip_panel_frame", "Panel Equipo", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Equipo", 36, 30, 140, 34, 20, 1);
-			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 184, 30, 260, 34, 1);
-			add_act_btn("btn_back", "Volver", "back", 814, 30, 110, 34, 2);
-			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 36, 73, 304, 390, 1);
-			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 36, 470, 304, 38, 0);
-			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 350, 73, 304, 390, 1);
-			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 350, 470, 304, 38, 1);
-			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 664, 73, 260, 100, 1);
-			add_widget("equip_desc", "Detalles pieza", "equip_desc", 664, 179, 260, 107, 1);
-			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 664, 292, 260, 218, 1);
+			add_hdr("sub_heading", "Encabezado", "Equipo", 36, 30, 140, 34, 20, 1, "equip_panel_frame");
+			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 184, 30, 260, 34, 1, "equip_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 814, 30, 110, 34, 2, "equip_panel_frame");
+			add_folder("col_equip_slots", "Columna ranuras", "equip_panel_frame", 1);
+			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 36, 73, 304, 390, 1, "col_equip_slots");
+			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 36, 470, 304, 38, 0, "col_equip_slots");
+			add_folder("col_equip_inventory", "Columna inventario", "equip_panel_frame", 1);
+			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 350, 73, 304, 390, 1, "col_equip_inventory");
+			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 350, 470, 304, 38, 1, "col_equip_inventory");
+			add_folder("col_equip_details", "Columna detalles", "equip_panel_frame", 1);
+			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 664, 73, 260, 100, 1, "col_equip_details");
+			add_widget("equip_desc", "Detalles pieza", "equip_desc", 664, 179, 260, 107, 1, "col_equip_details");
+			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 664, 292, 260, 218, 1, "col_equip_details");
 		} else if (sid == "game_menu_status") {
 			add_panel("status_panel_frame", "Panel Estado", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Estado", 40, 32, 140, 34, 22, 1);
-			add_widget("status_target_selector", "Selector de personaje", "status_target", 190, 32, 320, 34, 1);
-			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 0);
-			add_widget("status_basic", String::utf8("Retrato y datos básicos"), "status_basic", 40, 78, 430, 176, 1);
-			add_widget("status_equips", "Equipo equipado", "status_equips", 40, 264, 430, 240, 1);
-			add_widget("status_params", "Atributos y afinidades", "status_params", 486, 78, 434, 426, 1);
+			add_hdr("sub_heading", "Encabezado", "Estado", 40, 32, 140, 34, 22, 1, "status_panel_frame");
+			add_widget("status_target_selector", "Selector de personaje", "status_target", 190, 32, 320, 34, 1, "status_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 0, "status_panel_frame");
+			add_widget("status_basic", String::utf8("Retrato y datos básicos"), "status_basic", 40, 78, 430, 176, 1, "status_panel_frame");
+			add_widget("status_equips", "Equipo equipado", "status_equips", 40, 264, 430, 240, 1, "status_panel_frame");
+			add_widget("status_params", "Atributos y afinidades", "status_params", 486, 78, 434, 426, 1, "status_panel_frame");
 		} else if (sid == "game_menu_save") {
 			add_panel("save_panel_frame", "Panel Partidas", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Guardar partida", 40, 32, 480, 36, 22, 1);
-			add_widget("save_slots", "Ranuras de guardado", "save_slots", 40, 78, 880, 382, 1);
-			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0);
+			add_hdr("sub_heading", "Encabezado", "Guardar partida", 40, 32, 480, 36, 22, 1, "save_panel_frame");
+			add_widget("save_slots", "Ranuras de guardado", "save_slots", 40, 78, 880, 382, 1, "save_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0, "save_panel_frame");
 		} else {
 			add_panel("options_panel_frame", "Panel Opciones", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Opciones", 40, 32, 480, 36, 22, 1);
-			add_widget("options_controls", "Controles de opciones", "options_controls", 40, 78, 880, 382, 1);
-			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0);
+			add_hdr("sub_heading", "Encabezado", "Opciones", 40, 32, 480, 36, 22, 1, "options_panel_frame");
+			add_widget("options_controls", "Controles de opciones", "options_controls", 40, 78, 880, 382, 1, "options_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0, "options_panel_frame");
 		}
 	} else if (sid == "credits") {
 		Dictionary chdr = make_default_ui_element("text", sid);
@@ -6773,6 +6863,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		Dictionary hp_bar = make_default_ui_element("bar", sid);
 		hp_bar["id"] = "hud_hp_bar";
+		hp_bar["parent_id"] = "hud_panel";
 		hp_bar["name"] = "Barra PV";
 		hp_bar["label_text"] = "PV";
 		hp_bar["data_binding"] = "player_hp";
@@ -6786,6 +6877,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		Dictionary mp_bar = make_default_ui_element("bar", sid);
 		mp_bar["id"] = "hud_mp_bar";
+		mp_bar["parent_id"] = "hud_panel";
 		mp_bar["name"] = "Barra PM";
 		mp_bar["label_text"] = "PM";
 		mp_bar["data_binding"] = "player_mp";
@@ -6799,6 +6891,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		Dictionary gold_el = make_default_ui_element("currency", sid);
 		gold_el["id"] = "hud_gold";
+		gold_el["parent_id"] = "hud_panel";
 		gold_el["name"] = "Monedas";
 		gold_el["data_binding"] = "gold";
 		gold_el["anchor"] = "top_left";
@@ -6864,6 +6957,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		Dictionary por = make_default_ui_element("image", sid);
 		por["id"] = "msg_portrait";
+		por["parent_id"] = "msg_box_frame";
 		por["name"] = "Retrato hablante";
 		por["anchor"] = "bottom_left";
 		por["offset_x"] = 56;
@@ -6875,6 +6969,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		Dictionary spk = make_default_ui_element("text", sid);
 		spk["id"] = "msg_speaker_lbl";
+		spk["parent_id"] = "msg_box_frame";
 		spk["name"] = "Nombre hablante";
 		spk["text"] = "Personaje";
 		spk["anchor"] = "bottom_left";
@@ -6888,6 +6983,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		Dictionary bdy = make_default_ui_element("text", sid);
 		bdy["id"] = "msg_body_lbl";
+		bdy["parent_id"] = "msg_box_frame";
 		bdy["name"] = "Texto mensaje";
 		bdy["text"] = String::utf8("Texto de diálogo o aviso de batalla...");
 		bdy["anchor"] = "bottom_left";
@@ -6916,6 +7012,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		for (int i = 0; i < 4; i++) {
 			Dictionary bb = make_default_ui_element("button", sid);
 			bb["id"] = vformat("btn_battle_%d", i + 1);
+			bb["parent_id"] = "battle_cmd_frame";
 			bb["name"] = String::utf8(b_lbls[i]);
 			bb["text"] = String::utf8(b_lbls[i]);
 			bb["action"] = String(b_acts[i]);
@@ -7641,18 +7738,362 @@ bool ClockGearsDataManager::delete_ui_element(const String &p_screen_id, const S
 	String target = p_elem_id.strip_edges().to_lower();
 	Dictionary d = get_ui_screen_design(sid);
 	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	int del_idx = -1;
+	String del_id;
+	String del_parent;
 	for (int i = 0; i < elems.size(); i++) {
-		if (String(Dictionary(elems[i]).get("id", "")).to_lower() == target) {
-			elems.remove_at(i);
-			d["elements"] = elems;
-			if (sid == "hud") {
-				d["custom_enabled"] = !elems.is_empty();
-			}
-			set_ui_screen_design(sid, d, p_record_undo);
-			return true;
+		Dictionary cur = elems[i];
+		if (String(cur.get("id", "")).to_lower() == target) {
+			del_idx = i;
+			del_id = String(cur.get("id", ""));
+			del_parent = String(cur.get("parent_id", ""));
+			break;
 		}
 	}
+	if (del_idx < 0) {
+		return false;
+	}
+	elems.remove_at(del_idx);
+	for (int i = 0; i < elems.size(); i++) {
+		Dictionary ch = elems[i];
+		if (String(ch.get("parent_id", "")).to_lower() == target) {
+			ch["parent_id"] = del_parent;
+			elems[i] = ch;
+		}
+	}
+	d["elements"] = elems;
+	if (sid == "hud") {
+		d["custom_enabled"] = !elems.is_empty();
+	}
+	set_ui_screen_design(sid, d, p_record_undo);
+	return true;
+}
+
+static void _cg_collect_ui_tree_sorted(const Array &p_elems, HashMap<String, Dictionary> &r_by_id, HashMap<String, Vector<String>> &r_children, HashMap<String, int> &r_orig_idx) {
+	r_by_id.clear();
+	r_children.clear();
+	r_orig_idx.clear();
+	HashMap<String, String> canon_id;
+	for (int i = 0; i < p_elems.size(); i++) {
+		if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = Dictionary(p_elems[i]).duplicate(true);
+		String id = String(e.get("id", ""));
+		if (id.is_empty()) continue;
+		r_by_id[id] = e;
+		r_orig_idx[id] = i;
+		canon_id[id.to_lower()] = id;
+		r_children[id] = Vector<String>();
+	}
+	r_children[String("")] = Vector<String>();
+	for (int i = 0; i < p_elems.size(); i++) {
+		if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+		String id = String(Dictionary(p_elems[i]).get("id", ""));
+		if (!r_by_id.has(id)) continue;
+		String raw_pid = String(r_by_id[id].get("parent_id", "")).strip_edges().to_lower();
+		String pid = (!raw_pid.is_empty() && canon_id.has(raw_pid) && canon_id[raw_pid] != id) ? canon_id[raw_pid] : String("");
+		r_by_id[id]["parent_id"] = pid;
+		r_children[pid].push_back(id);
+	}
+	// Calcular máximo layer_order por subárbol para ordenar hermanos arriba = más al frente
+	HashMap<String, int> sub_max_z;
+	for (const KeyValue<String, Dictionary> &kv : r_by_id) {
+		sub_max_z[kv.key] = int(kv.value.get("layer_order", 0));
+	}
+	bool changed = true;
+	for (int pass = 0; pass < 32 && changed; pass++) {
+		changed = false;
+		for (const KeyValue<String, Vector<String>> &kv : r_children) {
+			if (kv.key.is_empty() || !sub_max_z.has(kv.key)) continue;
+			int mz = sub_max_z[kv.key];
+			for (int c = 0; c < kv.value.size(); c++) {
+				int cz = sub_max_z[kv.value[c]];
+				if (cz > mz) {
+					mz = cz;
+				}
+			}
+			if (mz != sub_max_z[kv.key]) {
+				sub_max_z[kv.key] = mz;
+				changed = true;
+			}
+		}
+	}
+	struct SiblingCmp {
+		const HashMap<String, Dictionary> *by_id = nullptr;
+		const HashMap<String, int> *sub_max = nullptr;
+		const HashMap<String, int> *orig_idx = nullptr;
+		bool operator()(const String &a, const String &b) const {
+			int sa = sub_max->get(a);
+			int sb = sub_max->get(b);
+			if (sa != sb) return sa > sb;
+			int za = int(by_id->get(a).get("layer_order", 0));
+			int zb = int(by_id->get(b).get("layer_order", 0));
+			if (za != zb) return za > zb;
+			return orig_idx->get(a) > orig_idx->get(b);
+		}
+	};
+	SiblingCmp cmp{ &r_by_id, &sub_max_z, &r_orig_idx };
+	for (KeyValue<String, Vector<String>> &kv : r_children) {
+		if (kv.value.size() > 1) {
+			kv.value.sort_custom<SiblingCmp>(cmp);
+		}
+	}
+}
+
+static void _cg_emit_ui_tree_back_to_front(const String &p_node_id, const HashMap<String, Vector<String>> &p_children, HashMap<String, Dictionary> &r_by_id, Array &r_out, int &r_next_z) {
+	if (!p_node_id.is_empty() && r_by_id.has(p_node_id)) {
+		Dictionary d = r_by_id[p_node_id];
+		d["layer_order"] = r_next_z++;
+		r_out.push_back(d);
+	}
+	if (!p_children.has(p_node_id)) {
+		return;
+	}
+	const Vector<String> &kids = p_children[p_node_id];
+	for (int i = kids.size() - 1; i >= 0; i--) {
+		_cg_emit_ui_tree_back_to_front(kids[i], p_children, r_by_id, r_out, r_next_z);
+	}
+}
+
+static bool _cg_is_ui_descendant(const String &p_candidate, const String &p_ancestor, const HashMap<String, Dictionary> &p_by_id) {
+	String cur = p_candidate;
+	HashSet<String> vis;
+	while (!cur.is_empty() && p_by_id.has(cur) && !vis.has(cur)) {
+		if (cur == p_ancestor) {
+			return true;
+		}
+		vis.insert(cur);
+		cur = String(p_by_id[cur].get("parent_id", ""));
+	}
 	return false;
+}
+
+bool ClockGearsDataManager::reorder_ui_element_tree(const String &p_screen_id, const PackedStringArray &p_elem_ids, const String &p_target_id, int p_drop_section, bool p_record_undo) {
+	if (p_elem_ids.is_empty()) {
+		return false;
+	}
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	HashMap<String, Dictionary> by_id;
+	HashMap<String, Vector<String>> children;
+	HashMap<String, int> orig_idx;
+	_cg_collect_ui_tree_sorted(elems, by_id, children, orig_idx);
+
+	HashSet<String> raw_sel;
+	for (int i = 0; i < p_elem_ids.size(); i++) {
+		String id = p_elem_ids[i].strip_edges();
+		for (const KeyValue<String, Dictionary> &kv : by_id) {
+			if (kv.key.to_lower() == id.to_lower()) {
+				raw_sel.insert(kv.key);
+				break;
+			}
+		}
+	}
+	if (raw_sel.is_empty()) {
+		return false;
+	}
+	// Quedarse solo con los ancestros más altos seleccionados (si padre e hijo están seleccionados, el hijo sigue dentro del padre)
+	Vector<String> moving;
+	HashMap<String, String> canon_lower;
+	for (const KeyValue<String, Dictionary> &kv : by_id) {
+		canon_lower[kv.key.to_lower()] = kv.key;
+	}
+	String target_id;
+	if (!p_target_id.strip_edges().is_empty() && canon_lower.has(p_target_id.strip_edges().to_lower())) {
+		target_id = canon_lower[p_target_id.strip_edges().to_lower()];
+	}
+	for (int i = 0; i < p_elem_ids.size(); i++) {
+		String kl = p_elem_ids[i].strip_edges().to_lower();
+		if (!canon_lower.has(kl)) continue;
+		String id = canon_lower[kl];
+		if (moving.has(id)) continue;
+		String cur = String(by_id[id].get("parent_id", ""));
+		bool anc_selected = false;
+		HashSet<String> vis;
+		while (!cur.is_empty() && by_id.has(cur) && !vis.has(cur)) {
+			if (raw_sel.has(cur)) {
+				anc_selected = true;
+				break;
+			}
+			vis.insert(cur);
+			cur = String(by_id[cur].get("parent_id", ""));
+		}
+		if (!anc_selected) {
+			moving.push_back(id);
+		}
+	}
+	if (moving.is_empty()) {
+		return false;
+	}
+	String new_parent;
+	if (p_drop_section == 0 && !target_id.is_empty()) {
+		new_parent = target_id;
+	} else if ((p_drop_section == -1 || p_drop_section == 1) && !target_id.is_empty()) {
+		new_parent = String(by_id[target_id].get("parent_id", ""));
+	} else {
+		new_parent = "";
+	}
+	if (!new_parent.is_empty()) {
+		for (int i = 0; i < moving.size(); i++) {
+			if (_cg_is_ui_descendant(new_parent, moving[i], by_id)) {
+				return false;
+			}
+		}
+	}
+	if (!target_id.is_empty() && moving.has(target_id) && (p_drop_section == 0 || p_drop_section == -1 || p_drop_section == 1)) {
+		return false;
+	}
+	for (int i = 0; i < moving.size(); i++) {
+		String mid = moving[i];
+		String old_p = String(by_id[mid].get("parent_id", ""));
+		if (children.has(old_p)) {
+			children[old_p].erase(mid);
+		}
+		by_id[mid]["parent_id"] = new_parent;
+	}
+	Vector<String> &dest_list = children[new_parent];
+	int ins_idx = dest_list.size();
+	if (p_drop_section == 0 && !target_id.is_empty()) {
+		ins_idx = 0;
+	} else if ((p_drop_section == -1 || p_drop_section == 1) && !target_id.is_empty()) {
+		int tidx = dest_list.find(target_id);
+		if (tidx >= 0) {
+			ins_idx = (p_drop_section == -1) ? tidx : (tidx + 1);
+		}
+	}
+	ins_idx = CLAMP(ins_idx, 0, dest_list.size());
+	for (int i = 0; i < moving.size(); i++) {
+		dest_list.insert(ins_idx + i, moving[i]);
+	}
+	Array reordered;
+	int next_z = 0;
+	_cg_emit_ui_tree_back_to_front(String(""), children, by_id, reordered, next_z);
+	d["elements"] = reordered;
+	d["custom_enabled"] = true;
+	set_ui_screen_design(sid, d, p_record_undo);
+	return true;
+}
+
+bool ClockGearsDataManager::move_ui_element_tree_step(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo) {
+	if (p_delta == 0) {
+		return false;
+	}
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	HashMap<String, Dictionary> by_id;
+	HashMap<String, Vector<String>> children;
+	HashMap<String, int> orig_idx;
+	_cg_collect_ui_tree_sorted(elems, by_id, children, orig_idx);
+	String target;
+	for (const KeyValue<String, Dictionary> &kv : by_id) {
+		if (kv.key.to_lower() == p_elem_id.strip_edges().to_lower()) {
+			target = kv.key;
+			break;
+		}
+	}
+	if (target.is_empty()) {
+		return false;
+	}
+	String pid = String(by_id[target].get("parent_id", ""));
+	const Vector<String> &sibs = children[pid];
+	int pos = sibs.find(target);
+	if (pos < 0) {
+		return false;
+	}
+	if (p_delta > 0 && pos > 0) {
+		PackedStringArray ids;
+		ids.push_back(target);
+		return reorder_ui_element_tree(sid, ids, sibs[pos - 1], -1, p_record_undo);
+	}
+	if (p_delta < 0 && pos + 1 < sibs.size()) {
+		PackedStringArray ids;
+		ids.push_back(target);
+		return reorder_ui_element_tree(sid, ids, sibs[pos + 1], 1, p_record_undo);
+	}
+	return false;
+}
+
+String ClockGearsDataManager::group_ui_elements_into_folder(const String &p_screen_id, const PackedStringArray &p_elem_ids, const String &p_folder_name, bool p_record_undo) {
+	if (p_elem_ids.is_empty()) {
+		return String();
+	}
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (p_record_undo) {
+		push_ui_design_undo_state(sid);
+	}
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array()));
+	HashMap<String, Dictionary> by_id;
+	HashMap<String, Vector<String>> children;
+	HashMap<String, int> orig_idx;
+	_cg_collect_ui_tree_sorted(elems, by_id, children, orig_idx);
+
+	String first_canon;
+	String common_parent;
+	for (int i = 0; i < p_elem_ids.size(); i++) {
+		String kl = p_elem_ids[i].strip_edges().to_lower();
+		for (const KeyValue<String, Dictionary> &kv : by_id) {
+			if (kv.key.to_lower() == kl) {
+				if (first_canon.is_empty()) {
+					first_canon = kv.key;
+					common_parent = String(kv.value.get("parent_id", ""));
+				} else if (String(kv.value.get("parent_id", "")) != common_parent) {
+					common_parent = "";
+				}
+				break;
+			}
+		}
+	}
+	if (first_canon.is_empty()) {
+		return String();
+	}
+	Dictionary folder = make_default_ui_element("folder", sid);
+	String fname = p_folder_name.strip_edges();
+	folder["name"] = fname.is_empty() ? String("Carpeta") : fname;
+	folder["parent_id"] = common_parent;
+	String folder_id = add_ui_element(sid, folder, false);
+	if (folder_id.is_empty()) {
+		return String();
+	}
+	PackedStringArray fn;
+	fn.push_back(folder_id);
+	reorder_ui_element_tree(sid, fn, first_canon, -1, false);
+	reorder_ui_element_tree(sid, p_elem_ids, folder_id, 0, false);
+	return folder_id;
+}
+
+bool ClockGearsDataManager::ungroup_ui_folder(const String &p_screen_id, const String &p_folder_id, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	int fidx = -1;
+	String fparent;
+	String fid_canon;
+	for (int i = 0; i < elems.size(); i++) {
+		Dictionary cur = elems[i];
+		if (String(cur.get("id", "")).to_lower() == p_folder_id.strip_edges().to_lower()) {
+			fidx = i;
+			fid_canon = String(cur.get("id", ""));
+			fparent = String(cur.get("parent_id", ""));
+			break;
+		}
+	}
+	if (fidx < 0) {
+		return false;
+	}
+	for (int i = 0; i < elems.size(); i++) {
+		Dictionary ch = elems[i];
+		if (String(ch.get("parent_id", "")).to_lower() == fid_canon.to_lower()) {
+			ch["parent_id"] = fparent;
+			elems[i] = ch;
+		}
+	}
+	elems.remove_at(fidx);
+	d["elements"] = elems;
+	d["custom_enabled"] = true;
+	set_ui_screen_design(sid, d, p_record_undo);
+	return true;
 }
 
 bool ClockGearsDataManager::move_ui_element_layer(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo) {
@@ -8949,16 +9390,46 @@ Dictionary ClockGearsDataManager::import_template_package(const String &p_src_pa
 }
 
 String ClockGearsDataManager::duplicate_ui_element(const String &p_screen_id, const String &p_elem_id, const Vector2i &p_offset_delta) {
-	Dictionary src = get_ui_element(p_screen_id, p_elem_id);
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	Dictionary src = get_ui_element(sid, p_elem_id);
 	if (src.is_empty()) {
 		return String();
 	}
-	Dictionary copy = src.duplicate(true);
-	copy.erase("id");
-	copy["name"] = String(src.get("name", "Elemento")) + " (Copia)";
-	copy["offset_x"] = CLAMP(int(src.get("offset_x", 0)) + p_offset_delta.x, -960, 960);
-	copy["offset_y"] = CLAMP(int(src.get("offset_y", 0)) + p_offset_delta.y, -540, 540);
-	return add_ui_element(p_screen_id, copy, true);
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	HashMap<String, Dictionary> by_id;
+	HashMap<String, Vector<String>> children;
+	HashMap<String, int> orig_idx;
+	_cg_collect_ui_tree_sorted(elems, by_id, children, orig_idx);
+
+	String root_canon = String(src.get("id", p_elem_id));
+	push_ui_design_undo_state(sid);
+
+	struct CloneHelper {
+		static String run(ClockGearsDataManager *dm, const String &sid, const String &old_id, const String &new_parent_id, const Vector2i &delta, bool is_root, const HashMap<String, Dictionary> &by_id, const HashMap<String, Vector<String>> &children) {
+			if (!by_id.has(old_id)) {
+				return String();
+			}
+			Dictionary copy = by_id[old_id].duplicate(true);
+			copy.erase("id");
+			if (is_root) {
+				copy["name"] = String(copy.get("name", "Elemento")) + " (Copia)";
+				copy["offset_x"] = CLAMP(int(copy.get("offset_x", 0)) + delta.x, -960, 960);
+				copy["offset_y"] = CLAMP(int(copy.get("offset_y", 0)) + delta.y, -540, 540);
+			} else {
+				copy["parent_id"] = new_parent_id;
+			}
+			String nid = dm->add_ui_element(sid, copy, false);
+			if (!nid.is_empty() && children.has(old_id)) {
+				const Vector<String> &kids = children[old_id];
+				for (int i = kids.size() - 1; i >= 0; i--) {
+					(void)run(dm, sid, kids[i], nid, Vector2i(), false, by_id, children);
+				}
+			}
+			return nid;
+		}
+	};
+	return CloneHelper::run(this, sid, root_canon, String(src.get("parent_id", "")), p_offset_delta, true, by_id, children);
 }
 
 void ClockGearsDataManager::copy_ui_elements_to_clipboard(const String &p_screen_id, const PackedStringArray &p_elem_ids) {
@@ -10576,6 +11047,10 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("update_ui_element", "screen_id", "elem_id", "elem", "record_undo"), &ClockGearsDataManager::update_ui_element, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("delete_ui_element", "screen_id", "elem_id", "record_undo"), &ClockGearsDataManager::delete_ui_element, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("move_ui_element_layer", "screen_id", "elem_id", "delta", "record_undo"), &ClockGearsDataManager::move_ui_element_layer, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("group_ui_elements_into_folder", "screen_id", "elem_ids", "folder_name", "record_undo"), &ClockGearsDataManager::group_ui_elements_into_folder, DEFVAL(""), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("ungroup_ui_folder", "screen_id", "folder_id", "record_undo"), &ClockGearsDataManager::ungroup_ui_folder, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("reorder_ui_element_tree", "screen_id", "elem_ids", "target_id", "drop_section", "record_undo"), &ClockGearsDataManager::reorder_ui_element_tree, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("move_ui_element_tree_step", "screen_id", "elem_id", "delta", "record_undo"), &ClockGearsDataManager::move_ui_element_tree_step, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("reset_ui_screen_design_to_default", "screen_id", "record_undo"), &ClockGearsDataManager::reset_ui_screen_design_to_default, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_ui_designs_config"), &ClockGearsDataManager::get_ui_designs_config);
 	ClassDB::bind_method(D_METHOD("set_ui_designs_config", "cfg"), &ClockGearsDataManager::set_ui_designs_config);

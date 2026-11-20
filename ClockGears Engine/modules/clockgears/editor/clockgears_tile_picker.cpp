@@ -871,17 +871,6 @@ void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scal
 		search_filter_edit->set_h_size_flags(SIZE_SHRINK_CENTER);
 		search_filter_edit->set_v_size_flags(SIZE_SHRINK_CENTER);
 		search_filter_edit->set_custom_minimum_size(Size2(int(104 * s), int(28 * s)));
-		Ref<StyleBoxFlat> le_norm = memnew(StyleBoxFlat);
-		le_norm->set_anti_aliased(true);
-		le_norm->set_bg_color(Color::html("#17191f"));
-		le_norm->set_corner_radius_all(r6);
-		le_norm->set_border_width_all(1);
-		le_norm->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.14f));
-		le_norm->set_content_margin_individual(int(8 * s), int(2 * s), int(8 * s), int(2 * s));
-		Ref<StyleBoxFlat> le_focus = le_norm->duplicate();
-		le_focus->set_border_color(accent);
-		search_filter_edit->add_theme_style_override("normal", le_norm);
-		search_filter_edit->add_theme_style_override("focus", le_focus);
 	}
 	Button *tiny_btns[3] = { btn_fav_toggle, btn_only_favorites, btn_grid_toggle };
 	for (int i = 0; i < 3; i++) {

@@ -1434,6 +1434,9 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		if (lmode == "radial" && etype == "button") {
 			continue;
 		}
+		if (etype == "folder") {
+			continue;
+		}
 		ElementEntry entry;
 		entry.id = String(cfg.get("id", vformat("elem_%d", i + 1)));
 		entry.name = String(cfg.get("name", entry.id));

@@ -305,6 +305,10 @@ public:
 	bool update_ui_element(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem, bool p_record_undo = true);
 	bool delete_ui_element(const String &p_screen_id, const String &p_elem_id, bool p_record_undo = true);
 	bool move_ui_element_layer(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo = true);
+	String group_ui_elements_into_folder(const String &p_screen_id, const PackedStringArray &p_elem_ids, const String &p_folder_name = "", bool p_record_undo = true);
+	bool ungroup_ui_folder(const String &p_screen_id, const String &p_folder_id, bool p_record_undo = true);
+	bool reorder_ui_element_tree(const String &p_screen_id, const PackedStringArray &p_elem_ids, const String &p_target_id, int p_drop_section, bool p_record_undo = true);
+	bool move_ui_element_tree_step(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo = true);
 	void reset_ui_screen_design_to_default(const String &p_screen_id, bool p_record_undo = true);
 	Dictionary get_ui_designs_config() const;
 	void set_ui_designs_config(const Dictionary &p_cfg);
