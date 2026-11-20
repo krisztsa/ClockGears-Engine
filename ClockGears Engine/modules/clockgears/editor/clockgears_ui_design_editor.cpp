@@ -3003,13 +3003,17 @@ void ClockGearsUiDesignEditor::refresh_geometry_fast(bool p_refresh_props) {
 	if (!dm || !design_layer) {
 		return;
 	}
-	bool has_custom = dm->has_custom_ui_design(current_screen_id) || !ClockGearsDataManager::is_system_menu_id(current_screen_id);
-	if (current_screen_id == "hud" || has_custom) {
-		Dictionary design = dm->get_ui_screen_design(current_screen_id);
-		design_layer->apply_prebuilt_screen_design(current_screen_id, design);
-		if (!design_layer->is_visible()) {
-			design_layer->show();
-		}
+	bool is_custom_menu = dm->has_menu(current_screen_id) && !ClockGearsDataManager::is_system_menu_id(current_screen_id);
+	bool has_custom = dm->has_custom_ui_design(current_screen_id) || is_custom_menu;
+	if (current_screen_id == "hud" && !has_custom) {
+		design_layer->apply_prebuilt_screen_design(current_screen_id, dm->get_default_ui_screen_template("hud"));
+	} else if (has_custom || current_screen_id == "hud") {
+		design_layer->apply_prebuilt_screen_design(current_screen_id, dm->get_ui_screen_design(current_screen_id));
+	} else {
+		design_layer->apply_prebuilt_screen_design(current_screen_id, dm->get_default_ui_screen_template(current_screen_id));
+	}
+	if (!design_layer->is_visible()) {
+		design_layer->show();
 	}
 	if (canvas_overlay) {
 		canvas_overlay->queue_redraw();
@@ -3144,7 +3148,6 @@ void ClockGearsUiDesignEditor::_refresh_background_and_default_preview(bool p_ha
 		ClockGearsTitleScreen::apply_screen_background(canvas_bg_color, canvas_bg_tex, bg, current_screen_id == "game_over" ? "#0c070cff" : "#12151e");
 	}
 
-	Size2 stage_sz(float(preview_resolution.x * canvas_zoom), float(preview_resolution.y * canvas_zoom));
 	if (default_title_preview) {
 		default_title_preview->hide();
 	}
@@ -3157,35 +3160,7 @@ void ClockGearsUiDesignEditor::_refresh_background_and_default_preview(bool p_ha
 	if (default_credits_preview) {
 		default_credits_preview->hide();
 	}
-
-	if (!p_has_custom && !is_hud) {
-		if (current_screen_id == "title") {
-			if (ClockGearsTitleScreen *tp = _ensure_default_title_preview()) {
-				tp->set_size(stage_sz);
-				tp->apply_title_config_preview(dm->get_title_menu_config(), dm->get_system_config());
-				tp->show();
-			}
-		} else if (current_screen_id.begins_with("game_menu_")) {
-			String sub = current_screen_id.trim_prefix("game_menu_");
-			if (ClockGearsGameMenu *gp = _ensure_default_gmenu_preview()) {
-				if (default_gmenu_vp) {
-					default_gmenu_vp->set_size(Size2i(stage_sz));
-				}
-				if (default_gmenu_disp) {
-					default_gmenu_disp->show();
-				}
-				gp->open_menu();
-				gp->open_subscreen(sub);
-				gp->show();
-			}
-		} else if (current_screen_id == "credits") {
-			if (ClockGearsCreditsPlayer *cp = _ensure_default_credits_preview()) {
-				cp->set_size(stage_sz);
-				cp->apply_credits_config_preview(dm->get_credits_config());
-				cp->show();
-			}
-		}
-	}
+	(void)p_has_custom;
 }
 
 static void s_select_option_meta(OptionButton *p_opt, const String &p_meta) {
@@ -3297,16 +3272,13 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 		Dictionary hud_preview = dm->get_default_ui_screen_template("hud");
 		design_layer->apply_prebuilt_screen_design(current_screen_id, hud_preview);
 		design_layer->show();
-	} else if ((current_screen_id == "game_over" || current_screen_id == "messages_battle") && !has_custom) {
+	} else if (!has_custom) {
 		Dictionary sys_preview = dm->get_default_ui_screen_template(current_screen_id);
 		design_layer->apply_prebuilt_screen_design(current_screen_id, sys_preview);
 		design_layer->show();
-	} else if (current_screen_id == "hud" || has_custom) {
+	} else {
 		design_layer->apply_prebuilt_screen_design(current_screen_id, design);
 		design_layer->show();
-	} else {
-		design_layer->clear_elements();
-		design_layer->hide();
 	}
 	if (canvas_overlay) {
 		canvas_overlay->set_size(stage_sz);

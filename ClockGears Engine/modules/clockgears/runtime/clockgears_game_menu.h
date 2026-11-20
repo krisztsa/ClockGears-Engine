@@ -83,10 +83,13 @@ private:
 	OptionButton *equip_actor_option = nullptr;
 	Button *btn_equip_next_actor = nullptr;
 	Label *equip_mode_label = nullptr;
+	VBoxContainer *equip_slots_wrap = nullptr;
 	ScrollContainer *equip_slots_scroll = nullptr;
 	VBoxContainer *equip_slots_box = nullptr;
+	VBoxContainer *equip_candidates_wrap = nullptr;
 	ScrollContainer *equip_candidates_scroll = nullptr;
 	VBoxContainer *equip_candidates_box = nullptr;
+	VBoxContainer *equip_params_wrap = nullptr;
 	ScrollContainer *equip_params_scroll = nullptr;
 	VBoxContainer *equip_preview_box = nullptr;
 	Label *equip_feedback_label = nullptr;

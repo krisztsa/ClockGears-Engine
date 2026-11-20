@@ -6563,16 +6563,16 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			add_act_btn("btn_item_discard", "Tirar", "item_discard", 776, 462, 132, 36, 1);
 		} else if (sid == "game_menu_equip") {
 			add_panel("equip_panel_frame", "Panel Equipo", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Equipo", 40, 32, 140, 34, 22, 1);
-			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 190, 32, 320, 34, 1);
-			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 2);
-			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 40, 78, 292, 378, 1);
-			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 40, 464, 292, 38, 0);
-			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 344, 78, 292, 378, 1);
-			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 344, 464, 292, 38, 1);
-			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 648, 78, 272, 100, 1);
-			add_widget("equip_desc", "Detalles pieza", "equip_desc", 648, 186, 272, 110, 1);
-			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 648, 304, 272, 198, 1);
+			add_hdr("sub_heading", "Encabezado", "Equipo", 36, 30, 140, 34, 20, 1);
+			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 184, 30, 260, 34, 1);
+			add_act_btn("btn_back", "Volver", "back", 814, 30, 110, 34, 2);
+			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 36, 73, 304, 390, 1);
+			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 36, 470, 304, 38, 0);
+			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 350, 73, 304, 390, 1);
+			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 350, 470, 304, 38, 1);
+			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 664, 73, 260, 100, 1);
+			add_widget("equip_desc", "Detalles pieza", "equip_desc", 664, 179, 260, 107, 1);
+			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 664, 292, 260, 218, 1);
 		} else if (sid == "game_menu_status") {
 			add_panel("status_panel_frame", "Panel Estado", 24, 20, 912, 500, 0);
 			add_hdr("sub_heading", "Encabezado", "Estado", 40, 32, 140, 34, 22, 1);

@@ -454,11 +454,17 @@ void ClockGearsGameMenu::_build_ui() {
 	col_slots->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	col_slots->add_theme_constant_override("separation", 6);
 	equip_cols->add_child(col_slots);
-	col_slots->add_child(_cg_make_title_label("Huecos", 14));
+	equip_slots_wrap = memnew(VBoxContainer);
+	equip_slots_wrap->set_name("EquipSlotsWrap");
+	equip_slots_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_slots_wrap->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_slots_wrap->add_theme_constant_override("separation", 6);
+	col_slots->add_child(equip_slots_wrap);
+	equip_slots_wrap->add_child(_cg_make_title_label("Huecos", 14));
 	equip_slots_scroll = memnew(ScrollContainer);
 	equip_slots_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_slots_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	col_slots->add_child(equip_slots_scroll);
+	equip_slots_wrap->add_child(equip_slots_scroll);
 	equip_slots_box = memnew(VBoxContainer);
 	equip_slots_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_slots_box->add_theme_constant_override("separation", 5);
@@ -471,11 +477,17 @@ void ClockGearsGameMenu::_build_ui() {
 	col_cand->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	col_cand->add_theme_constant_override("separation", 6);
 	equip_cols->add_child(col_cand);
-	col_cand->add_child(_cg_make_title_label("Inventario compatible", 14));
+	equip_candidates_wrap = memnew(VBoxContainer);
+	equip_candidates_wrap->set_name("EquipCandidatesWrap");
+	equip_candidates_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_candidates_wrap->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_candidates_wrap->add_theme_constant_override("separation", 6);
+	col_cand->add_child(equip_candidates_wrap);
+	equip_candidates_wrap->add_child(_cg_make_title_label("Inventario compatible", 14));
 	equip_candidates_scroll = memnew(ScrollContainer);
 	equip_candidates_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_candidates_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	col_cand->add_child(equip_candidates_scroll);
+	equip_candidates_wrap->add_child(equip_candidates_scroll);
 	equip_candidates_box = memnew(VBoxContainer);
 	equip_candidates_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_candidates_box->add_theme_constant_override("separation", 5);
@@ -541,11 +553,17 @@ void ClockGearsGameMenu::_build_ui() {
 	equip_desc_scroll->add_child(equip_detail_desc);
 	col_prev->add_child(equip_desc_box);
 
-	col_prev->add_child(_cg_make_title_label(String::utf8("Parámetros"), 14));
+	equip_params_wrap = memnew(VBoxContainer);
+	equip_params_wrap->set_name("EquipParamsWrap");
+	equip_params_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_params_wrap->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	equip_params_wrap->add_theme_constant_override("separation", 4);
+	col_prev->add_child(equip_params_wrap);
+	equip_params_wrap->add_child(_cg_make_title_label(String::utf8("Parámetros"), 14));
 	equip_params_scroll = memnew(ScrollContainer);
 	equip_params_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_params_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	col_prev->add_child(equip_params_scroll);
+	equip_params_wrap->add_child(equip_params_scroll);
 	equip_preview_box = memnew(VBoxContainer);
 	equip_preview_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_preview_box->add_theme_constant_override("separation", 4);
@@ -553,7 +571,7 @@ void ClockGearsGameMenu::_build_ui() {
 	equip_feedback_label = memnew(Label);
 	equip_feedback_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	equip_feedback_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	col_prev->add_child(equip_feedback_label);
+	equip_params_wrap->add_child(equip_feedback_label);
 
 	// --- 4. Subpantalla Estado ---
 	status_panel = memnew(PanelContainer);
@@ -1274,11 +1292,11 @@ void ClockGearsGameMenu::_mount_custom_widgets(const String &p_ui_sid) {
 		_refresh_items_view();
 	} else if (p_ui_sid == "game_menu_equip") {
 		_mount_widget_to_slot(equip_member_selector, "equip_target");
-		_mount_widget_to_slot(equip_slots_scroll, "equip_slots");
-		_mount_widget_to_slot(equip_candidates_scroll, "equip_candidates");
+		_mount_widget_to_slot(equip_slots_wrap ? static_cast<Control *>(equip_slots_wrap) : static_cast<Control *>(equip_slots_scroll), "equip_slots");
+		_mount_widget_to_slot(equip_candidates_wrap ? static_cast<Control *>(equip_candidates_wrap) : static_cast<Control *>(equip_candidates_scroll), "equip_candidates");
 		_mount_widget_to_slot(equip_item_preview_box, "equip_preview");
 		_mount_widget_to_slot(equip_desc_box, "equip_desc");
-		_mount_widget_to_slot(equip_params_scroll, "equip_params");
+		_mount_widget_to_slot(equip_params_wrap ? static_cast<Control *>(equip_params_wrap) : static_cast<Control *>(equip_params_scroll), "equip_params");
 		if (equip_feedback_label) {
 			equip_feedback_label->set_text("");
 		}
