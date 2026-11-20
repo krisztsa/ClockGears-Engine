@@ -7,6 +7,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/texture_rect.h"
+#include "scene/resources/image_texture.h"
 
 class ClockGearsDataManager;
 class ClockGearsUiDesignLayer;
@@ -222,8 +223,13 @@ private:
 	ColorRect *bg_veil_rect = nullptr;
 	Control *bg_backdrop_ctrl = nullptr;
 	TextureRect *bg_image_rect = nullptr;
+	TextureRect *bg_blur_rect = nullptr;
 	Ref<Texture2D> cached_bg_texture;
 	String cached_bg_path;
+	Ref<Image> captured_backdrop_img;
+	Ref<ImageTexture> cached_blur_texture;
+	int last_blur_intensity = -1;
+	bool last_blur_preview_mode = false;
 	Vector2 bg_scroll_offset;
 	bool transition_active = false;
 	bool transition_is_out = false;
@@ -243,6 +249,7 @@ private:
 	Size2 _resolve_effective_viewport_size() const;
 	void _clear_aux_layout_controls();
 	void _ensure_background_nodes();
+	void _rebuild_cached_blur_texture(int p_intensity);
 	void _apply_screen_background(const Dictionary &p_design, const Size2 &p_vp);
 	static Ref<Font> _load_cached_font(const String &p_path);
 	float _eval_transition_curve(float p_t) const;
@@ -287,6 +294,7 @@ public:
 	Vector2 get_viewport_size_override() const { return viewport_size_override; }
 
 	void set_action_disabled(const String &p_action, bool p_disabled);
+	void capture_backdrop_from_viewport();
 	void clear_disabled_actions();
 
 	void apply_screen_design(const String &p_screen_id, const Dictionary &p_design_override = Dictionary());

@@ -445,12 +445,28 @@ Rect2 ClockGearsUiCanvasOverlay::get_handle_widget_rect(int p_handle) const {
 	return _get_handle_rect(sr, static_cast<HandleType>(p_handle));
 }
 
+static bool s_is_supported_image_ext(const String &p_path) {
+	String ext = p_path.get_extension().strip_edges().to_lower();
+	return ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "webp" || ext == "bmp" || ext == "svg";
+}
+
 bool ClockGearsUiCanvasOverlay::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
 	if (p_data.get_type() != Variant::DICTIONARY) {
 		return false;
 	}
 	Dictionary d = p_data;
-	return String(d.get("type", "")) == "clockgears_ui_palette" && !String(d.get("element_type", "")).is_empty();
+	if (String(d.get("type", "")) == "clockgears_ui_palette" && !String(d.get("element_type", "")).is_empty()) {
+		return true;
+	}
+	if (String(d.get("type", "")) == "files" && d.has("files")) {
+		PackedStringArray files = d["files"];
+		for (int i = 0; i < files.size(); i++) {
+			if (s_is_supported_image_ext(files[i])) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 void ClockGearsUiCanvasOverlay::drop_data(const Point2 &p_point, const Variant &p_data) {
@@ -458,11 +474,21 @@ void ClockGearsUiCanvasOverlay::drop_data(const Point2 &p_point, const Variant &
 		return;
 	}
 	Dictionary d = p_data;
-	String etype = String(d.get("element_type", ""));
 	float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
 	Vector2i logical_pos(
 			CLAMP(int(Math::round(p_point.x / z)), 0, ClockGearsUiDesignEditor::BASE_W),
 			CLAMP(int(Math::round(p_point.y / z)), 0, ClockGearsUiDesignEditor::BASE_H));
+	if (String(d.get("type", "")) == "files" && d.has("files")) {
+		PackedStringArray files = d["files"];
+		for (int i = 0; i < files.size(); i++) {
+			if (s_is_supported_image_ext(files[i])) {
+				(void)owner_editor->drop_image_file_on_canvas(files[i], logical_pos);
+				return;
+			}
+		}
+		return;
+	}
+	String etype = String(d.get("element_type", ""));
 	(void)owner_editor->add_element_at(etype, logical_pos);
 }
 
@@ -1048,6 +1074,7 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_preview_resolution", "width", "height", "sync_owner_db"), &ClockGearsUiDesignEditor::set_preview_resolution, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_preview_resolution"), &ClockGearsUiDesignEditor::get_preview_resolution);
 	ClassDB::bind_method(D_METHOD("add_element_at", "type", "canvas_pos"), &ClockGearsUiDesignEditor::add_element_at, DEFVAL(Vector2i(-1, -1)));
+	ClassDB::bind_method(D_METHOD("drop_image_file_on_canvas", "path", "canvas_pos"), &ClockGearsUiDesignEditor::drop_image_file_on_canvas, DEFVAL(Vector2i(-1, -1)));
 	ClassDB::bind_method(D_METHOD("select_element", "elem_id"), &ClockGearsUiDesignEditor::select_element);
 	ClassDB::bind_method(D_METHOD("get_selected_element_id"), &ClockGearsUiDesignEditor::get_selected_element_id);
 	ClassDB::bind_method(D_METHOD("delete_selected_element"), &ClockGearsUiDesignEditor::delete_selected_element);
@@ -1137,6 +1164,12 @@ void ClockGearsUiDesignEditor::_refresh_theme_icons() {
 void ClockGearsUiDesignEditor::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
 		_refresh_theme_icons();
+		if (Window *win = get_window()) {
+			Callable cb = callable_mp(this, &ClockGearsUiDesignEditor::_on_window_files_dropped);
+			if (!win->is_connected("files_dropped", cb)) {
+				win->connect("files_dropped", cb);
+			}
+		}
 	} else if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_VISIBILITY_CHANGED) {
 		if (is_visible()) {
 			refresh_from_data_manager();
@@ -2180,10 +2213,19 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_show_bg_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(shape_body, "Mostrar fondo:", String::utf8("Activa el fondo o caja del componente."), "fondo panel", false, prop_show_bg_chk);
 
+	HBoxContainer *style_hb = memnew(HBoxContainer);
+	style_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
 	prop_style_opt = memnew(OptionButton);
-	prop_style_opt->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	prop_style_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_style_opt, EDSCALE);
 	prop_style_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
-	make_prop_row(shape_body, "Estilo:", String::utf8("Estilo de ventana o marco del tema."), "estilo ventana marco", false, prop_style_opt);
+	style_hb->add_child(prop_style_opt);
+	prop_edit_style_btn = memnew(Button("Editar estilo"));
+	prop_edit_style_btn->set_tooltip_text(String::utf8("Edita colores, bordes y relleno del estilo seleccionado sin salir de esta pestaña."));
+	s_make_rounded_action_btn(prop_edit_style_btn);
+	prop_edit_style_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_style_pressed));
+	style_hb->add_child(prop_edit_style_btn);
+	make_prop_row(shape_body, "Estilo:", String::utf8("Estilo de ventana o marco del tema."), "estilo ventana marco editar", false, style_hb);
 
 	prop_shape_opt = memnew(OptionButton);
 	prop_shape_opt->add_item(String::utf8("Rectángulo"), 0); prop_shape_opt->set_item_metadata(0, "rect");
@@ -2363,6 +2405,28 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_image_clear_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_clear_image_pressed));
 	im_hb->add_child(prop_image_clear_btn);
 
+	HBoxContainer *sm_hb = memnew(HBoxContainer);
+	sm_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_image_scale_opt = memnew(OptionButton);
+	prop_image_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_image_scale_opt, EDSCALE);
+	prop_image_scale_opt->add_item("Estirar", 0); prop_image_scale_opt->set_item_metadata(0, "stretch");
+	prop_image_scale_opt->add_item("Ajustar", 1); prop_image_scale_opt->set_item_metadata(1, "fit");
+	prop_image_scale_opt->add_item("Rellenar", 2); prop_image_scale_opt->set_item_metadata(2, "fill");
+	prop_image_scale_opt->add_item("Mosaico", 3); prop_image_scale_opt->set_item_metadata(3, "tile");
+	prop_image_scale_opt->add_item("9-slice", 4); prop_image_scale_opt->set_item_metadata(4, "nine_slice");
+	prop_image_scale_opt->add_item("Escala entera", 5); prop_image_scale_opt->set_item_metadata(5, "integer");
+	prop_image_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	sm_hb->add_child(prop_image_scale_opt);
+	prop_nine_slice_spin = memnew(SpinBox);
+	prop_nine_slice_spin->set_min(0);
+	prop_nine_slice_spin->set_max(128);
+	prop_nine_slice_spin->set_prefix("9s ");
+	prop_nine_slice_spin->set_tooltip_text(String::utf8("Margen en px para modo 9-slice."));
+	prop_nine_slice_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	sm_hb->add_child(prop_nine_slice_spin);
+	prop_image_row->add_child(sm_hb);
+
 	prop_img_thumbs_flow = memnew(HFlowContainer);
 	prop_img_thumbs_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_img_thumbs_flow->add_theme_constant_override("h_separation", int(4 * EDSCALE));
@@ -2401,7 +2465,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	prop_pixel_art_chk = memnew(CheckBox("Pixelado (Nearest)"));
 	prop_pixel_art_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
-	make_prop_row(sec_imagen_body, "Filtro imagen:", String::utf8("Pixelado nítido o suave interpolado."), "pixel art filtro imagen", true, prop_pixel_art_chk);
+	make_prop_row(sec_imagen_body, "Filtro imagen:", String::utf8("Pixelado (Nearest) o Suave interpolado (desactivado)."), "pixel art filtro imagen suave pixelado", false, prop_pixel_art_chk);
 
 	// Sección 5: Acciones
 	VBoxContainer *sec_acciones_body = nullptr;
@@ -2581,6 +2645,20 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	mbg_im->add_child(menu_bg_img_btn);
 	make_prop_row(bg_body, "Imagen fondo:", String::utf8("Imagen de fondo del menú."), "fondo imagen scroll", false, mbg_im);
 
+	menu_bg_scale_opt = memnew(OptionButton);
+	menu_bg_scale_opt->add_item("Estirar", 0); menu_bg_scale_opt->set_item_metadata(0, "stretch");
+	menu_bg_scale_opt->add_item("Ajustar", 1); menu_bg_scale_opt->set_item_metadata(1, "fit");
+	menu_bg_scale_opt->add_item("Rellenar", 2); menu_bg_scale_opt->set_item_metadata(2, "fill");
+	menu_bg_scale_opt->add_item("Mosaico", 3); menu_bg_scale_opt->set_item_metadata(3, "tile");
+	menu_bg_scale_opt->add_item("9-slice", 4); menu_bg_scale_opt->set_item_metadata(4, "nine_slice");
+	menu_bg_scale_opt->add_item("Escala entera", 5); menu_bg_scale_opt->set_item_metadata(5, "integer");
+	menu_bg_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
+	make_prop_row(bg_body, "Ajuste fondo:", String::utf8("Cómo se escala la imagen de fondo."), "ajuste escala fondo imagen", false, menu_bg_scale_opt);
+
+	menu_bg_pixel_chk = memnew(CheckBox("Pixelado (Nearest)"));
+	menu_bg_pixel_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
+	make_prop_row(bg_body, "Filtro fondo:", String::utf8("Pixelado nítido o suave para el fondo."), "pixelado suave filtro fondo", false, menu_bg_pixel_chk);
+
 	HBoxContainer *scr_hb = memnew(HBoxContainer);
 	menu_bg_scroll_x_spin = memnew(SpinBox);
 	menu_bg_scroll_x_spin->set_min(-200); menu_bg_scroll_x_spin->set_max(200);
@@ -2594,9 +2672,31 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	scr_hb->add_child(menu_bg_scroll_y_spin);
 	make_prop_row(bg_body, "Scroll fondo X/Y:", String::utf8("Velocidad en px/s de desplazamiento infinito."), "scroll movimiento fondo", true, scr_hb);
 
-	menu_bg_veil_chk = memnew(CheckBox("Velo oscuro sobre el mapa"));
+	menu_bg_blur_chk = memnew(CheckBox("Desenfocar el juego de fondo"));
+	menu_bg_blur_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
+	make_prop_row(bg_body, "Desenfoque:", String::utf8("Desenfoca de forma eficiente el juego detrás del menú."), "desenfoque blur juego mapa", false, menu_bg_blur_chk);
+
+	menu_bg_blur_slider = memnew(HSlider);
+	menu_bg_blur_slider->set_min(0); menu_bg_blur_slider->set_max(100); menu_bg_blur_slider->set_step(1);
+	menu_bg_blur_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
+	make_prop_row(bg_body, "Intens. blur:", String::utf8("Intensidad del desenfoque (0-100%)."), "intensidad desenfoque blur", false, menu_bg_blur_slider);
+
+	menu_bg_veil_chk = memnew(CheckBox("Velo de color sobre el juego"));
 	menu_bg_veil_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
-	make_prop_row(bg_body, "Velo oscuro:", String::utf8("Oscurece suavemente el juego detrás del menú."), "velo oscuro sombra mapa", false, menu_bg_veil_chk);
+	make_prop_row(bg_body, "Velo color:", String::utf8("Tiñe suavemente el juego o desenfoque detrás del menú."), "velo oscuro color sombra mapa", false, menu_bg_veil_chk);
+
+	HBoxContainer *veil_hb = memnew(HBoxContainer);
+	veil_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	menu_bg_veil_col_btn = memnew(ColorPickerButton);
+	menu_bg_veil_col_btn->set_edit_alpha(false);
+	menu_bg_veil_col_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
+	veil_hb->add_child(menu_bg_veil_col_btn);
+	menu_bg_veil_opacity_slider = memnew(HSlider);
+	menu_bg_veil_opacity_slider->set_min(0); menu_bg_veil_opacity_slider->set_max(100); menu_bg_veil_opacity_slider->set_step(1);
+	menu_bg_veil_opacity_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	menu_bg_veil_opacity_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
+	veil_hb->add_child(menu_bg_veil_opacity_slider);
+	make_prop_row(bg_body, "Color/opac. velo:", String::utf8("Color y opacidad (0-100%) del velo."), "velo opacidad color", false, veil_hb);
 
 	menu_trans_in_opt = memnew(OptionButton);
 	const char *k_tr_labels[8] = { "Sin animación", "Fundido", "Desde izquierda", "Desde derecha", "Desde arriba", "Desde abajo", "Escala", "Giro radial" };
@@ -3812,16 +3912,37 @@ void ClockGearsUiDesignEditor::_refresh_style_binding_action_options() {
 	Array styles = dm->get_window_styles();
 	if (prop_style_opt && (cached_opts_styles_cnt != styles.size() || prop_style_opt->get_item_count() == 0)) {
 		prop_style_opt->clear();
-		prop_style_opt->add_item("(Ninguno)", 0);
+		prop_style_opt->add_item("(Del tema)", 0);
 		prop_style_opt->set_item_metadata(0, String(""));
 		for (int i = 0; i < styles.size(); i++) {
 			if (styles[i].get_type() != Variant::DICTIONARY) {
 				continue;
 			}
 			Dictionary st = styles[i];
+			String sid = String(st.get("id", ""));
+			String sname = String(st.get("name", sid));
+			String fhex = String(st.get("fill_color", "#141824ff"));
+			String bhex = String(st.get("border_color", "#e0a040ff"));
+			Color fc = Color::html_is_valid(fhex) ? Color::html(fhex) : Color(0.1f, 0.12f, 0.18f, 1.0f);
+			Color bc = Color::html_is_valid(bhex) ? Color::html(bhex) : Color(0.88f, 0.62f, 0.25f, 1.0f);
+			String ckey = sid + "|" + fhex + "|" + bhex;
+			Ref<Texture2D> thumb;
+			if (style_thumb_cache.has(ckey)) {
+				thumb = style_thumb_cache[ckey];
+			} else {
+				Ref<Image> tim = Image::create_empty(16, 16, false, Image::FORMAT_RGBA8);
+				for (int y = 0; y < 16; y++) {
+					for (int x = 0; x < 16; x++) {
+						bool border = (x <= 1 || y <= 1 || x >= 14 || y >= 14);
+						tim->set_pixel(x, y, border ? bc : fc);
+					}
+				}
+				thumb = ImageTexture::create_from_image(tim);
+				style_thumb_cache[ckey] = thumb;
+			}
 			int idx = prop_style_opt->get_item_count();
-			prop_style_opt->add_item(String(st.get("name", st.get("id", ""))), idx);
-			prop_style_opt->set_item_metadata(idx, String(st.get("id", "")));
+			prop_style_opt->add_icon_item(thumb, sname, idx);
+			prop_style_opt->set_item_metadata(idx, sid);
 		}
 		cached_opts_styles_cnt = styles.size();
 	}
@@ -4298,7 +4419,7 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 		if (prop_font_color_btn && Color::html_is_valid(tcol)) prop_font_color_btn->set_pick_color(Color::html(tcol));
 	}
 
-	bool has_img = (etype == "image" || etype == "button" || etype == "currency" || etype == "item");
+	bool has_img = (etype == "image" || etype == "frame" || etype == "button" || etype == "currency" || etype == "item");
 	prop_image_row->set_visible(has_img);
 	if (has_img) {
 		String ikey = (etype == "currency" || etype == "item") ? "icon_path" : "image_path";
@@ -4307,6 +4428,15 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 			ip = String(el.get("icon_path", ""));
 		}
 		prop_image_edit->set_text(ip);
+		bool has_scale_mode = (etype == "image" || etype == "frame" || etype == "button");
+		if (prop_image_scale_opt) {
+			prop_image_scale_opt->set_visible(has_scale_mode);
+			s_select_option_meta(prop_image_scale_opt, String(el.get("scale_mode", "stretch")));
+		}
+		if (prop_nine_slice_spin) {
+			prop_nine_slice_spin->set_visible(has_scale_mode);
+			prop_nine_slice_spin->set_value(int(el.get("nine_slice_margin", 12)));
+		}
 		_refresh_image_thumbs_gallery();
 	}
 	if (prop_btn_state_imgs_box) {
@@ -4401,9 +4531,17 @@ void ClockGearsUiDesignEditor::_refresh_menu_global_properties() {
 	if (menu_bg_col_btn && Color::html_is_valid(mc)) menu_bg_col_btn->set_pick_color(Color::html(mc));
 	if (menu_bg_grad_bot_btn && Color::html_is_valid(mg)) menu_bg_grad_bot_btn->set_pick_color(Color::html(mg));
 	if (menu_bg_img_edit) menu_bg_img_edit->set_text(String(bg.get("image_path", "")));
+	if (menu_bg_scale_opt) s_select_option_meta(menu_bg_scale_opt, String(bg.get("scale_mode", "stretch")));
+	if (menu_bg_pixel_chk) menu_bg_pixel_chk->set_pressed(bg.has("pixel_art") ? bool(bg["pixel_art"]) : true);
 	if (menu_bg_scroll_x_spin) menu_bg_scroll_x_spin->set_value(int(bg.get("scroll_speed_x", 0)));
 	if (menu_bg_scroll_y_spin) menu_bg_scroll_y_spin->set_value(int(bg.get("scroll_speed_y", 0)));
-	if (menu_bg_veil_chk) menu_bg_veil_chk->set_pressed(bool(bg.get("dark_veil", false)));
+	if (menu_bg_blur_chk) menu_bg_blur_chk->set_pressed(bool(bg.get("blur_enabled", false)));
+	if (menu_bg_blur_slider) menu_bg_blur_slider->set_value(int(bg.get("blur_intensity", 45)));
+	if (menu_bg_veil_chk) menu_bg_veil_chk->set_pressed(bool(bg.get("veil_enabled", bg.get("dark_veil", false))));
+	String vcol_hex = String(bg.get("veil_color", "#05070ca6"));
+	Color vcol = Color::html_is_valid(vcol_hex) ? Color::html(vcol_hex) : Color(0.02f, 0.03f, 0.05f, 0.65f);
+	if (menu_bg_veil_col_btn) menu_bg_veil_col_btn->set_pick_color(Color(vcol.r, vcol.g, vcol.b, 1.0f));
+	if (menu_bg_veil_opacity_slider) menu_bg_veil_opacity_slider->set_value(int(Math::round(CLAMP(vcol.a, 0.0f, 1.0f) * 100.0f)));
 
 	s_select_option_meta(menu_trans_in_opt, String(tin.get("type", "none")));
 	s_select_option_meta(menu_trans_out_opt, String(tout.get("type", "none")));
@@ -5709,9 +5847,25 @@ void ClockGearsUiDesignEditor::_on_menu_global_changed() {
 	if (menu_bg_col_btn) bg["color"] = "#" + menu_bg_col_btn->get_pick_color().to_html(false);
 	if (menu_bg_grad_bot_btn) bg["gradient_bottom"] = "#" + menu_bg_grad_bot_btn->get_pick_color().to_html(false);
 	if (menu_bg_img_edit) bg["image_path"] = menu_bg_img_edit->get_text().strip_edges();
+	if (menu_bg_scale_opt && menu_bg_scale_opt->get_selected() >= 0) {
+		bg["scale_mode"] = String(menu_bg_scale_opt->get_item_metadata(menu_bg_scale_opt->get_selected()));
+	}
+	if (menu_bg_pixel_chk) bg["pixel_art"] = menu_bg_pixel_chk->is_pressed();
 	if (menu_bg_scroll_x_spin) bg["scroll_speed_x"] = menu_bg_scroll_x_spin->get_value();
 	if (menu_bg_scroll_y_spin) bg["scroll_speed_y"] = menu_bg_scroll_y_spin->get_value();
-	if (menu_bg_veil_chk) bg["dark_veil"] = menu_bg_veil_chk->is_pressed();
+	if (menu_bg_blur_chk) bg["blur_enabled"] = menu_bg_blur_chk->is_pressed();
+	if (menu_bg_blur_slider) bg["blur_intensity"] = int(Math::round(menu_bg_blur_slider->get_value()));
+	if (menu_bg_veil_chk) {
+		bool veil_on = menu_bg_veil_chk->is_pressed();
+		bg["veil_enabled"] = veil_on;
+		bg["dark_veil"] = veil_on;
+	}
+	if (menu_bg_veil_col_btn || menu_bg_veil_opacity_slider) {
+		Color vc = menu_bg_veil_col_btn ? menu_bg_veil_col_btn->get_pick_color() : Color(0.02f, 0.03f, 0.05f, 1.0f);
+		float va = menu_bg_veil_opacity_slider ? float(CLAMP(menu_bg_veil_opacity_slider->get_value(), 0.0, 100.0) / 100.0) : 0.65f;
+		vc.a = va;
+		bg["veil_color"] = "#" + vc.to_html(true);
+	}
 	d["background"] = ClockGearsDataManager::normalize_ui_background(bg);
 
 	Dictionary tin = d.get("transition_in", Dictionary());
@@ -6166,6 +6320,18 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 		String next_img = prop_image_edit->get_text().strip_edges();
 		if (String(el.get(ikey, "")) != next_img) only_geom = false;
 		el[ikey] = next_img;
+		if (etype == "image" || etype == "frame" || etype == "button") {
+			if (prop_image_scale_opt && prop_image_scale_opt->get_selected() >= 0) {
+				String sm = String(prop_image_scale_opt->get_item_metadata(prop_image_scale_opt->get_selected()));
+				if (String(el.get("scale_mode", "stretch")) != sm) only_geom = false;
+				el["scale_mode"] = sm;
+			}
+			if (prop_nine_slice_spin) {
+				int nm = int(Math::round(prop_nine_slice_spin->get_value()));
+				if (int(el.get("nine_slice_margin", 12)) != nm) only_geom = false;
+				el["nine_slice_margin"] = nm;
+			}
+		}
 		if (etype == "button") {
 			el["icon_path"] = next_img;
 			static const char *k_sk[4] = { "image_normal", "image_hover", "image_pressed", "image_disabled" };
@@ -6345,6 +6511,205 @@ void ClockGearsUiDesignEditor::_on_image_file_selected(const String &p_path) {
 		}
 	}
 	image_import_target = 0;
+}
+
+String ClockGearsUiDesignEditor::drop_image_file_on_canvas(const String &p_path, const Vector2i &p_canvas_pos) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || p_path.strip_edges().is_empty()) {
+		return String();
+	}
+	String final_path = p_path.strip_edges();
+	if (owner_db) {
+		final_path = owner_db->import_menu_asset_for_ui_designer(final_path, true);
+	}
+	if (final_path.is_empty()) {
+		return String();
+	}
+	cached_thumbs_scanned = false;
+	Vector2i pos = p_canvas_pos;
+	if (pos.x < 0 || pos.y < 0) {
+		pos = Vector2i(BASE_W / 2 - 96, BASE_H / 2 - 64);
+	}
+	String eid = add_element_at("image", pos);
+	if (eid.is_empty()) {
+		return String();
+	}
+	Dictionary el = _get_selected_element_copy();
+	if (!el.is_empty()) {
+		el["image_path"] = final_path;
+		el["name"] = final_path.get_file().get_basename();
+		Ref<Texture2D> tex;
+		if (ResourceLoader::exists(final_path)) {
+			tex = ResourceLoader::load(final_path);
+		}
+		if (tex.is_null()) {
+			Ref<Image> im = Image::load_from_file(final_path);
+			if (im.is_valid() && !im->is_empty()) {
+				el["width"] = MIN(im->get_width(), BASE_W - 40);
+				el["height"] = MIN(im->get_height(), BASE_H - 40);
+			}
+		} else {
+			Size2i tsz = Size2i(tex->get_size());
+			if (tsz.x >= 8 && tsz.y >= 8) {
+				el["width"] = MIN(tsz.x, BASE_W - 40);
+				el["height"] = MIN(tsz.y, BASE_H - 40);
+			}
+		}
+		dm->update_ui_element(current_screen_id, eid, el, false);
+		_notify_data_mutated(true);
+		_trace_log("drop_image_canvas", eid + " -> " + final_path);
+	}
+	return eid;
+}
+
+void ClockGearsUiDesignEditor::_on_window_files_dropped(const Vector<String> &p_files) {
+	if (!is_visible_in_tree() || p_files.is_empty()) {
+		return;
+	}
+	if (canvas_overlay) {
+		Vector2 mp = canvas_overlay->get_local_mouse_position();
+		Rect2 r(Vector2(), canvas_overlay->get_size());
+		if (!r.has_point(mp)) {
+			return;
+		}
+		Vector2i cpos(int(Math::round(mp.x / MAX(0.05f, canvas_zoom))), int(Math::round(mp.y / MAX(0.05f, canvas_zoom))));
+		for (int i = 0; i < p_files.size(); i++) {
+			String ext = p_files[i].get_extension().to_lower();
+			if (ext == "png" || ext == "webp" || ext == "jpg" || ext == "jpeg" || ext == "svg") {
+				(void)drop_image_file_on_canvas(p_files[i], cpos + Vector2i(i * 16, i * 16));
+			}
+		}
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_edit_style_pressed() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	String sid;
+	if (prop_style_opt && prop_style_opt->get_selected() >= 0) {
+		sid = String(prop_style_opt->get_item_metadata(prop_style_opt->get_selected()));
+	}
+	if (sid.is_empty() || sid == "none") {
+		Array styles = dm->get_window_styles();
+		if (!styles.is_empty() && styles[0].get_type() == Variant::DICTIONARY) {
+			sid = String(Dictionary(styles[0]).get("id", "classic"));
+		} else {
+			sid = "classic";
+		}
+	}
+	Dictionary st = dm->get_window_style(sid);
+	if (st.is_empty()) {
+		return;
+	}
+	style_editing_id = sid;
+	if (!style_inline_dialog) {
+		style_inline_dialog = memnew(AcceptDialog);
+		style_inline_dialog->set_name("UiInlineStyleDialog");
+		style_inline_dialog->set_title(String::utf8("Editar estilo de marco"));
+		style_inline_dialog->set_min_size(Size2i(int(360 * EDSCALE), int(280 * EDSCALE)));
+		style_inline_dialog->get_ok_button()->set_text("Aplicar al estilo");
+		style_inline_dialog->connect("confirmed", callable_mp(this, &ClockGearsUiDesignEditor::_on_inline_style_applied));
+		VBoxContainer *vb = memnew(VBoxContainer);
+		vb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		style_inline_dialog->add_child(vb);
+
+		auto add_row = [&](const String &p_lbl, Control *p_ctrl) {
+			HBoxContainer *hb = memnew(HBoxContainer);
+			Label *l = memnew(Label(p_lbl));
+			l->set_custom_minimum_size(Size2(115 * EDSCALE, 0));
+			hb->add_child(l);
+			p_ctrl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			hb->add_child(p_ctrl);
+			vb->add_child(hb);
+		};
+		style_edit_name = memnew(LineEdit);
+		add_row("Nombre:", style_edit_name);
+		style_edit_fill_col = memnew(ColorPickerButton);
+		style_edit_fill_col->set_edit_alpha(true);
+		add_row("Color fondo:", style_edit_fill_col);
+		style_edit_border_col = memnew(ColorPickerButton);
+		style_edit_border_col->set_edit_alpha(true);
+		add_row("Color borde:", style_edit_border_col);
+		style_edit_border_w = memnew(SpinBox);
+		style_edit_border_w->set_min(0); style_edit_border_w->set_max(16);
+		add_row("Grosor borde:", style_edit_border_w);
+		style_edit_radius = memnew(SpinBox);
+		style_edit_radius->set_min(0); style_edit_radius->set_max(64);
+		add_row("Redondeo:", style_edit_radius);
+		style_edit_pad = memnew(SpinBox);
+		style_edit_pad->set_min(0); style_edit_pad->set_max(48);
+		add_row("Margen interno:", style_edit_pad);
+		style_edit_opacity = memnew(HSlider);
+		style_edit_opacity->set_min(0.05); style_edit_opacity->set_max(1.0); style_edit_opacity->set_step(0.05);
+		add_row("Opacidad:", style_edit_opacity);
+		add_child(style_inline_dialog);
+	}
+	if (style_edit_name) style_edit_name->set_text(String(st.get("name", sid)));
+	String fhex = String(st.get("fill_color", "#141824ff"));
+	String bhex = String(st.get("border_color", "#e0a040ff"));
+	Color fcol = Color::html_is_valid(fhex) ? Color::html(fhex) : Color(0.08f, 0.09f, 0.14f, 0.94f);
+	if (style_edit_fill_col) style_edit_fill_col->set_pick_color(fcol);
+	if (style_edit_border_col && Color::html_is_valid(bhex)) style_edit_border_col->set_pick_color(Color::html(bhex));
+	if (style_edit_border_w) style_edit_border_w->set_value(int(st.get("border_width", 2)));
+	if (style_edit_radius) style_edit_radius->set_value(int(st.get("corner_radius", 8)));
+	int pad_v = 12;
+	if (st.get("padding", Variant()).get_type() == Variant::DICTIONARY) {
+		pad_v = int(Dictionary(st["padding"]).get("left", 12));
+	} else {
+		pad_v = int(st.get("padding", 12));
+	}
+	if (style_edit_pad) style_edit_pad->set_value(pad_v);
+	if (style_edit_opacity) style_edit_opacity->set_value(fcol.a);
+	style_inline_dialog->popup_centered();
+}
+
+void ClockGearsUiDesignEditor::_on_inline_style_applied() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || style_editing_id.is_empty()) {
+		return;
+	}
+	Dictionary patch = dm->get_window_style(style_editing_id).duplicate(true);
+	if (style_edit_name && !style_edit_name->get_text().strip_edges().is_empty()) {
+		patch["name"] = style_edit_name->get_text().strip_edges();
+	}
+	if (style_edit_fill_col) {
+		Color fc = style_edit_fill_col->get_pick_color();
+		if (style_edit_opacity) {
+			fc.a = float(CLAMP(style_edit_opacity->get_value(), 0.05, 1.0));
+		}
+		patch["fill_color"] = "#" + fc.to_html(true);
+	}
+	if (style_edit_border_col) patch["border_color"] = "#" + style_edit_border_col->get_pick_color().to_html(true);
+	int bw = style_edit_border_w ? int(Math::round(style_edit_border_w->get_value())) : int(patch.get("border_width", 2));
+	int rad = style_edit_radius ? int(Math::round(style_edit_radius->get_value())) : int(patch.get("corner_radius", 8));
+	patch["border_width"] = bw;
+	patch["corner_radius"] = rad;
+	if (rad > 0) {
+		patch["border_type"] = "rounded";
+	} else if (bw > 0) {
+		patch["border_type"] = "rect";
+	}
+	if (style_edit_pad) {
+		int p = int(Math::round(style_edit_pad->get_value()));
+		Dictionary pad_d;
+		pad_d["left"] = p; pad_d["top"] = p; pad_d["right"] = p; pad_d["bottom"] = p;
+		patch["padding"] = pad_d;
+	}
+	dm->update_window_style(style_editing_id, patch);
+	cached_opts_styles_cnt = -1;
+	style_thumb_cache.clear();
+	_refresh_style_binding_action_options();
+	if (!selected_elem_id.is_empty()) {
+		Dictionary el = _get_selected_element_copy();
+		if (!el.is_empty() && String(el.get("window_style_id", "")).is_empty()) {
+			el["window_style_id"] = style_editing_id;
+			dm->update_ui_element(current_screen_id, selected_elem_id, el, false);
+		}
+	}
+	_notify_data_mutated(true);
+	_trace_log("inline_style_applied", style_editing_id);
 }
 
 void ClockGearsUiDesignEditor::_on_test_pressed() {
@@ -6557,8 +6922,29 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["prop_locked_chk"] = prop_locked_chk;
 	out["grid_step_opt"] = grid_step_opt;
 	out["prop_style_opt"] = prop_style_opt;
+	out["prop_edit_style_btn"] = prop_edit_style_btn;
+	out["style_inline_dialog"] = style_inline_dialog;
+	out["style_edit_name"] = style_edit_name;
+	out["style_edit_fill_col"] = style_edit_fill_col;
+	out["style_edit_border_col"] = style_edit_border_col;
+	out["style_edit_border_w"] = style_edit_border_w;
+	out["style_edit_radius"] = style_edit_radius;
+	out["style_edit_pad"] = style_edit_pad;
+	out["style_edit_opacity"] = style_edit_opacity;
 	out["prop_text_edit"] = prop_text_edit;
 	out["prop_image_edit"] = prop_image_edit;
+	out["prop_image_scale_opt"] = prop_image_scale_opt;
+	out["prop_nine_slice_spin"] = prop_nine_slice_spin;
+	out["prop_pixel_art_chk"] = prop_pixel_art_chk;
+	out["menu_bg_type_opt"] = menu_bg_type_opt;
+	out["menu_bg_img_edit"] = menu_bg_img_edit;
+	out["menu_bg_scale_opt"] = menu_bg_scale_opt;
+	out["menu_bg_pixel_chk"] = menu_bg_pixel_chk;
+	out["menu_bg_blur_chk"] = menu_bg_blur_chk;
+	out["menu_bg_blur_slider"] = menu_bg_blur_slider;
+	out["menu_bg_veil_chk"] = menu_bg_veil_chk;
+	out["menu_bg_veil_col_btn"] = menu_bg_veil_col_btn;
+	out["menu_bg_veil_opacity_slider"] = menu_bg_veil_opacity_slider;
 	out["prop_binding_opt"] = prop_binding_opt;
 	out["prop_var_edit"] = prop_var_edit;
 	out["prop_item_opt"] = prop_item_opt;

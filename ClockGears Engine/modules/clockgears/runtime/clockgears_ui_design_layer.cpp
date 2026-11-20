@@ -11,6 +11,7 @@
 #include "core/math/math_funcs.h"
 #include "core/object/callable_mp.h"
 #include "scene/gui/box_container.h"
+#include "scene/gui/nine_patch_rect.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
@@ -69,6 +70,17 @@ protected:
 					float s = MAX(sz.x / ts.x, sz.y / ts.y);
 					Vector2 dsz = ts * s;
 					draw_texture_rect(bg_tex, Rect2((sz - dsz) * 0.5f, dsz), false);
+				} else if (sm == "integer") {
+					int mult = MAX(1, int(Math::floor(MIN(sz.x / ts.x, sz.y / ts.y))));
+					Vector2 dsz = ts * float(mult);
+					draw_texture_rect(bg_tex, Rect2(((sz - dsz) * 0.5f).floor(), dsz), false);
+				} else if (sm == "nine_slice") {
+					float m = CLAMP(float(bg_cfg.get("nine_slice_margin", 16)), 0.0f, MIN(ts.x, ts.y) * 0.45f);
+					Ref<StyleBoxTexture> sbt;
+					sbt.instantiate();
+					sbt->set_texture(bg_tex);
+					sbt->set_texture_margin_all(m);
+					draw_style_box(sbt, Rect2(Vector2(), sz));
 				} else {
 					draw_texture_rect(bg_tex, Rect2(Vector2(), sz), false);
 				}
@@ -80,9 +92,10 @@ public:
 	void configure(const Dictionary &p_bg, const Ref<Texture2D> &p_tex) {
 		bg_cfg = p_bg;
 		bg_tex = p_tex;
-		bool pa = bg_cfg.has("pixel_art") ? bool(bg_cfg["pixel_art"]) : true;
-		set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
-		queue_redraw();
+	bool pa = bg_cfg.has("pixel_art") ? bool(bg_cfg["pixel_art"]) : true;
+	String sm = String(bg_cfg.get("scale_mode", "stretch")).strip_edges().to_lower();
+	set_texture_filter((pa || sm == "integer") ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+	queue_redraw();
 	}
 	void set_scroll_offset(const Vector2 &p_off) {
 		scroll_offset = p_off;
@@ -1056,22 +1069,90 @@ Ref<Font> ClockGearsUiDesignLayer::_load_cached_font(const String &p_path) {
 }
 
 void ClockGearsUiDesignLayer::_ensure_background_nodes() {
-	if (!bg_veil_rect) {
-		bg_veil_rect = memnew(ColorRect);
-		bg_veil_rect->set_name("MenuBgVeil");
-		bg_veil_rect->set_mouse_filter(MOUSE_FILTER_IGNORE);
-		bg_veil_rect->set_z_index(-200);
-		bg_veil_rect->hide();
-		add_child(bg_veil_rect);
+	if (!bg_blur_rect) {
+		bg_blur_rect = memnew(TextureRect);
+		bg_blur_rect->set_name("MenuBgBlur");
+		bg_blur_rect->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		bg_blur_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+		bg_blur_rect->set_stretch_mode(TextureRect::STRETCH_SCALE);
+		bg_blur_rect->set_texture_filter(TEXTURE_FILTER_LINEAR);
+		bg_blur_rect->set_z_index(-210);
+		bg_blur_rect->hide();
+		add_child(bg_blur_rect);
 	}
 	if (!bg_backdrop_ctrl) {
 		ClockGearsUiBackdropDraw *bd = memnew(ClockGearsUiBackdropDraw);
 		bd->set_name("MenuBgBackdrop");
 		bd->set_mouse_filter(MOUSE_FILTER_IGNORE);
-		bd->set_z_index(-190);
+		bd->set_z_index(-195);
 		bd->hide();
 		add_child(bd);
 		bg_backdrop_ctrl = bd;
+	}
+	if (!bg_veil_rect) {
+		bg_veil_rect = memnew(ColorRect);
+		bg_veil_rect->set_name("MenuBgVeil");
+		bg_veil_rect->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		bg_veil_rect->set_z_index(-185);
+		bg_veil_rect->hide();
+		add_child(bg_veil_rect);
+	}
+}
+
+void ClockGearsUiDesignLayer::capture_backdrop_from_viewport() {
+	if (preview_mode || !is_inside_tree() || !get_viewport()) {
+		return;
+	}
+	Ref<Texture2D> vtex = get_viewport()->get_texture();
+	if (vtex.is_valid()) {
+		Ref<Image> img = vtex->get_image();
+		if (img.is_valid() && !img->is_empty()) {
+			captured_backdrop_img = img->duplicate();
+			last_blur_intensity = -1; // Forzar regeneración única con la captura nueva
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_rebuild_cached_blur_texture(int p_intensity) {
+	int inten = CLAMP(p_intensity, 0, 100);
+	if (cached_blur_texture.is_valid() && last_blur_intensity == inten && last_blur_preview_mode == preview_mode) {
+		return;
+	}
+	last_blur_intensity = inten;
+	last_blur_preview_mode = preview_mode;
+
+	Ref<Image> src;
+	if (!preview_mode && captured_backdrop_img.is_valid() && !captured_backdrop_img->is_empty()) {
+		src = captured_backdrop_img->duplicate();
+	} else {
+		// Muestra estilizada cacheada del juego para ver el desenfoque real en el lienzo
+		src = Image::create_empty(160, 90, false, Image::FORMAT_RGBA8);
+		for (int y = 0; y < 90; y++) {
+			for (int x = 0; x < 160; x++) {
+				bool checker = (((x / 12) + (y / 12)) % 2) == 0;
+				Color c = checker ? Color(0.18f, 0.34f, 0.24f, 1.0f) : Color(0.13f, 0.26f, 0.20f, 1.0f);
+				if ((x - 80) * (x - 80) + (y - 45) * (y - 45) < 420) {
+					c = Color(0.55f, 0.42f, 0.24f, 1.0f);
+				} else if (x > 110 && y < 35) {
+					c = Color(0.24f, 0.40f, 0.62f, 1.0f);
+				}
+				src->set_pixel(x, y, c);
+			}
+		}
+	}
+	int sw = src->get_width();
+	int sh = src->get_height();
+	if (inten > 0 && sw > 8 && sh > 8) {
+		int div = CLAMP(1 + (inten * 20) / 100, 1, 22);
+		int dw = MAX(10, sw / div);
+		int dh = MAX(6, sh / div);
+		src->resize(dw, dh, Image::INTERPOLATE_BILINEAR);
+		src->resize(MIN(320, sw), MIN(180, sh), Image::INTERPOLATE_BILINEAR);
+	}
+	if (cached_blur_texture.is_null()) {
+		cached_blur_texture = ImageTexture::create_from_image(src);
+	} else {
+		cached_blur_texture->set_image(src);
 	}
 }
 
@@ -1080,7 +1161,18 @@ void ClockGearsUiDesignLayer::_apply_screen_background(const Dictionary &p_desig
 	Dictionary bg = (p_design.has("background") && p_design["background"].get_type() == Variant::DICTIONARY)
 			? Dictionary(p_design["background"])
 			: Dictionary();
-	bool veil = bool(bg.get("veil_enabled", false));
+	bool blur_en = bool(bg.get("blur_enabled", false));
+	int blur_int = CLAMP(int(bg.get("blur_intensity", 45)), 0, 100);
+	if (bg_blur_rect) {
+		bg_blur_rect->set_visible(blur_en);
+		if (blur_en) {
+			_rebuild_cached_blur_texture(blur_int);
+			bg_blur_rect->set_texture(cached_blur_texture);
+			bg_blur_rect->set_position(Vector2());
+			bg_blur_rect->set_size(p_vp);
+		}
+	}
+	bool veil = bool(bg.get("veil_enabled", bg.get("dark_veil", false)));
 	if (bg_veil_rect) {
 		bg_veil_rect->set_visible(veil);
 		if (veil) {
@@ -1292,10 +1384,11 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.config = cfg;
 
 		bool has_shape = cfg.has("shape") && cfg["shape"].get_type() == Variant::DICTIONARY;
+		bool can_reuse_frame = (etype == "frame" && String(cfg.get("image_path", "")).strip_edges().is_empty());
 		bool reused_ok = false;
-		if (!has_shape && (etype == "text" || etype == "frame")) {
+		if (!has_shape && (etype == "text" || can_reuse_frame)) {
 			for (int r = 0; r < reusable.size(); r++) {
-				if (!used[r] && reusable[r].root && reusable[r].type == etype && !reusable[r].clip_host) {
+				if (!used[r] && reusable[r].root && reusable[r].type == etype && !reusable[r].clip_host && (etype != "frame" || String(reusable[r].config.get("image_path", "")).strip_edges().is_empty())) {
 					used.write[r] = true;
 					entry.root = reusable[r].root;
 					entry.bg_panel = reusable[r].bg_panel;
@@ -1410,6 +1503,40 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 	if (r_entry.type == "frame") {
 		float op = CLAMP(float(r_entry.config.get("opacity", 1.0)), 0.0f, 1.0f);
 		bg->set_modulate(Color(1, 1, 1, op));
+		String fip = String(r_entry.config.get("image_path", "")).strip_edges();
+		if (!fip.is_empty()) {
+			Ref<Texture2D> ftex = ClockGearsWindowStyleManager::load_texture_safe(fip);
+			if (ftex.is_valid()) {
+				String sm = String(r_entry.config.get("scale_mode", "stretch")).strip_edges().to_lower();
+				int margin = CLAMP(int(r_entry.config.get("nine_slice_margin", 12)), 0, 128);
+				if (sm == "nine_slice") {
+					NinePatchRect *np = memnew(NinePatchRect);
+					np->set_name("FrameNinePatch");
+					np->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					np->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+					np->set_texture(ftex);
+					np->set_patch_margin(SIDE_LEFT, margin);
+					np->set_patch_margin(SIDE_TOP, margin);
+					np->set_patch_margin(SIDE_RIGHT, margin);
+					np->set_patch_margin(SIDE_BOTTOM, margin);
+					np->set_texture_filter(tf);
+					np->set_modulate(Color(1, 1, 1, op));
+					content->add_child(np);
+				} else {
+					TextureRect *fimg = memnew(TextureRect);
+					fimg->set_name("FrameFillImage");
+					fimg->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					fimg->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+					fimg->set_texture_filter(tf);
+					fimg->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+					fimg->set_stretch_mode(sm == "fit" ? TextureRect::STRETCH_KEEP_ASPECT_CENTERED : (sm == "fill" ? TextureRect::STRETCH_KEEP_ASPECT_COVERED : (sm == "tile" ? TextureRect::STRETCH_TILE : TextureRect::STRETCH_SCALE)));
+					fimg->set_modulate(Color(1, 1, 1, op));
+					fimg->set_texture(ftex);
+					content->add_child(fimg);
+					r_entry.image_rect = fimg;
+				}
+			}
+		}
 	} else if (r_entry.type == "button") {
 		Button *btn = memnew(Button);
 		btn->set_name("ActionButton");
@@ -1436,36 +1563,53 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		content->add_child(btn);
 		r_entry.button = btn;
 	} else if (r_entry.type == "image") {
-		TextureRect *img = memnew(TextureRect);
-		img->set_name("Image");
-		img->set_mouse_filter(MOUSE_FILTER_IGNORE);
-		img->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
-		img->set_texture_filter(tf);
-		String sm = String(r_entry.config.get("scale_mode", "fit"));
-		if (sm == "stretch") {
-			img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-			img->set_stretch_mode(TextureRect::STRETCH_SCALE);
-		} else if (sm == "fill") {
-			img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-			img->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
-		} else if (sm == "tile") {
-			img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-			img->set_stretch_mode(TextureRect::STRETCH_TILE);
-		} else if (sm == "native") {
-			img->set_expand_mode(TextureRect::EXPAND_KEEP_SIZE);
-			img->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
-		} else {
-			img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-			img->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
-		}
+		String sm = String(r_entry.config.get("scale_mode", "fit")).strip_edges().to_lower();
 		float op = CLAMP(float(r_entry.config.get("opacity", 1.0)), 0.0f, 1.0f);
-		img->set_modulate(Color(1, 1, 1, op));
 		String ip = String(r_entry.config.get("image_path", "")).strip_edges();
-		if (!ip.is_empty()) {
-			img->set_texture(ClockGearsWindowStyleManager::load_texture_safe(ip));
+		Ref<Texture2D> tex = ip.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(ip);
+		if (sm == "nine_slice") {
+			int margin = CLAMP(int(r_entry.config.get("nine_slice_margin", 12)), 0, 128);
+			NinePatchRect *np = memnew(NinePatchRect);
+			np->set_name("Image");
+			np->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			np->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+			np->set_texture_filter(tf);
+			np->set_patch_margin(SIDE_LEFT, margin);
+			np->set_patch_margin(SIDE_TOP, margin);
+			np->set_patch_margin(SIDE_RIGHT, margin);
+			np->set_patch_margin(SIDE_BOTTOM, margin);
+			np->set_modulate(Color(1, 1, 1, op));
+			if (tex.is_valid()) np->set_texture(tex);
+			content->add_child(np);
+		} else {
+			TextureRect *img = memnew(TextureRect);
+			img->set_name("Image");
+			img->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			img->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+			img->set_texture_filter(tf);
+			if (sm == "stretch") {
+				img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+				img->set_stretch_mode(TextureRect::STRETCH_SCALE);
+			} else if (sm == "fill") {
+				img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+				img->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_COVERED);
+			} else if (sm == "tile") {
+				img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+				img->set_stretch_mode(TextureRect::STRETCH_TILE);
+			} else if (sm == "native") {
+				img->set_expand_mode(TextureRect::EXPAND_KEEP_SIZE);
+				img->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+			} else {
+				img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+				img->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+			}
+			img->set_modulate(Color(1, 1, 1, op));
+			if (tex.is_valid()) {
+				img->set_texture(tex);
+			}
+			content->add_child(img);
+			r_entry.image_rect = img;
 		}
-		content->add_child(img);
-		r_entry.image_rect = img;
 	} else if (r_entry.type == "bar") {
 		ColorRect *bg_r = memnew(ColorRect);
 		bg_r->set_mouse_filter(MOUSE_FILTER_IGNORE);
@@ -1716,6 +1860,19 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 		if (r_entry.content_root->get_size() != rsz) {
 			r_entry.content_root->set_size(rsz);
 		}
+		if (r_entry.image_rect && String(r_entry.config.get("scale_mode", "")).strip_edges().to_lower() == "integer") {
+			Ref<Texture2D> it = r_entry.image_rect->get_texture();
+			if (it.is_valid()) {
+				Vector2 ts = it->get_size();
+				if (ts.x > 0.0f && ts.y > 0.0f) {
+					int mult = MAX(1, int(Math::floor(MIN(rsz.x / ts.x, rsz.y / ts.y))));
+					Vector2 dsz = ts * float(mult);
+					r_entry.image_rect->set_anchors_preset(PRESET_TOP_LEFT);
+					r_entry.image_rect->set_position(((rsz - dsz) * 0.5f).floor());
+					r_entry.image_rect->set_size(dsz);
+				}
+			}
+		}
 		return;
 	}
 
@@ -1743,7 +1900,21 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	float pad_b = sb.is_valid() ? MAX(0.0f, sb->get_content_margin(SIDE_BOTTOM)) : (4.0f * p_scale);
 	Size2 rsz = r_entry.root->get_size();
 	r_entry.content_root->set_position(Vector2(pad_l, pad_t));
-	r_entry.content_root->set_size(Vector2(MAX(4.0f, rsz.x - pad_l - pad_r), MAX(4.0f, rsz.y - pad_t - pad_b)));
+	Size2 csz(MAX(4.0f, rsz.x - pad_l - pad_r), MAX(4.0f, rsz.y - pad_t - pad_b));
+	r_entry.content_root->set_size(csz);
+	if (r_entry.image_rect && String(r_entry.config.get("scale_mode", "")).strip_edges().to_lower() == "integer") {
+		Ref<Texture2D> it = r_entry.image_rect->get_texture();
+		if (it.is_valid()) {
+			Vector2 ts = it->get_size();
+			if (ts.x > 0.0f && ts.y > 0.0f) {
+				int mult = MAX(1, int(Math::floor(MIN(csz.x / ts.x, csz.y / ts.y))));
+				Vector2 dsz = ts * float(mult);
+				r_entry.image_rect->set_anchors_preset(PRESET_TOP_LEFT);
+				r_entry.image_rect->set_position(((csz - dsz) * 0.5f).floor());
+				r_entry.image_rect->set_size(dsz);
+			}
+		}
+	}
 }
 
 void ClockGearsUiDesignLayer::_apply_container_layout(const Dictionary &p_layout, float p_scale) {
@@ -2662,6 +2833,7 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_action_disabled", "action", "disabled"), &ClockGearsUiDesignLayer::set_action_disabled);
 	ClassDB::bind_method(D_METHOD("clear_disabled_actions"), &ClockGearsUiDesignLayer::clear_disabled_actions);
 	ClassDB::bind_method(D_METHOD("apply_screen_design", "screen_id", "design_override"), &ClockGearsUiDesignLayer::apply_screen_design, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("capture_backdrop_from_viewport"), &ClockGearsUiDesignLayer::capture_backdrop_from_viewport);
 	ClassDB::bind_method(D_METHOD("update_element_geometry_fast", "elem_id", "elem"), &ClockGearsUiDesignLayer::update_element_geometry_fast);
 	ClassDB::bind_method(D_METHOD("play_transition_in"), &ClockGearsUiDesignLayer::play_transition_in);
 	ClassDB::bind_method(D_METHOD("play_transition_out"), &ClockGearsUiDesignLayer::play_transition_out);

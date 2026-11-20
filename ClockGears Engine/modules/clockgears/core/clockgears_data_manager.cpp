@@ -5080,16 +5080,30 @@ static void _cg_normalize_hud_core_fields(const Dictionary &p_in, const Dictiona
 		r_out["font_size"] = CLAMP(int(p_in.get("font_size", p_def.get("font_size", 16))), 8, 64);
 		r_out["font_color"] = _cg_norm_hud_color(p_in.get("font_color", p_def.get("font_color", "#FFFFFFFF")), String(p_def.get("font_color", "#FFFFFFFF")));
 		r_out["image_path"] = String(p_in.get("image_path", "")).strip_edges();
+		String bsm = String(p_in.get("scale_mode", "stretch")).strip_edges().to_lower();
+		if (bsm != "fit" && bsm != "fill" && bsm != "tile" && bsm != "native" && bsm != "nine_slice" && bsm != "integer") {
+			bsm = "stretch";
+		}
+		r_out["scale_mode"] = bsm;
+		r_out["nine_slice_margin"] = CLAMP(int(p_in.get("nine_slice_margin", 12)), 0, 128);
 		r_out["disabled"] = p_in.has("disabled") ? bool(p_in["disabled"]) : false;
 	} else if (p_wtype == "frame") {
 		r_out["opacity"] = CLAMP(double(p_in.get("opacity", p_def.get("opacity", 1.0))), 0.0, 1.0);
+		r_out["image_path"] = String(p_in.get("image_path", "")).strip_edges();
+		String fsm = String(p_in.get("scale_mode", "stretch")).strip_edges().to_lower();
+		if (fsm != "fit" && fsm != "fill" && fsm != "tile" && fsm != "native" && fsm != "nine_slice" && fsm != "integer") {
+			fsm = "stretch";
+		}
+		r_out["scale_mode"] = fsm;
+		r_out["nine_slice_margin"] = CLAMP(int(p_in.get("nine_slice_margin", 12)), 0, 128);
 	} else {
 		r_out["image_path"] = String(p_in.get("image_path", "")).strip_edges();
 		String sm = String(p_in.get("scale_mode", p_def.get("scale_mode", "fit"))).strip_edges().to_lower();
-		if (sm != "stretch" && sm != "tile" && sm != "native" && sm != "fill") {
+		if (sm != "stretch" && sm != "tile" && sm != "native" && sm != "fill" && sm != "nine_slice" && sm != "integer") {
 			sm = "fit";
 		}
 		r_out["scale_mode"] = sm;
+		r_out["nine_slice_margin"] = CLAMP(int(p_in.get("nine_slice_margin", 12)), 0, 128);
 		r_out["opacity"] = CLAMP(double(p_in.get("opacity", p_def.get("opacity", 1.0))), 0.0, 1.0);
 	}
 }
@@ -5791,15 +5805,19 @@ Dictionary ClockGearsDataManager::normalize_ui_background(const Dictionary &p_bg
 	out["gradient_angle"] = (ga == "horizontal") ? "horizontal" : "vertical";
 	out["image_path"] = String(p_bg.get("image_path", "")).strip_edges();
 	String sm = String(p_bg.get("scale_mode", "stretch")).strip_edges().to_lower();
-	if (sm != "stretch" && sm != "fit" && sm != "fill" && sm != "tile") {
+	if (sm != "stretch" && sm != "fit" && sm != "fill" && sm != "tile" && sm != "nine_slice" && sm != "integer") {
 		sm = "stretch";
 	}
 	out["scale_mode"] = sm;
 	out["pixel_art"] = p_bg.has("pixel_art") ? bool(p_bg["pixel_art"]) : true;
 	out["scroll_speed_x"] = CLAMP(int(p_bg.get("scroll_speed_x", 0)), -400, 400);
 	out["scroll_speed_y"] = CLAMP(int(p_bg.get("scroll_speed_y", 0)), -400, 400);
-	out["veil_enabled"] = bool(p_bg.get("veil_enabled", false));
+	bool v_en = p_bg.has("veil_enabled") ? bool(p_bg["veil_enabled"]) : bool(p_bg.get("dark_veil", false));
+	out["veil_enabled"] = v_en;
+	out["dark_veil"] = v_en;
 	out["veil_color"] = _cg_norm_color_rgba(p_bg.get("veil_color", "#05070ca6"), "#05070ca6");
+	out["blur_enabled"] = bool(p_bg.get("blur_enabled", false));
+	out["blur_intensity"] = CLAMP(int(p_bg.get("blur_intensity", 45)), 0, 100);
 	return out;
 }
 

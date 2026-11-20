@@ -305,6 +305,17 @@ private:
 	CheckBox *prop_locked_chk = nullptr;
 	CheckBox *prop_show_bg_chk = nullptr;
 	OptionButton *prop_style_opt = nullptr;
+	Button *prop_edit_style_btn = nullptr;
+	AcceptDialog *style_inline_dialog = nullptr;
+	String style_editing_id;
+	LineEdit *style_edit_name = nullptr;
+	ColorPickerButton *style_edit_fill_col = nullptr;
+	ColorPickerButton *style_edit_border_col = nullptr;
+	SpinBox *style_edit_border_w = nullptr;
+	SpinBox *style_edit_radius = nullptr;
+	SpinBox *style_edit_pad = nullptr;
+	HSlider *style_edit_opacity = nullptr;
+	HashMap<String, Ref<Texture2D>> style_thumb_cache;
 
 	// Forma, relleno, bordes, sombra, brillo y fuente (3F / 4C)
 	OptionButton *prop_shape_opt = nullptr;
@@ -334,9 +345,15 @@ private:
 	ColorPickerButton *menu_bg_grad_bot_btn = nullptr;
 	LineEdit *menu_bg_img_edit = nullptr;
 	Button *menu_bg_img_btn = nullptr;
+	OptionButton *menu_bg_scale_opt = nullptr;
+	CheckBox *menu_bg_pixel_chk = nullptr;
 	SpinBox *menu_bg_scroll_x_spin = nullptr;
 	SpinBox *menu_bg_scroll_y_spin = nullptr;
+	CheckBox *menu_bg_blur_chk = nullptr;
+	HSlider *menu_bg_blur_slider = nullptr;
 	CheckBox *menu_bg_veil_chk = nullptr;
+	ColorPickerButton *menu_bg_veil_col_btn = nullptr;
+	HSlider *menu_bg_veil_opacity_slider = nullptr;
 	OptionButton *menu_trans_in_opt = nullptr;
 	OptionButton *menu_trans_out_opt = nullptr;
 	HSlider *menu_trans_dur_slider = nullptr;
@@ -409,6 +426,8 @@ private:
 	LineEdit *prop_image_edit = nullptr;
 	Button *prop_image_import_btn = nullptr;
 	Button *prop_image_clear_btn = nullptr;
+	OptionButton *prop_image_scale_opt = nullptr;
+	SpinBox *prop_nine_slice_spin = nullptr;
 	VBoxContainer *prop_btn_state_imgs_box = nullptr;
 	LineEdit *prop_btn_state_img_edits[4] = { nullptr, nullptr, nullptr, nullptr };
 	VBoxContainer *prop_binding_row = nullptr;
@@ -570,6 +589,9 @@ private:
 	void _on_prop_btn_state_clear_pressed(int p_state);
 	void _on_prop_btn_shortcut_capture_pressed();
 	void _on_prop_btn_shortcut_clear_pressed();
+	void _on_prop_edit_style_pressed();
+	void _on_inline_style_applied();
+	void _on_window_files_dropped(const Vector<String> &p_files);
 	void _on_canvas_context_menu_id(int p_id);
 	void _on_align_center_pressed(bool p_vertical);
 	void _on_distribute_vertical_pressed();
@@ -674,6 +696,7 @@ public:
 	void log_trace_action(const String &p_event, const String &p_detail = "") const { _trace_log(p_event, p_detail); }
 
 	String add_element_at(const String &p_type, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
+	String drop_image_file_on_canvas(const String &p_path, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
 	bool select_element(const String &p_elem_id);
 	String get_selected_element_id() const { return selected_elem_id; }
 	bool delete_selected_element();
