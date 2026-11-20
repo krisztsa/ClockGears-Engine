@@ -1140,7 +1140,11 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 		if (is_visible()) {
 			refresh_from_data_manager();
 			callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
+		} else {
+			close_test_popup();
 		}
+	} else if (p_what == NOTIFICATION_EXIT_TREE) {
+		close_test_popup();
 	} else if (p_what == NOTIFICATION_RESIZED) {
 		int w = int(get_size().x);
 		if (get_window() && get_window()->get_size().x > 0) {
@@ -5986,11 +5990,22 @@ void ClockGearsUiDesignEditor::_on_test_window_input(const Ref<InputEvent> &p_ev
 }
 
 void ClockGearsUiDesignEditor::close_test_popup() {
+	if (test_gmenu) {
+		if (test_gmenu->is_menu_open()) {
+			test_gmenu->close_menu();
+		}
+		test_gmenu = nullptr;
+	}
 	if (test_credits) {
 		test_credits->stop_credits(true);
+		test_credits = nullptr;
 	}
+	test_title = nullptr;
+	test_hud = nullptr;
 	if (test_window) {
 		test_window->hide();
+		test_window->queue_free();
+		test_window = nullptr;
 	}
 	if (test_injected_sample_state) {
 		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
@@ -6007,14 +6022,6 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 		return nullptr;
 	}
 	close_test_popup();
-	if (test_window) {
-		test_window->queue_free();
-		test_window = nullptr;
-	}
-	test_title = nullptr;
-	test_gmenu = nullptr;
-	test_credits = nullptr;
-	test_hud = nullptr;
 
 	// Datos de ejemplo temporales si no hay partida activa (4E)
 	if (dm->get_gold() == 0 && dm->get_inventory_entries().is_empty()) {
@@ -6031,6 +6038,7 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 	Size2i test_sz(MAX(BASE_W, preview_resolution.x), MAX(BASE_H, preview_resolution.y));
 	test_window = memnew(Window);
 	test_window->set_name("UiDesignTestPopup");
+	test_window->set_process_mode(Node::PROCESS_MODE_ALWAYS);
 	test_window->set_title(String::utf8("Probar interfaz (") + itos(test_sz.x) + "x" + itos(test_sz.y) + String::utf8(", Esc para cerrar)"));
 	test_window->set_size(test_sz);
 	test_window->set_content_scale_size(Size2i(BASE_W, BASE_H));
@@ -6038,7 +6046,7 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 	test_window->set_content_scale_aspect(Window::CONTENT_SCALE_ASPECT_KEEP);
 	test_window->set_transient(true);
 	test_window->set_exclusive(false);
-	test_window->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested));
+	test_window->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested), CONNECT_DEFERRED);
 	test_window->connect("window_input", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_input));
 	add_child(test_window);
 
@@ -6064,12 +6072,54 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 		test_hud->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		test_window->add_child(test_hud);
 		test_hud->reload_from_data_manager();
+	} else if (current_screen_id == "messages_battle" || (current_screen_id == "game_over" && !dm->has_custom_ui_design("game_over"))) {
+		ColorRect *bg = memnew(ColorRect);
+		bg->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		bg->set_color(current_screen_id == "game_over" ? Color::html("#0c070cff") : Color::html("#131823ff"));
+		test_window->add_child(bg);
+
+		ClockGearsUiDesignLayer *layer = memnew(ClockGearsUiDesignLayer);
+		layer->set_name("TestUiIsolatedLayer");
+		layer->set_preview_mode(false);
+		layer->set_window_type_fallback(current_screen_id == "messages_battle" ? "message" : "game_menu");
+		layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		Dictionary d = dm->has_custom_ui_design(current_screen_id)
+				? dm->get_ui_screen_design(current_screen_id)
+				: dm->get_default_ui_screen_template(current_screen_id);
+		layer->apply_prebuilt_screen_design(current_screen_id, d);
+		layer->connect("action_triggered", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested).unbind(3), CONNECT_DEFERRED);
+		test_window->add_child(layer);
 	} else {
 		test_gmenu = memnew(ClockGearsGameMenu);
 		test_gmenu->set_editor_test_popup_mode(true);
 		test_window->add_child(test_gmenu);
 		test_gmenu->open_menu_by_id(current_screen_id, true, false, true);
+		test_gmenu->connect("menu_closed", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested), CONNECT_DEFERRED);
 	}
+
+	Button *close_btn = memnew(Button("Cerrar"));
+	close_btn->set_name("UiTestCloseButton");
+	close_btn->set_tooltip_text(String::utf8("Cierra la vista de prueba (Esc)."));
+	close_btn->set_anchors_preset(Control::PRESET_TOP_RIGHT);
+	close_btn->set_offset(SIDE_LEFT, -84);
+	close_btn->set_offset(SIDE_TOP, 8);
+	close_btn->set_offset(SIDE_RIGHT, -8);
+	close_btn->set_offset(SIDE_BOTTOM, 34);
+	close_btn->set_z_index(100);
+	s_make_rounded_action_btn(close_btn);
+	close_btn->set_clip_text(false);
+	Ref<InputEventKey> esc_ev;
+	esc_ev.instantiate();
+	esc_ev->set_keycode(Key::ESCAPE);
+	Ref<Shortcut> esc_sc;
+	esc_sc.instantiate();
+	Array esc_arr;
+	esc_arr.push_back(esc_ev);
+	esc_sc->set_events(esc_arr);
+	close_btn->set_shortcut(esc_sc);
+	close_btn->set_shortcut_in_tooltip(false);
+	close_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested), CONNECT_DEFERRED);
+	test_window->add_child(close_btn);
 
 	test_window->popup_centered(Size2i(MIN(test_sz.x, 1280), MIN(test_sz.y, 720)));
 	return test_window;

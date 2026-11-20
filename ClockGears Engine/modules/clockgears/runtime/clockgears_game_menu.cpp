@@ -954,6 +954,12 @@ void ClockGearsGameMenu::_play_menu_sound(const String &p_event_key) {
 }
 
 void ClockGearsGameMenu::_update_pause_state_for_menu(const String &p_menu_id) {
+	if (editor_test_popup_mode || preview_mode || (Engine::get_singleton() && Engine::get_singleton()->is_editor_hint())) {
+		if (paused_tree_by_menu) {
+			_restore_pause_state();
+		}
+		return;
+	}
 	Dictionary design = _get_menu_design(p_menu_id);
 	bool want_pause = bool(design.get("pause_on_open", false));
 	if (want_pause && !paused_tree_by_menu) {
