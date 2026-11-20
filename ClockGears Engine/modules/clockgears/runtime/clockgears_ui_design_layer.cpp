@@ -4,6 +4,7 @@
 #include "clockgears_audio_manager.h"
 #include "clockgears_title_screen.h"
 #include "clockgears_window_style.h"
+#include "core/input/input.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/io/resource_loader.h"
@@ -303,6 +304,7 @@ void ClockGearsRadialCanvas::configure(const Dictionary &p_layout, const Array &
 	layout_cfg = p_layout.duplicate(true);
 	ui_scale = MAX(0.25f, p_scale);
 	interactive = p_interactive;
+	open_anim = String(layout_cfg.get("radial_open_anim", "radial_spin")).strip_edges().to_lower();
 	all_slots.clear();
 
 	Array raw_slots = layout_cfg.get("radial_slots", Array());
@@ -416,6 +418,41 @@ Vector2 ClockGearsRadialCanvas::_compute_center_local() const {
 	return Vector2(cx, cy);
 }
 
+void ClockGearsRadialCanvas::play_open_anim() {
+	if (!interactive || open_anim == "none" || open_anim.is_empty()) {
+		open_anim_progress = 1.0f;
+		open_anim_playing = false;
+		set_modulate(Color(1, 1, 1, 1));
+		queue_redraw();
+		return;
+	}
+	open_anim_progress = 0.0f;
+	open_anim_playing = true;
+	set_process(true);
+	queue_redraw();
+}
+
+Array ClockGearsRadialCanvas::get_slot_actions_by_id(const String &p_id) const {
+	String tid = p_id.strip_edges().to_lower();
+	for (int i = 0; i < all_slots.size(); i++) {
+		if (all_slots[i].id.to_lower() == tid) {
+			if (!all_slots[i].actions.is_empty()) {
+				return all_slots[i].actions.duplicate(true);
+			}
+			String act = all_slots[i].action.strip_edges().to_lower();
+			if (!act.is_empty() && act != "none") {
+				Dictionary step;
+				step["type"] = act;
+				Array single;
+				single.push_back(step);
+				return single;
+			}
+			return Array();
+		}
+	}
+	return Array();
+}
+
 float ClockGearsRadialCanvas::_compute_radius_px() const {
 	float r = float(CLAMP(int(layout_cfg.get("radial_radius", 145)), 48, 250)) * ui_scale;
 	Size2 sz = get_size();
@@ -423,11 +460,17 @@ float ClockGearsRadialCanvas::_compute_radius_px() const {
 		float max_r = MIN(sz.x, sz.y) * 0.38f;
 		r = MIN(r, max_r);
 	}
-	return MAX(32.0f, r);
+	if (open_anim_playing && (open_anim == "scale" || open_anim == "radial_spin")) {
+		r *= Math::lerp(0.35f, 1.0f, open_anim_progress);
+	}
+	return MAX(16.0f, r);
 }
 
 float ClockGearsRadialCanvas::_compute_slot_angle(int p_visible_idx, int p_count) const {
 	float start_rad = Math::deg_to_rad(float(layout_cfg.get("radial_start_angle_deg", -90.0)));
+	if (open_anim_playing && open_anim == "radial_spin") {
+		start_rad += (1.0f - open_anim_progress) * -0.9f;
+	}
 	float sweep_deg = CLAMP(float(layout_cfg.get("radial_sweep_angle_deg", 360.0)), 45.0f, 360.0f);
 	float sweep_rad = Math::deg_to_rad(sweep_deg);
 	bool cw = layout_cfg.has("radial_clockwise") ? bool(layout_cfg["radial_clockwise"]) : true;
@@ -590,14 +633,24 @@ void ClockGearsRadialCanvas::gui_input(const Ref<InputEvent> &p_event) {
 
 void ClockGearsRadialCanvas::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
-		if (!anim_active) {
+		if (!anim_active && !open_anim_playing) {
 			set_process(false);
 			return;
 		}
 		float dt = float(get_process_delta_time());
+		if (open_anim_playing) {
+			open_anim_progress = MIN(1.0f, open_anim_progress + dt / 0.22f);
+			if (open_anim == "fade" || open_anim == "scale" || open_anim == "radial_spin") {
+				set_modulate(Color(1, 1, 1, open_anim_progress));
+			}
+			if (open_anim_progress >= 1.0f) {
+				open_anim_playing = false;
+				set_modulate(Color(1, 1, 1, 1));
+			}
+		}
 		float sel_sc = CLAMP(float(layout_cfg.get("radial_selected_scale", 1.28)), 1.0f, 1.8f);
 		float speed = 18.0f * dt;
-		bool still_moving = false;
+		bool still_moving = open_anim_playing;
 		for (int i = 0; i < slot_visual_scales.size(); i++) {
 			float target = (i == selected_pos) ? sel_sc : 1.0f;
 			float cur = slot_visual_scales[i];
@@ -1036,8 +1089,8 @@ void ClockGearsUiDesignLayer::_clear_aux_layout_controls() {
 	if (radial_canvas) {
 		if (radial_canvas->get_parent() == this) {
 			remove_child(radial_canvas);
+			memdelete(radial_canvas);
 		}
-		memdelete(radial_canvas);
 		radial_canvas = nullptr;
 	}
 }
@@ -1279,6 +1332,9 @@ void ClockGearsUiDesignLayer::_apply_transition_pose(float p_progress) {
 }
 
 void ClockGearsUiDesignLayer::play_transition_in() {
+	if (radial_canvas && !preview_mode) {
+		radial_canvas->play_open_anim();
+	}
 	Dictionary tr = (active_design.has("transition") && active_design["transition"].get_type() == Variant::DICTIONARY)
 			? Dictionary(active_design["transition"])
 			: Dictionary();
@@ -1745,21 +1801,25 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			vb->add_child(body);
 		}
 	} else if (r_entry.type == "radial") {
-		PanelContainer *card = memnew(PanelContainer);
-		card->set_mouse_filter(MOUSE_FILTER_IGNORE);
-		card->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
-		ClockGearsWindowStyleManager::apply_window_style(card, window_type_fallback);
-		content->add_child(card);
-
-		Label *rlbl = memnew(Label);
-		rlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
-		rlbl->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
-		rlbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		rlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
-		rlbl->set_text(String::utf8("◎ Rueda radial"));
-		rlbl->add_theme_color_override("font_color", Color(0.96f, 0.80f, 0.40f, 1.0f));
-		card->add_child(rlbl);
-		r_entry.label = rlbl;
+		ClockGearsRadialCanvas *rc = memnew(ClockGearsRadialCanvas);
+		rc->set_name("ElemRadialCanvas");
+		rc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		rc->connect("slot_activated", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_slot_activated));
+		rc->connect("selection_changed", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_selection_changed));
+		Dictionary rlay = (r_entry.config.has("layout") && r_entry.config["layout"].get_type() == Variant::DICTIONARY)
+				? Dictionary(r_entry.config["layout"]).duplicate(true)
+				: Dictionary();
+		rlay["mode"] = "radial";
+		if (!rlay.has("radial_slots") || Array(rlay["radial_slots"]).is_empty()) {
+			rlay["radial_slots"] = ClockGearsDataManager::make_default_radial_slots(6, screen_id);
+		}
+		rlay["radial_center_x"] = 480;
+		rlay["radial_center_y"] = 270;
+		content->add_child(rc);
+		rc->configure(rlay, Array(), MAX(0.25f, current_ui_scale), !preview_mode);
+		if (!radial_canvas) {
+			radial_canvas = rc;
+		}
 	} else {
 		Label *lbl = memnew(Label);
 		lbl->set_name("TextLabel");
@@ -2688,6 +2748,10 @@ Array ClockGearsUiDesignLayer::get_element_actions(const String &p_elem_id) cons
 		}
 	}
 	if (radial_canvas) {
+		Array r_acts = radial_canvas->get_slot_actions_by_id(p_elem_id);
+		if (!r_acts.is_empty()) {
+			return r_acts;
+		}
 		Dictionary info = radial_canvas->get_selected_slot_info();
 		if (String(info.get("id", "")).to_lower() == target) {
 			return Array(info.get("actions", Array())).duplicate(true);
@@ -2904,7 +2968,60 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 
 ClockGearsUiDesignLayer::ClockGearsUiDesignLayer() {
 	set_mouse_filter(MOUSE_FILTER_IGNORE);
+	set_process_input(true);
 	set_process_unhandled_input(true);
+}
+
+void ClockGearsUiDesignLayer::input(const Ref<InputEvent> &p_event) {
+	if (preview_mode || !is_visible_in_tree() || p_event.is_null() || !radial_canvas || !radial_canvas->is_visible_in_tree()) {
+		return;
+	}
+	Ref<InputEventJoypadMotion> jm = p_event;
+	if (jm.is_valid()) {
+		int dev = jm->get_device();
+		float ax = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_X) : 0.0f;
+		float ay = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_Y) : 0.0f;
+		if (jm->get_axis() == JoyAxis::LEFT_X) ax = jm->get_axis_value();
+		if (jm->get_axis() == JoyAxis::LEFT_Y) ay = jm->get_axis_value();
+		Vector2 stick(ax, ay);
+		if (stick.length() >= 0.55f) {
+			radial_canvas->select_by_angle_vector(stick);
+			if (get_viewport()) get_viewport()->set_input_as_handled();
+			return;
+		}
+	}
+	if (p_event->is_pressed() && !p_event->is_echo()) {
+		Ref<InputEventKey> rk = p_event;
+		Ref<InputEventJoypadButton> rj = p_event;
+		Key kc = rk.is_valid() ? rk->get_keycode() : Key::NONE;
+		JoyButton jb = rj.is_valid() ? rj->get_button_index() : JoyButton::INVALID;
+		if (kc == Key::RIGHT || kc == Key::D || jb == JoyButton::DPAD_RIGHT) {
+			radial_canvas->step_selection(1);
+			if (get_viewport()) get_viewport()->set_input_as_handled();
+			return;
+		}
+		if (kc == Key::LEFT || kc == Key::A || jb == JoyButton::DPAD_LEFT) {
+			radial_canvas->step_selection(-1);
+			if (get_viewport()) get_viewport()->set_input_as_handled();
+			return;
+		}
+		if (kc == Key::UP || kc == Key::W || jb == JoyButton::DPAD_UP) {
+			radial_canvas->select_by_angle_vector(Vector2(0, -1));
+			if (get_viewport()) get_viewport()->set_input_as_handled();
+			return;
+		}
+		if (kc == Key::DOWN || kc == Key::S || jb == JoyButton::DPAD_DOWN) {
+			radial_canvas->select_by_angle_vector(Vector2(0, 1));
+			if (get_viewport()) get_viewport()->set_input_as_handled();
+			return;
+		}
+		if (kc == Key::ENTER || kc == Key::KP_ENTER || kc == Key::SPACE || jb == JoyButton::A) {
+			if (radial_canvas->activate_selected_slot()) {
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+				return;
+			}
+		}
+	}
 }
 
 void ClockGearsUiDesignLayer::unhandled_input(const Ref<InputEvent> &p_event) {

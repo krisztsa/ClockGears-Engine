@@ -267,6 +267,7 @@ public:
 	static Array get_menu_trigger_contexts();
 	static Dictionary normalize_menu_trigger(const Dictionary &p_trig);
 	static Dictionary normalize_menu_layout(const Dictionary &p_layout);
+	static Array make_default_radial_slots(int p_count = 6, const String &p_screen_id = "title");
 	static Dictionary normalize_ui_shape(const Dictionary &p_shape);
 	static Dictionary make_default_ui_element(const String &p_type = "text", const String &p_screen_id = "title");
 	static Dictionary normalize_ui_element(const Dictionary &p_elem, int p_index_hint = 1, const String &p_screen_id = "title");

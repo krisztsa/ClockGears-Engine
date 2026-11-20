@@ -101,6 +101,7 @@ private:
 
 	Rect2 _get_handle_rect(const Rect2 &p_elem_rect, HandleType p_handle) const;
 	HandleType _hit_test_handle(const Rect2 &p_elem_rect, const Vector2 &p_pt) const;
+	bool _get_radial_overlay_geometry(Vector2 &r_center, float &r_radius, float &r_start_rad, float p_scale) const;
 	HandleType _hit_test_radial_handle(const Vector2 &p_pt) const;
 	String _hit_test_element(const Vector2 &p_pt) const;
 	Vector2 _apply_snap_and_guides(const Rect2 &p_base_rect, const String &p_ignore_id, Vector2 &r_delta);
@@ -450,6 +451,30 @@ private:
 	Button *prop_btn_shortcut_capture_btn = nullptr;
 	Button *prop_btn_shortcut_clear_btn = nullptr;
 
+	// Inspector completo de Rueda radial (Punto 7)
+	VBoxContainer *prop_radial_box = nullptr;
+	HSlider *prop_rad_count_slider = nullptr;
+	Label *prop_rad_count_lbl = nullptr;
+	HSlider *prop_rad_radius_slider = nullptr;
+	HSlider *prop_rad_start_slider = nullptr;
+	CheckBox *prop_rad_full_chk = nullptr;
+	HSlider *prop_rad_sweep_slider = nullptr;
+	CheckBox *prop_rad_cw_chk = nullptr;
+	HSlider *prop_rad_slot_size_slider = nullptr;
+	CheckBox *prop_rad_center_info_chk = nullptr;
+	OptionButton *prop_rad_open_anim_opt = nullptr;
+	OptionButton *prop_rad_slot_opt = nullptr;
+	int prop_rad_selected_slot = 0;
+	Button *prop_rad_add_slot_btn = nullptr;
+	Button *prop_rad_del_slot_btn = nullptr;
+	LineEdit *prop_rad_slot_name_edit = nullptr;
+	LineEdit *prop_rad_slot_desc_edit = nullptr;
+	LineEdit *prop_rad_slot_icon_edit = nullptr;
+	Button *prop_rad_slot_icon_btn = nullptr;
+	OptionButton *prop_rad_slot_add_act_opt = nullptr;
+	Button *prop_rad_slot_add_act_btn = nullptr;
+	VBoxContainer *prop_rad_slot_actions_vbox = nullptr;
+
 	// Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B)
 	FileDialog *import_image_dialog = nullptr;
 	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF, 10..13=estados boton
@@ -539,6 +564,16 @@ private:
 	void _on_ss_hud_sample_changed(double p_val = 0.0);
 	void _on_ss_gameover_changed();
 	void _refresh_multi_actions_ui(const Dictionary &p_elem);
+	void _populate_multi_actions_list(VBoxContainer *p_vbox, const Array &p_acts);
+	Dictionary _get_active_radial_layout(bool *r_is_elem = nullptr) const;
+	void _commit_active_radial_layout(const Dictionary &p_lay, bool p_push_undo = true, bool p_refresh_inspector = true);
+	void _refresh_radial_inspector();
+	void _on_prop_radial_changed();
+	void _on_prop_radial_count_changed(double p_val);
+	void _on_prop_radial_slot_selected(int p_idx);
+	void _on_prop_radial_slot_edited();
+	void _on_prop_radial_del_slot_pressed();
+	void _on_prop_radial_slot_icon_import_pressed();
 	void _refresh_recent_colors_palette();
 	void _refresh_image_thumbs_gallery();
 	void _apply_properties_filter();

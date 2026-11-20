@@ -5754,6 +5754,11 @@ Dictionary ClockGearsDataManager::normalize_menu_layout(const Dictionary &p_layo
 	out["radial_sweep_angle_deg"] = CLAMP(float(p_layout.get("radial_sweep_angle_deg", 360.0)), 45.0f, 360.0f);
 	out["radial_clockwise"] = p_layout.has("radial_clockwise") ? bool(p_layout["radial_clockwise"]) : true;
 	out["radial_show_center_info"] = p_layout.has("radial_show_center_info") ? bool(p_layout["radial_show_center_info"]) : true;
+	String roa = String(p_layout.get("radial_open_anim", "radial_spin")).strip_edges().to_lower();
+	if (roa != "none" && roa != "fade" && roa != "scale") {
+		roa = "radial_spin";
+	}
+	out["radial_open_anim"] = roa;
 	out["radial_ring_color"] = _cg_norm_color_rgba(p_layout.get("radial_ring_color", "#1a1e2ad9"), "#1a1e2ad9");
 	out["radial_accent_color"] = _cg_norm_color_rgba(p_layout.get("radial_accent_color", "#f5bc54ff"), "#f5bc54ff");
 
@@ -5761,8 +5766,17 @@ Dictionary ClockGearsDataManager::normalize_menu_layout(const Dictionary &p_layo
 	if (p_layout.has("radial_slots") && p_layout["radial_slots"].get_type() == Variant::ARRAY) {
 		Array raw_rs = p_layout["radial_slots"];
 		for (int i = 0; i < raw_rs.size(); i++) {
-			if (raw_rs[i].get_type() != Variant::DICTIONARY) continue;
-			Dictionary rs = raw_rs[i];
+			Dictionary rs;
+			if (raw_rs[i].get_type() == Variant::STRING) {
+				String sid_s = String(raw_rs[i]).strip_edges();
+				if (sid_s.is_empty()) continue;
+				rs["id"] = sid_s;
+				rs["title"] = sid_s;
+			} else if (raw_rs[i].get_type() == Variant::DICTIONARY) {
+				rs = raw_rs[i];
+			} else {
+				continue;
+			}
 			Dictionary nrs;
 			nrs["id"] = String(rs.get("id", vformat("slot_%d", i + 1))).strip_edges();
 			nrs["title"] = String(rs.get("title", rs.get("name", nrs["id"])));
@@ -5958,6 +5972,45 @@ Array ClockGearsDataManager::get_ui_button_actions(const String &p_screen_id) {
 	return out;
 }
 
+Array ClockGearsDataManager::make_default_radial_slots(int p_count, const String &p_screen_id) {
+	int cnt = CLAMP(p_count, 1, 16);
+	Array avail = get_ui_button_actions(p_screen_id);
+	Array slots;
+	for (int i = 0; i < cnt; i++) {
+		Dictionary s;
+		s["id"] = vformat("slot_%d", i + 1);
+		String title = String::utf8("Ranura ") + itos(i + 1);
+		String act = "";
+		Array acts;
+		if (i < avail.size() && avail[i].get_type() == Variant::DICTIONARY) {
+			Dictionary ad = avail[i];
+			String aid = String(ad.get("id", ""));
+			if (!aid.is_empty() && aid != "quit") {
+				act = aid;
+				String lbl = String(ad.get("label", ""));
+				if (!lbl.is_empty()) {
+					title = lbl;
+				}
+				Dictionary step;
+				step["type"] = aid;
+				acts.push_back(step);
+			}
+		}
+		s["title"] = title;
+		s["description"] = "";
+		s["icon_path"] = "";
+		s["pixel_art"] = true;
+		s["action"] = act;
+		s["actions"] = acts;
+		s["enabled_mode"] = "always";
+		s["enabled_switch"] = "";
+		s["visibility_mode"] = "always";
+		s["visibility_switch"] = "";
+		slots.push_back(s);
+	}
+	return slots;
+}
+
 Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, const String &p_screen_id) {
 	String etype = _cg_norm_ui_elem_type(p_type);
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
@@ -5979,12 +6032,26 @@ Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, 
 		el["width"] = 300;
 		el["height"] = 200;
 	} else if (etype == "container" || etype == "radial") {
-		el["name"] = (etype == "radial") ? "Anillo Radial" : "Contenedor";
-		el["width"] = 420;
-		el["height"] = 320;
+		el["name"] = (etype == "radial") ? "Rueda radial" : "Contenedor";
+		el["anchor"] = "top_left";
+		el["offset_x"] = (etype == "radial") ? 300 : 270;
+		el["offset_y"] = (etype == "radial") ? 90 : 110;
+		el["width"] = (etype == "radial") ? 360 : 420;
+		el["height"] = (etype == "radial") ? 360 : 320;
+		el["window_style_id"] = "none";
 		Dictionary lay;
 		if (etype == "radial") {
 			lay["mode"] = "radial";
+			lay["radial_center_x"] = 480;
+			lay["radial_center_y"] = 270;
+			lay["radial_radius"] = 128;
+			lay["radial_slot_size"] = 56;
+			lay["radial_sweep_angle_deg"] = 360.0;
+			lay["radial_start_angle_deg"] = -90.0;
+			lay["radial_clockwise"] = true;
+			lay["radial_show_center_info"] = true;
+			lay["radial_open_anim"] = "radial_spin";
+			lay["radial_slots"] = make_default_radial_slots(6, sid);
 		}
 		el["layout"] = normalize_menu_layout(lay);
 	} else if (etype == "widget") {

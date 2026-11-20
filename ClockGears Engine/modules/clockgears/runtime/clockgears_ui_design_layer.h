@@ -98,6 +98,9 @@ private:
 	float ui_scale = 1.0f;
 	bool anim_active = false;
 	bool interactive = true;
+	String open_anim = "radial_spin";
+	float open_anim_progress = 1.0f;
+	bool open_anim_playing = false;
 
 	Vector2 _compute_center_local() const;
 	float _compute_radius_px() const;
@@ -113,6 +116,8 @@ protected:
 public:
 	void configure(const Dictionary &p_layout, const Array &p_fallback_elements, float p_scale, bool p_interactive);
 	void refresh_slot_states(const ClockGearsDataManager *p_dm);
+	void play_open_anim();
+	Array get_slot_actions_by_id(const String &p_id) const;
 
 	int get_slot_count() const { return active_slot_indices.size(); }
 	int get_selected_index() const { return selected_pos; }
@@ -271,6 +276,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void input(const Ref<InputEvent> &p_event) override;
 	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:

@@ -281,23 +281,48 @@ Rect2 ClockGearsUiCanvasOverlay::_get_handle_rect(const Rect2 &p_elem_rect, Hand
 	return Rect2(c.x - half, c.y - half, hs, hs);
 }
 
+bool ClockGearsUiCanvasOverlay::_get_radial_overlay_geometry(Vector2 &r_center, float &r_radius, float &r_start_rad, float p_scale) const {
+	if (!owner_editor) {
+		return false;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return false;
+	}
+	Dictionary sel = owner_editor->get_effective_element(owner_editor->get_selected_element_id());
+	if (!sel.is_empty() && String(sel.get("type", "")) == "radial") {
+		Dictionary lay = sel.get("layout", Dictionary());
+		Rect2 stage(0, 0, float(ClockGearsUiDesignEditor::BASE_W) * p_scale, float(ClockGearsUiDesignEditor::BASE_H) * p_scale);
+		Rect2 er = ClockGearsUiDesignLayer::compute_element_rect(sel, stage, p_scale);
+		r_center = er.get_center();
+		float r = float(CLAMP(int(lay.get("radial_radius", 128)), 48, 250)) * p_scale;
+		float max_r = MIN(er.size.x, er.size.y) * 0.38f;
+		r_radius = MAX(16.0f, MIN(r, max_r));
+		r_start_rad = Math::deg_to_rad(float(lay.get("radial_start_angle_deg", -90.0)));
+		return true;
+	}
+	Dictionary design = dm->get_ui_screen_design(owner_editor->get_current_screen());
+	Dictionary lay = design.get("layout", Dictionary());
+	if (String(lay.get("mode", "free")) == "radial") {
+		r_center = Vector2(float(lay.get("radial_center_x", 480)) * p_scale, float(lay.get("radial_center_y", 270)) * p_scale);
+		r_radius = float(lay.get("radial_radius", 145)) * p_scale;
+		r_start_rad = Math::deg_to_rad(float(lay.get("radial_start_angle_deg", -90.0)));
+		return true;
+	}
+	return false;
+}
+
 ClockGearsUiCanvasOverlay::HandleType ClockGearsUiCanvasOverlay::_hit_test_radial_handle(const Vector2 &p_pt) const {
 	if (!owner_editor) {
 		return HANDLE_NONE;
 	}
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm) {
-		return HANDLE_NONE;
-	}
-	Dictionary design = dm->get_ui_screen_design(owner_editor->get_current_screen());
-	Dictionary lay = design.get("layout", Dictionary());
-	if (String(lay.get("mode", "free")) != "radial") {
-		return HANDLE_NONE;
-	}
 	float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
-	Vector2 c(float(lay.get("radial_center_x", 480)) * z, float(lay.get("radial_center_y", 270)) * z);
-	float rad = float(lay.get("radial_radius", 145)) * z;
-	float ang = Math::deg_to_rad(float(lay.get("radial_start_angle_deg", -90.0)));
+	Vector2 c;
+	float rad = 0.0f;
+	float ang = 0.0f;
+	if (!_get_radial_overlay_geometry(c, rad, ang, z)) {
+		return HANDLE_NONE;
+	}
 	Vector2 ang_handle = c + Vector2(Math::cos(ang), Math::sin(ang)) * rad;
 	if (p_pt.distance_to(ang_handle) <= 10.0f) {
 		return HANDLE_RADIAL_ANGLE;
@@ -667,17 +692,16 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 		if (dragging && (active_handle == HANDLE_RADIAL_RADIUS || active_handle == HANDLE_RADIAL_ANGLE)) {
-			ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-			if (dm) {
-				float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
-				Dictionary design = dm->get_ui_screen_design(owner_editor->get_current_screen());
-				Dictionary lay = design.get("layout", Dictionary());
-				Vector2 c(float(lay.get("radial_center_x", 480)) * z, float(lay.get("radial_center_y", 270)) * z);
+			float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
+			Vector2 c;
+			float cur_rad = 0.0f;
+			float cur_ang = 0.0f;
+			if (_get_radial_overlay_geometry(c, cur_rad, cur_ang, z)) {
 				Vector2 d = (pt - c) / z;
-				int rad = int(lay.get("radial_radius", 145));
-				float ang = float(lay.get("radial_start_angle_deg", -90.0));
+				int rad = int(Math::round(cur_rad / z));
+				float ang = Math::rad_to_deg(cur_ang);
 				if (active_handle == HANDLE_RADIAL_RADIUS) {
-					rad = CLAMP(int(Math::round(d.length())), 40, 260);
+					rad = CLAMP(int(Math::round(d.length())), 48, 250);
 				} else {
 					ang = Math::rad_to_deg(Math::atan2(d.y, d.x));
 				}
@@ -829,19 +853,19 @@ void ClockGearsUiCanvasOverlay::_notification(int p_what) {
 		// Marco sutil del área base 960x540
 		draw_rect(stage, Color(0.95f, 0.72f, 0.30f, 0.35f), false, 1.0f);
 
-		// Asas interactivas radiales si la pantalla usa layout radial (4D)
-		Dictionary design = dm->get_ui_screen_design(owner_editor->get_current_screen());
-		Dictionary lay = design.get("layout", Dictionary());
-		if (String(lay.get("mode", "free")) == "radial") {
-			Vector2 c(float(lay.get("radial_center_x", 480)) * scale, float(lay.get("radial_center_y", 270)) * scale);
-			float rad = float(lay.get("radial_radius", 145)) * scale;
-			float ang = Math::deg_to_rad(float(lay.get("radial_start_angle_deg", -90.0)));
-			draw_arc(c, rad, 0.0f, Math::TAU, 48, Color(0.96f, 0.78f, 0.34f, 0.45f), 1.5f);
-			Vector2 rad_pt = c + Vector2(rad, 0.0f);
-			Vector2 ang_pt = c + Vector2(Math::cos(ang), Math::sin(ang)) * rad;
-			draw_line(c, ang_pt, Color(0.55f, 0.88f, 1.0f, 0.5f), 1.0f);
-			draw_circle(rad_pt, 6.0f, (hover_handle == HANDLE_RADIAL_RADIUS) ? Color(1.0f, 0.94f, 0.65f) : Color(0.92f, 0.65f, 0.20f));
-			draw_circle(ang_pt, 6.0f, (hover_handle == HANDLE_RADIAL_ANGLE) ? Color(0.85f, 1.0f, 1.0f) : Color(0.35f, 0.80f, 0.95f));
+		// Asas interactivas radiales si hay elemento radial seleccionado o pantalla radial (4D / P7)
+		{
+			Vector2 c;
+			float rad = 0.0f;
+			float ang = 0.0f;
+			if (_get_radial_overlay_geometry(c, rad, ang, scale)) {
+				draw_arc(c, rad, 0.0f, Math::TAU, 48, Color(0.96f, 0.78f, 0.34f, 0.45f), 1.5f);
+				Vector2 rad_pt = c + Vector2(rad, 0.0f);
+				Vector2 ang_pt = c + Vector2(Math::cos(ang), Math::sin(ang)) * rad;
+				draw_line(c, ang_pt, Color(0.55f, 0.88f, 1.0f, 0.5f), 1.0f);
+				draw_circle(rad_pt, 6.0f, (hover_handle == HANDLE_RADIAL_RADIUS) ? Color(1.0f, 0.94f, 0.65f) : Color(0.92f, 0.65f, 0.20f));
+				draw_circle(ang_pt, 6.0f, (hover_handle == HANDLE_RADIAL_ANGLE) ? Color(0.85f, 1.0f, 1.0f) : Color(0.35f, 0.80f, 0.95f));
+			}
 		}
 
 		Array elems = owner_editor->get_effective_screen_elements();
@@ -2608,6 +2632,120 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_anim_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(sec_anim_body, "Entrada:", String::utf8("Animación de entrada para este elemento."), "animacion entrada rebote escala", true, prop_anim_opt);
 
+	// Sección 7: Rueda radial (solo cuando se selecciona un elemento radial)
+	add_prop_section(props_fields_box, "Rueda radial", false, prop_radial_box);
+
+	HBoxContainer *rc_hb = memnew(HBoxContainer);
+	rc_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_rad_count_slider = memnew(HSlider);
+	prop_rad_count_slider->set_min(1); prop_rad_count_slider->set_max(16); prop_rad_count_slider->set_step(1);
+	prop_rad_count_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_rad_count_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_count_changed));
+	rc_hb->add_child(prop_rad_count_slider);
+	prop_rad_count_lbl = memnew(Label("6"));
+	prop_rad_count_lbl->set_custom_minimum_size(Size2(28 * EDSCALE, 0));
+	rc_hb->add_child(prop_rad_count_lbl);
+	make_prop_row(prop_radial_box, String::utf8("Núm. ranuras:"), String::utf8("Cantidad de huecos en la rueda (1-16)."), "radial ranuras cantidad", false, rc_hb, "radial");
+
+	prop_rad_radius_slider = memnew(HSlider);
+	prop_rad_radius_slider->set_min(48); prop_rad_radius_slider->set_max(250); prop_rad_radius_slider->set_step(1);
+	prop_rad_radius_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	make_prop_row(prop_radial_box, "Radio rueda:", String::utf8("Radio del anillo en píxeles."), "radial radio", false, prop_rad_radius_slider, "radial");
+
+	prop_rad_start_slider = memnew(HSlider);
+	prop_rad_start_slider->set_min(-180); prop_rad_start_slider->set_max(180); prop_rad_start_slider->set_step(1);
+	prop_rad_start_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	make_prop_row(prop_radial_box, String::utf8("Ángulo inicio:"), String::utf8("Ángulo de la primera ranura (-180° a 180°)."), "radial angulo inicio", false, prop_rad_start_slider, "radial");
+
+	HBoxContainer *sw_hb = memnew(HBoxContainer);
+	sw_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_rad_full_chk = memnew(CheckBox(String::utf8("360°")));
+	prop_rad_full_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	sw_hb->add_child(prop_rad_full_chk);
+	prop_rad_sweep_slider = memnew(HSlider);
+	prop_rad_sweep_slider->set_min(45); prop_rad_sweep_slider->set_max(360); prop_rad_sweep_slider->set_step(5);
+	prop_rad_sweep_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_rad_sweep_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	sw_hb->add_child(prop_rad_sweep_slider);
+	make_prop_row(prop_radial_box, "Arco:", String::utf8("Círculo completo (360°) o arco parcial."), "radial arco amplitud circulo", false, sw_hb, "radial");
+
+	prop_rad_cw_chk = memnew(CheckBox("Sentido horario"));
+	prop_rad_cw_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	make_prop_row(prop_radial_box, String::utf8("Dirección:"), String::utf8("Orden horario o antihorario."), "radial horario direccion", false, prop_rad_cw_chk, "radial");
+
+	prop_rad_slot_size_slider = memnew(HSlider);
+	prop_rad_slot_size_slider->set_min(28); prop_rad_slot_size_slider->set_max(120); prop_rad_slot_size_slider->set_step(2);
+	prop_rad_slot_size_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	make_prop_row(prop_radial_box, String::utf8("Tamaño hueco:"), String::utf8("Diámetro de cada ranura en píxeles."), "radial tamano ranura", false, prop_rad_slot_size_slider, "radial");
+
+	prop_rad_center_info_chk = memnew(CheckBox("Mostrar info en centro"));
+	prop_rad_center_info_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	make_prop_row(prop_radial_box, "Info centro:", String::utf8("Muestra icono, título y descripción de la ranura activa en el centro."), "radial centro info descripcion", false, prop_rad_center_info_chk, "radial");
+
+	prop_rad_open_anim_opt = memnew(OptionButton);
+	prop_rad_open_anim_opt->add_item("Giro radial", 0); prop_rad_open_anim_opt->set_item_metadata(0, "radial_spin");
+	prop_rad_open_anim_opt->add_item("Escala", 1); prop_rad_open_anim_opt->set_item_metadata(1, "scale");
+	prop_rad_open_anim_opt->add_item("Fundido", 2); prop_rad_open_anim_opt->set_item_metadata(2, "fade");
+	prop_rad_open_anim_opt->add_item("Ninguna", 3); prop_rad_open_anim_opt->set_item_metadata(3, "none");
+	prop_rad_open_anim_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_changed).unbind(1));
+	make_prop_row(prop_radial_box, "Apertura:", String::utf8("Animación de apertura de la rueda radial."), "radial animacion apertura", false, prop_rad_open_anim_opt, "radial");
+
+	HBoxContainer *rslot_hb = memnew(HBoxContainer);
+	rslot_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_rad_slot_opt = memnew(OptionButton);
+	prop_rad_slot_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_rad_slot_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_slot_selected));
+	rslot_hb->add_child(prop_rad_slot_opt);
+	prop_rad_add_slot_btn = memnew(Button(String::utf8("+ Añadir ranura")));
+	s_make_rounded_action_btn(prop_rad_add_slot_btn);
+	prop_rad_add_slot_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_radial_add_slot_pressed));
+	rslot_hb->add_child(prop_rad_add_slot_btn);
+	prop_rad_del_slot_btn = memnew(Button("x"));
+	s_make_rounded_action_btn(prop_rad_del_slot_btn);
+	prop_rad_del_slot_btn->set_tooltip_text("Eliminar ranura seleccionada.");
+	prop_rad_del_slot_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_del_slot_pressed), CONNECT_DEFERRED);
+	rslot_hb->add_child(prop_rad_del_slot_btn);
+	make_prop_row(prop_radial_box, "Ranura:", String::utf8("Selecciona una ranura para configurar su icono, texto y acciones."), "radial ranura editar", false, rslot_hb, "radial");
+
+	prop_rad_slot_name_edit = memnew(LineEdit);
+	prop_rad_slot_name_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_slot_edited).unbind(1));
+	make_prop_row(prop_radial_box, "Nombre ran.:", String::utf8("Nombre visible en la ranura y centro."), "radial nombre titulo", false, prop_rad_slot_name_edit, "radial");
+
+	prop_rad_slot_desc_edit = memnew(LineEdit);
+	prop_rad_slot_desc_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_slot_edited).unbind(1));
+	make_prop_row(prop_radial_box, String::utf8("Desc. ranura:"), String::utf8("Descripción mostrada en el centro."), "radial descripcion", false, prop_rad_slot_desc_edit, "radial");
+
+	HBoxContainer *ric_hb = memnew(HBoxContainer);
+	ric_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_rad_slot_icon_edit = memnew(LineEdit);
+	prop_rad_slot_icon_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_rad_slot_icon_edit->set_placeholder("res://img/...");
+	prop_rad_slot_icon_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_slot_edited).unbind(1));
+	ric_hb->add_child(prop_rad_slot_icon_edit);
+	prop_rad_slot_icon_btn = memnew(Button("Importar"));
+	s_make_rounded_action_btn(prop_rad_slot_icon_btn);
+	prop_rad_slot_icon_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_radial_slot_icon_import_pressed));
+	ric_hb->add_child(prop_rad_slot_icon_btn);
+	make_prop_row(prop_radial_box, "Icono ranura:", String::utf8("Icono o imagen dibujada en esta ranura."), "radial icono imagen", false, ric_hb, "radial");
+
+	VBoxContainer *ract_wrap = memnew(VBoxContainer);
+	ract_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ract_wrap->add_theme_constant_override("separation", int(4 * EDSCALE));
+	HBoxContainer *ract_add_hb = memnew(HBoxContainer);
+	ract_add_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_rad_slot_add_act_opt = memnew(OptionButton);
+	prop_rad_slot_add_act_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ract_add_hb->add_child(prop_rad_slot_add_act_opt);
+	prop_rad_slot_add_act_btn = memnew(Button(String::utf8("+ Añadir acción")));
+	s_make_rounded_action_btn(prop_rad_slot_add_act_btn);
+	prop_rad_slot_add_act_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_add_multi_action_pressed));
+	ract_add_hb->add_child(prop_rad_slot_add_act_btn);
+	ract_wrap->add_child(ract_add_hb);
+	prop_rad_slot_actions_vbox = memnew(VBoxContainer);
+	prop_rad_slot_actions_vbox->add_theme_constant_override("separation", int(3 * EDSCALE));
+	ract_wrap->add_child(prop_rad_slot_actions_vbox);
+	make_prop_row(prop_radial_box, "Acciones ran.:", String::utf8("Acciones ejecutadas en orden al activar esta ranura."), "radial acciones ranura", false, ract_wrap, "radial");
+
 	// --- Sección contextual consolidada: Ajustes de la pantalla (9B Corr Punto 5) ---
 	screen_settings_box = memnew(VBoxContainer);
 	screen_settings_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -4000,6 +4138,15 @@ void ClockGearsUiDesignEditor::_refresh_style_binding_action_options() {
 			prop_add_action_opt->set_item_metadata(i, String(ad.get("id", "")));
 		}
 	}
+	if (prop_rad_slot_add_act_opt && prop_rad_slot_add_act_opt->get_item_count() == 0) {
+		prop_rad_slot_add_act_opt->clear();
+		Array all_acts = ClockGearsDataManager::get_all_ui_button_action_types();
+		for (int i = 0; i < all_acts.size(); i++) {
+			Dictionary ad = all_acts[i];
+			prop_rad_slot_add_act_opt->add_item(String(ad.get("label", ad.get("id", ""))), i);
+			prop_rad_slot_add_act_opt->set_item_metadata(i, String(ad.get("id", "")));
+		}
+	}
 
 	if (prop_font_opt && (!cached_fonts_scanned || prop_font_opt->get_item_count() == 0)) {
 		prop_font_opt->clear();
@@ -4166,10 +4313,14 @@ void ClockGearsUiDesignEditor::_refresh_image_thumbs_gallery() {
 }
 
 void ClockGearsUiDesignEditor::_refresh_multi_actions_ui(const Dictionary &p_elem) {
-	if (!prop_multi_actions_vbox) {
+	_populate_multi_actions_list(prop_multi_actions_vbox, p_elem.get("actions", Array()));
+}
+
+void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbox, const Array &p_acts) {
+	if (!p_vbox) {
 		return;
 	}
-	s_clear_container_children(prop_multi_actions_vbox);
+	s_clear_container_children(p_vbox);
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	Array all_types = ClockGearsDataManager::get_all_ui_button_action_types();
 	auto action_label = [&](const String &p_t) -> String {
@@ -4182,7 +4333,7 @@ void ClockGearsUiDesignEditor::_refresh_multi_actions_ui(const Dictionary &p_ele
 		return p_t;
 	};
 	Array menus = dm ? dm->get_all_menus_for_selector() : Array();
-	Array acts = p_elem.get("actions", Array());
+	Array acts = p_acts;
 	for (int i = 0; i < acts.size(); i++) {
 		if (acts[i].get_type() != Variant::DICTIONARY) {
 			continue;
@@ -4191,7 +4342,7 @@ void ClockGearsUiDesignEditor::_refresh_multi_actions_ui(const Dictionary &p_ele
 		String atype = String(a.get("type", "")).strip_edges().to_lower();
 		VBoxContainer *card = memnew(VBoxContainer);
 		card->add_theme_constant_override("separation", int(2 * EDSCALE));
-		prop_multi_actions_vbox->add_child(card);
+		p_vbox->add_child(card);
 
 		HBoxContainer *hb = memnew(HBoxContainer);
 		hb->add_theme_constant_override("separation", int(3 * EDSCALE));
@@ -4572,6 +4723,9 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 		if (prop_en_sw_edit) prop_en_sw_edit->set_text(e_sw);
 		_refresh_multi_actions_ui(el);
 	}
+	if (etype == "radial") {
+		_refresh_radial_inspector();
+	}
 
 	updating_ui = prev_upd;
 	_apply_properties_filter();
@@ -4919,6 +5073,9 @@ String ClockGearsUiDesignEditor::add_element_at(const String &p_type, const Vect
 		int cy = CLAMP(p_canvas_pos.y - h / 2, 0, BASE_H - h);
 		el["offset_x"] = cx;
 		el["offset_y"] = cy;
+	} else if (p_type == "radial") {
+		el["offset_x"] = (BASE_W - w) / 2;
+		el["offset_y"] = (BASE_H - h) / 2;
 	} else {
 		Array existing = dm->get_ui_screen_elements(current_screen_id);
 		el["offset_x"] = CLAMP(36 + existing.size() * 14, 0, BASE_W - w);
@@ -5418,15 +5575,215 @@ PackedStringArray ClockGearsUiDesignEditor::paste_from_clipboard() {
 	return added;
 }
 
+Dictionary ClockGearsUiDesignEditor::_get_active_radial_layout(bool *r_is_elem) const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary sel = _get_selected_element_copy();
+	if (!sel.is_empty() && String(sel.get("type", "")) == "radial") {
+		if (r_is_elem) *r_is_elem = true;
+		Dictionary lay = sel.get("layout", Dictionary());
+		return ClockGearsDataManager::normalize_menu_layout(lay);
+	}
+	if (r_is_elem) *r_is_elem = false;
+	if (!dm) return Dictionary();
+	Dictionary d = dm->get_ui_screen_design(current_screen_id);
+	return ClockGearsDataManager::normalize_menu_layout(d.get("layout", Dictionary()));
+}
+
+void ClockGearsUiDesignEditor::_commit_active_radial_layout(const Dictionary &p_lay, bool p_push_undo, bool p_refresh_inspector) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	Dictionary norm_lay = ClockGearsDataManager::normalize_menu_layout(p_lay);
+	Dictionary sel = _get_selected_element_copy();
+	if (!sel.is_empty() && String(sel.get("type", "")) == "radial") {
+		Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+		bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+		ensure_screen_customizable_for_edit(false);
+		sel["layout"] = norm_lay;
+		dm->update_ui_element(current_screen_id, selected_elem_id, sel, prev_custom && p_push_undo);
+		if (p_push_undo && !prev_custom) {
+			dm->push_ui_design_undo_state(current_screen_id, snap);
+		}
+		if (p_refresh_inspector) {
+			_notify_data_mutated(true);
+		} else {
+			_refresh_canvas_stage();
+			emit_signal("design_modified");
+		}
+		return;
+	}
+	Dictionary d = dm->get_ui_screen_design(current_screen_id).duplicate(true);
+	d["layout"] = norm_lay;
+	dm->set_ui_screen_design(current_screen_id, d, p_push_undo);
+	if (p_refresh_inspector) {
+		_notify_data_mutated(true);
+	} else {
+		_refresh_canvas_stage();
+		emit_signal("design_modified");
+	}
+}
+
+void ClockGearsUiDesignEditor::_refresh_radial_inspector() {
+	if (!prop_radial_box) {
+		return;
+	}
+	bool is_el = false;
+	Dictionary lay = _get_active_radial_layout(&is_el);
+	Array slots = lay.get("radial_slots", Array());
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	if (prop_rad_count_slider) prop_rad_count_slider->set_value(MAX(1, slots.size()));
+	if (prop_rad_count_lbl) prop_rad_count_lbl->set_text(itos(slots.size()));
+	if (prop_rad_radius_slider) prop_rad_radius_slider->set_value(int(lay.get("radial_radius", 128)));
+	if (prop_rad_start_slider) prop_rad_start_slider->set_value(float(lay.get("radial_start_angle_deg", -90.0)));
+	float sweep = float(lay.get("radial_sweep_angle_deg", 360.0));
+	if (prop_rad_full_chk) prop_rad_full_chk->set_pressed(sweep >= 359.5f);
+	if (prop_rad_sweep_slider) {
+		prop_rad_sweep_slider->set_value(sweep);
+		prop_rad_sweep_slider->set_editable(sweep < 359.5f);
+	}
+	if (prop_rad_cw_chk) prop_rad_cw_chk->set_pressed(lay.has("radial_clockwise") ? bool(lay["radial_clockwise"]) : true);
+	if (prop_rad_slot_size_slider) prop_rad_slot_size_slider->set_value(int(lay.get("radial_slot_size", 56)));
+	if (prop_rad_center_info_chk) prop_rad_center_info_chk->set_pressed(lay.has("radial_show_center_info") ? bool(lay["radial_show_center_info"]) : true);
+	if (prop_rad_open_anim_opt) s_select_option_meta(prop_rad_open_anim_opt, String(lay.get("radial_open_anim", "radial_spin")));
+
+	if (prop_rad_slot_opt) {
+		prop_rad_slot_opt->clear();
+		for (int i = 0; i < slots.size(); i++) {
+			Dictionary rs = slots[i].get_type() == Variant::DICTIONARY ? Dictionary(slots[i]) : Dictionary();
+			String stitle = String(rs.get("title", String::utf8("Ranura ") + itos(i + 1)));
+			prop_rad_slot_opt->add_item(itos(i + 1) + ". " + stitle, i);
+			prop_rad_slot_opt->set_item_metadata(i, i);
+		}
+		if (slots.size() > 0) {
+			prop_rad_selected_slot = CLAMP(prop_rad_selected_slot, 0, slots.size() - 1);
+			prop_rad_slot_opt->select(prop_rad_selected_slot);
+		} else {
+			prop_rad_selected_slot = 0;
+		}
+	}
+	bool has_slot = (prop_rad_selected_slot >= 0 && prop_rad_selected_slot < slots.size() && slots[prop_rad_selected_slot].get_type() == Variant::DICTIONARY);
+	Dictionary cur_s = has_slot ? Dictionary(slots[prop_rad_selected_slot]) : Dictionary();
+	if (prop_rad_del_slot_btn) prop_rad_del_slot_btn->set_disabled(slots.size() <= 1);
+	if (prop_rad_slot_name_edit) prop_rad_slot_name_edit->set_text(String(cur_s.get("title", "")));
+	if (prop_rad_slot_desc_edit) prop_rad_slot_desc_edit->set_text(String(cur_s.get("description", "")));
+	if (prop_rad_slot_icon_edit) prop_rad_slot_icon_edit->set_text(String(cur_s.get("icon_path", "")));
+	_populate_multi_actions_list(prop_rad_slot_actions_vbox, cur_s.get("actions", Array()));
+	updating_ui = prev_upd;
+}
+
+void ClockGearsUiDesignEditor::_on_prop_radial_changed() {
+	if (updating_ui) {
+		return;
+	}
+	Dictionary lay = _get_active_radial_layout();
+	lay["mode"] = "radial";
+	if (prop_rad_radius_slider) lay["radial_radius"] = int(Math::round(prop_rad_radius_slider->get_value()));
+	if (prop_rad_start_slider) lay["radial_start_angle_deg"] = float(prop_rad_start_slider->get_value());
+	bool full = prop_rad_full_chk ? prop_rad_full_chk->is_pressed() : false;
+	if (full) {
+		lay["radial_sweep_angle_deg"] = 360.0;
+	} else if (prop_rad_sweep_slider) {
+		double sw = prop_rad_sweep_slider->get_value();
+		lay["radial_sweep_angle_deg"] = (sw >= 359.5) ? 270.0 : sw;
+	}
+	if (prop_rad_cw_chk) lay["radial_clockwise"] = prop_rad_cw_chk->is_pressed();
+	if (prop_rad_slot_size_slider) lay["radial_slot_size"] = int(Math::round(prop_rad_slot_size_slider->get_value()));
+	if (prop_rad_center_info_chk) lay["radial_show_center_info"] = prop_rad_center_info_chk->is_pressed();
+	if (prop_rad_open_anim_opt && prop_rad_open_anim_opt->get_selected() >= 0) {
+		lay["radial_open_anim"] = String(prop_rad_open_anim_opt->get_item_metadata(prop_rad_open_anim_opt->get_selected()));
+	}
+	_commit_active_radial_layout(lay, false);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_radial_count_changed(double p_val) {
+	if (updating_ui) {
+		return;
+	}
+	int target = CLAMP(int(Math::round(p_val)), 1, 16);
+	Dictionary lay = _get_active_radial_layout();
+	lay["mode"] = "radial";
+	Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+	if (slots.size() < target) {
+		Array defs = ClockGearsDataManager::make_default_radial_slots(target, current_screen_id);
+		while (slots.size() < target) {
+			int idx = slots.size();
+			Dictionary ns = defs[idx];
+			ns["id"] = vformat("slot_%d", idx + 1);
+			slots.push_back(ns);
+		}
+	} else if (slots.size() > target) {
+		slots.resize(target);
+	}
+	lay["radial_slots"] = slots;
+	prop_rad_selected_slot = CLAMP(prop_rad_selected_slot, 0, target - 1);
+	_commit_active_radial_layout(lay, true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_radial_slot_selected(int p_idx) {
+	if (updating_ui) {
+		return;
+	}
+	prop_rad_selected_slot = MAX(0, p_idx);
+	_refresh_radial_inspector();
+}
+
+void ClockGearsUiDesignEditor::_on_prop_radial_slot_edited() {
+	if (updating_ui) {
+		return;
+	}
+	Dictionary lay = _get_active_radial_layout();
+	Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+	if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) {
+		return;
+	}
+	Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
+	if (prop_rad_slot_name_edit) rs["title"] = prop_rad_slot_name_edit->get_text();
+	if (prop_rad_slot_desc_edit) rs["description"] = prop_rad_slot_desc_edit->get_text();
+	if (prop_rad_slot_icon_edit) rs["icon_path"] = prop_rad_slot_icon_edit->get_text().strip_edges();
+	slots[prop_rad_selected_slot] = rs;
+	lay["radial_slots"] = slots;
+	_commit_active_radial_layout(lay, false, false);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_radial_del_slot_pressed() {
+	Dictionary lay = _get_active_radial_layout();
+	Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+	if (slots.size() <= 1 || prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) {
+		return;
+	}
+	slots.remove_at(prop_rad_selected_slot);
+	prop_rad_selected_slot = CLAMP(prop_rad_selected_slot, 0, slots.size() - 1);
+	lay["radial_slots"] = slots;
+	_commit_active_radial_layout(lay, true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_radial_slot_icon_import_pressed() {
+	image_import_target = 20;
+	_on_prop_import_image_pressed();
+}
+
 void ClockGearsUiDesignEditor::set_radial_layout_live(int p_radius, float p_start_deg) {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	if (!dm) {
 		return;
 	}
+	Dictionary sel = _get_selected_element_copy();
+	if (!sel.is_empty() && String(sel.get("type", "")) == "radial") {
+		Dictionary lay = sel.get("layout", Dictionary()).duplicate(true);
+		lay["mode"] = "radial";
+		lay["radial_radius"] = CLAMP(p_radius, 48, 250);
+		lay["radial_start_angle_deg"] = CLAMP(p_start_deg, -360.0f, 360.0f);
+		sel["layout"] = ClockGearsDataManager::normalize_menu_layout(lay);
+		dm->update_ui_element(current_screen_id, selected_elem_id, sel, false);
+		_refresh_canvas_stage();
+		return;
+	}
 	Dictionary d = dm->get_ui_screen_design(current_screen_id).duplicate(true);
 	Dictionary lay = d.get("layout", Dictionary());
 	lay["mode"] = "radial";
-	lay["radial_radius"] = CLAMP(p_radius, 40, 260);
+	lay["radial_radius"] = CLAMP(p_radius, 48, 250);
 	lay["radial_start_angle_deg"] = CLAMP(p_start_deg, -360.0f, 360.0f);
 	d["layout"] = lay;
 	dm->set_ui_screen_design(current_screen_id, d, false);
@@ -5443,35 +5800,24 @@ bool ClockGearsUiDesignEditor::add_radial_slot_from_editor() {
 	if (!dm) {
 		return false;
 	}
-	Dictionary d = dm->get_ui_screen_design(current_screen_id).duplicate(true);
-	Dictionary lay = d.get("layout", Dictionary());
+	bool is_el = false;
+	Dictionary lay = _get_active_radial_layout(&is_el);
 	lay["mode"] = "radial";
-	Array rslots = lay.get("radial_slots", Array());
+	Array rslots = Array(lay.get("radial_slots", Array())).duplicate(true);
 	int next_idx = rslots.size() + 1;
-	Dictionary btn = dm->make_default_ui_element("button", current_screen_id);
-	btn["name"] = "Ranura " + itos(next_idx);
-	btn["text"] = "Ranura " + itos(next_idx);
-	btn["width"] = 104;
-	btn["height"] = 44;
-	btn["shape"] = "pill";
-	btn["corner_radius"] = 22;
-	btn["focus_order"] = next_idx * 10;
-	d["layout"] = lay;
-	dm->set_ui_screen_design(current_screen_id, d, true);
-	String bid = dm->add_ui_element(current_screen_id, btn, false);
-	if (!bid.is_empty()) {
-		Dictionary d2 = dm->get_ui_screen_design(current_screen_id).duplicate(true);
-		Dictionary lay2 = d2.get("layout", Dictionary());
-		Array rs2 = lay2.get("radial_slots", Array());
-		rs2.push_back(bid);
-		lay2["radial_slots"] = rs2;
-		d2["layout"] = lay2;
-		dm->set_ui_screen_design(current_screen_id, d2, false);
-		selected_elem_id = bid;
-		_notify_data_mutated(true);
-		return true;
-	}
-	return false;
+	Dictionary ns;
+	ns["id"] = vformat("slot_%d", next_idx);
+	ns["title"] = String::utf8("Ranura ") + itos(next_idx);
+	ns["description"] = "";
+	ns["icon_path"] = "";
+	ns["pixel_art"] = true;
+	ns["action"] = "";
+	ns["actions"] = Array();
+	rslots.push_back(ns);
+	lay["radial_slots"] = rslots;
+	prop_rad_selected_slot = rslots.size() - 1;
+	_commit_active_radial_layout(lay, true);
+	return true;
 }
 
 void ClockGearsUiDesignEditor::_on_align_center_pressed(bool p_vertical) {
@@ -6074,7 +6420,26 @@ void ClockGearsUiDesignEditor::_on_font_file_selected(const String &p_path) {
 void ClockGearsUiDesignEditor::_on_prop_add_multi_action_pressed() {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	Dictionary el = _get_selected_element_copy();
-	if (!dm || el.is_empty() || !prop_add_action_opt || prop_add_action_opt->get_selected() < 0) {
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	if (String(el.get("type", "")) == "radial") {
+		if (!prop_rad_slot_add_act_opt || prop_rad_slot_add_act_opt->get_selected() < 0) return;
+		Dictionary lay = _get_active_radial_layout();
+		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
+		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
+		Array acts = rs.get("actions", Array()).duplicate(true);
+		Dictionary na;
+		na["type"] = String(prop_rad_slot_add_act_opt->get_item_metadata(prop_rad_slot_add_act_opt->get_selected()));
+		acts.push_back(na);
+		rs["actions"] = acts;
+		slots[prop_rad_selected_slot] = rs;
+		lay["radial_slots"] = slots;
+		_commit_active_radial_layout(lay, true);
+		return;
+	}
+	if (!prop_add_action_opt || prop_add_action_opt->get_selected() < 0) {
 		return;
 	}
 	String atype = String(prop_add_action_opt->get_item_metadata(prop_add_action_opt->get_selected()));
@@ -6099,17 +6464,32 @@ void ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed(int p_idx) {
 	if (!dm || el.is_empty()) {
 		return;
 	}
+	if (String(el.get("type", "")) == "radial") {
+		Dictionary lay = _get_active_radial_layout();
+		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
+		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
+		Array acts = rs.get("actions", Array()).duplicate(true);
+		if (p_idx >= 0 && p_idx < acts.size()) {
+			acts.remove_at(p_idx);
+			rs["actions"] = acts;
+			slots[prop_rad_selected_slot] = rs;
+			lay["radial_slots"] = slots;
+			_commit_active_radial_layout(lay, true);
+		}
+		return;
+	}
 	Array acts = el.get("actions", Array()).duplicate(true);
 	if (p_idx >= 0 && p_idx < acts.size()) {
 		acts.remove_at(p_idx);
 		el["actions"] = acts;
 		Dictionary snap = dm->get_ui_screen_design(current_screen_id);
-	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
-	ensure_screen_customizable_for_edit(false);
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
-	if (!prev_custom) {
-		dm->push_ui_design_undo_state(current_screen_id, snap);
-	}
+		bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+		if (!prev_custom) {
+			dm->push_ui_design_undo_state(current_screen_id, snap);
+		}
 		_notify_data_mutated(true);
 	}
 }
@@ -6118,6 +6498,23 @@ void ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed(int p_idx, int
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	Dictionary el = _get_selected_element_copy();
 	if (!dm || el.is_empty()) {
+		return;
+	}
+	if (String(el.get("type", "")) == "radial") {
+		Dictionary lay = _get_active_radial_layout();
+		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
+		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
+		Array acts = rs.get("actions", Array()).duplicate(true);
+		int target = p_idx + p_delta;
+		if (p_idx < 0 || p_idx >= acts.size() || target < 0 || target >= acts.size() || target == p_idx) return;
+		Variant moved = acts[p_idx];
+		acts.remove_at(p_idx);
+		acts.insert(target, moved);
+		rs["actions"] = acts;
+		slots[prop_rad_selected_slot] = rs;
+		lay["radial_slots"] = slots;
+		_commit_active_radial_layout(lay, true);
 		return;
 	}
 	Array acts = el.get("actions", Array()).duplicate(true);
@@ -6146,6 +6543,23 @@ void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step(const Variant &p_
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	Dictionary el = _get_selected_element_copy();
 	if (!dm || el.is_empty()) {
+		return;
+	}
+	if (String(el.get("type", "")) == "radial") {
+		Dictionary lay = _get_active_radial_layout();
+		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
+		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
+		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
+		Array acts = rs.get("actions", Array()).duplicate(true);
+		if (p_idx < 0 || p_idx >= acts.size() || acts[p_idx].get_type() != Variant::DICTIONARY) return;
+		Dictionary step = Dictionary(acts[p_idx]).duplicate(true);
+		step[p_key] = p_val;
+		if (p_key == "menu_id") step["target"] = p_val;
+		acts[p_idx] = step;
+		rs["actions"] = acts;
+		slots[prop_rad_selected_slot] = rs;
+		lay["radial_slots"] = slots;
+		_commit_active_radial_layout(lay, false, false);
 		return;
 	}
 	Array acts = el.get("actions", Array()).duplicate(true);
@@ -6608,6 +7022,9 @@ void ClockGearsUiDesignEditor::_on_image_file_selected(const String &p_path) {
 		if (image_import_target == 1 && menu_bg_img_edit) {
 			menu_bg_img_edit->set_text(final_path);
 			_on_menu_global_changed();
+		} else if (image_import_target == 20 && prop_rad_slot_icon_edit) {
+			prop_rad_slot_icon_edit->set_text(final_path);
+			_on_prop_radial_slot_edited();
 		} else if (image_import_target >= 10 && image_import_target <= 13) {
 			int si = image_import_target - 10;
 			if (prop_btn_state_img_edits[si]) {
@@ -7111,6 +7528,25 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 		btn_state_arr.push_back(prop_btn_state_img_edits[si]);
 	}
 	out["prop_btn_state_img_edits"] = btn_state_arr;
+	out["prop_radial_box"] = prop_radial_box;
+	out["prop_rad_count_slider"] = prop_rad_count_slider;
+	out["prop_rad_radius_slider"] = prop_rad_radius_slider;
+	out["prop_rad_start_slider"] = prop_rad_start_slider;
+	out["prop_rad_full_chk"] = prop_rad_full_chk;
+	out["prop_rad_sweep_slider"] = prop_rad_sweep_slider;
+	out["prop_rad_cw_chk"] = prop_rad_cw_chk;
+	out["prop_rad_slot_size_slider"] = prop_rad_slot_size_slider;
+	out["prop_rad_center_info_chk"] = prop_rad_center_info_chk;
+	out["prop_rad_open_anim_opt"] = prop_rad_open_anim_opt;
+	out["prop_rad_slot_opt"] = prop_rad_slot_opt;
+	out["prop_rad_add_slot_btn"] = prop_rad_add_slot_btn;
+	out["prop_rad_del_slot_btn"] = prop_rad_del_slot_btn;
+	out["prop_rad_slot_name_edit"] = prop_rad_slot_name_edit;
+	out["prop_rad_slot_desc_edit"] = prop_rad_slot_desc_edit;
+	out["prop_rad_slot_icon_edit"] = prop_rad_slot_icon_edit;
+	out["prop_rad_slot_add_act_opt"] = prop_rad_slot_add_act_opt;
+	out["prop_rad_slot_add_act_btn"] = prop_rad_slot_add_act_btn;
+	out["prop_rad_slot_actions_vbox"] = prop_rad_slot_actions_vbox;
 	return out;
 }
 
