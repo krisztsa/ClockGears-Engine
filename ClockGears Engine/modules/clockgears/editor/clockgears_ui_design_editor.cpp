@@ -4164,7 +4164,7 @@ String ClockGearsUiDesignEditor::add_submenu_to_current(const String &p_name) {
 }
 
 void ClockGearsUiDesignEditor::_on_add_submenu_pressed() {
-	add_submenu_to_current("");
+	(void)add_submenu_to_current("");
 }
 
 String ClockGearsUiDesignEditor::quick_add_button_element(const String &p_text) {
@@ -4184,7 +4184,7 @@ String ClockGearsUiDesignEditor::quick_add_button_element(const String &p_text) 
 }
 
 void ClockGearsUiDesignEditor::_on_add_button_bar_pressed() {
-	quick_add_button_element(String::utf8("Nuevo botón"));
+	(void)quick_add_button_element(String::utf8("Nuevo botón"));
 }
 
 void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
@@ -4316,6 +4316,8 @@ String ClockGearsUiDesignEditor::add_element_at(const String &p_type, const Vect
 	String new_id = dm->add_ui_element(current_screen_id, el, true);
 	if (!new_id.is_empty()) {
 		selected_elem_id = new_id;
+		selected_elem_ids.clear();
+		selected_elem_ids.push_back(new_id);
 		_notify_data_mutated(true);
 	}
 	return new_id;
@@ -4765,6 +4767,8 @@ bool ClockGearsUiDesignEditor::duplicate_selected_element() {
 			dm->push_ui_design_undo_state(current_screen_id, snap);
 		}
 		selected_elem_id = nid;
+		selected_elem_ids.clear();
+		selected_elem_ids.push_back(nid);
 		_notify_data_mutated(true);
 		return true;
 	}
@@ -4791,6 +4795,7 @@ PackedStringArray ClockGearsUiDesignEditor::paste_from_clipboard() {
 	PackedStringArray added = dm->paste_ui_elements_from_clipboard(current_screen_id);
 	if (!added.is_empty()) {
 		selected_elem_id = added[0];
+		selected_elem_ids = added;
 		_notify_data_mutated(true);
 	}
 	return added;
@@ -6865,6 +6870,8 @@ void ClockGearsUiDesignEditor::_on_ss_hud_add_widget_pressed() {
 	String wid = dm->create_hud_widget(nw);
 	if (!wid.is_empty()) {
 		selected_elem_id = wid;
+		selected_elem_ids.clear();
+		selected_elem_ids.push_back(wid);
 		_notify_data_mutated(true);
 	}
 }
