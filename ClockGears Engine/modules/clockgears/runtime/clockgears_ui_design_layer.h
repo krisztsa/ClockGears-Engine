@@ -253,7 +253,8 @@ private:
 	void _relayout_elements(bool p_refresh_styles);
 	void _apply_container_layout(const Dictionary &p_layout, float p_scale);
 	void _on_button_pressed(const String &p_action, const String &p_elem_id);
-	void _on_button_focus_changed(ObjectID p_btn_id);
+	void _on_button_hover(const String &p_elem_id);
+	void _on_button_focus_changed(ObjectID p_btn_id, const String &p_elem_id);
 	void _on_radial_slot_activated(int p_slot_idx);
 	void _on_radial_selection_changed(int p_slot_idx);
 	void _on_layout_page_delta(int p_delta);
@@ -263,6 +264,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void unhandled_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	static Vector2 compute_anchor_factors(const String &p_anchor);

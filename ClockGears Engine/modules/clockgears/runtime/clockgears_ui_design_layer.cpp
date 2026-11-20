@@ -1,6 +1,7 @@
 #include "clockgears_ui_design_layer.h"
 
 #include "../core/clockgears_data_manager.h"
+#include "clockgears_audio_manager.h"
 #include "clockgears_title_screen.h"
 #include "clockgears_window_style.h"
 #include "core/io/file_access.h"
@@ -13,6 +14,7 @@
 #include "scene/main/viewport.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/style_box_texture.h"
 
 namespace {
 static HashMap<String, Ref<Font>> s_cg_ui_font_cache;
@@ -1427,8 +1429,10 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 				btn->set_button_icon(itex);
 			}
 		}
-		btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_button_pressed).bind(r_entry.action, r_entry.id));
-		btn->connect("focus_entered", callable_mp(this, &ClockGearsUiDesignLayer::_on_button_focus_changed).bind(btn->get_instance_id()));
+		btn->set_texture_filter(tf);
+		btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_button_pressed).bind(r_entry.action, r_entry.id), CONNECT_DEFERRED);
+		btn->connect("mouse_entered", callable_mp(this, &ClockGearsUiDesignLayer::_on_button_hover).bind(r_entry.id));
+		btn->connect("focus_entered", callable_mp(this, &ClockGearsUiDesignLayer::_on_button_focus_changed).bind(btn->get_instance_id(), r_entry.id));
 		content->add_child(btn);
 		r_entry.button = btn;
 	} else if (r_entry.type == "image") {
@@ -1669,6 +1673,28 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 			}
 		}
 		ClockGearsWindowStyleManager::apply_button_style(r_entry.button, window_type_fallback, b_over);
+		String img_norm = String(r_entry.config.get("image_normal", "")).strip_edges();
+		String img_hov = String(r_entry.config.get("image_hover", "")).strip_edges();
+		String img_prs = String(r_entry.config.get("image_pressed", "")).strip_edges();
+		String img_dis = String(r_entry.config.get("image_disabled", "")).strip_edges();
+		if (!img_norm.is_empty() || !img_hov.is_empty() || !img_prs.is_empty() || !img_dis.is_empty()) {
+			auto apply_btn_tex_state = [&](const char *p_state, const String &p_path, const String &p_fb) {
+				String use_p = p_path.is_empty() ? p_fb : p_path;
+				if (use_p.is_empty()) return;
+				Ref<Texture2D> t = ClockGearsWindowStyleManager::load_texture_safe(use_p);
+				if (t.is_valid()) {
+					Ref<StyleBoxTexture> sbt;
+					sbt.instantiate();
+					sbt->set_texture(t);
+					sbt->set_content_margin_all(4.0f * p_scale);
+					r_entry.button->add_theme_style_override(p_state, sbt);
+				}
+			};
+			apply_btn_tex_state("normal", img_norm, img_hov);
+			apply_btn_tex_state("hover", img_hov, img_norm);
+			apply_btn_tex_state("pressed", img_prs, img_hov.is_empty() ? img_norm : img_hov);
+			apply_btn_tex_state("disabled", img_dis, img_norm);
+		}
 		int fsz = MAX(8, int(Math::round(float(r_entry.config.get("font_size", 16)) * p_scale)));
 		r_entry.button->add_theme_font_size_override("font_size", fsz);
 		r_entry.bg_panel->set_visible(false);
@@ -2063,7 +2089,11 @@ void ClockGearsUiDesignLayer::refresh_live_values() {
 						(!e.action.is_empty() && bool(disabled_actions.get(e.action, false)));
 				if (!is_dis && emode == "switch") {
 					String esw = String(e.config.get("enabled_switch", "")).strip_edges();
-					is_dis = (!dm || esw.is_empty()) ? true : !dm->get_switch(esw);
+					bool sw_on = (dm && !esw.is_empty()) ? dm->get_switch(esw) : false;
+					if (bool(e.config.get("enabled_invert", false))) {
+						sw_on = !sw_on;
+					}
+					is_dis = !sw_on;
 				}
 				e.button->set_disabled(is_dis);
 				e.button->set_focus_mode((preview_mode || is_dis) ? FOCUS_NONE : FOCUS_ALL);
@@ -2201,12 +2231,41 @@ void ClockGearsUiDesignLayer::_on_button_pressed(const String &p_action, const S
 	if (preview_mode) {
 		return;
 	}
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == p_elem_id) {
+			String sc = String(elements[i].config.get("sound_click", "")).strip_edges();
+			if (!sc.is_empty()) {
+				if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+					am->play_se(sc, 1.0f, 1.0f);
+				}
+			}
+			break;
+		}
+	}
 	emit_signal("action_triggered", p_action, p_elem_id);
 }
 
-void ClockGearsUiDesignLayer::_on_button_focus_changed(ObjectID p_btn_id) {
+void ClockGearsUiDesignLayer::_on_button_hover(const String &p_elem_id) {
+	if (preview_mode) {
+		return;
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == p_elem_id) {
+			String sh = String(elements[i].config.get("sound_hover", "")).strip_edges();
+			if (!sh.is_empty()) {
+				if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+					am->play_se(sh, 1.0f, 1.0f);
+				}
+			}
+			break;
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_on_button_focus_changed(ObjectID p_btn_id, const String &p_elem_id) {
 	Button *b = Object::cast_to<Button>(ObjectDB::get_instance(p_btn_id));
 	update_cursor_for_button(b);
+	_on_button_hover(p_elem_id);
 }
 
 void ClockGearsUiDesignLayer::_on_radial_slot_activated(int p_slot_idx) {
@@ -2628,4 +2687,43 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 
 ClockGearsUiDesignLayer::ClockGearsUiDesignLayer() {
 	set_mouse_filter(MOUSE_FILTER_IGNORE);
+	set_process_unhandled_input(true);
+}
+
+void ClockGearsUiDesignLayer::unhandled_input(const Ref<InputEvent> &p_event) {
+	if (preview_mode || !is_visible_in_tree() || p_event.is_null() || !p_event->is_pressed() || p_event->is_echo()) {
+		return;
+	}
+	Ref<InputEventKey> ek = p_event;
+	Ref<InputEventJoypadButton> ej = p_event;
+	if (ek.is_null() && ej.is_null()) {
+		return;
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &e = elements[i];
+		if (e.type != "button" || !e.button || !e.root || !e.root->is_visible() || e.button->is_disabled()) {
+			continue;
+		}
+		if (!e.config.has("shortcut") || e.config["shortcut"].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary sc = e.config["shortcut"];
+		String kind = String(sc.get("kind", "key")).strip_edges().to_lower();
+		bool hit = false;
+		if (kind == "key" && ek.is_valid()) {
+			int64_t kc = int64_t(sc.get("keycode", 0));
+			if (kc > 0 && ((int64_t)ek->get_keycode() == kc || (int64_t)ek->get_physical_keycode() == kc)) {
+				hit = true;
+			}
+		} else if (kind == "joy_button" && ej.is_valid()) {
+			if (ej->get_button_index() == (JoyButton)int(sc.get("joy_button", -1))) {
+				hit = true;
+			}
+		}
+		if (hit) {
+			get_viewport()->set_input_as_handled();
+			_on_button_pressed(e.action, e.id);
+			return;
+		}
+	}
 }

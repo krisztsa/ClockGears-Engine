@@ -891,6 +891,16 @@ bool ClockGearsTitleScreen::_execute_title_step(const Dictionary &p_step) {
 		}
 		return false;
 	}
+	if (step_type == "play_music") {
+		String sp = String(p_step.get("sound_path", p_step.get("music_path", p_step.get("path", "")))).strip_edges();
+		if (!sp.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_bgm(sp, 1.0f, float(p_step.get("pitch", 1.0f)));
+			}
+			return true;
+		}
+		return false;
+	}
 	if (step_type == "hud_visibility" && dm) {
 		dm->set_hud_runtime_visible(bool(p_step.get("visible", true)));
 		return true;

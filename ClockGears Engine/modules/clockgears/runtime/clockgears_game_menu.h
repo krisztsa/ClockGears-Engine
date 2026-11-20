@@ -163,6 +163,7 @@ private:
 	bool auto_quit_tree = true;
 	bool quit_requested_flag = false;
 	String last_played_menu_sound;
+	String last_played_menu_music;
 	int last_common_event_id = 0;
 	Array last_executed_actions;
 	PackedStringArray visible_entry_ids;
@@ -276,6 +277,7 @@ public:
 	int get_menu_history_depth() const { return menu_history_stack.size(); }
 	bool is_tree_paused_by_menu() const { return paused_tree_by_menu; }
 	String get_last_played_menu_sound() const { return last_played_menu_sound; }
+	String get_last_played_menu_music() const { return last_played_menu_music; }
 	int get_last_common_event_id() const { return last_common_event_id; }
 	Array get_last_executed_actions() const { return last_executed_actions.duplicate(true); }
 	void set_auto_quit_tree(bool p_enable) { auto_quit_tree = p_enable; }

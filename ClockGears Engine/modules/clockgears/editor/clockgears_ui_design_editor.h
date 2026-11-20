@@ -47,6 +47,7 @@ protected:
 
 public:
 	void setup(ClockGearsUiDesignEditor *p_owner, const String &p_type, const String &p_label);
+	void _on_pressed();
 	String get_element_type() const { return element_type; }
 	virtual Variant get_drag_data(const Point2 &p_at_position) override;
 };
@@ -408,6 +409,8 @@ private:
 	LineEdit *prop_image_edit = nullptr;
 	Button *prop_image_import_btn = nullptr;
 	Button *prop_image_clear_btn = nullptr;
+	VBoxContainer *prop_btn_state_imgs_box = nullptr;
+	LineEdit *prop_btn_state_img_edits[4] = { nullptr, nullptr, nullptr, nullptr };
 	VBoxContainer *prop_binding_row = nullptr;
 	OptionButton *prop_binding_opt = nullptr;
 	HBoxContainer *prop_var_row = nullptr;
@@ -418,10 +421,15 @@ private:
 	VBoxContainer *prop_action_row = nullptr;
 	OptionButton *prop_action_opt = nullptr;
 	SpinBox *prop_focus_spin = nullptr;
+	LineEdit *prop_sound_hover_edit = nullptr;
+	LineEdit *prop_sound_click_edit = nullptr;
+	Label *prop_btn_shortcut_lbl = nullptr;
+	Button *prop_btn_shortcut_capture_btn = nullptr;
+	Button *prop_btn_shortcut_clear_btn = nullptr;
 
 	// Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B)
 	FileDialog *import_image_dialog = nullptr;
-	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF
+	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF, 10..13=estados boton
 	FileDialog *import_font_dialog = nullptr;
 	FileDialog *export_pkg_dialog = nullptr;
 	FileDialog *import_pkg_dialog = nullptr;
@@ -435,6 +443,7 @@ private:
 	String pending_apply_template_id;
 	bool capturing_key_for_screen = false;
 	bool capturing_key_for_wizard = false;
+	bool capturing_key_for_btn_shortcut = false;
 
 	AcceptDialog *menu_wizard_dialog = nullptr;
 	int wizard_step = 0;
@@ -554,6 +563,13 @@ private:
 	void _on_font_file_selected(const String &p_path);
 	void _on_prop_add_multi_action_pressed();
 	void _on_prop_remove_multi_action_pressed(int p_idx);
+	void _on_prop_move_multi_action_pressed(int p_idx, int p_delta);
+	void _on_prop_edit_multi_action_step(const Variant &p_val, int p_idx, const String &p_key);
+	void _on_prop_edit_multi_action_menu(int p_opt_idx, ObjectID p_opt_id, int p_idx, const String &p_key);
+	void _on_prop_btn_state_import_pressed(int p_state);
+	void _on_prop_btn_state_clear_pressed(int p_state);
+	void _on_prop_btn_shortcut_capture_pressed();
+	void _on_prop_btn_shortcut_clear_pressed();
 	void _on_canvas_context_menu_id(int p_id);
 	void _on_align_center_pressed(bool p_vertical);
 	void _on_distribute_vertical_pressed();

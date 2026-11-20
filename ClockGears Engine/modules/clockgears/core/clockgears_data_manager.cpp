@@ -4968,6 +4968,12 @@ static Dictionary _cg_norm_button_action_step(const Dictionary &p_step) {
 		out["volume_db"] = float(p_step.get("volume_db", 0.0));
 		return out;
 	}
+	if (t == "play_music" || t == "play_bgm") {
+		out["type"] = "play_music";
+		out["sound_path"] = String(p_step.get("sound_path", p_step.get("music_path", p_step.get("path", "")))).strip_edges();
+		out["volume_db"] = float(p_step.get("volume_db", 0.0));
+		return out;
+	}
 	if (t == "hud_visibility" || t == "show_hide_hud") {
 		out["type"] = "hud_visibility";
 		Variant vis = p_step.get("visible", true);
@@ -5653,6 +5659,7 @@ Array ClockGearsDataManager::get_all_ui_button_action_types() {
 	push_t("set_switch", "Cambiar interruptor");
 	push_t("set_variable", "Cambiar variable");
 	push_t("play_sound", "Reproducir sonido");
+	push_t("play_music", String::utf8("Reproducir música"));
 	push_t("hud_visibility", "Mostrar u ocultar HUD");
 	push_t("item_use", "Usar objeto seleccionado");
 	push_t("item_discard", "Tirar objeto seleccionado");
@@ -6010,15 +6017,42 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	}
 	out["window_style_id"] = ws;
 	out["pixel_art"] = p_elem.has("pixel_art") ? bool(p_elem["pixel_art"]) : true;
-	out["visibility_mode"] = (String(p_elem.get("visibility_mode", "always")).strip_edges().to_lower() == "switch") ? "switch" : "always";
-	out["visibility_switch"] = String(p_elem.get("visibility_switch", "")).strip_edges();
-	out["visibility_invert"] = bool(p_elem.get("visibility_invert", false));
+	String vis_m = String(p_elem.get("visibility_mode", "always")).strip_edges().to_lower();
+	String vis_sw = String(p_elem.get("visibility_switch", "")).strip_edges();
+	bool vis_inv = bool(p_elem.get("visibility_invert", false));
+	if (p_elem.has("visible_condition") && p_elem["visible_condition"].get_type() == Variant::DICTIONARY) {
+		Dictionary vc = p_elem["visible_condition"];
+		String vcm = String(vc.get("mode", "always")).strip_edges().to_lower();
+		if (vcm == "switch_on" || vcm == "switch_off" || vcm == "switch") {
+			vis_m = "switch";
+			vis_inv = (vcm == "switch_off");
+			vis_sw = String(vc.get("switch_name", vis_sw)).strip_edges();
+		}
+	}
+	out["visibility_mode"] = (vis_m == "switch") ? "switch" : "always";
+	out["visibility_switch"] = vis_sw;
+	out["visibility_invert"] = vis_inv;
+
 	String emode = String(p_elem.get("enabled_mode", "always")).strip_edges().to_lower();
+	String en_sw = String(p_elem.get("enabled_switch", "")).strip_edges();
+	bool en_inv = bool(p_elem.get("enabled_invert", false));
+	if (p_elem.has("enabled_condition") && p_elem["enabled_condition"].get_type() == Variant::DICTIONARY) {
+		Dictionary ec = p_elem["enabled_condition"];
+		String ecm = String(ec.get("mode", "always")).strip_edges().to_lower();
+		if (ecm == "switch_on" || ecm == "switch_off" || ecm == "switch") {
+			emode = "switch";
+			en_inv = (ecm == "switch_off");
+			en_sw = String(ec.get("switch_name", en_sw)).strip_edges();
+		} else if (ecm == "disabled") {
+			emode = "disabled";
+		}
+	}
 	if (emode != "switch" && emode != "disabled") {
 		emode = bool(p_elem.get("disabled", false)) ? "disabled" : "always";
 	}
 	out["enabled_mode"] = emode;
-	out["enabled_switch"] = String(p_elem.get("enabled_switch", "")).strip_edges();
+	out["enabled_switch"] = en_sw;
+	out["enabled_invert"] = en_inv;
 	out["hide_during_messages_and_menus"] = p_elem.has("hide_during_messages_and_menus") ? bool(p_elem["hide_during_messages_and_menus"]) : (sid == "hud");
 
 	String db_def = (etype == "variable") ? "variable" : "none";
@@ -6106,9 +6140,15 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 			}
 		}
 		out["action"] = raw_action;
-		for (const char *pk : { "switch_name", "switch", "variable_name", "var_name", "variable", "value", "op", "menu_id", "target", "screen_id", "screen", "common_event_id", "sound_path", "sound", "slot", "visible", "scope", "widget_id", "widget", "pitch" }) {
+		for (const char *pk : { "switch_name", "switch", "variable_name", "var_name", "variable", "value", "op", "menu_id", "target", "screen_id", "screen", "common_event_id", "sound_path", "sound", "slot", "visible", "scope", "widget_id", "widget", "pitch", "sound_hover", "sound_click", "image_normal", "image_hover", "image_pressed", "image_disabled" }) {
 			if (p_elem.has(pk)) {
 				out[pk] = p_elem[pk];
+			}
+		}
+		if (p_elem.has("shortcut") && p_elem["shortcut"].get_type() == Variant::DICTIONARY) {
+			Dictionary sc = p_elem["shortcut"];
+			if (!sc.is_empty() && (int64_t(sc.get("keycode", 0)) > 0 || sc.has("joy_button") || sc.has("mouse_button") || !String(sc.get("action_name", "")).is_empty())) {
+				out["shortcut"] = normalize_menu_trigger(sc);
 			}
 		}
 		if (p_elem.has("actions") && p_elem["actions"].get_type() == Variant::ARRAY) {

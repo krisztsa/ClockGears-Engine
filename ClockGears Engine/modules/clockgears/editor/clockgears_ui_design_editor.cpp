@@ -201,11 +201,20 @@ void ClockGearsUiPaletteButton::setup(ClockGearsUiDesignEditor *p_owner, const S
 	owner_editor = p_owner;
 	element_type = p_type;
 	set_text(p_label);
-	set_tooltip_text(String::utf8("Arrastra al lienzo o haz doble clic para añadir: ") + p_label);
+	set_tooltip_text(String::utf8("Pulsa para crear en el centro o arrastra al lienzo: ") + p_label);
 	set_clip_text(true);
 	set_custom_minimum_size(Size2(0, 30 * EDSCALE));
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	s_make_rounded_action_btn(this);
+	if (!is_connected("pressed", callable_mp(this, &ClockGearsUiPaletteButton::_on_pressed))) {
+		connect("pressed", callable_mp(this, &ClockGearsUiPaletteButton::_on_pressed));
+	}
+}
+
+void ClockGearsUiPaletteButton::_on_pressed() {
+	if (owner_editor) {
+		(void)owner_editor->add_element_at(element_type, Vector2i(ClockGearsUiDesignEditor::BASE_W / 2, ClockGearsUiDesignEditor::BASE_H / 2));
+	}
 }
 
 Variant ClockGearsUiPaletteButton::get_drag_data(const Point2 &p_at_position) {
@@ -223,14 +232,6 @@ Variant ClockGearsUiPaletteButton::get_drag_data(const Point2 &p_at_position) {
 }
 
 void ClockGearsUiPaletteButton::gui_input(const Ref<InputEvent> &p_event) {
-	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && mb->is_double_click()) {
-		if (owner_editor) {
-			(void)owner_editor->add_element_at(element_type, Vector2i(-1, -1));
-			accept_event();
-			return;
-		}
-	}
 	Button::gui_input(p_event);
 }
 
@@ -1175,12 +1176,13 @@ static Dictionary s_input_event_to_trigger(const Ref<InputEvent> &p_ev) {
 }
 
 void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
-	if (!capturing_key_for_screen && !capturing_key_for_wizard) {
+	if (!capturing_key_for_screen && !capturing_key_for_wizard && !capturing_key_for_btn_shortcut) {
 		return;
 	}
 	if (!is_visible_in_tree()) {
 		capturing_key_for_screen = false;
 		capturing_key_for_wizard = false;
+		capturing_key_for_btn_shortcut = false;
 		return;
 	}
 	Dictionary tr = s_input_event_to_trigger(p_event);
@@ -1200,6 +1202,21 @@ void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
 		wizard_triggers.push_back(tr);
 		_update_wizard_step_ui();
 		_refresh_wizard_conflict_label();
+	} else if (capturing_key_for_btn_shortcut) {
+		capturing_key_for_btn_shortcut = false;
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		Dictionary el = _get_selected_element_copy();
+		if (dm && !el.is_empty()) {
+			el["shortcut"] = ClockGearsDataManager::normalize_menu_trigger(tr);
+			Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+			bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+			ensure_screen_customizable_for_edit(false);
+			dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+			if (!prev_custom) {
+				dm->push_ui_design_undo_state(current_screen_id, snap);
+			}
+			_notify_data_mutated(true);
+		}
 	} else if (capturing_key_for_screen) {
 		capturing_key_for_screen = false;
 		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
@@ -2351,7 +2368,36 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_img_thumbs_flow->add_theme_constant_override("h_separation", int(4 * EDSCALE));
 	prop_img_thumbs_flow->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	prop_image_row->add_child(prop_img_thumbs_flow);
-	_register_prop_filter_row(prop_image_row, "imagen textura sprite icono", false);
+
+	prop_btn_state_imgs_box = memnew(VBoxContainer);
+	prop_btn_state_imgs_box->add_theme_constant_override("separation", int(3 * EDSCALE));
+	prop_btn_state_imgs_box->hide();
+	prop_image_row->add_child(prop_btn_state_imgs_box);
+	static const char *k_btn_state_lbls[4] = { "Img normal:", "Img encima:", "Img pulsado:", "Img desact.:" };
+	for (int si = 0; si < 4; si++) {
+		HBoxContainer *shb = memnew(HBoxContainer);
+		shb->add_theme_constant_override("separation", int(3 * EDSCALE));
+		Label *sl = memnew(Label(String::utf8(k_btn_state_lbls[si])));
+		sl->set_custom_minimum_size(Size2(72 * EDSCALE, 0));
+		shb->add_child(sl);
+		prop_btn_state_img_edits[si] = memnew(LineEdit);
+		prop_btn_state_img_edits[si]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		prop_btn_state_img_edits[si]->set_placeholder("res://...");
+		prop_btn_state_img_edits[si]->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+		shb->add_child(prop_btn_state_img_edits[si]);
+		Button *sb_imp = memnew(Button("..."));
+		sb_imp->set_tooltip_text(String::utf8("Elegir imagen para este estado del botón."));
+		s_make_rounded_action_btn(sb_imp);
+		sb_imp->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_btn_state_import_pressed).bind(si));
+		shb->add_child(sb_imp);
+		Button *sb_clr = memnew(Button("x"));
+		sb_clr->set_tooltip_text(String::utf8("Quitar imagen de este estado."));
+		s_make_rounded_action_btn(sb_clr);
+		sb_clr->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_btn_state_clear_pressed).bind(si));
+		shb->add_child(sb_clr);
+		prop_btn_state_imgs_box->add_child(shb);
+	}
+	_register_prop_filter_row(prop_image_row, "imagen textura sprite icono estado normal encima pulsado desactivado", false);
 
 	prop_pixel_art_chk = memnew(CheckBox("Pixelado (Nearest)"));
 	prop_pixel_art_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
@@ -2383,8 +2429,47 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_focus_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	fo_hb->add_child(prop_focus_spin);
 
+	HBoxContainer *sh_hb = memnew(HBoxContainer);
+	sh_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	sh_hb->add_child(memnew(Label("Sonido pasar:")));
+	prop_sound_hover_edit = memnew(LineEdit);
+	prop_sound_hover_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_sound_hover_edit->set_placeholder("res://audio/...");
+	prop_sound_hover_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	sh_hb->add_child(prop_sound_hover_edit);
+	prop_action_row->add_child(sh_hb);
+
+	HBoxContainer *sc_hb = memnew(HBoxContainer);
+	sc_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	sc_hb->add_child(memnew(Label("Sonido pulsar:")));
+	prop_sound_click_edit = memnew(LineEdit);
+	prop_sound_click_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_sound_click_edit->set_placeholder("res://audio/...");
+	prop_sound_click_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	sc_hb->add_child(prop_sound_click_edit);
+	prop_action_row->add_child(sc_hb);
+
+	HBoxContainer *ks_hb = memnew(HBoxContainer);
+	ks_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	ks_hb->add_child(memnew(Label("Atajo:")));
+	prop_btn_shortcut_lbl = memnew(Label("Ninguno"));
+	prop_btn_shortcut_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_btn_shortcut_lbl->set_clip_text(true);
+	ks_hb->add_child(prop_btn_shortcut_lbl);
+	prop_btn_shortcut_capture_btn = memnew(Button("Capturar"));
+	s_make_rounded_action_btn(prop_btn_shortcut_capture_btn);
+	prop_btn_shortcut_capture_btn->set_tooltip_text(String::utf8("Pulsa una tecla o botón de mando para activar este botón."));
+	prop_btn_shortcut_capture_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_btn_shortcut_capture_pressed));
+	ks_hb->add_child(prop_btn_shortcut_capture_btn);
+	prop_btn_shortcut_clear_btn = memnew(Button("x"));
+	prop_btn_shortcut_clear_btn->set_tooltip_text(String::utf8("Quitar atajo de teclado o mando."));
+	s_make_rounded_action_btn(prop_btn_shortcut_clear_btn);
+	prop_btn_shortcut_clear_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_btn_shortcut_clear_pressed));
+	ks_hb->add_child(prop_btn_shortcut_clear_btn);
+	prop_action_row->add_child(ks_hb);
+
 	prop_multi_actions_vbox = memnew(VBoxContainer);
-	prop_multi_actions_vbox->add_theme_constant_override("separation", int(3 * EDSCALE));
+	prop_multi_actions_vbox->add_theme_constant_override("separation", int(4 * EDSCALE));
 	prop_action_row->add_child(prop_multi_actions_vbox);
 
 	HBoxContainer *add_act_hb = memnew(HBoxContainer);
@@ -2394,7 +2479,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_add_action_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	s_clamp_narrow_controls(prop_add_action_opt, EDSCALE);
 	add_act_hb->add_child(prop_add_action_opt);
-	prop_add_action_btn = memnew(Button(String::utf8("+ Acción")));
+	prop_add_action_btn = memnew(Button(String::utf8("+ Añadir acción")));
 	s_make_rounded_action_btn(prop_add_action_btn);
 	prop_add_action_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_add_multi_action_pressed));
 	add_act_hb->add_child(prop_add_action_btn);
@@ -3944,23 +4029,130 @@ void ClockGearsUiDesignEditor::_refresh_multi_actions_ui(const Dictionary &p_ele
 		return;
 	}
 	s_clear_container_children(prop_multi_actions_vbox);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Array all_types = ClockGearsDataManager::get_all_ui_button_action_types();
+	auto action_label = [&](const String &p_t) -> String {
+		for (int ai = 0; ai < all_types.size(); ai++) {
+			Dictionary ad = all_types[ai];
+			if (String(ad.get("id", "")) == p_t) {
+				return String(ad.get("label", p_t));
+			}
+		}
+		return p_t;
+	};
+	Array menus = dm ? dm->get_all_menus_for_selector() : Array();
 	Array acts = p_elem.get("actions", Array());
 	for (int i = 0; i < acts.size(); i++) {
 		if (acts[i].get_type() != Variant::DICTIONARY) {
 			continue;
 		}
 		Dictionary a = acts[i];
+		String atype = String(a.get("type", "")).strip_edges().to_lower();
+		VBoxContainer *card = memnew(VBoxContainer);
+		card->add_theme_constant_override("separation", int(2 * EDSCALE));
+		prop_multi_actions_vbox->add_child(card);
+
 		HBoxContainer *hb = memnew(HBoxContainer);
-		hb->add_theme_constant_override("separation", int(4 * EDSCALE));
-		Label *l = memnew(Label(itos(i + 1) + ". " + String(a.get("type", ""))));
+		hb->add_theme_constant_override("separation", int(3 * EDSCALE));
+		Label *l = memnew(Label(itos(i + 1) + ". " + action_label(atype)));
 		l->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		l->set_clip_text(true);
 		hb->add_child(l);
+
+		Button *ub = memnew(Button(String::utf8("▲")));
+		ub->set_tooltip_text(String::utf8("Subir acción en el orden."));
+		ub->set_disabled(i == 0);
+		s_make_rounded_action_btn(ub);
+		ub->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed).bind(i, -1), CONNECT_DEFERRED);
+		hb->add_child(ub);
+
+		Button *db = memnew(Button(String::utf8("▼")));
+		db->set_tooltip_text(String::utf8("Bajar acción en el orden."));
+		db->set_disabled(i + 1 >= acts.size());
+		s_make_rounded_action_btn(db);
+		db->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed).bind(i, 1), CONNECT_DEFERRED);
+		hb->add_child(db);
+
 		Button *rb = memnew(Button("x"));
+		rb->set_tooltip_text(String::utf8("Quitar esta acción de la lista."));
 		s_make_rounded_action_btn(rb);
-		rb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed).bind(i));
+		rb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed).bind(i), CONNECT_DEFERRED);
 		hb->add_child(rb);
-		prop_multi_actions_vbox->add_child(hb);
+		card->add_child(hb);
+
+		if (atype == "open_menu" || atype == "open_system_screen") {
+			OptionButton *m_opt = memnew(OptionButton);
+			m_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			s_clamp_narrow_controls(m_opt, EDSCALE);
+			String cur_m = String(a.get("menu_id", a.get("target", a.get("screen_id", ""))));
+			for (int mi = 0; mi < menus.size(); mi++) {
+				Dictionary md = menus[mi];
+				String mid = String(md.get("id", ""));
+				m_opt->add_item(String(md.get("name", mid)), mi);
+				m_opt->set_item_metadata(mi, mid);
+			}
+			s_select_option_meta(m_opt, cur_m);
+			String pk = (atype == "open_system_screen") ? "screen_id" : "menu_id";
+			m_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(m_opt->get_instance_id(), i, pk));
+			card->add_child(m_opt);
+		} else if (atype == "play_sound" || atype == "play_music") {
+			LineEdit *se = memnew(LineEdit);
+			se->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			se->set_placeholder("res://audio/...");
+			se->set_text(String(a.get("sound_path", a.get("path", ""))));
+			se->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("sound_path")));
+			card->add_child(se);
+		} else if (atype == "common_event") {
+			SpinBox *ces = memnew(SpinBox);
+			ces->set_min(1);
+			ces->set_max(999);
+			ces->set_prefix("EC #");
+			ces->set_value(int(a.get("common_event_id", 1)));
+			ces->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("common_event_id")));
+			card->add_child(ces);
+		} else if (atype == "set_switch") {
+			HBoxContainer *swb = memnew(HBoxContainer);
+			LineEdit *swe = memnew(LineEdit);
+			swe->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			swe->set_placeholder("interruptor");
+			swe->set_text(String(a.get("switch_name", "")));
+			swe->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("switch_name")));
+			swb->add_child(swe);
+			CheckBox *swc = memnew(CheckBox("ON"));
+			swc->set_pressed(bool(a.get("value", true)));
+			swc->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("value")));
+			swb->add_child(swc);
+			card->add_child(swb);
+		} else if (atype == "set_variable") {
+			HBoxContainer *vb = memnew(HBoxContainer);
+			LineEdit *ve = memnew(LineEdit);
+			ve->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			ve->set_placeholder("variable");
+			ve->set_text(String(a.get("variable_name", "")));
+			ve->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("variable_name")));
+			vb->add_child(ve);
+			SpinBox *vs = memnew(SpinBox);
+			vs->set_min(-99999);
+			vs->set_max(99999);
+			vs->set_value(int(a.get("value", 0)));
+			vs->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("value")));
+			vb->add_child(vs);
+			card->add_child(vb);
+		} else if (atype == "hud_visibility") {
+			OptionButton *h_opt = memnew(OptionButton);
+			h_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			h_opt->add_item("Mostrar", 0); h_opt->set_item_metadata(0, true);
+			h_opt->add_item("Ocultar", 1); h_opt->set_item_metadata(1, false);
+			h_opt->add_item("Alternar", 2); h_opt->set_item_metadata(2, String("toggle"));
+			Variant hv = a.get("visible", true);
+			if (hv.get_type() == Variant::STRING && String(hv) == "toggle") {
+				h_opt->select(2);
+			} else {
+				h_opt->select(bool(hv) ? 0 : 1);
+			}
+			h_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(h_opt->get_instance_id(), i, String("visible")));
+			card->add_child(h_opt);
+		}
 	}
 }
 
@@ -4110,8 +4302,23 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	prop_image_row->set_visible(has_img);
 	if (has_img) {
 		String ikey = (etype == "currency" || etype == "item") ? "icon_path" : "image_path";
-		prop_image_edit->set_text(String(el.get(ikey, "")));
+		String ip = String(el.get(ikey, ""));
+		if (ip.is_empty() && etype == "button") {
+			ip = String(el.get("icon_path", ""));
+		}
+		prop_image_edit->set_text(ip);
 		_refresh_image_thumbs_gallery();
+	}
+	if (prop_btn_state_imgs_box) {
+		prop_btn_state_imgs_box->set_visible(etype == "button");
+		if (etype == "button") {
+			static const char *k_sk[4] = { "image_normal", "image_hover", "image_pressed", "image_disabled" };
+			for (int si = 0; si < 4; si++) {
+				if (prop_btn_state_img_edits[si]) {
+					prop_btn_state_img_edits[si]->set_text(String(el.get(k_sk[si], "")));
+				}
+			}
+		}
 	}
 
 	bool has_binding = (etype == "text" || etype == "button" || etype == "variable");
@@ -4135,12 +4342,37 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	if (is_btn) {
 		s_select_option_meta(prop_action_opt, String(el.get("action", "")));
 		prop_focus_spin->set_value(int(el.get("focus_order", 0)));
-		Dictionary vc = el.get("visible_condition", Dictionary());
-		Dictionary ec = el.get("enabled_condition", Dictionary());
-		s_select_option_meta(prop_vis_mode_opt, String(vc.get("mode", "always")));
-		if (prop_vis_sw_edit) prop_vis_sw_edit->set_text(String(vc.get("switch_name", "")));
-		s_select_option_meta(prop_en_mode_opt, String(ec.get("mode", "always")));
-		if (prop_en_sw_edit) prop_en_sw_edit->set_text(String(ec.get("switch_name", "")));
+		if (prop_sound_hover_edit) prop_sound_hover_edit->set_text(String(el.get("sound_hover", "")));
+		if (prop_sound_click_edit) prop_sound_click_edit->set_text(String(el.get("sound_click", "")));
+		if (prop_btn_shortcut_lbl) {
+			Dictionary sc = el.get("shortcut", Dictionary());
+			prop_btn_shortcut_lbl->set_text(sc.is_empty() ? "Ninguno" : s_format_trigger_text(sc));
+		}
+		String vmode_flat = String(el.get("visibility_mode", "always")).strip_edges().to_lower();
+		String v_ui = "always";
+		String v_sw = String(el.get("visibility_switch", "")).strip_edges();
+		if (vmode_flat == "switch") {
+			v_ui = bool(el.get("visibility_invert", false)) ? "switch_off" : "switch_on";
+		} else if (el.has("visible_condition") && el["visible_condition"].get_type() == Variant::DICTIONARY) {
+			Dictionary vc = el["visible_condition"];
+			v_ui = String(vc.get("mode", "always"));
+			if (v_sw.is_empty()) v_sw = String(vc.get("switch_name", ""));
+		}
+		s_select_option_meta(prop_vis_mode_opt, v_ui);
+		if (prop_vis_sw_edit) prop_vis_sw_edit->set_text(v_sw);
+
+		String emode_flat = String(el.get("enabled_mode", "always")).strip_edges().to_lower();
+		String e_ui = "always";
+		String e_sw = String(el.get("enabled_switch", "")).strip_edges();
+		if (emode_flat == "switch") {
+			e_ui = bool(el.get("enabled_invert", false)) ? "switch_off" : "switch_on";
+		} else if (el.has("enabled_condition") && el["enabled_condition"].get_type() == Variant::DICTIONARY) {
+			Dictionary ec = el["enabled_condition"];
+			e_ui = String(ec.get("mode", "always"));
+			if (e_sw.is_empty()) e_sw = String(ec.get("switch_name", ""));
+		}
+		s_select_option_meta(prop_en_mode_opt, e_ui);
+		if (prop_en_sw_edit) prop_en_sw_edit->set_text(e_sw);
 		_refresh_multi_actions_ui(el);
 	}
 
@@ -4328,7 +4560,7 @@ void ClockGearsUiDesignEditor::_on_add_submenu_pressed() {
 }
 
 String ClockGearsUiDesignEditor::quick_add_button_element(const String &p_text) {
-	String bid = add_element_at("button", Vector2i(-1, -1));
+	String bid = add_element_at("button", Vector2i(BASE_W / 2, BASE_H / 2));
 	if (!bid.is_empty() && !p_text.strip_edges().is_empty()) {
 		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
 			Dictionary el = dm->get_ui_element(current_screen_id, bid);
@@ -4336,6 +4568,9 @@ String ClockGearsUiDesignEditor::quick_add_button_element(const String &p_text) 
 				el["name"] = p_text.strip_edges();
 				el["text"] = p_text.strip_edges();
 				dm->update_ui_element(current_screen_id, bid, el, false);
+				selected_elem_id = bid;
+				selected_elem_ids.clear();
+				selected_elem_ids.push_back(bid);
 				refresh_from_data_manager();
 			}
 		}
@@ -4484,8 +4719,14 @@ String ClockGearsUiDesignEditor::add_element_at(const String &p_type, const Vect
 		el["offset_x"] = CLAMP(36 + existing.size() * 14, 0, BASE_W - w);
 		el["offset_y"] = CLAMP(36 + existing.size() * 14, 0, BASE_H - h);
 	}
-	String new_id = dm->add_ui_element(current_screen_id, el, true);
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	String new_id = dm->add_ui_element(current_screen_id, el, prev_custom);
 	if (!new_id.is_empty()) {
+		if (!prev_custom) {
+			dm->push_ui_design_undo_state(current_screen_id, snap);
+		}
 		selected_elem_id = new_id;
 		selected_elem_ids.clear();
 		selected_elem_ids.push_back(new_id);
@@ -5652,6 +5893,107 @@ void ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed(int p_idx) {
 	}
 }
 
+void ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed(int p_idx, int p_delta) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	Array acts = el.get("actions", Array()).duplicate(true);
+	int target = p_idx + p_delta;
+	if (p_idx < 0 || p_idx >= acts.size() || target < 0 || target >= acts.size() || target == p_idx) {
+		return;
+	}
+	Variant moved = acts[p_idx];
+	acts.remove_at(p_idx);
+	acts.insert(target, moved);
+	el["actions"] = acts;
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step(const Variant &p_val, int p_idx, const String &p_key) {
+	if (updating_ui) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	Array acts = el.get("actions", Array()).duplicate(true);
+	if (p_idx < 0 || p_idx >= acts.size() || acts[p_idx].get_type() != Variant::DICTIONARY) {
+		return;
+	}
+	Dictionary step = Dictionary(acts[p_idx]).duplicate(true);
+	step[p_key] = p_val;
+	if (p_key == "menu_id") {
+		step["target"] = p_val;
+	}
+	acts[p_idx] = step;
+	el["actions"] = acts;
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
+	emit_signal("design_modified");
+}
+
+void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu(int p_opt_idx, ObjectID p_opt_id, int p_idx, const String &p_key) {
+	OptionButton *opt = Object::cast_to<OptionButton>(ObjectDB::get_instance(p_opt_id));
+	if (!opt || p_opt_idx < 0) {
+		return;
+	}
+	_on_prop_edit_multi_action_step(opt->get_item_metadata(p_opt_idx), p_idx, p_key);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_btn_state_import_pressed(int p_state) {
+	image_import_target = 10 + CLAMP(p_state, 0, 3);
+	_on_prop_import_image_pressed();
+}
+
+void ClockGearsUiDesignEditor::_on_prop_btn_state_clear_pressed(int p_state) {
+	int s = CLAMP(p_state, 0, 3);
+	if (prop_btn_state_img_edits[s]) {
+		prop_btn_state_img_edits[s]->set_text(String());
+		_on_prop_field_changed();
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_btn_shortcut_capture_pressed() {
+	capturing_key_for_btn_shortcut = true;
+	if (prop_btn_shortcut_lbl) {
+		prop_btn_shortcut_lbl->set_text("Pulsa tecla/mando...");
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_btn_shortcut_clear_pressed() {
+	capturing_key_for_btn_shortcut = false;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	el.erase("shortcut");
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
+	_notify_data_mutated(true);
+}
+
 void ClockGearsUiDesignEditor::_on_screen_selected(int p_idx) {
 	if (updating_ui || !screen_opt || p_idx < 0) {
 		return;
@@ -5824,6 +6166,17 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 		String next_img = prop_image_edit->get_text().strip_edges();
 		if (String(el.get(ikey, "")) != next_img) only_geom = false;
 		el[ikey] = next_img;
+		if (etype == "button") {
+			el["icon_path"] = next_img;
+			static const char *k_sk[4] = { "image_normal", "image_hover", "image_pressed", "image_disabled" };
+			for (int si = 0; si < 4; si++) {
+				if (prop_btn_state_img_edits[si]) {
+					String sv = prop_btn_state_img_edits[si]->get_text().strip_edges();
+					if (String(el.get(k_sk[si], "")) != sv) only_geom = false;
+					el[k_sk[si]] = sv;
+				}
+			}
+		}
 	}
 	if (prop_var_row->is_visible()) {
 		String next_var = prop_var_edit->get_text().strip_edges();
@@ -5837,17 +6190,31 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 		int next_fo = int(Math::round(prop_focus_spin->get_value()));
 		if (int(el.get("focus_order", 0)) != next_fo) only_geom = false;
 		el["focus_order"] = next_fo;
+		if (prop_sound_hover_edit) el["sound_hover"] = prop_sound_hover_edit->get_text().strip_edges();
+		if (prop_sound_click_edit) el["sound_click"] = prop_sound_click_edit->get_text().strip_edges();
 		if (prop_vis_mode_opt && prop_vis_sw_edit) {
+			String vm = String(prop_vis_mode_opt->get_item_metadata(prop_vis_mode_opt->get_selected()));
+			String vsw = prop_vis_sw_edit->get_text().strip_edges();
+			el["visibility_mode"] = (vm == "always") ? "always" : "switch";
+			el["visibility_invert"] = (vm == "switch_off");
+			el["visibility_switch"] = vsw;
 			Dictionary vc;
-			vc["mode"] = String(prop_vis_mode_opt->get_item_metadata(prop_vis_mode_opt->get_selected()));
-			vc["switch_name"] = prop_vis_sw_edit->get_text().strip_edges();
+			vc["mode"] = vm;
+			vc["switch_name"] = vsw;
 			el["visible_condition"] = vc;
+			only_geom = false;
 		}
 		if (prop_en_mode_opt && prop_en_sw_edit) {
+			String em = String(prop_en_mode_opt->get_item_metadata(prop_en_mode_opt->get_selected()));
+			String esw = prop_en_sw_edit->get_text().strip_edges();
+			el["enabled_mode"] = (em == "always") ? "always" : "switch";
+			el["enabled_invert"] = (em == "switch_off");
+			el["enabled_switch"] = esw;
 			Dictionary ec;
-			ec["mode"] = String(prop_en_mode_opt->get_item_metadata(prop_en_mode_opt->get_selected()));
-			ec["switch_name"] = prop_en_sw_edit->get_text().strip_edges();
+			ec["mode"] = em;
+			ec["switch_name"] = esw;
 			el["enabled_condition"] = ec;
+			only_geom = false;
 		}
 	}
 	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
@@ -5966,6 +6333,12 @@ void ClockGearsUiDesignEditor::_on_image_file_selected(const String &p_path) {
 		if (image_import_target == 1 && menu_bg_img_edit) {
 			menu_bg_img_edit->set_text(final_path);
 			_on_menu_global_changed();
+		} else if (image_import_target >= 10 && image_import_target <= 13) {
+			int si = image_import_target - 10;
+			if (prop_btn_state_img_edits[si]) {
+				prop_btn_state_img_edits[si]->set_text(final_path);
+				_on_prop_field_changed();
+			}
 		} else if (prop_image_edit) {
 			prop_image_edit->set_text(final_path);
 			_on_prop_field_changed();
@@ -6208,6 +6581,22 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["screens_tree"] = screens_tree;
 	out["screen_settings_box"] = screen_settings_box;
 	out["screen_settings_body"] = screen_settings_body;
+	out["prop_add_action_opt"] = prop_add_action_opt;
+	out["prop_add_action_btn"] = prop_add_action_btn;
+	out["prop_multi_actions_vbox"] = prop_multi_actions_vbox;
+	out["prop_sound_hover_edit"] = prop_sound_hover_edit;
+	out["prop_sound_click_edit"] = prop_sound_click_edit;
+	out["prop_vis_mode_opt"] = prop_vis_mode_opt;
+	out["prop_vis_sw_edit"] = prop_vis_sw_edit;
+	out["prop_en_mode_opt"] = prop_en_mode_opt;
+	out["prop_en_sw_edit"] = prop_en_sw_edit;
+	out["prop_btn_shortcut_lbl"] = prop_btn_shortcut_lbl;
+	out["prop_btn_shortcut_capture_btn"] = prop_btn_shortcut_capture_btn;
+	Array btn_state_arr;
+	for (int si = 0; si < 4; si++) {
+		btn_state_arr.push_back(prop_btn_state_img_edits[si]);
+	}
+	out["prop_btn_state_img_edits"] = btn_state_arr;
 	return out;
 }
 

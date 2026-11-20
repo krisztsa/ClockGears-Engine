@@ -82,6 +82,7 @@ void ClockGearsGameMenu::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_menu_history_depth"), &ClockGearsGameMenu::get_menu_history_depth);
 	ClassDB::bind_method(D_METHOD("is_tree_paused_by_menu"), &ClockGearsGameMenu::is_tree_paused_by_menu);
 	ClassDB::bind_method(D_METHOD("get_last_played_menu_sound"), &ClockGearsGameMenu::get_last_played_menu_sound);
+	ClassDB::bind_method(D_METHOD("get_last_played_menu_music"), &ClockGearsGameMenu::get_last_played_menu_music);
 	ClassDB::bind_method(D_METHOD("get_last_common_event_id"), &ClockGearsGameMenu::get_last_common_event_id);
 	ClassDB::bind_method(D_METHOD("get_last_executed_actions"), &ClockGearsGameMenu::get_last_executed_actions);
 	ClassDB::bind_method(D_METHOD("set_auto_quit_tree", "enable"), &ClockGearsGameMenu::set_auto_quit_tree);
@@ -3049,6 +3050,19 @@ bool ClockGearsGameMenu::_execute_button_step(const Dictionary &p_step, const St
 			last_played_menu_sound = spath;
 			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
 				am->play_se(spath, vol, pitch);
+			}
+			return true;
+		}
+		return false;
+	}
+	if (step_type == "play_music") {
+		String spath = String(p_step.get("sound_path", p_step.get("music_path", p_step.get("path", "")))).strip_edges();
+		float vol = p_step.has("volume") ? float(p_step["volume"]) : Math::db_to_linear(float(p_step.get("volume_db", 0.0f)));
+		float pitch = float(p_step.get("pitch", 1.0f));
+		if (!spath.is_empty()) {
+			last_played_menu_music = spath;
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_bgm(spath, vol, pitch);
 			}
 			return true;
 		}
