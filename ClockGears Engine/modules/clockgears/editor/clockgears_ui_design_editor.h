@@ -179,6 +179,7 @@ private:
 	String selected_elem_id;
 	PackedStringArray selected_elem_ids;
 	int canvas_zoom = 1;
+	int canvas_zoom_mode = 0; // 0=Ajustar, 1=100%, 2=200%
 	Vector2i preview_resolution = Vector2i(960, 540);
 	bool updating_ui = false;
 	bool compact_two_row_layout = false;
@@ -284,7 +285,14 @@ private:
 		String search_text;
 		bool advanced_only = false;
 	};
+	struct PropSectionGroup {
+		Button *header = nullptr;
+		VBoxContainer *body = nullptr;
+		bool advanced_only = false;
+	};
 	Vector<PropRowFilterEntry> prop_filter_entries;
+	Vector<PropSectionGroup> prop_sections;
+	OptionButton *prop_anim_opt = nullptr;
 	LineEdit *prop_name_edit = nullptr;
 	Button *anchor_btns[9] = { nullptr };
 	SpinBox *prop_ox_spin = nullptr;
@@ -616,6 +624,9 @@ public:
 	String get_system_scope() const { return system_scope_root; }
 	String add_submenu_to_current(const String &p_name = "");
 	String quick_add_button_element(const String &p_text = "");
+	void set_canvas_zoom_mode(int p_mode);
+	int get_canvas_zoom_mode() const { return canvas_zoom_mode; }
+	void forward_canvas_wheel(const Vector2 &p_delta, bool p_horizontal);
 	void select_screen(const String &p_screen_id);
 	String get_current_screen() const { return current_screen_id; }
 	void set_props_advanced_mode(bool p_adv);

@@ -229,7 +229,7 @@ func _run() -> void:
 	var btn_test: Button = hi.get("test_btn", null) as Button
 	_check(btn_new_design != null and btn_new_design.text.find("Nuevo diseño") >= 0, "Boton '+ Nuevo diseño' presente")
 	_check(btn_add_sub != null and btn_add_sub.text.find("Añadir submenú") >= 0, "Boton '+ Añadir submenú' presente")
-	_check(btn_add_btn != null and btn_add_btn.text.find("Añadir botón") >= 0, "Boton '+ Añadir botón' presente")
+	_check(btn_add_btn != null and btn_add_btn.text.find("Botón") >= 0, "Boton '+ Botón' presente")
 	_check(btn_reset != null and btn_reset.text.find("Restaurar plantilla") >= 0, "Boton 'Restaurar plantilla original' presente")
 	_check(btn_test != null and btn_test.text.find("Probar") >= 0, "Boton 'Probar' presente")
 

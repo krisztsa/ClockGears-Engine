@@ -1410,6 +1410,19 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 	if (is_ui_designer) {
 		_setup_ui_design_editor_ui();
 	}
+	if (col2_scroll_container) {
+		col2_scroll_container->set_vertical_scroll_mode(is_ui_designer ? ScrollContainer::SCROLL_MODE_DISABLED : ScrollContainer::SCROLL_MODE_AUTO);
+		if (is_ui_designer) {
+			col2_scroll_container->set_v_scroll(0);
+		}
+	}
+	if (tab0_margin_container) {
+		int pad = is_ui_designer ? int(6 * EDSCALE) : int(12 * EDSCALE);
+		tab0_margin_container->add_theme_constant_override("margin_left", pad);
+		tab0_margin_container->add_theme_constant_override("margin_top", pad);
+		tab0_margin_container->add_theme_constant_override("margin_right", pad);
+		tab0_margin_container->add_theme_constant_override("margin_bottom", pad);
+	}
 	if (ui_design_editor_panel) {
 		ui_design_editor_panel->set_visible(is_ui_designer);
 		if (is_ui_designer) {
@@ -8419,10 +8432,9 @@ void ClockGearsDatabaseDialog::open_database() {
 	}
 	set_min_size(min_sz);
 
-	Size2i max_def(int(1600 * EDSCALE), int(900 * EDSCALE));
 	Size2i default_sz(
-			MIN(int(screen_sz.x * 0.90f), max_def.x),
-			MIN(int(screen_sz.y * 0.90f), max_def.y));
+			MIN(screen_sz.x - 12, int(screen_sz.x * 0.94f)),
+			MIN(screen_sz.y - 16, int(screen_sz.y * 0.94f)));
 	default_sz = default_sz.max(min_sz).min(screen_sz);
 
 	Size2i remembered_window_size(int(ui_state.get("window_w", 0)), int(ui_state.get("window_h", 0)));
