@@ -686,6 +686,7 @@ private:
 	void _update_canvas_fit_scale();
 	void _apply_canvas_zoom_layout(bool p_recalc_fit);
 	void _on_canvas_scroll_resized();
+	void _on_canvas_fit_holder_resized();
 	void _restore_canvas_scroll_pos(const Vector2i &p_pos);
 	Button *_attach_collapsible_header(VBoxContainer *p_card_vb, const String &p_title, Control *p_body, bool p_expanded = true);
 	void _on_collapsible_section_toggled(bool p_expanded, Control *p_body, Button *p_btn, const String &p_title);

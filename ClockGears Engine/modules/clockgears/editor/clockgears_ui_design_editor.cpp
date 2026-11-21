@@ -86,19 +86,50 @@ static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
 		opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		Size2 ms = opt->get_custom_minimum_size();
-		opt->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 72.0f * p_scale, 76.0f * p_scale), ms.y));
+		opt->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 44.0f * p_scale, 48.0f * p_scale), ms.y));
 	} else if (CheckBox *cb = Object::cast_to<CheckBox>(p_ctrl)) {
 		cb->set_clip_text(true);
 		cb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		Size2 ms = cb->get_custom_minimum_size();
+		if (ms.x > 64.0f * p_scale) {
+			cb->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+		}
+	} else if (Label *lb = Object::cast_to<Label>(p_ctrl)) {
+		if (lb->get_autowrap_mode() == TextServer::AUTOWRAP_OFF) {
+			lb->set_clip_text(true);
+			lb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		}
+		Size2 ms = lb->get_custom_minimum_size();
+		if (ms.x > 64.0f * p_scale) {
+			lb->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+		}
 	} else if (LineEdit *le = Object::cast_to<LineEdit>(p_ctrl)) {
+		le->add_theme_constant_override("minimum_character_width", 2);
 		Size2 ms = le->get_custom_minimum_size();
-		if (ms.x > 72.0f * p_scale || ms.x <= 0.0f) {
-			le->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+		if (ms.x > 46.0f * p_scale || ms.x <= 0.0f) {
+			le->set_custom_minimum_size(Size2(40.0f * p_scale, ms.y));
 		}
 	} else if (SpinBox *sp = Object::cast_to<SpinBox>(p_ctrl)) {
 		Size2 ms = sp->get_custom_minimum_size();
-		if (ms.x > 72.0f * p_scale || ms.x <= 0.0f) {
-			sp->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+		if (ms.x > 48.0f * p_scale || ms.x <= 0.0f) {
+			sp->set_custom_minimum_size(Size2(44.0f * p_scale, ms.y));
+		}
+	} else if (HSlider *sl = Object::cast_to<HSlider>(p_ctrl)) {
+		Size2 ms = sl->get_custom_minimum_size();
+		sl->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 36.0f * p_scale, 36.0f * p_scale), ms.y));
+	} else if (Button *bt = Object::cast_to<Button>(p_ctrl)) {
+		if (!Object::cast_to<ColorPickerButton>(bt)) {
+			bt->set_clip_text(true);
+			bt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			Size2 ms = bt->get_custom_minimum_size();
+			if (ms.x > 44.0f * p_scale) {
+				bt->set_custom_minimum_size(Size2(44.0f * p_scale, ms.y));
+			}
+		} else {
+			Size2 ms = bt->get_custom_minimum_size();
+			if (ms.x > 42.0f * p_scale) {
+				bt->set_custom_minimum_size(Size2(42.0f * p_scale, ms.y));
+			}
 		}
 	}
 	for (int i = 0; i < p_ctrl->get_child_count(); i++) {
@@ -2183,17 +2214,22 @@ void ClockGearsUiDesignEditor::_apply_canvas_zoom_layout(bool p_recalc_fit) {
 }
 
 void ClockGearsUiDesignEditor::_on_canvas_scroll_resized() {
-	if (canvas_zoom_mode != 0 || updating_props_panel || !canvas_scroll) {
+	if (canvas_zoom_mode != 0 || !canvas_scroll) {
 		return;
 	}
 	Size2 sc_sz = canvas_scroll->get_size();
 	if (sc_sz.x < 16.0f || sc_sz.y < 16.0f) {
 		return;
 	}
-	if (last_canvas_viewport_sz.x > 0.0f && sc_sz.distance_to(last_canvas_viewport_sz) <= 8.0f) {
+	last_canvas_viewport_sz = sc_sz;
+	_update_canvas_fit_scale();
+	callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized).call_deferred();
+}
+
+void ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized() {
+	if (canvas_zoom_mode != 0) {
 		return;
 	}
-	last_canvas_viewport_sz = sc_sz;
 	_update_canvas_fit_scale();
 }
 
@@ -2209,8 +2245,9 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 	if (!canvas_stage || !canvas_fit_holder) {
 		return;
 	}
+	Size2 sc_sz;
 	if (canvas_scroll) {
-		Size2 sc_sz = canvas_scroll->get_size();
+		sc_sz = canvas_scroll->get_size();
 		if (sc_sz.x > 16.0f && sc_sz.y > 16.0f) {
 			last_canvas_viewport_sz = sc_sz;
 		}
@@ -2224,10 +2261,13 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 		return;
 	}
 	if (canvas_zoom_mode == 0) {
+		if (sc_sz.x >= 16.0f && sc_sz.y >= 16.0f) {
+			holder_sz = Vector2(MIN(holder_sz.x, sc_sz.x), MIN(holder_sz.y, sc_sz.y));
+		}
 		float s = MIN(holder_sz.x / MAX(1.0f, stage_sz.x), holder_sz.y / MAX(1.0f, stage_sz.y));
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(s, s));
-		canvas_stage->set_position((holder_sz - stage_sz * s) * 0.5f);
+		canvas_stage->set_position((canvas_fit_holder->get_size() - stage_sz * s) * 0.5f);
 	} else {
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(1.0f, 1.0f));
@@ -2845,6 +2885,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_fit_holder = memnew(Control);
 	canvas_fit_holder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	canvas_fit_holder->set_clip_contents(true);
+	canvas_fit_holder->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized), CONNECT_DEFERRED);
 	canvas_aspect->add_child(canvas_fit_holder);
 
 	canvas_stage = memnew(Control);
@@ -2967,6 +3008,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	props_sel_lbl = memnew(Label(String::utf8("Selecciona un elemento o ajusta el menú abajo.")));
 	props_sel_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	props_sel_lbl->set_clip_text(true);
+	props_sel_lbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	props_sel_lbl->set_custom_minimum_size(Size2(0, 0));
 	props_sel_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
 	props_body->add_child(props_sel_lbl);
 
@@ -2975,6 +3019,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	props_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	props_scroll->set_custom_minimum_size(Size2(150 * EDSCALE, 140 * EDSCALE));
 	props_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	props_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_SHOW_ALWAYS);
 	props_body->add_child(props_scroll);
 
 	VBoxContainer *props_scroll_vb = memnew(VBoxContainer);
@@ -2993,7 +3038,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 		Label *l = memnew(Label(p_lbl));
-		l->set_custom_minimum_size(Size2(82 * EDSCALE, 0));
+		l->set_custom_minimum_size(Size2(70 * EDSCALE, 0));
 		l->set_clip_text(true);
 		l->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		l->set_tooltip_text(p_tip);
@@ -3020,7 +3065,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	};
 
 	prop_name_edit = memnew(LineEdit);
-	prop_name_edit->set_custom_minimum_size(Size2(90 * EDSCALE, row_h));
+	prop_name_edit->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
 	prop_name_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(props_fields_box, "Nombre:", String::utf8("Nombre visible del elemento en capas y diseño."), "nombre texto", false, prop_name_edit);
 
@@ -3031,7 +3076,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	HBoxContainer *anc_row = memnew(HBoxContainer);
 	anc_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	Label *anc_lbl = memnew(Label("Anclaje:"));
-	anc_lbl->set_custom_minimum_size(Size2(86 * EDSCALE, 0));
+	anc_lbl->set_custom_minimum_size(Size2(68 * EDSCALE, 0));
+	anc_lbl->set_clip_text(true);
 	anc_row->add_child(anc_lbl);
 	GridContainer *anc_grid = memnew(GridContainer);
 	anc_grid->set_columns(3);
@@ -3050,7 +3096,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	for (int i = 0; i < 9; i++) {
 		Button *ab = memnew(Button(k_anc_glyphs[i]));
 		ab->set_toggle_mode(true);
-		ab->set_custom_minimum_size(Size2(32 * EDSCALE, 24 * EDSCALE));
+		ab->set_custom_minimum_size(Size2(26 * EDSCALE, 24 * EDSCALE));
 		ab->set_tooltip_text(String::utf8(k_anc_tips[i]));
 		s_make_rounded_action_btn(ab);
 		ab->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_anchor_btn_pressed).bind(i));
@@ -3063,7 +3109,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		r_sp->set_min(p_min);
 		r_sp->set_max(p_max);
 		r_sp->set_step(1);
-		r_sp->set_custom_minimum_size(Size2(80 * EDSCALE, row_h));
+		r_sp->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
 		r_sp->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 		make_prop_row(p_parent, p_lbl, p_tip, p_kw, p_adv, r_sp);
 	};
@@ -3857,6 +3903,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	menu_bgm_edit->set_placeholder("res://audio/bgm/...");
 	menu_bgm_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
 	make_prop_row(snd_body, String::utf8("Música (BGM):"), String::utf8("Música de fondo opcional al abrir esta pantalla."), "bgm musica audio titulo", true, menu_bgm_edit);
+	s_clamp_narrow_controls(props_card, EDSCALE);
+	// Mantener Label "Tipo: ... | ID: ..." con ajuste seguro sin empujar columna
+	if (props_sel_lbl) {
+		props_sel_lbl->set_custom_minimum_size(Size2(0, 0));
+	}
 
 	// --- Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B) ---
 	import_image_dialog = memnew(FileDialog);
@@ -9226,6 +9277,7 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["wide_center_col"] = wide_center_col;
 	out["wide_right_col"] = wide_right_col;
 	out["canvas_scroll"] = canvas_scroll;
+	out["canvas_fit_holder"] = canvas_fit_holder;
 	out["canvas_stage"] = canvas_stage;
 	out["design_layer"] = design_layer;
 	out["canvas_overlay"] = canvas_overlay;
@@ -9904,6 +9956,7 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 	}
 
 	updating_ui = prev_upd;
+	s_clamp_narrow_controls(screen_settings_body, EDSCALE);
 	if (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass") {
 		ClockGearsTheme::get_singleton()->apply_theme_to_node_tree(screen_settings_body);
 	}
