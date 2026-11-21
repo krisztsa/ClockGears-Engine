@@ -198,9 +198,16 @@ private:
 	String selected_elem_id;
 	PackedStringArray selected_elem_ids;
 	int canvas_zoom = 1;
-	int canvas_zoom_mode = 0; // 0=Ajustar, 1=100%, 2=200%
+	int canvas_zoom_mode = 0; // 0=Ajustar, 1=100%, 2=200%, 3=50%, 4=300%
 	Vector2i preview_resolution = Vector2i(960, 540);
 	bool updating_ui = false;
+	bool updating_props_panel = false;
+	struct ScreenZoomState {
+		int zoom_mode = 0;
+		Vector2i scroll_pos;
+	};
+	HashMap<String, ScreenZoomState> per_screen_zoom_state;
+	Size2 last_canvas_viewport_sz = Size2(-1, -1);
 	bool compact_two_row_layout = false;
 	int last_adapt_width = 1920;
 
@@ -208,7 +215,7 @@ private:
 	HBoxContainer *top_bar = nullptr;
 	OptionButton *screen_opt = nullptr;
 	OptionButton *preview_res_opt = nullptr;
-	Button *zoom_btns[3] = { nullptr, nullptr, nullptr };
+	Button *zoom_btns[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
 	Label *zoom_info_lbl = nullptr;
 	Button *undo_btn = nullptr;
 	Button *redo_btn = nullptr;
@@ -564,6 +571,9 @@ private:
 	void _trace_log(const String &p_event, const String &p_detail = "") const;
 	void _rebalance_responsive_layout(int p_avail_w);
 	void _update_canvas_fit_scale();
+	void _apply_canvas_zoom_layout(bool p_recalc_fit);
+	void _on_canvas_scroll_resized();
+	void _restore_canvas_scroll_pos(const Vector2i &p_pos);
 	Button *_attach_collapsible_header(VBoxContainer *p_card_vb, const String &p_title, Control *p_body, bool p_expanded = true);
 	void _on_collapsible_section_toggled(bool p_expanded, Control *p_body, Button *p_btn, const String &p_title);
 	void _on_preview_res_selected(int p_idx);

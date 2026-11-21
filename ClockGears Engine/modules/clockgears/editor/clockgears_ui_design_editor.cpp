@@ -544,7 +544,7 @@ void ClockGearsUiCanvasOverlay::drop_data(const Point2 &p_point, const Variant &
 		return;
 	}
 	Dictionary d = p_data;
-	float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
+	float z = MAX(0.25f, owner_editor->get_canvas_stage_scale());
 	Vector2i logical_pos(
 			CLAMP(int(Math::round(p_point.x / z)), 0, ClockGearsUiDesignEditor::BASE_W),
 			CLAMP(int(Math::round(p_point.y / z)), 0, ClockGearsUiDesignEditor::BASE_H));
@@ -739,7 +739,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 		if (dragging && (active_handle == HANDLE_RADIAL_RADIUS || active_handle == HANDLE_RADIAL_ANGLE)) {
-			float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
+			float z = MAX(0.25f, owner_editor->get_canvas_stage_scale());
 			Vector2 c;
 			float cur_rad = 0.0f;
 			float cur_ang = 0.0f;
@@ -764,7 +764,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 		if (dragging && !drag_elem_id.is_empty()) {
 			ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 			if (dm) {
-				float z = MAX(0.5f, owner_editor->get_canvas_stage_scale());
+				float z = MAX(0.25f, owner_editor->get_canvas_stage_scale());
 				int dx = int(Math::round((pt.x - drag_start_pos.x) / z));
 				int dy = int(Math::round((pt.y - drag_start_pos.y) / z));
 
@@ -1371,7 +1371,7 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 	} else if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_VISIBILITY_CHANGED) {
 		if (is_visible()) {
 			refresh_from_data_manager();
-			callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
+			callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 		} else {
 			close_test_popup();
 		}
@@ -1385,7 +1385,7 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 		if (w > 200) {
 			_rebalance_responsive_layout(w);
 		}
-		_update_canvas_fit_scale();
+		_apply_canvas_zoom_layout(true);
 	}
 }
 
@@ -1578,12 +1578,28 @@ void ClockGearsUiDesignEditor::_on_preview_res_selected(int p_idx) {
 	}
 }
 
-void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
+static float _cg_zoom_factor_for_mode(int p_mode) {
+	switch (p_mode) {
+		case 3: return 0.5f;
+		case 1: return 1.0f;
+		case 2: return 2.0f;
+		case 4: return 3.0f;
+		default: return 1.0f;
+	}
+}
+
+void ClockGearsUiDesignEditor::_apply_canvas_zoom_layout(bool p_recalc_fit) {
 	if (!canvas_stage || !canvas_fit_holder) {
 		return;
 	}
-	int z_mult = (canvas_zoom_mode == 2) ? 2 : MAX(1, canvas_zoom);
-	Size2 stage_sz(float(preview_resolution.x * z_mult), float(preview_resolution.y * z_mult));
+	float zf = _cg_zoom_factor_for_mode(canvas_zoom_mode);
+	Size2 stage_sz(
+			MAX(160.0f, float(int(Math::round(float(preview_resolution.x) * zf)))),
+			MAX(90.0f, float(int(Math::round(float(preview_resolution.y) * zf)))));
+	if (zoom_info_lbl) {
+		String pct = (canvas_zoom_mode == 0) ? String("Ajustar") : (canvas_zoom_mode == 3 ? String("50%") : (canvas_zoom_mode == 1 ? String("100%") : (canvas_zoom_mode == 2 ? String("200%") : String("300%"))));
+		zoom_info_lbl->set_text(itos(int(stage_sz.x)) + "x" + itos(int(stage_sz.y)) + " (" + pct + ")");
+	}
 	if (canvas_zoom_mode == 0 && canvas_aspect && canvas_scroll) {
 		canvas_aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		canvas_aspect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1601,11 +1617,14 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 		canvas_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	} else if (canvas_aspect && canvas_scroll) {
 		Size2 sc_sz = canvas_scroll->get_size();
-		bool exceeds = (sc_sz.x > 16.0f && sc_sz.y > 16.0f) ? (stage_sz.x > sc_sz.x + 2.0f || stage_sz.y > sc_sz.y + 2.0f) : (canvas_zoom_mode >= 2);
+		bool exceeds = (sc_sz.x > 16.0f && sc_sz.y > 16.0f) ? (stage_sz.x > sc_sz.x + 2.0f || stage_sz.y > sc_sz.y + 2.0f) : (canvas_zoom_mode == 2 || canvas_zoom_mode == 4);
 		canvas_scroll->set_horizontal_scroll_mode(exceeds ? ScrollContainer::SCROLL_MODE_AUTO : ScrollContainer::SCROLL_MODE_DISABLED);
 		canvas_scroll->set_vertical_scroll_mode(exceeds ? ScrollContainer::SCROLL_MODE_AUTO : ScrollContainer::SCROLL_MODE_DISABLED);
 		canvas_aspect->set_h_size_flags(exceeds ? Control::SIZE_SHRINK_CENTER : Control::SIZE_EXPAND_FILL);
 		canvas_aspect->set_v_size_flags(exceeds ? Control::SIZE_SHRINK_CENTER : Control::SIZE_EXPAND_FILL);
+		if (canvas_stage->get_custom_minimum_size().distance_to(stage_sz) > 1.5f) {
+			canvas_stage->set_custom_minimum_size(stage_sz);
+		}
 		if (canvas_aspect->get_custom_minimum_size().distance_to(stage_sz) > 1.5f) {
 			canvas_aspect->set_custom_minimum_size(stage_sz);
 		}
@@ -1613,6 +1632,48 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 			canvas_fit_holder->set_custom_minimum_size(stage_sz);
 		}
 	}
+	if (p_recalc_fit) {
+		_update_canvas_fit_scale();
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_canvas_scroll_resized() {
+	if (canvas_zoom_mode != 0 || updating_props_panel || !canvas_scroll) {
+		return;
+	}
+	Size2 sc_sz = canvas_scroll->get_size();
+	if (sc_sz.x < 16.0f || sc_sz.y < 16.0f) {
+		return;
+	}
+	if (last_canvas_viewport_sz.x > 0.0f && sc_sz.distance_to(last_canvas_viewport_sz) <= 8.0f) {
+		return;
+	}
+	last_canvas_viewport_sz = sc_sz;
+	_update_canvas_fit_scale();
+}
+
+void ClockGearsUiDesignEditor::_restore_canvas_scroll_pos(const Vector2i &p_pos) {
+	if (!canvas_scroll || canvas_zoom_mode == 0) {
+		return;
+	}
+	canvas_scroll->set_h_scroll(MAX(0, p_pos.x));
+	canvas_scroll->set_v_scroll(MAX(0, p_pos.y));
+}
+
+void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
+	if (!canvas_stage || !canvas_fit_holder) {
+		return;
+	}
+	if (canvas_scroll) {
+		Size2 sc_sz = canvas_scroll->get_size();
+		if (sc_sz.x > 16.0f && sc_sz.y > 16.0f) {
+			last_canvas_viewport_sz = sc_sz;
+		}
+	}
+	float zf = _cg_zoom_factor_for_mode(canvas_zoom_mode);
+	Size2 stage_sz(
+			MAX(160.0f, float(int(Math::round(float(preview_resolution.x) * zf)))),
+			MAX(90.0f, float(int(Math::round(float(preview_resolution.y) * zf)))));
 	Size2 holder_sz = canvas_fit_holder->get_size();
 	if (holder_sz.x < 16.0f || holder_sz.y < 16.0f) {
 		return;
@@ -1778,13 +1839,17 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	HBoxContainer *zoom_hb = memnew(HBoxContainer);
 	zoom_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
 	top_flow->add_child(zoom_hb);
-	static const char *k_zoom_labels[3] = { "Ajustar", "100 %", "200 %" };
-	static const char *k_zoom_tips[3] = {
+	static const int k_zoom_order[5] = { 0, 3, 1, 2, 4 };
+	static const char *k_zoom_labels[5] = { "Ajustar", "100 %", "200 %", "50 %", "300 %" };
+	static const char *k_zoom_tips[5] = {
 		"Ajustar la pantalla completa 16:9 al lienzo disponible",
 		"Escala real 100 % (muestra desplazamiento si no cabe)",
-		"Ampliar el lienzo al 200 %"
+		"Ampliar el lienzo al 200 %",
+		"Reducir el lienzo al 50 %",
+		"Ampliar el lienzo al 300 %"
 	};
-	for (int z = 0; z < 3; z++) {
+	for (int oi = 0; oi < 5; oi++) {
+		int z = k_zoom_order[oi];
 		Button *zb = memnew(Button(String::utf8(k_zoom_labels[z])));
 		zb->set_toggle_mode(true);
 		zb->set_pressed(z == canvas_zoom_mode);
@@ -2117,12 +2182,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_aspect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_aspect->set_custom_minimum_size(Size2(160 * EDSCALE, 90 * EDSCALE));
 	canvas_scroll->add_child(canvas_aspect);
-	canvas_scroll->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale));
+	canvas_scroll->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_scroll_resized), CONNECT_DEFERRED);
 
 	canvas_fit_holder = memnew(Control);
 	canvas_fit_holder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	canvas_fit_holder->set_clip_contents(true);
-	canvas_fit_holder->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale), CONNECT_DEFERRED);
 	canvas_aspect->add_child(canvas_fit_holder);
 
 	canvas_stage = memnew(Control);
@@ -3550,16 +3614,19 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 			left_col_scroll->set_custom_minimum_size(Size2(left_w, 0));
 			left_col_scroll->set_h_size_flags(Control::SIZE_FILL);
 			left_col_scroll->set_stretch_ratio(0.0f);
+			left_col_scroll->set_clip_contents(true);
 			left_col_scroll->show();
 		}
 		if (wide_center_col) {
 			wide_center_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			wide_center_col->set_stretch_ratio(1.0f);
+			wide_center_col->set_clip_contents(true);
 		}
 		if (wide_right_col) {
 			wide_right_col->set_custom_minimum_size(Size2(right_w, 0));
 			wide_right_col->set_h_size_flags(Control::SIZE_FILL);
 			wide_right_col->set_stretch_ratio(0.0f);
+			wide_right_col->set_clip_contents(true);
 		}
 		s_reparent_ctrl(menus_card, wide_left_col);
 		s_reparent_ctrl(palette_card, wide_left_col);
@@ -3570,12 +3637,13 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		palette_card->set_custom_minimum_size(Size2(0, 0));
 		layers_card->set_custom_minimum_size(Size2(0, 0));
 		props_card->set_custom_minimum_size(Size2(0, 0));
+		props_card->set_clip_contents(true);
 		canvas_card->set_custom_minimum_size(Size2(0, 0));
 		if (palette_grid) {
 			palette_grid->set_columns(eff_w < 1320.0f * EDSCALE ? 1 : 2);
 		}
 	}
-	callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
+	callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 }
 
 void ClockGearsUiDesignEditor::adapt_to_width(int p_window_width) {
@@ -3596,6 +3664,7 @@ void ClockGearsUiDesignEditor::set_preview_resolution(int p_width, int p_height,
 		}
 		updating_ui = prev;
 	}
+	_apply_canvas_zoom_layout(true);
 	_refresh_canvas_stage();
 	if (p_sync_owner_db && owner_db && owner_db->get_menus_preview_resolution() != preview_resolution) {
 		owner_db->set_menus_preview_resolution(preview_resolution.x, preview_resolution.y);
@@ -3826,43 +3895,7 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 	if (!dm || !design_layer || !canvas_stage) {
 		return;
 	}
-	int z_mult = (canvas_zoom_mode == 2) ? 2 : MAX(1, canvas_zoom);
-	Size2 stage_sz(float(preview_resolution.x * z_mult), float(preview_resolution.y * z_mult));
-	canvas_stage->set_size(stage_sz);
-	if (canvas_zoom_mode == 0) {
-		canvas_stage->set_custom_minimum_size(Size2(0, 0));
-		if (canvas_scroll) {
-			canvas_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-			canvas_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-		}
-		if (canvas_aspect) {
-			canvas_aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			canvas_aspect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-			canvas_aspect->set_custom_minimum_size(Size2(160 * EDSCALE, 90 * EDSCALE));
-		}
-		if (canvas_fit_holder) {
-			canvas_fit_holder->set_custom_minimum_size(Size2(0, 0));
-		}
-	} else {
-		canvas_stage->set_custom_minimum_size(stage_sz);
-		if (canvas_scroll) {
-			Size2 sc_sz = canvas_scroll->get_size();
-			bool exceeds = (sc_sz.x > 16.0f && sc_sz.y > 16.0f) ? (stage_sz.x > sc_sz.x + 2.0f || stage_sz.y > sc_sz.y + 2.0f) : (canvas_zoom_mode >= 2);
-			canvas_scroll->set_horizontal_scroll_mode(exceeds ? ScrollContainer::SCROLL_MODE_AUTO : ScrollContainer::SCROLL_MODE_DISABLED);
-			canvas_scroll->set_vertical_scroll_mode(exceeds ? ScrollContainer::SCROLL_MODE_AUTO : ScrollContainer::SCROLL_MODE_DISABLED);
-		}
-		if (canvas_aspect) {
-			canvas_aspect->set_custom_minimum_size(stage_sz);
-		}
-		if (canvas_fit_holder) {
-			canvas_fit_holder->set_custom_minimum_size(stage_sz);
-		}
-	}
-	if (zoom_info_lbl) {
-		zoom_info_lbl->set_text(itos(int(stage_sz.x)) + "x" + itos(int(stage_sz.y)));
-	}
-	callable_mp(this, &ClockGearsUiDesignEditor::_update_canvas_fit_scale).call_deferred();
-
+	// Nota 9B P3: _refresh_canvas_stage solo redibuja el contenido; NUNCA altera zoom, escala ni scroll del lienzo.
 	Dictionary design = dm->get_ui_screen_design(current_screen_id);
 	bool is_custom_menu = dm->has_menu(current_screen_id) && !ClockGearsDataManager::is_system_menu_id(current_screen_id);
 	bool has_custom = dm->has_custom_ui_design(current_screen_id) || is_custom_menu;
@@ -3882,6 +3915,10 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 		}
 	}
 
+	float zf = _cg_zoom_factor_for_mode(canvas_zoom_mode);
+	Size2 stage_sz(
+			MAX(160.0f, float(int(Math::round(float(preview_resolution.x) * zf)))),
+			MAX(90.0f, float(int(Math::round(float(preview_resolution.y) * zf)))));
 	design_layer->set_viewport_size_override(stage_sz);
 	design_layer->set_size(stage_sz);
 	if (current_screen_id == "hud" && !has_custom) {
@@ -4856,6 +4893,7 @@ void ClockGearsUiDesignEditor::_on_props_search_changed(const String &p_text) {
 }
 
 void ClockGearsUiDesignEditor::_refresh_properties_panel() {
+	updating_props_panel = true;
 	Dictionary el = _get_selected_element_copy();
 	if (el.is_empty()) {
 		current_selected_elem_type = "";
@@ -4866,6 +4904,7 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 			props_fields_box->hide();
 		}
 		_apply_properties_filter();
+		updating_props_panel = false;
 		return;
 	}
 
@@ -5046,6 +5085,7 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 
 	updating_ui = prev_upd;
 	_apply_properties_filter();
+	updating_props_panel = false;
 }
 
 void ClockGearsUiDesignEditor::_refresh_menu_global_properties() {
@@ -5274,6 +5314,14 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 			system_scope_root = sg;
 		}
 	}
+	if (!current_screen_id.is_empty() && norm_sid != current_screen_id) {
+		ScreenZoomState cur_zs;
+		cur_zs.zoom_mode = canvas_zoom_mode;
+		if (canvas_scroll) {
+			cur_zs.scroll_pos = Vector2i(canvas_scroll->get_h_scroll(), canvas_scroll->get_v_scroll());
+		}
+		per_screen_zoom_state[current_screen_id] = cur_zs;
+	}
 	current_screen_id = norm_sid;
 	selected_elem_id = "";
 	selected_elem_ids.clear();
@@ -5284,13 +5332,28 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 			selected_elem_ids.push_back(selected_elem_id);
 		}
 	}
+	ScreenZoomState target_zs;
+	if (per_screen_zoom_state.has(current_screen_id)) {
+		target_zs = per_screen_zoom_state[current_screen_id];
+	}
+	canvas_zoom_mode = CLAMP(target_zs.zoom_mode, 0, 4);
+	canvas_zoom = (canvas_zoom_mode == 2) ? 2 : ((canvas_zoom_mode == 4) ? 3 : 1);
+	for (int i = 0; i < 5; i++) {
+		if (zoom_btns[i]) {
+			zoom_btns[i]->set_pressed(i == canvas_zoom_mode);
+		}
+	}
+	_apply_canvas_zoom_layout(true);
 	refresh_from_data_manager();
+	if (canvas_zoom_mode != 0) {
+		callable_mp(this, &ClockGearsUiDesignEditor::_restore_canvas_scroll_pos).bind(target_zs.scroll_pos).call_deferred();
+	}
 	_trace_log("screen_open_done", "screen=" + current_screen_id + " elems=" + itos(elems.size()) + " sel=" + selected_elem_id);
 }
 
 float ClockGearsUiDesignEditor::get_canvas_stage_scale() const {
 	float base_ratio = float(MAX(320, preview_resolution.x)) / float(BASE_W);
-	return base_ratio * float(MAX(1, canvas_zoom));
+	return base_ratio * _cg_zoom_factor_for_mode(canvas_zoom_mode);
 }
 
 Array ClockGearsUiDesignEditor::get_effective_screen_elements() const {
@@ -5356,13 +5419,20 @@ void ClockGearsUiDesignEditor::commit_canvas_drag_undo(const Dictionary &p_initi
 }
 
 void ClockGearsUiDesignEditor::set_canvas_zoom_mode(int p_mode) {
-	canvas_zoom_mode = CLAMP(p_mode, 0, 2);
-	canvas_zoom = (canvas_zoom_mode == 2) ? 2 : 1;
-	for (int i = 0; i < 3; i++) {
+	canvas_zoom_mode = CLAMP(p_mode, 0, 4);
+	canvas_zoom = (canvas_zoom_mode == 2) ? 2 : ((canvas_zoom_mode == 4) ? 3 : 1);
+	for (int i = 0; i < 5; i++) {
 		if (zoom_btns[i]) {
 			zoom_btns[i]->set_pressed(i == canvas_zoom_mode);
 		}
 	}
+	ScreenZoomState st = per_screen_zoom_state.has(current_screen_id) ? per_screen_zoom_state[current_screen_id] : ScreenZoomState();
+	st.zoom_mode = canvas_zoom_mode;
+	if (canvas_scroll) {
+		st.scroll_pos = Vector2i(canvas_scroll->get_h_scroll(), canvas_scroll->get_v_scroll());
+	}
+	per_screen_zoom_state[current_screen_id] = st;
+	_apply_canvas_zoom_layout(true);
 	_refresh_canvas_stage();
 }
 
@@ -5370,9 +5440,11 @@ void ClockGearsUiDesignEditor::set_canvas_zoom(int p_zoom) {
 	if (p_zoom <= 0) {
 		set_canvas_zoom_mode(0);
 	} else if (p_zoom == 1) {
-		set_canvas_zoom_mode(0);
-	} else {
+		set_canvas_zoom_mode(1);
+	} else if (p_zoom == 2) {
 		set_canvas_zoom_mode(2);
+	} else {
+		set_canvas_zoom_mode(4);
 	}
 }
 
@@ -8320,6 +8392,8 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["zoom_1_btn"] = zoom_btns[0];
 	out["zoom_2_btn"] = zoom_btns[1];
 	out["zoom_3_btn"] = zoom_btns[2];
+	out["zoom_50_btn"] = zoom_btns[3];
+	out["zoom_300_btn"] = zoom_btns[4];
 	out["undo_btn"] = undo_btn;
 	out["redo_btn"] = redo_btn;
 	out["reset_btn"] = reset_btn;
