@@ -18,6 +18,7 @@
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
+#include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/texture_rect.h"
@@ -166,6 +167,95 @@ public:
 	int get_row_count() const { return rows.size(); }
 };
 
+class ClockGearsDesignChildArrow;
+class ClockGearsDesignCardsContainer;
+class ClockGearsDesignCardRow;
+
+class ClockGearsDesignChildArrow : public Control {
+	GDCLASS(ClockGearsDesignChildArrow, Control);
+
+protected:
+	void _notification(int p_what);
+};
+
+class ClockGearsDesignCardRow : public PanelContainer {
+	GDCLASS(ClockGearsDesignCardRow, PanelContainer);
+
+	ClockGearsUiDesignEditor *owner_editor = nullptr;
+	ClockGearsDesignCardsContainer *cards_container = nullptr;
+	String elem_id;
+	String parent_id;
+	String elem_type;
+	int depth = 0;
+	bool has_children = false;
+	bool collapsed = false;
+	bool elem_visible = true;
+	bool elem_locked = false;
+	bool elem_selected = false;
+	bool hovered = false;
+	int drop_section_preview = -999; // -1=above, 0=child, 1=below, -999=none
+
+	HBoxContainer *row_hb = nullptr;
+	Button *collapse_btn = nullptr;
+	TextureRect *type_icon_rect = nullptr;
+	Label *name_lbl = nullptr;
+	LineEdit *rename_edit = nullptr;
+	Button *eye_btn = nullptr;
+	Button *lock_btn = nullptr;
+
+	Ref<StyleBoxFlat> sb_normal;
+	Ref<StyleBoxFlat> sb_hover;
+	Ref<StyleBoxFlat> sb_selected;
+	Ref<StyleBoxFlat> sb_drop_child;
+
+	void _on_mouse_entered();
+	void _on_mouse_exited();
+	void _on_collapse_pressed();
+	void _on_eye_pressed();
+	void _on_lock_pressed();
+	void _on_rename_submitted(const String &p_text);
+	void _on_rename_focus_exited();
+
+protected:
+	void _notification(int p_what);
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	void setup(ClockGearsUiDesignEditor *p_owner, ClockGearsDesignCardsContainer *p_container,
+			const Dictionary &p_elem, int p_depth, bool p_has_children,
+			const Ref<Texture2D> &p_type_icon, const Ref<Texture2D> &p_eye_icon, const Ref<Texture2D> &p_lock_icon,
+			bool p_selected, const String &p_parent_name);
+	void update_visual_state(bool p_selected);
+	void set_drop_section_preview(int p_sec);
+	int get_drop_section_preview() const { return drop_section_preview; }
+	String get_elem_id() const { return elem_id; }
+	int get_depth() const { return depth; }
+	void begin_inline_rename();
+	int compute_drop_section(const Point2 &p_local_pos) const;
+
+	virtual Variant get_drag_data(const Point2 &p_at_position) override;
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
+};
+
+class ClockGearsDesignCardsContainer : public VBoxContainer {
+	GDCLASS(ClockGearsDesignCardsContainer, VBoxContainer);
+
+	ClockGearsUiDesignEditor *owner_editor = nullptr;
+	ClockGearsDesignCardRow *drop_preview_row = nullptr;
+	int drop_preview_section = -999;
+
+protected:
+	void _notification(int p_what);
+
+public:
+	void set_owner_editor(ClockGearsUiDesignEditor *p_owner) { owner_editor = p_owner; }
+	void set_drop_preview(ClockGearsDesignCardRow *p_row, int p_sec);
+	void clear_drop_preview();
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
+};
+
 class ClockGearsLayersTree : public Tree {
 	GDCLASS(ClockGearsLayersTree, Tree);
 
@@ -242,9 +332,10 @@ private:
 	Button *copy_elem_btn = nullptr;
 	Button *paste_elem_btn = nullptr;
 
-	// Contenedores responsivos (3 columnas >= 1460px; 2 filas < 1460px sin scroll H)
+	// Contenedores responsivos (3 columnas >= 780px con divisores arrastrables; 1 col < 780px sin scroll H)
 	VBoxContainer *layout_root = nullptr;
-	HBoxContainer *wide_hbox = nullptr;
+	HSplitContainer *wide_hbox = nullptr;
+	HSplitContainer *wide_right_split = nullptr;
 	VBoxContainer *wide_left_col = nullptr;
 	VBoxContainer *wide_center_col = nullptr;
 	VBoxContainer *wide_right_col = nullptr;
@@ -294,10 +385,17 @@ private:
 	PopupMenu *canvas_context_menu = nullptr;
 	Vector2 canvas_context_pos;
 
-	// Lista de capas con árbol jerárquico, carpetas, ojo, bloqueo y reordenado
+	// Lista de tarjetas de elementos dentro de "Diseños" (reemplaza árbol Capas)
+	ScrollContainer *design_cards_scroll = nullptr;
+	ClockGearsDesignCardsContainer *design_cards_vbox = nullptr;
+	HashMap<String, ClockGearsDesignCardRow *> design_card_rows;
+	Vector<String> design_cards_order;
 	ClockGearsLayersTree *layers_tree = nullptr;
 	HashMap<String, TreeItem *> layer_tree_items;
 	PopupMenu *layer_context_menu = nullptr;
+	PopupMenu *add_child_submenu = nullptr;
+	PopupMenu *reparent_submenu = nullptr;
+	Vector<String> reparent_candidate_ids;
 	VBoxContainer *layers_list_vbox = nullptr;
 	ClockGearsLayersCanvas *layers_long_canvas = nullptr;
 	Button *layer_add_folder_btn = nullptr;
@@ -722,6 +820,9 @@ private:
 	void _on_layers_tree_item_collapsed(Object *p_item);
 	void _on_layers_tree_item_mouse_selected(const Vector2 &p_pos, int p_mouse_button_index);
 	void _on_layer_context_menu_id(int p_id);
+	void _on_add_child_submenu_id(int p_id);
+	void _on_reparent_submenu_id(int p_id);
+	void _ensure_design_card_visible(const String &p_elem_id);
 	void _on_layer_add_folder_pressed();
 	void _on_layer_group_pressed();
 	void _on_layer_ungroup_pressed();
@@ -816,6 +917,13 @@ public:
 	void show_layer_context_menu(const Vector2 &p_screen_pos);
 	bool set_element_collapsed(const String &p_elem_id, bool p_collapsed);
 	Array get_layer_tree_info() const;
+	Array get_design_cards_info() const;
+	Control *get_design_card_control(const String &p_elem_id) const;
+	String add_child_element_of_type(const String &p_parent_id, const String &p_type);
+	bool reparent_element_to(const String &p_elem_id, const String &p_new_parent_id);
+	bool unparent_element(const String &p_elem_id);
+	bool drop_card_on_target(const PackedStringArray &p_elem_ids, const String &p_target_id, int p_drop_section);
+	bool simulate_card_drop_at(const String &p_target_id, const Vector2 &p_local_pos, const PackedStringArray &p_drag_ids);
 	bool move_selected_layer(int p_delta);
 
 	bool apply_undo();
