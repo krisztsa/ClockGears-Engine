@@ -10,8 +10,10 @@
 
 class ClockGearsBootSplash {
 public:
-	static constexpr int SPLASH_WIDTH = 800;
-	static constexpr int SPLASH_HEIGHT = 450;
+	static constexpr int BASE_DESIGN_WIDTH = 1920;
+	static constexpr int BASE_DESIGN_HEIGHT = 1080;
+	static constexpr int SPLASH_WIDTH = 1920;
+	static constexpr int SPLASH_HEIGHT = 1080;
 	static constexpr int TOTAL_STAGES = 7;
 	static constexpr uint64_t WATCHDOG_DEFAULT_TIMEOUT_MS = 15000;
 
@@ -33,6 +35,7 @@ public:
 
 	struct LayoutMetrics {
 		Rect2i card_rect;
+		Rect2i inner_frame_rect;
 		Rect2i icon_rect;
 		Rect2i badge_rect;
 		Rect2i title_rect;
@@ -42,14 +45,20 @@ public:
 		Rect2i right_brand_rect;
 		Rect2i progress_bar_rect;
 		int corner_radius = 6;
+		int frame_inset = 24;
+		int icon_scale_multiple = 2;
+		int ornament_gear_count = 0;
+		int circuit_trace_count = 0;
+		float layout_scale = 1.0f;
 	};
 
 	static bool is_saved_brass_theme();
 	static Palette get_active_palette(bool p_force_brass = false, bool p_override_brass = false);
 	static Color get_active_clear_color();
 	static Vector<Vector2> get_rounded_window_polygon(int p_width = SPLASH_WIDTH, int p_height = SPLASH_HEIGHT, int p_radius = -1);
+	static Vector2i get_primary_monitor_size(int *r_pos_x = nullptr, int *r_pos_y = nullptr, float *r_dpi_scale = nullptr);
 
-	static Ref<Image> render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics = nullptr);
+	static Ref<Image> render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics = nullptr, const Vector2i &p_screen_size = Vector2i(BASE_DESIGN_WIDTH, BASE_DESIGN_HEIGHT), float p_dpi_scale = 1.0f);
 	static void present_stage(int p_stage, int p_total_stages, const String &p_status, bool p_completed = false);
 
 	// Ventana propia independiente sin bordes, ciclo de vida y seguro anti-bloqueo (15 s).

@@ -326,75 +326,160 @@ void _draw_filled_rounded_rect(uint8_t *p_dst, int p_w, int p_h, float rx, float
 	}
 }
 
-void _build_static_base(Vector<uint8_t> &r_buf, const ClockGearsBootSplash::Palette &p_pal, ClockGearsBootSplash::LayoutMetrics &r_metrics) {
-	const int W = ClockGearsBootSplash::SPLASH_WIDTH;
-	const int H = ClockGearsBootSplash::SPLASH_HEIGHT;
+void _draw_inner_copper_frame(uint8_t *p_dst, int p_w, int p_h, const Rect2i &p_frame, float p_radius, float p_border_w, const Color &p_col) {
+	const float rx = (float)p_frame.position.x;
+	const float ry = (float)p_frame.position.y;
+	const float rw = (float)p_frame.size.x;
+	const float rh = (float)p_frame.size.y;
+	const int band = MAX(3, (int)ceilf(p_radius + p_border_w + 2.0f));
+	const int x0 = MAX(0, p_frame.position.x - 2);
+	const int y0 = MAX(0, p_frame.position.y - 2);
+	const int x1 = MIN(p_w - 1, p_frame.get_end().x + 2);
+	const int y1 = MIN(p_h - 1, p_frame.get_end().y + 2);
+
+	for (int y = y0; y <= y1; y++) {
+		const bool in_v_band = (y <= p_frame.position.y + band) || (y >= p_frame.get_end().y - band);
+		for (int x = x0; x <= x1; x++) {
+			if (!in_v_band && x > p_frame.position.x + band && x < p_frame.get_end().x - band) {
+				x = p_frame.get_end().x - band - 1;
+				continue;
+			}
+			const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, rx, ry, rw, rh, p_radius);
+			const float db = fabsf(d + p_border_w * 0.5f) - p_border_w * 0.5f;
+			if (db < 1.0f) {
+				_blend_pixel_rgba(p_dst, p_w, p_h, x, y, p_col, _clamp01(1.0f - db));
+			}
+		}
+	}
+}
+
+void _build_static_base(Vector<uint8_t> &r_buf, int W, int H, float p_dpi_scale, const ClockGearsBootSplash::Palette &p_pal, ClockGearsBootSplash::LayoutMetrics &r_metrics) {
 	r_buf.resize(W * H * 4);
 	uint8_t *dst = r_buf.ptrw();
 
-	// 1. Fondo con degradado suave vertical y brillo radial calido central.
-	const float halo_cx = 400.0f;
-	const float halo_cy = 148.0f;
-	const float halo_inv_r = 1.0f / 145.0f;
+	// Escala proporcional sobre una base de 1920x1080 (en pantallas 16:10 o ultrapanorámicas extiende el fondo sin estirar).
+	const float s = MIN((float)W / (float)ClockGearsBootSplash::BASE_DESIGN_WIDTH, (float)H / (float)ClockGearsBootSplash::BASE_DESIGN_HEIGHT);
+	r_metrics.layout_scale = s;
+	r_metrics.card_rect = Rect2i(0, 0, W, H);
+
+	// Tamaño del icono en múltiplo ENTERO de 64/128 px (128, 192 o 256 px según pantalla y escala de Windows) con filtro nearest.
+	const float eff_h = (float)H * MAX(1.0f, p_dpi_scale * 0.85f);
+	int icon_px = 128;
+	if (H >= 1800 || eff_h >= 1950.0f) {
+		icon_px = 256;
+	} else if (H >= 1000) {
+		icon_px = 192;
+	}
+	r_metrics.icon_scale_multiple = icon_px / 64;
+
+	const int ix0 = (W - icon_px) / 2;
+	const int iy0 = (int)Math::round((float)H * 0.20f);
+	r_metrics.icon_rect = Rect2i(ix0, iy0, icon_px, icon_px);
+
+	// 1. Fondo a pantalla completa con degradado vertical rápido y halo radial cálido centrado en el icono.
+	const float halo_cx = (float)W * 0.5f;
+	const float halo_cy = (float)iy0 + (float)icon_px * 0.5f;
+	const float halo_r = 250.0f * s;
+	const float halo_inv_r = 1.0f / MAX(32.0f, halo_r);
+	const int hx0 = MAX(0, (int)floorf(halo_cx - halo_r * 1.55f));
+	const int hx1 = MIN(W - 1, (int)ceilf(halo_cx + halo_r * 1.55f));
+	const int hy0 = MAX(0, (int)floorf(halo_cy - halo_r * 1.55f));
+	const int hy1 = MIN(H - 1, (int)ceilf(halo_cy + halo_r * 1.55f));
+
 	for (int y = 0; y < H; y++) {
-		const float vt = (float)y / (float)(H - 1);
+		const float vt = (float)y / (float)MAX(1, H - 1);
 		const Color row_bg = p_pal.bg_top.lerp(p_pal.bg_bottom, vt);
+		const uint8_t br = (uint8_t)Math::round(_clamp01(row_bg.r) * 255.0f);
+		const uint8_t bg = (uint8_t)Math::round(_clamp01(row_bg.g) * 255.0f);
+		const uint8_t bb = (uint8_t)Math::round(_clamp01(row_bg.b) * 255.0f);
+		const uint32_t row_packed = (uint32_t)br | ((uint32_t)bg << 8) | ((uint32_t)bb << 16) | 0xFF000000u;
+
+		uint32_t *row_ptr32 = reinterpret_cast<uint32_t *>(dst + (size_t)y * W * 4);
 		for (int x = 0; x < W; x++) {
-			const float dx = ((float)x + 0.5f - halo_cx) * halo_inv_r;
+			row_ptr32[x] = row_packed;
+		}
+		if (y >= hy0 && y <= hy1) {
 			const float dy = ((float)y + 0.5f - halo_cy) * halo_inv_r;
-			const float d2 = dx * dx + dy * dy;
-			const float halo = expf(-2.65f * d2) * p_pal.halo_amber.a;
-			const float c_r = _clamp01(row_bg.r + p_pal.halo_amber.r * halo);
-			const float c_g = _clamp01(row_bg.g + p_pal.halo_amber.g * halo);
-			const float c_b = _clamp01(row_bg.b + p_pal.halo_amber.b * halo);
-			uint8_t *px = dst + ((y * W + x) * 4);
-			px[0] = (uint8_t)Math::round(c_r * 255.0f);
-			px[1] = (uint8_t)Math::round(c_g * 255.0f);
-			px[2] = (uint8_t)Math::round(c_b * 255.0f);
-			px[3] = 255;
+			const float dy2 = dy * dy;
+			for (int x = hx0; x <= hx1; x++) {
+				const float dx = ((float)x + 0.5f - halo_cx) * halo_inv_r;
+				const float d2 = dx * dx + dy2;
+				if (d2 < 2.35f) {
+					const float halo = expf(-2.45f * d2) * p_pal.halo_amber.a;
+					uint8_t *px = dst + (((size_t)y * W + x) * 4);
+					px[0] = (uint8_t)Math::round(_clamp01(row_bg.r + p_pal.halo_amber.r * halo) * 255.0f);
+					px[1] = (uint8_t)Math::round(_clamp01(row_bg.g + p_pal.halo_amber.g * halo) * 255.0f);
+					px[2] = (uint8_t)Math::round(_clamp01(row_bg.b + p_pal.halo_amber.b * halo) * 255.0f);
+				}
+			}
 		}
 	}
 
-	// Anillos concentricos tenues alrededor del halo del icono.
-	_draw_aa_ring(dst, W, H, halo_cx, halo_cy, 84.0f, 1.0f, Color(p_pal.accent_amber.r, p_pal.accent_amber.g, p_pal.accent_amber.b, 0.16f));
-	_draw_aa_ring(dst, W, H, halo_cx, halo_cy, 114.0f, 1.0f, Color(p_pal.accent_amber.r, p_pal.accent_amber.g, p_pal.accent_amber.b, 0.07f));
+	// Anillos concéntricos tenues alrededor del halo del icono.
+	const float ring_th = MAX(1.0f, 1.3f * s);
+	_draw_aa_ring(dst, W, H, halo_cx, halo_cy, (float)icon_px * 0.72f, ring_th, Color(p_pal.accent_amber.r, p_pal.accent_amber.g, p_pal.accent_amber.b, 0.18f));
+	_draw_aa_ring(dst, W, H, halo_cx, halo_cy, (float)icon_px * 0.98f, ring_th, Color(p_pal.accent_amber.r, p_pal.accent_amber.g, p_pal.accent_amber.b, 0.09f));
+	_draw_aa_ring(dst, W, H, halo_cx, halo_cy, (float)icon_px * 1.24f, ring_th, Color(p_pal.accent_amber.r, p_pal.accent_amber.g, p_pal.accent_amber.b, 0.045f));
 
-	// 2. Decoracion de engranajes y trazos de circuito en baja opacidad en las esquinas.
+	// 2. Engranajes y trazos de circuito más grandes y numerosos anclados a las esquinas y los bordes.
 	const Color orn_soft = p_pal.ornament_copper;
-	const Color orn_subtle(orn_soft.r, orn_soft.g, orn_soft.b, orn_soft.a * 0.72f);
+	const Color orn_mid(orn_soft.r, orn_soft.g, orn_soft.b, orn_soft.a * 0.80f);
+	const Color orn_subtle(orn_soft.r, orn_soft.g, orn_soft.b, orn_soft.a * 0.68f);
+	const float stroke_main = MAX(1.1f, 1.8f * s);
+	const float stroke_sub = MAX(1.0f, 1.45f * s);
 
-	// Esquina superior izquierda
-	_draw_ornament_gear(dst, W, H, 36.0f, 36.0f, 76.0f, 20.0f, 12, 0.25f, 1.3f, orn_soft);
-	_draw_circuit_trace(dst, W, H, { Vector2(106, 26), Vector2(168, 26), Vector2(190, 48), Vector2(238, 48) }, 1.2f, orn_subtle, false, true);
-	_draw_circuit_trace(dst, W, H, { Vector2(26, 108), Vector2(26, 152), Vector2(46, 172), Vector2(46, 212) }, 1.2f, orn_subtle, false, true);
+	// 8 engranajes en las 4 esquinas y 4 bordes.
+	_draw_ornament_gear(dst, W, H, 76.0f * s, 76.0f * s, 155.0f * s, 42.0f * s, 14, 0.22f, stroke_main, orn_soft);
+	_draw_ornament_gear(dst, W, H, 242.0f * s, 56.0f * s, 74.0f * s, 20.0f * s, 10, 0.55f, stroke_sub, orn_mid);
 
-	// Esquina superior derecha
-	_draw_ornament_gear(dst, W, H, 770.0f, 44.0f, 64.0f, 16.0f, 10, 0.65f, 1.2f, Color(orn_soft.r, orn_soft.g, orn_soft.b, orn_soft.a * 0.75f));
-	_draw_circuit_trace(dst, W, H, { Vector2(772, 106), Vector2(772, 154), Vector2(752, 174), Vector2(752, 220) }, 1.2f, orn_subtle, false, true);
+	_draw_ornament_gear(dst, W, H, (float)W - 82.0f * s, 82.0f * s, 144.0f * s, 38.0f * s, 12, 0.65f, stroke_main, orn_mid);
+	_draw_ornament_gear(dst, W, H, (float)W - 60.0f * s, 238.0f * s, 70.0f * s, 18.0f * s, 10, 0.15f, stroke_sub, orn_subtle);
 
-	// Esquina inferior izquierda (sobre el area de barra para cero interferencia)
-	_draw_ornament_gear(dst, W, H, 34.0f, 356.0f, 52.0f, 14.0f, 10, 0.40f, 1.15f, Color(orn_soft.r, orn_soft.g, orn_soft.b, orn_soft.a * 0.70f), 382.0f);
-	_draw_circuit_trace(dst, W, H, { Vector2(84, 346), Vector2(142, 346), Vector2(162, 326), Vector2(194, 326) }, 1.15f, orn_subtle, true, true);
+	_draw_ornament_gear(dst, W, H, 80.0f * s, (float)H - 80.0f * s, 140.0f * s, 36.0f * s, 12, 0.40f, stroke_main, orn_mid);
+	_draw_ornament_gear(dst, W, H, 28.0f * s, (float)H * 0.48f, 86.0f * s, 22.0f * s, 12, 0.10f, stroke_sub, orn_subtle);
 
-	// Esquina inferior derecha
-	_draw_circuit_trace(dst, W, H, { Vector2(758, 352), Vector2(704, 352), Vector2(684, 332), Vector2(648, 332) }, 1.15f, orn_subtle, true, true);
+	_draw_ornament_gear(dst, W, H, (float)W - 80.0f * s, (float)H - 80.0f * s, 140.0f * s, 36.0f * s, 12, 0.30f, stroke_main, orn_mid);
+	_draw_ornament_gear(dst, W, H, (float)W - 28.0f * s, (float)H * 0.52f, 86.0f * s, 22.0f * s, 12, 0.50f, stroke_sub, orn_subtle);
+	r_metrics.ornament_gear_count = 8;
 
-	// 3. Icono central (~128 px sin filtro suave, 1:1 desde app_icon_png).
+	// 10 trazos de circuito anclados a esquinas y bordes laterales/superiores/inferiores.
+	_draw_circuit_trace(dst, W, H, { Vector2(210 * s, 54 * s), Vector2(360 * s, 54 * s), Vector2(402 * s, 96 * s), Vector2(530 * s, 96 * s) }, stroke_sub, orn_subtle, false, true);
+	_draw_circuit_trace(dst, W, H, { Vector2(54 * s, 215 * s), Vector2(54 * s, 340 * s), Vector2(96 * s, 382 * s), Vector2(96 * s, 470 * s) }, stroke_sub, orn_subtle, false, true);
+	_draw_circuit_trace(dst, W, H, { Vector2(142 * s, 152 * s), Vector2(236 * s, 152 * s), Vector2(276 * s, 192 * s), Vector2(368 * s, 192 * s) }, stroke_sub, orn_subtle, true, true);
+
+	_draw_circuit_trace(dst, W, H, { Vector2(W - 216 * s, 60 * s), Vector2(W - 368 * s, 60 * s), Vector2(W - 410 * s, 102 * s), Vector2(W - 535 * s, 102 * s) }, stroke_sub, orn_subtle, false, true);
+	_draw_circuit_trace(dst, W, H, { Vector2(W - 54 * s, 220 * s), Vector2(W - 54 * s, 348 * s), Vector2(W - 96 * s, 390 * s), Vector2(W - 96 * s, 475 * s) }, stroke_sub, orn_subtle, false, true);
+
+	_draw_circuit_trace(dst, W, H, { Vector2(96 * s, H * 0.56f), Vector2(178 * s, H * 0.56f), Vector2(214 * s, H * 0.60f), Vector2(310 * s, H * 0.60f) }, stroke_sub, orn_subtle, true, true);
+	_draw_circuit_trace(dst, W, H, { Vector2(W - 96 * s, H * 0.56f), Vector2(W - 178 * s, H * 0.56f), Vector2(W - 214 * s, H * 0.60f), Vector2(W - 310 * s, H * 0.60f) }, stroke_sub, orn_subtle, true, true);
+
+	_draw_circuit_trace(dst, W, H, { Vector2(198 * s, H - 72 * s), Vector2(348 * s, H - 72 * s), Vector2(388 * s, H - 112 * s), Vector2(492 * s, H - 112 * s) }, stroke_sub, orn_subtle, true, true);
+	_draw_circuit_trace(dst, W, H, { Vector2(68 * s, H - 205 * s), Vector2(68 * s, H - 305 * s), Vector2(112 * s, H - 349 * s), Vector2(196 * s, H - 349 * s) }, stroke_sub, orn_subtle, false, true);
+	_draw_circuit_trace(dst, W, H, { Vector2(W - 198 * s, H - 72 * s), Vector2(W - 348 * s, H - 72 * s), Vector2(W - 388 * s, H - 112 * s), Vector2(W - 492 * s, H - 112 * s) }, stroke_sub, orn_subtle, true, true);
+	r_metrics.circuit_trace_count = 10;
+
+	// 3. Marco cobrizo fino interior separado del borde de la pantalla (24 px a 1080p, con esquinas suaves).
+	const int frame_inset = MAX(10, (int)Math::round(24.0f * s));
+	const int frame_corner = MAX(4, (int)Math::round((float)p_pal.corner_radius * s));
+	const float frame_bw = MAX(1.0f, Math::round((float)p_pal.border_width * s));
+	r_metrics.frame_inset = frame_inset;
+	r_metrics.corner_radius = p_pal.corner_radius;
+	r_metrics.inner_frame_rect = Rect2i(frame_inset, frame_inset, W - frame_inset * 2, H - frame_inset * 2);
+	_draw_inner_copper_frame(dst, W, H, r_metrics.inner_frame_rect, (float)frame_corner, frame_bw, p_pal.card_border);
+
+	// 4. Icono central en múltiplo entero con filtro nearest.
 	Ref<Image> icon = memnew(Image(app_icon_png));
 	if (icon.is_valid() && !icon->is_empty()) {
 		if (icon->get_format() != Image::FORMAT_RGBA8) {
 			icon->convert(Image::FORMAT_RGBA8);
 		}
-		if (icon->get_width() != 128 || icon->get_height() != 128) {
-			icon->resize(128, 128, Image::INTERPOLATE_NEAREST);
+		if (icon->get_width() != icon_px || icon->get_height() != icon_px) {
+			icon->resize(icon_px, icon_px, Image::INTERPOLATE_NEAREST);
 		}
-		const int ix0 = (W - 128) / 2;
-		const int iy0 = 84;
-		r_metrics.icon_rect = Rect2i(ix0, iy0, 128, 128);
 		const uint8_t *isrc = icon->get_data().ptr();
-		for (int sy = 0; sy < 128; sy++) {
-			for (int sx = 0; sx < 128; sx++) {
-				const uint8_t *sp = isrc + ((sy * 128 + sx) * 4);
+		for (int sy = 0; sy < icon_px; sy++) {
+			for (int sx = 0; sx < icon_px; sx++) {
+				const uint8_t *sp = isrc + (((size_t)sy * icon_px + sx) * 4);
 				if (sp[3] > 0) {
 					const Color c((float)sp[0] / 255.0f, (float)sp[1] / 255.0f, (float)sp[2] / 255.0f, (float)sp[3] / 255.0f);
 					_blend_pixel_rgba(dst, W, H, ix0 + sx, iy0 + sy, c, 1.0f);
@@ -403,43 +488,65 @@ void _build_static_base(Vector<uint8_t> &r_buf, const ClockGearsBootSplash::Pale
 		}
 	}
 
-	// 4. Tipografías del tema: pastilla superior derecha v0.0.4 ALPHA + titulos centrados.
+	// 5. Tipografías escaladas directamente en tamaño entero de píxel (nunca desenfocadas).
 	SplashFontCache &fc = get_font_cache();
 
+	// Etiqueta "v0.0.4 ALPHA" arriba a la derecha dentro del marco interior.
 	const String ver_txt = String::utf8(CLOCKGEARS_SPLASH_VERSION);
-	const int ver_w = fc.measure_text_width(ver_txt, 11, 0.8f);
-	const int pill_w = ver_w + 22;
-	const int pill_h = 24;
-	const int pill_x = W - 22 - pill_w;
-	const int pill_y = 22;
+	const int ver_font_px = MAX(11, (int)Math::round(15.0f * s));
+	const float ver_track = 1.0f * s;
+	const int ver_w = fc.measure_text_width(ver_txt, ver_font_px, ver_track);
+	const int pill_pad_x = MAX(10, (int)Math::round(16.0f * s));
+	const int pill_w = ver_w + pill_pad_x * 2;
+	const int pill_h = MAX(22, (int)Math::round(32.0f * s));
+	const int pill_margin = MAX(14, (int)Math::round(24.0f * s));
+	const int pill_x = r_metrics.inner_frame_rect.get_end().x - pill_margin - pill_w;
+	const int pill_y = r_metrics.inner_frame_rect.position.y + pill_margin;
 	r_metrics.badge_rect = Rect2i(pill_x, pill_y, pill_w, pill_h);
-	_draw_filled_rounded_rect(dst, W, H, (float)pill_x, (float)pill_y, (float)pill_w, (float)pill_h, 4.0f,
-			Color(p_pal.badge_bg.r, p_pal.badge_bg.g, p_pal.badge_bg.b, 0.88f),
-			Color(p_pal.card_border.r, p_pal.card_border.g, p_pal.card_border.b, 0.62f), 1.0f);
-	(void)fc.draw_text(dst, W, H, ver_txt, pill_x + 11, pill_y + 16, 11, p_pal.accent_amber, 0.8f, true);
+	_draw_filled_rounded_rect(dst, W, H, (float)pill_x, (float)pill_y, (float)pill_w, (float)pill_h, MAX(4.0f, 5.0f * s),
+			Color(p_pal.badge_bg.r, p_pal.badge_bg.g, p_pal.badge_bg.b, 0.90f),
+			Color(p_pal.card_border.r, p_pal.card_border.g, p_pal.card_border.b, 0.68f), frame_bw);
+	const int ver_baseline = pill_y + (pill_h + ver_font_px) / 2 - MAX(1, (int)Math::round(1.5f * s));
+	(void)fc.draw_text(dst, W, H, ver_txt, pill_x + pill_pad_x, ver_baseline, ver_font_px, p_pal.accent_amber, ver_track, true);
 
+	// Títulos y créditos centrados debajo del icono.
 	const String title_txt = String::utf8("CLOCKGEARS ENGINE");
-	const int title_w = fc.measure_text_width(title_txt, 27, 2.0f);
-	r_metrics.title_rect = fc.draw_text(dst, W, H, title_txt, (W - title_w) / 2, 248, 27, p_pal.accent_amber, 2.0f, true);
+	const int title_font_px = MAX(22, (int)Math::round(42.0f * s));
+	const float title_track = 2.8f * s;
+	const int title_w = fc.measure_text_width(title_txt, title_font_px, title_track);
+	const int title_y = iy0 + icon_px + MAX(34, (int)Math::round(58.0f * s));
+	r_metrics.title_rect = fc.draw_text(dst, W, H, title_txt, (W - title_w) / 2, title_y, title_font_px, p_pal.accent_amber, title_track, true);
 
 	const String sub_txt = String::utf8("NEXT-GEN RPG CREATION SYSTEM");
-	const int sub_w = fc.measure_text_width(sub_txt, 11, 2.8f);
-	r_metrics.subtitle_rect = fc.draw_text(dst, W, H, sub_txt, (W - sub_w) / 2, 274, 11, p_pal.text_secondary, 2.8f, false);
+	const int sub_font_px = MAX(10, (int)Math::round(15.0f * s));
+	const float sub_track = 3.6f * s;
+	const int sub_w = fc.measure_text_width(sub_txt, sub_font_px, sub_track);
+	const int sub_y = title_y + MAX(22, (int)Math::round(36.0f * s));
+	r_metrics.subtitle_rect = fc.draw_text(dst, W, H, sub_txt, (W - sub_w) / 2, sub_y, sub_font_px, p_pal.text_secondary, sub_track, false);
 
-	// Linea separadora cobriza sutil centrada.
-	for (int x = 305; x <= 495; x++) {
-		const float t = 1.0f - fabsf((float)x - 400.0f) / 95.0f;
-		_blend_pixel_rgba(dst, W, H, x, 292, p_pal.card_border, 0.45f * t);
+	// Línea separadora cobriza sutil centrada.
+	const int sep_half_w = MAX(80, (int)Math::round(145.0f * s));
+	const int sep_y = sub_y + MAX(16, (int)Math::round(26.0f * s));
+	const int cx_mid = W / 2;
+	for (int x = cx_mid - sep_half_w; x <= cx_mid + sep_half_w; x++) {
+		const float t = 1.0f - fabsf((float)(x - cx_mid)) / (float)sep_half_w;
+		_blend_pixel_rgba(dst, W, H, x, sep_y, p_pal.card_border, 0.48f * t);
 	}
 
 	const String cred_txt = String::utf8("Created by Kris'ZtS (ClockGears Studio)");
-	const int cred_w = fc.measure_text_width(cred_txt, 12, 0.3f);
+	const int cred_font_px = MAX(11, (int)Math::round(17.0f * s));
+	const float cred_track = 0.4f * s;
+	const int cred_w = fc.measure_text_width(cred_txt, cred_font_px, cred_track);
+	const int cred_y = sep_y + MAX(22, (int)Math::round(36.0f * s));
 	const Color cred_col = p_pal.text_primary.lerp(p_pal.text_secondary, 0.35f);
-	r_metrics.credits_rect = fc.draw_text(dst, W, H, cred_txt, (W - cred_w) / 2, 316, 12, cred_col, 0.3f, false);
+	r_metrics.credits_rect = fc.draw_text(dst, W, H, cred_txt, (W - cred_w) / 2, cred_y, cred_font_px, cred_col, cred_track, false);
 }
 
 static bool cg_splash_base_valid = false;
 static bool cg_splash_base_brass = false;
+static int cg_splash_base_w = 0;
+static int cg_splash_base_h = 0;
+static float cg_splash_base_dpi = 1.0f;
 static Vector<uint8_t> cg_splash_base_bytes;
 static ClockGearsBootSplash::LayoutMetrics cg_splash_cached_metrics;
 
@@ -615,7 +722,47 @@ void ClockGearsBootSplash::log_event(const String &p_event_line) {
 	cg_splash_log_file_initialized = true;
 }
 
+Vector2i ClockGearsBootSplash::get_primary_monitor_size(int *r_pos_x, int *r_pos_y, float *r_dpi_scale) {
+	int pos_x = 0;
+	int pos_y = 0;
+	int mon_w = BASE_DESIGN_WIDTH;
+	int mon_h = BASE_DESIGN_HEIGHT;
+	float dpi_scale = 1.0f;
+#ifdef WINDOWS_ENABLED
+	POINT pt_zero = { 0, 0 };
+	HMONITOR hMon = MonitorFromPoint(pt_zero, MONITOR_DEFAULTTOPRIMARY);
+	MONITORINFO mi;
+	memset(&mi, 0, sizeof(mi));
+	mi.cbSize = sizeof(MONITORINFO);
+	if (hMon && GetMonitorInfoW(hMon, &mi)) {
+		pos_x = mi.rcMonitor.left;
+		pos_y = mi.rcMonitor.top;
+		mon_w = MAX(640, (int)(mi.rcMonitor.right - mi.rcMonitor.left));
+		mon_h = MAX(400, (int)(mi.rcMonitor.bottom - mi.rcMonitor.top));
+	}
+	HDC hdc = GetDC(nullptr);
+	if (hdc) {
+		const int dpi_x = GetDeviceCaps(hdc, LOGPIXELSX);
+		if (dpi_x > 0) {
+			dpi_scale = CLAMP((float)dpi_x / 96.0f, 1.0f, 3.0f);
+		}
+		ReleaseDC(nullptr, hdc);
+	}
+#endif
+	if (r_pos_x) {
+		*r_pos_x = pos_x;
+	}
+	if (r_pos_y) {
+		*r_pos_y = pos_y;
+	}
+	if (r_dpi_scale) {
+		*r_dpi_scale = dpi_scale;
+	}
+	return Vector2i(mon_w, mon_h);
+}
+
 bool ClockGearsBootSplash::open_window(int p_screen) {
+	(void)p_screen;
 	if (cg_splash_window_open) {
 		return true;
 	}
@@ -632,6 +779,11 @@ bool ClockGearsBootSplash::open_window(int p_screen) {
 		}
 	}
 
+	int pos_x = 0;
+	int pos_y = 0;
+	float dpi_scale = 1.0f;
+	const Vector2i mon_sz = get_primary_monitor_size(&pos_x, &pos_y, &dpi_scale);
+
 #ifdef WINDOWS_ENABLED
 	HINSTANCE hInst = GetModuleHandleW(nullptr);
 	if (!cg_splash_wndclass_registered) {
@@ -647,23 +799,6 @@ bool ClockGearsBootSplash::open_window(int p_screen) {
 		}
 	}
 
-	// Centrar en el área de trabajo de la pantalla seleccionada.
-	int pos_x = 100;
-	int pos_y = 100;
-	if (DisplayServer::get_singleton() && DisplayServer::get_singleton()->get_name() != "headless") {
-		const Rect2i scr = DisplayServer::get_singleton()->screen_get_usable_rect(p_screen);
-		if (scr.size.x > 0 && scr.size.y > 0) {
-			pos_x = scr.position.x + (scr.size.x - SPLASH_WIDTH) / 2;
-			pos_y = scr.position.y + (scr.size.y - SPLASH_HEIGHT) / 2;
-		}
-	} else {
-		RECT wa;
-		if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
-			pos_x = wa.left + ((wa.right - wa.left) - SPLASH_WIDTH) / 2;
-			pos_y = wa.top + ((wa.bottom - wa.top) - SPLASH_HEIGHT) / 2;
-		}
-	}
-
 	const DWORD dwStyle = WS_POPUP;
 	const DWORD dwExStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 	cg_splash_hwnd = CreateWindowExW(
@@ -671,8 +806,8 @@ bool ClockGearsBootSplash::open_window(int p_screen) {
 			L"ClockGearsBootSplashWindow",
 			L"ClockGears Engine Splash",
 			dwStyle,
-			pos_x, pos_y, SPLASH_WIDTH, SPLASH_HEIGHT,
-			nullptr, // Sin ventana padre: ventana propia independiente, nunca embebida en el editor.
+			pos_x, pos_y, mon_sz.x, mon_sz.y,
+			nullptr, // Ventana propia a pantalla completa del monitor principal, nunca embebida en el editor.
 			nullptr,
 			hInst,
 			nullptr);
@@ -693,12 +828,12 @@ bool ClockGearsBootSplash::open_window(int p_screen) {
 		SetTimer(cg_splash_hwnd, CG_SPLASH_WATCHDOG_TIMER_ID, 200, nullptr);
 		ShowWindow(cg_splash_hwnd, SW_SHOWNOACTIVATE);
 
-		log_event(vformat("event=created window_type=\"Win32IndependentPopup\" parent=\"%s\" borderless=%s titlebar=%s taskbar_button=%s size=%dx%d pos=(%d,%d)",
+		log_event(vformat("event=created window_type=\"Win32FullscreenPopup\" parent=\"%s\" borderless=%s titlebar=%s taskbar_button=%s size=%dx%d pos=(%d,%d) dpi_scale=%.2f",
 				cg_splash_has_parent ? "HWND" : "NONE",
 				cg_splash_is_borderless ? "true" : "false",
 				cg_splash_has_titlebar ? "true" : "false",
 				cg_splash_has_taskbar_btn ? "true" : "false",
-				SPLASH_WIDTH, SPLASH_HEIGHT, pos_x, pos_y));
+				mon_sz.x, mon_sz.y, pos_x, pos_y, dpi_scale));
 		return true;
 	}
 #endif
@@ -710,7 +845,7 @@ bool ClockGearsBootSplash::open_window(int p_screen) {
 	cg_splash_is_borderless = true;
 	cg_splash_has_titlebar = false;
 	cg_splash_has_taskbar_btn = false;
-	log_event("event=created window_type=\"IndependentPopup\" parent=\"NONE\" borderless=true titlebar=false taskbar_button=false size=800x450");
+	log_event(vformat("event=created window_type=\"FullscreenPopup\" parent=\"NONE\" borderless=true titlebar=false taskbar_button=false size=%dx%d", mon_sz.x, mon_sz.y));
 	return true;
 }
 
@@ -802,9 +937,11 @@ void ClockGearsBootSplash::set_watchdog_timeout_ms(uint64_t p_timeout_ms) {
 Dictionary ClockGearsBootSplash::get_last_lifecycle_state() {
 	LayoutMetrics m;
 	const bool is_brass = is_saved_brass_theme();
-	(void)render_card(1.0f, String::utf8("Listo"), 0.0f, true, is_brass, &m);
-	const bool badge_unclipped = (m.badge_rect.position.x >= 0 && m.badge_rect.position.y >= 16 &&
-			m.badge_rect.get_end().x <= SPLASH_WIDTH && m.badge_rect.get_end().y <= SPLASH_HEIGHT);
+	float dpi_scale = 1.0f;
+	const Vector2i mon_sz = get_primary_monitor_size(nullptr, nullptr, &dpi_scale);
+	(void)render_card(1.0f, String::utf8("Listo"), 0.0f, true, is_brass, &m, mon_sz, dpi_scale);
+	const bool badge_unclipped = (m.badge_rect.position.x >= 0 && m.badge_rect.position.y >= m.inner_frame_rect.position.y &&
+			m.badge_rect.get_end().x <= mon_sz.x && m.badge_rect.get_end().y <= mon_sz.y);
 
 	Dictionary d;
 	d["window_open"] = cg_splash_window_open;
@@ -821,6 +958,8 @@ Dictionary ClockGearsBootSplash::get_last_lifecycle_state() {
 	d["closed_reason"] = cg_splash_closed_reason;
 	d["version_badge_rect"] = m.badge_rect;
 	d["version_badge_unclipped"] = badge_unclipped;
+	d["monitor_size"] = mon_sz;
+	d["inner_frame_rect"] = m.inner_frame_rect;
 	if (OS::get_singleton() && !OS::get_singleton()->get_user_data_dir().is_empty()) {
 		d["trace_log_path"] = OS::get_singleton()->get_user_data_dir().path_join("boot_splash_trace.log");
 	} else {
@@ -899,14 +1038,20 @@ Vector<Vector2> ClockGearsBootSplash::get_rounded_window_polygon(int p_width, in
 	return poly;
 }
 
-Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics) {
+Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics, const Vector2i &p_screen_size, float p_dpi_scale) {
+	const int W = MAX(320, p_screen_size.x);
+	const int H = MAX(200, p_screen_size.y);
+	const float s = MIN((float)W / (float)BASE_DESIGN_WIDTH, (float)H / (float)BASE_DESIGN_HEIGHT);
 	const Palette pal = get_active_palette(p_brass, true);
-	if (!cg_splash_base_valid || cg_splash_base_brass != p_brass || cg_splash_base_bytes.size() != SPLASH_WIDTH * SPLASH_HEIGHT * 4) {
+
+	if (!cg_splash_base_valid || cg_splash_base_brass != p_brass || cg_splash_base_w != W || cg_splash_base_h != H ||
+			!Math::is_equal_approx(cg_splash_base_dpi, p_dpi_scale) || cg_splash_base_bytes.size() != W * H * 4) {
 		cg_splash_cached_metrics = LayoutMetrics();
-		cg_splash_cached_metrics.card_rect = Rect2i(0, 0, SPLASH_WIDTH, SPLASH_HEIGHT);
-		cg_splash_cached_metrics.corner_radius = pal.corner_radius;
-		_build_static_base(cg_splash_base_bytes, pal, cg_splash_cached_metrics);
+		_build_static_base(cg_splash_base_bytes, W, H, p_dpi_scale, pal, cg_splash_cached_metrics);
 		cg_splash_base_brass = p_brass;
+		cg_splash_base_w = W;
+		cg_splash_base_h = H;
+		cg_splash_base_dpi = p_dpi_scale;
 		cg_splash_base_valid = true;
 	}
 
@@ -914,87 +1059,66 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 	uint8_t *dst = frame_bytes.ptrw();
 	LayoutMetrics metrics = cg_splash_cached_metrics;
 
-	// 5. Zona inferior: texto de fase a la izquierda, marca + indicador animado a la derecha, barra ambar fina debajo.
+	// Bloque de la barra de progreso centrado en el tercio inferior, con un ancho de ~40 % de la pantalla.
 	SplashFontCache &fc = get_font_cache();
-	const int pad_x = 28;
-	const int status_baseline = 403;
-	const int bar_x = pad_x;
-	const int bar_y = 416;
-	const int bar_w = SPLASH_WIDTH - pad_x * 2;
-	const int bar_h = 5;
+	const int bar_w = MAX(200, (int)Math::round((float)W * 0.40f));
+	const int bar_h = MAX(6, (int)Math::round(10.0f * s));
+	const int bar_x = (W - bar_w) / 2;
+	const int bar_y = (int)Math::round((float)H * 0.79f);
+	const int status_font_px = MAX(11, (int)Math::round(15.0f * s));
+	const int brand_font_px = MAX(10, (int)Math::round(14.0f * s));
+	const int status_baseline = bar_y - MAX(10, (int)Math::round(14.0f * s));
 
 	const Color status_col = p_completed ? pal.accent_amber : pal.text_primary;
-	metrics.status_rect = fc.draw_text(dst, SPLASH_WIDTH, SPLASH_HEIGHT, p_status, pad_x, status_baseline, 12, status_col, 0.2f, p_completed);
+	metrics.status_rect = fc.draw_text(dst, W, H, p_status, bar_x, status_baseline, status_font_px, status_col, 0.25f * s, p_completed);
 
-	// Indicador animado / estado abajo a la derecha.
-	const float spin_cx = (float)(SPLASH_WIDTH - pad_x - 8);
-	const float spin_cy = 398.5f;
-	const float spin_r = 6.2f;
+	// Indicador giratorio y marca "ClockGears Engine" encima de la barra a la derecha.
+	const float spin_r = MAX(5.0f, 7.5f * s);
+	const float spin_cx = (float)(bar_x + bar_w) - spin_r - 2.0f * s;
+	const float spin_cy = (float)status_baseline - (float)brand_font_px * 0.36f;
+	const float spin_th = MAX(1.3f, 1.8f * s);
 	if (p_completed) {
-		_draw_aa_ring(dst, SPLASH_WIDTH, SPLASH_HEIGHT, spin_cx, spin_cy, spin_r, 1.5f, pal.accent_amber);
-		_draw_aa_disc(dst, SPLASH_WIDTH, SPLASH_HEIGHT, spin_cx, spin_cy, 2.5f, pal.accent_amber);
+		_draw_aa_ring(dst, W, H, spin_cx, spin_cy, spin_r, spin_th, pal.accent_amber);
+		_draw_aa_disc(dst, W, H, spin_cx, spin_cy, MAX(2.2f, 3.2f * s), pal.accent_amber);
 	} else {
-		_draw_aa_ring(dst, SPLASH_WIDTH, SPLASH_HEIGHT, spin_cx, spin_cy, spin_r, 1.4f, Color(pal.accent_amber.r, pal.accent_amber.g, pal.accent_amber.b, 0.25f));
+		_draw_aa_ring(dst, W, H, spin_cx, spin_cy, spin_r, spin_th * 0.85f, Color(pal.accent_amber.r, pal.accent_amber.g, pal.accent_amber.b, 0.25f));
 		const float rad0 = Math::deg_to_rad(p_spinner_deg);
 		const int arc_segs = 18;
 		const float arc_span = 2.6f;
-		for (int s = 0; s < arc_segs; s++) {
-			const float t0 = rad0 + (arc_span * (float)s) / (float)arc_segs;
-			const float t1 = rad0 + (arc_span * (float)(s + 1)) / (float)arc_segs;
-			const float fade = (float)(s + 1) / (float)arc_segs;
-			_draw_aa_line(dst, SPLASH_WIDTH, SPLASH_HEIGHT,
+		for (int seg = 0; seg < arc_segs; seg++) {
+			const float t0 = rad0 + (arc_span * (float)seg) / (float)arc_segs;
+			const float t1 = rad0 + (arc_span * (float)(seg + 1)) / (float)arc_segs;
+			const float fade = (float)(seg + 1) / (float)arc_segs;
+			_draw_aa_line(dst, W, H,
 					spin_cx + cosf(t0) * spin_r, spin_cy + sinf(t0) * spin_r,
 					spin_cx + cosf(t1) * spin_r, spin_cy + sinf(t1) * spin_r,
-					1.6f, Color(pal.accent_amber.r, pal.accent_amber.g, pal.accent_amber.b, fade));
+					spin_th, Color(pal.accent_amber.r, pal.accent_amber.g, pal.accent_amber.b, fade));
 		}
 	}
 
 	const String right_txt = String::utf8("ClockGears Engine");
-	const int right_w = fc.measure_text_width(right_txt, 11, 0.2f);
-	const int right_x = (int)spin_cx - 14 - right_w;
-	metrics.right_brand_rect = fc.draw_text(dst, SPLASH_WIDTH, SPLASH_HEIGHT, right_txt, right_x, status_baseline, 11, pal.text_secondary, 0.2f, false);
+	const int right_w = fc.measure_text_width(right_txt, brand_font_px, 0.25f * s);
+	const int right_x = (int)Math::round(spin_cx - spin_r - MAX(8.0f, 10.0f * s)) - right_w;
+	metrics.right_brand_rect = fc.draw_text(dst, W, H, right_txt, right_x, status_baseline, brand_font_px, pal.text_secondary, 0.25f * s, false);
 
-	// Barra de progreso fina ambar.
+	// Barra de progreso redondeada (10 px de alto a 1080p).
+	const float bar_rad = (float)bar_h * 0.5f;
 	metrics.progress_bar_rect = Rect2i(bar_x, bar_y, bar_w, bar_h);
-	_draw_filled_rounded_rect(dst, SPLASH_WIDTH, SPLASH_HEIGHT, (float)bar_x, (float)bar_y, (float)bar_w, (float)bar_h, 2.5f,
-			pal.progress_track, Color(pal.card_border.r, pal.card_border.g, pal.card_border.b, 0.28f), 1.0f);
+	_draw_filled_rounded_rect(dst, W, H, (float)bar_x, (float)bar_y, (float)bar_w, (float)bar_h, bar_rad,
+			pal.progress_track, Color(pal.card_border.r, pal.card_border.g, pal.card_border.b, 0.34f), MAX(1.0f, s));
 
 	const float frac = _clamp01(p_progress);
 	if (frac > 0.001f) {
-		const float fill_w = MAX(5.0f, (float)bar_w * frac);
-		const Color fill_hi = pal.progress_fill.lightened(0.18f);
+		const float fill_w = MAX((float)bar_h, (float)bar_w * frac);
+		const Color fill_hi = pal.progress_fill.lightened(0.20f);
 		for (int y = bar_y; y < bar_y + bar_h; y++) {
+			const float row_t = (float)(y - bar_y) / (float)MAX(1, bar_h - 1);
+			const Color row_col = fill_hi.lerp(pal.progress_fill, row_t);
 			for (int x = bar_x; x < (int)ceilf((float)bar_x + fill_w); x++) {
-				const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, (float)bar_x, (float)bar_y, fill_w, (float)bar_h, 2.5f);
+				const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, (float)bar_x, (float)bar_y, fill_w, (float)bar_h, bar_rad);
 				if (d < 1.0f) {
-					const float cov = _clamp01(1.0f - d);
-					const Color bar_c = (y == bar_y) ? fill_hi : pal.progress_fill;
-					_blend_pixel_rgba(dst, SPLASH_WIDTH, SPLASH_HEIGHT, x, y, bar_c, cov);
+					_blend_pixel_rgba(dst, W, H, x, y, row_col, _clamp01(1.0f - d));
 				}
-			}
-		}
-	}
-
-	// 6. Esquinas suavemente redondeadas y borde cobrizo fino de 1 px sobre toda la tarjeta.
-	const float r_card = (float)pal.corner_radius;
-	const float bw_card = (float)pal.border_width;
-	for (int y = 0; y < SPLASH_HEIGHT; y++) {
-		for (int x = 0; x < SPLASH_WIDTH; x++) {
-			// Salto rapido del interior seguro
-			if (x >= (int)r_card + 3 && x < SPLASH_WIDTH - (int)r_card - 3 &&
-					y >= (int)r_card + 3 && y < SPLASH_HEIGHT - (int)r_card - 3) {
-				continue;
-			}
-			const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, 0.0f, 0.0f, (float)SPLASH_WIDTH, (float)SPLASH_HEIGHT, r_card);
-			uint8_t *px = dst + ((y * SPLASH_WIDTH + x) * 4);
-			if (d >= 0.6f) {
-				// Fuera de la esquina redondeada: transparente para la tarjeta.
-				px[3] = 0;
-			} else if (d > -bw_card - 0.8f) {
-				const float outer_cov = _clamp01(0.6f - d);
-				const float border_cov = _clamp01(1.0f - fabsf(d + bw_card * 0.5f)) * outer_cov;
-				_blend_pixel_rgba(dst, SPLASH_WIDTH, SPLASH_HEIGHT, x, y, pal.card_border, border_cov);
-				px[3] = (uint8_t)Math::round(outer_cov * 255.0f);
 			}
 		}
 	}
@@ -1003,7 +1127,7 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 		*r_metrics = metrics;
 	}
 
-	Ref<Image> img = Image::create_from_data(SPLASH_WIDTH, SPLASH_HEIGHT, false, Image::FORMAT_RGBA8, frame_bytes);
+	Ref<Image> img = Image::create_from_data(W, H, false, Image::FORMAT_RGBA8, frame_bytes);
 	return img;
 }
 
@@ -1016,7 +1140,9 @@ void ClockGearsBootSplash::present_stage(int p_stage, int p_total_stages, const 
 	const float spinner_deg = (float)(stage * 64 + (int)((OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0) % 360));
 	const bool is_brass = is_saved_brass_theme();
 
-	Ref<Image> card = render_card(progress, full_status, spinner_deg, p_completed, is_brass);
+	float dpi_scale = 1.0f;
+	const Vector2i mon_sz = get_primary_monitor_size(nullptr, nullptr, &dpi_scale);
+	Ref<Image> card = render_card(progress, full_status, spinner_deg, p_completed, is_brass, nullptr, mon_sz, dpi_scale);
 	cg_splash_last_card = card;
 
 	if (!cg_splash_window_open && !p_completed) {

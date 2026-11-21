@@ -188,43 +188,50 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	const int pct = (int)Math::round(progress * 100.0f);
 	const String full_status = completed ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
 
+	const Vector2i target_size(MAX(320, p_screen_size.x), MAX(200, p_screen_size.y));
 	ClockGearsBootSplash::LayoutMetrics metrics;
-	Ref<Image> img = ClockGearsBootSplash::render_card(progress, full_status, (float)(stage * 64), completed, p_brass, &metrics);
+	Ref<Image> img = ClockGearsBootSplash::render_card(progress, full_status, (float)(stage * 64), completed, p_brass, &metrics, target_size, 1.0f);
 	ERR_FAIL_COND_V(img.is_null(), out);
 
 	if (!p_save_png_path.is_empty()) {
 		img->save_png(p_save_png_path);
 	}
 
-	const Vector2i win_size(ClockGearsBootSplash::SPLASH_WIDTH, ClockGearsBootSplash::SPLASH_HEIGHT);
-	const Vector2i centered_pos = (p_screen_size - win_size) / 2;
-	const Rect2i centered_rect(centered_pos, win_size);
-	const bool fits_screen = (centered_pos.x >= 0 && centered_pos.y >= 0 && centered_rect.get_end().x <= p_screen_size.x && centered_rect.get_end().y <= p_screen_size.y);
+	const Rect2i fullscreen_rect(Vector2i(0, 0), target_size);
+	const bool fits_screen = (img->get_width() == target_size.x && img->get_height() == target_size.y);
 
 	const Color corner_outer = img->get_pixel(0, 0);
-	const Color top_border_px = img->get_pixel(ClockGearsBootSplash::SPLASH_WIDTH / 2, 0);
-	const Color center_bg_px = img->get_pixel(ClockGearsBootSplash::SPLASH_WIDTH / 2, 340);
+	const int top_border_y = CLAMP(metrics.inner_frame_rect.position.y, 0, img->get_height() - 1);
+	const Color top_border_px = img->get_pixel(img->get_width() / 2, top_border_y);
+	const Color center_bg_px = img->get_pixel(img->get_width() / 2, CLAMP((int)(img->get_height() * 0.72f), 0, img->get_height() - 1));
 
-	// Medir ancho real ocupado por la parte rellena de la barra de progreso ambar.
+	// Medir ancho real ocupado por la parte rellena de la barra de progreso ámbar.
 	int filled_bar_px = 0;
-	const int bar_sample_y = metrics.progress_bar_rect.position.y + metrics.progress_bar_rect.size.y / 2;
+	const int bar_sample_y = CLAMP(metrics.progress_bar_rect.position.y + metrics.progress_bar_rect.size.y / 2, 0, img->get_height() - 1);
 	const SplashPalette pal = get_splash_palette(p_brass);
 	for (int x = metrics.progress_bar_rect.position.x; x < metrics.progress_bar_rect.get_end().x; x++) {
-		const Color px = img->get_pixel(x, bar_sample_y);
-		if (px.r > pal.progress_fill.r * 0.70f && px.g > pal.progress_fill.g * 0.55f) {
+		const Color px = img->get_pixel(CLAMP(x, 0, img->get_width() - 1), bar_sample_y);
+		if (px.r > pal.progress_fill.r * 0.65f && px.g > pal.progress_fill.g * 0.50f) {
 			filled_bar_px++;
 		}
 	}
 
 	out["width"] = img->get_width();
 	out["height"] = img->get_height();
-	out["aspect_ratio_16_9"] = Math::is_equal_approx((double)img->get_width() / (double)img->get_height(), 16.0 / 9.0, 0.005);
-	out["centered_rect"] = centered_rect;
+	out["is_fullscreen"] = (img->get_width() == target_size.x && img->get_height() == target_size.y);
+	out["aspect_ratio_16_9"] = Math::is_equal_approx((double)img->get_width() / (double)img->get_height(), 16.0 / 9.0, 0.01);
+	out["centered_rect"] = fullscreen_rect;
 	out["fits_screen"] = fits_screen;
 	out["corner_outer_alpha"] = corner_outer.a;
 	out["top_border_color"] = top_border_px;
 	out["center_bg_color"] = center_bg_px;
 	out["expected_border_color"] = pal.card_border;
+	out["inner_frame_rect"] = metrics.inner_frame_rect;
+	out["frame_inset"] = metrics.frame_inset;
+	out["icon_scale_multiple"] = metrics.icon_scale_multiple;
+	out["ornament_gear_count"] = metrics.ornament_gear_count;
+	out["circuit_trace_count"] = metrics.circuit_trace_count;
+	out["layout_scale"] = metrics.layout_scale;
 	out["icon_rect"] = metrics.icon_rect;
 	out["badge_rect"] = metrics.badge_rect;
 	out["title_rect"] = metrics.title_rect;
@@ -233,11 +240,12 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	out["status_rect"] = metrics.status_rect;
 	out["right_brand_rect"] = metrics.right_brand_rect;
 	out["progress_bar_rect"] = metrics.progress_bar_rect;
+	out["bar_width_ratio"] = (float)metrics.progress_bar_rect.size.x / (float)MAX(1, img->get_width());
 	out["filled_bar_px"] = filled_bar_px;
 	out["status_text"] = full_status;
 	out["version_text"] = String::utf8(CLOCKGEARS_SPLASH_VERSION);
 	out["corner_radius"] = metrics.corner_radius;
-	out["polygon_points"] = ClockGearsBootSplash::get_rounded_window_polygon().size();
+	out["polygon_points"] = ClockGearsBootSplash::get_rounded_window_polygon(target_size.x, target_size.y).size();
 	return out;
 }
 
