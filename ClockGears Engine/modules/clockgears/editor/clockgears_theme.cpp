@@ -361,6 +361,202 @@ Ref<StyleBoxFlat> ClockGearsTheme::make_input_stylebox(bool p_has_error, bool p_
 	return sb;
 }
 
+static void _cg_populate_project_manager_styles(const Ref<Theme> &th, bool p_brass, bool p_light, float p_scale, const Color &bg, const Color &panel_col, const Color &container_border, const Color &accent, const Color &txt, const Color &txt_sec, const Color &txt_dis) {
+	const int r6 = int(6 * p_scale);
+	const int r4 = int(4 * p_scale);
+	const int m4 = int(4 * p_scale);
+	const int m6 = int(6 * p_scale);
+	const int m8 = int(8 * p_scale);
+	const int m12 = int(12 * p_scale);
+	const Color sunken_bg = ClockGearsTheme::color_sunken_list_bg(p_brass, p_light);
+	const Color sunken_bd = ClockGearsTheme::color_sunken_list_border(p_brass, p_light);
+	const Color err_col = ClockGearsTheme::color_error();
+
+	th->set_color("background", "ClockGears", bg);
+	Ref<StyleBoxFlat> sb_win_bg;
+	sb_win_bg.instantiate();
+	sb_win_bg->set_bg_color(bg);
+	th->set_stylebox("Background", "EditorStyles", sb_win_bg);
+
+	// Botón principal en relleno ámbar ("ClockGearsPrimaryButton")
+	const Color cta_dark_txt = p_light ? Color::html("#171512") : ClockGearsTheme::color_brass_bg();
+	Ref<StyleBoxFlat> cta_n;
+	cta_n.instantiate();
+	cta_n->set_anti_aliased(true);
+	cta_n->set_bg_color(accent);
+	cta_n->set_corner_radius_all(r6);
+	cta_n->set_border_width_all(1);
+	cta_n->set_border_color(accent.lightened(0.22f));
+	cta_n->set_content_margin_individual(m12, m6, m12, m6);
+
+	Ref<StyleBoxFlat> cta_h = cta_n->duplicate();
+	cta_h->set_bg_color(accent.lightened(0.10f));
+	cta_h->set_border_color(Color::html("#ffe09c"));
+
+	Ref<StyleBoxFlat> cta_p = cta_n->duplicate();
+	cta_p->set_bg_color(accent.darkened(0.16f));
+	cta_p->set_border_color(accent);
+
+	Ref<StyleBoxFlat> cta_dis = cta_n->duplicate();
+	cta_dis->set_bg_color(panel_col.lerp(accent, 0.14f));
+	cta_dis->set_border_color(Color(container_border.r, container_border.g, container_border.b, 0.25f));
+
+	th->set_type_variation("ClockGearsPrimaryButton", "Button");
+	th->set_stylebox("normal", "ClockGearsPrimaryButton", cta_n);
+	th->set_stylebox("hover", "ClockGearsPrimaryButton", cta_h);
+	th->set_stylebox("pressed", "ClockGearsPrimaryButton", cta_p);
+	th->set_stylebox("hover_pressed", "ClockGearsPrimaryButton", cta_p);
+	th->set_stylebox("disabled", "ClockGearsPrimaryButton", cta_dis);
+	th->set_color("font_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("font_hover_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("font_pressed_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("font_hover_pressed_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("font_focus_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("font_disabled_color", "ClockGearsPrimaryButton", txt_dis);
+	th->set_color("icon_normal_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("icon_hover_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("icon_pressed_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("icon_hover_pressed_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("icon_focus_color", "ClockGearsPrimaryButton", cta_dark_txt);
+	th->set_color("icon_disabled_color", "ClockGearsPrimaryButton", Color(txt_dis.r, txt_dis.g, txt_dis.b, 0.55f));
+	th->set_constant("h_separation", "ClockGearsPrimaryButton", m6);
+
+	// Barra de cabecera y paneles del Administrador de proyectos
+	Ref<StyleBoxFlat> sb_header;
+	sb_header.instantiate();
+	sb_header->set_anti_aliased(true);
+	sb_header->set_bg_color(p_brass ? ClockGearsTheme::color_brass_header() : (p_light ? Color::html("#e8ebf2") : panel_col.darkened(0.08f)));
+	sb_header->set_corner_radius_all(r6);
+	sb_header->set_border_width_all(1);
+	sb_header->set_border_color(container_border);
+	sb_header->set_content_margin_individual(m12, m8, m12, m8);
+	th->set_type_variation("ProjectHeaderBar", "PanelContainer");
+	th->set_stylebox("panel", "ProjectHeaderBar", sb_header);
+
+	Ref<StyleBoxFlat> sb_pm_container;
+	sb_pm_container.instantiate();
+	sb_pm_container->set_draw_center(false);
+	sb_pm_container->set_content_margin_all(0);
+
+	Ref<StyleBoxFlat> sb_pm_list;
+	sb_pm_list.instantiate();
+	sb_pm_list->set_anti_aliased(true);
+	sb_pm_list->set_bg_color(sunken_bg);
+	sb_pm_list->set_corner_radius_all(r6);
+	sb_pm_list->set_border_width_all(1);
+	sb_pm_list->set_border_color(sunken_bd);
+	sb_pm_list->set_content_margin_all(m8);
+
+	Ref<StyleBoxFlat> sb_action_panel;
+	sb_action_panel.instantiate();
+	sb_action_panel->set_anti_aliased(true);
+	sb_action_panel->set_bg_color(panel_col);
+	sb_action_panel->set_corner_radius_all(r6);
+	sb_action_panel->set_border_width_all(1);
+	sb_action_panel->set_border_color(container_border);
+	sb_action_panel->set_content_margin_all(m12);
+
+	Ref<StyleBoxFlat> sb_preview_card = sb_pm_list->duplicate();
+	sb_preview_card->set_border_color(Color(container_border.r, container_border.g, container_border.b, 0.45f));
+	sb_preview_card->set_content_margin_individual(m8, m8, m8, m8);
+
+	Ref<StyleBoxFlat> sb_pm_bg;
+	sb_pm_bg.instantiate();
+	sb_pm_bg->set_bg_color(bg);
+
+	th->set_stylebox("background_panel", "ProjectManager", sb_pm_bg);
+	th->set_color("background_color", "ProjectManager", bg);
+	th->set_stylebox("panel_container", "ProjectManager", sb_pm_container);
+	th->set_stylebox("project_list", "ProjectManager", sb_pm_list);
+	th->set_stylebox("quick_settings_panel", "ProjectManager", sb_pm_list);
+	th->set_stylebox("action_panel", "ProjectManager", sb_action_panel);
+	th->set_stylebox("preview_card", "ProjectManager", sb_preview_card);
+	th->set_constant("sidebar_button_icon_separation", "ProjectManager", m6);
+	th->set_color("subtitle_color", "ProjectManager", txt_sec);
+	th->set_color("empty_title_color", "ProjectManager", txt);
+	th->set_color("empty_sub_color", "ProjectManager", txt_sec);
+	th->set_color("accent_color", "ProjectManager", accent);
+
+	// Tarjetas de ProjectList (esquinas 6 px, borde fino, seleccionada con borde cobrizo y tinte ámbar suave)
+	Ref<StyleBoxFlat> card_normal;
+	card_normal.instantiate();
+	card_normal->set_anti_aliased(true);
+	card_normal->set_bg_color(panel_col);
+	card_normal->set_corner_radius_all(r6);
+	card_normal->set_border_width_all(1);
+	card_normal->set_border_color(Color(container_border.r, container_border.g, container_border.b, p_light ? 0.30f : 0.26f));
+	card_normal->set_content_margin_individual(m8, m4, m8, m4);
+
+	Ref<StyleBoxFlat> card_hover = card_normal->duplicate();
+	card_hover->set_bg_color(p_light ? panel_col.darkened(0.03f) : panel_col.lightened(0.06f));
+	card_hover->set_border_color(Color(accent.r, accent.g, accent.b, 0.56f));
+
+	Ref<StyleBoxFlat> card_selected = card_normal->duplicate();
+	card_selected->set_bg_color(panel_col.lerp(accent, p_light ? 0.16f : 0.14f));
+	card_selected->set_border_color(accent);
+
+	Ref<StyleBoxFlat> card_hover_pressed = card_normal->duplicate();
+	card_hover_pressed->set_bg_color(panel_col.lerp(accent, p_light ? 0.22f : 0.19f));
+	card_hover_pressed->set_border_color(accent.lightened(0.14f));
+
+	Ref<StyleBoxFlat> card_missing = card_normal->duplicate();
+	card_missing->set_bg_color(sunken_bg);
+	card_missing->set_border_color(Color(err_col.r, err_col.g, err_col.b, 0.42f));
+
+	Ref<StyleBoxFlat> card_focus = card_normal->duplicate();
+	card_focus->set_draw_center(false);
+	card_focus->set_border_color(accent.lightened(0.10f));
+
+	th->set_stylebox("normal", "ProjectList", card_normal);
+	th->set_stylebox("hovered", "ProjectList", card_hover);
+	th->set_stylebox("selected", "ProjectList", card_selected);
+	th->set_stylebox("hover_pressed", "ProjectList", card_hover_pressed);
+	th->set_stylebox("missing", "ProjectList", card_missing);
+	th->set_stylebox("focus", "ProjectList", card_focus);
+	th->set_color("font_color", "ProjectList", txt);
+	th->set_color("path_color", "ProjectList", txt_sec);
+	th->set_color("date_color", "ProjectList", txt_sec);
+	th->set_color("favorite_color", "ProjectList", accent);
+	th->set_color("guide_color", "ProjectList", Color(0, 0, 0, 0));
+
+	// Insignias de versión, faltante y etiquetas
+	Ref<StyleBoxFlat> ver_badge;
+	ver_badge.instantiate();
+	ver_badge->set_anti_aliased(true);
+	ver_badge->set_bg_color(sunken_bg);
+	ver_badge->set_corner_radius_all(r4);
+	ver_badge->set_border_width_all(1);
+	ver_badge->set_border_color(Color(container_border.r, container_border.g, container_border.b, 0.36f));
+	ver_badge->set_content_margin_individual(m6, int(1 * p_scale), m6, int(1 * p_scale));
+	th->set_type_variation("ProjectVersionBadge", "Label");
+	th->set_stylebox("normal", "ProjectVersionBadge", ver_badge);
+	th->set_color("font_color", "ProjectVersionBadge", txt_sec);
+
+	Ref<StyleBoxFlat> miss_badge = ver_badge->duplicate();
+	miss_badge->set_bg_color(Color(err_col.r, err_col.g, err_col.b, 0.16f));
+	miss_badge->set_border_color(Color(err_col.r, err_col.g, err_col.b, 0.72f));
+	th->set_type_variation("ProjectMissingBadge", "Label");
+	th->set_stylebox("normal", "ProjectMissingBadge", miss_badge);
+	th->set_color("font_color", "ProjectMissingBadge", p_brass ? Color::html("#ff9e96") : err_col);
+
+	Ref<StyleBoxFlat> tag_sb;
+	tag_sb.instantiate();
+	tag_sb->set_anti_aliased(true);
+	tag_sb->set_bg_color(sunken_bg);
+	tag_sb->set_corner_radius_all(r4);
+	tag_sb->set_border_width_all(1);
+	tag_sb->set_border_color(Color(container_border.r, container_border.g, container_border.b, 0.42f));
+	tag_sb->set_content_margin_individual(m6, int(1 * p_scale), m6, int(1 * p_scale));
+	Ref<StyleBoxFlat> tag_hov = tag_sb->duplicate();
+	tag_hov->set_border_color(accent);
+	th->set_type_variation("ProjectTagButton", "Button");
+	th->set_stylebox("normal", "ProjectTagButton", tag_sb);
+	th->set_stylebox("hover", "ProjectTagButton", tag_hov);
+	th->set_stylebox("pressed", "ProjectTagButton", tag_hov);
+	th->set_color("font_color", "ProjectTagButton", txt);
+	th->set_color("font_hover_color", "ProjectTagButton", accent);
+}
+
 Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_has_editor_base) const {
 	Ref<Theme> th;
 	bool has_base = false;
@@ -866,6 +1062,8 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_constant("v_separation", "VFlowContainer", m8);
 	th->set_constant("h_separation", "GridContainer", m8);
 	th->set_constant("v_separation", "GridContainer", m8);
+
+	_cg_populate_project_manager_styles(th, false, p_light, p_scale, bg, panel_col, container_border, accent, txt, txt_sec, txt_dis);
 
 	return th;
 }
@@ -1515,6 +1713,8 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_constant("v_separation", "VFlowContainer", m8);
 	th->set_constant("h_separation", "GridContainer", m8);
 	th->set_constant("v_separation", "GridContainer", m8);
+
+	_cg_populate_project_manager_styles(th, true, false, p_scale, bg, panel_col, container_border, accent, txt, txt_sec, txt_dis);
 
 	return th;
 }

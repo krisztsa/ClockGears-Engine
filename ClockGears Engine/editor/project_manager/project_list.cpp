@@ -34,6 +34,7 @@
 #include "core/input/input.h"
 #include "core/io/dir_access.h"
 #include "core/object/callable_mp.h"
+#include "core/object/class_db.h"
 #include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/version.h"
@@ -50,9 +51,11 @@
 #include "scene/gui/line_edit.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/progress_bar.h"
+#include "scene/gui/scroll_bar.h"
 #include "scene/gui/texture_button.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/style_box_flat.h"
 #include "servers/display/accessibility_server.h"
 #include "servers/display/display_server.h"
 
@@ -60,18 +63,28 @@ void ProjectListItemControl::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			if (icon_needs_reload) {
-				// The project icon may not be loaded by the time the control is displayed,
-				// so use a loading placeholder.
 				project_icon->set_texture(get_editor_theme_icon(SNAME("ProjectIconLoading")));
 			}
 
 			project_title->begin_bulk_theme_override();
-			project_title->add_theme_font_override(SceneStringName(font), get_theme_font(SNAME("title"), EditorStringName(EditorFonts)));
-			project_title->add_theme_font_size_override(SceneStringName(font_size), get_theme_font_size(SNAME("title_size"), EditorStringName(EditorFonts)));
+			project_title->add_theme_font_override(SceneStringName(font), get_theme_font(SNAME("bold"), EditorStringName(EditorFonts)));
+			project_title->add_theme_font_size_override(SceneStringName(font_size), get_theme_font_size(SNAME("main_size"), EditorStringName(EditorFonts)) + int(1 * EDSCALE));
 			project_title->add_theme_color_override(SceneStringName(font_color), get_theme_color(SceneStringName(font_color), SNAME("ProjectList")));
 			project_title->end_bulk_theme_override();
 
-			project_path->add_theme_color_override(SceneStringName(font_color), get_theme_color(SceneStringName(font_color), SNAME("ProjectList")));
+			project_path->begin_bulk_theme_override();
+			project_path->add_theme_font_size_override(SceneStringName(font_size), MAX(11, get_theme_font_size(SNAME("main_size"), EditorStringName(EditorFonts)) - int(1 * EDSCALE)));
+			project_path->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("path_color"), SNAME("ProjectList")));
+			project_path->end_bulk_theme_override();
+
+			last_edited_info->begin_bulk_theme_override();
+			last_edited_info->add_theme_font_size_override(SceneStringName(font_size), MAX(11, get_theme_font_size(SNAME("main_size"), EditorStringName(EditorFonts)) - int(2 * EDSCALE)));
+			last_edited_info->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("date_color"), SNAME("ProjectList")));
+			last_edited_info->end_bulk_theme_override();
+
+			const int badge_sz = MAX(10, get_theme_font_size(SNAME("main_size"), EditorStringName(EditorFonts)) - int(2 * EDSCALE));
+			project_version->add_theme_font_size_override(SceneStringName(font_size), badge_sz);
+			missing_badge->add_theme_font_size_override(SceneStringName(font_size), badge_sz);
 
 			switch (version_match_type) {
 				case VersionMatchType::PROJECT_USES_OLDER_MAJOR:
@@ -93,23 +106,28 @@ void ProjectListItemControl::_notification(int p_what) {
 			project_unsupported_features->set_texture(get_editor_theme_icon(SNAME("NodeWarning")));
 
 			favorite_focus_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+			favorite_active_color = has_theme_color(SNAME("favorite_color"), SNAME("ProjectList"))
+					? get_theme_color(SNAME("favorite_color"), SNAME("ProjectList"))
+					: favorite_focus_color;
+			_update_favorite_icon();
 			_update_favorite_button_focus_color();
-			if (is_favorite) {
-				favorite_button->set_texture_normal(get_editor_theme_icon(SNAME("Favorites")));
-			} else {
-				favorite_button->set_texture_normal(get_editor_theme_icon(SNAME("Unfavorite")));
-			}
 
 			if (project_is_missing) {
 				explore_button->set_button_icon(get_editor_theme_icon(SNAME("FileBroken")));
 #if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
 			} else {
-				explore_button->set_button_icon(get_editor_theme_icon(SNAME("Load")));
+				explore_button->set_button_icon(get_editor_theme_icon(SNAME("ClockGearsFolderLine")));
 #endif
 			}
 			if (touch_menu_button) {
 				touch_menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
 			}
+			_update_path_display();
+			queue_redraw();
+		} break;
+
+		case NOTIFICATION_RESIZED: {
+			_update_path_display();
 		} break;
 
 		case NOTIFICATION_MOUSE_ENTER: {
@@ -137,64 +155,54 @@ void ProjectListItemControl::_notification(int p_what) {
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_FOCUS, callable_mp(this, &ProjectListItemControl::_accessibility_action_focus));
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_BLUR, callable_mp(this, &ProjectListItemControl::_accessibility_action_blur));
 
-			ProjectList *pl = get_list();
-			if (pl) {
-				AccessibilityServer::get_singleton()->update_set_list_item_index(ae, pl->get_index(this));
-			}
+			AccessibilityServer::get_singleton()->update_set_list_item_index(ae, bound_project_index);
 			AccessibilityServer::get_singleton()->update_set_list_item_level(ae, 0);
 			AccessibilityServer::get_singleton()->update_set_list_item_selected(ae, is_selected);
 		} break;
 
 		case NOTIFICATION_FOCUS_ENTER: {
 			ProjectList *pl = get_list();
-			if (pl) {
-				int idx = pl->get_index(this);
-				if (idx >= 0) {
-					// has_focus(true) is false on mouse-initiated focus, true on keyboard navigation.
-					pl->select_project(idx, !has_focus(true));
-
-					pl->emit_signal(SNAME(ProjectList::SIGNAL_SELECTION_CHANGED));
-				}
+			if (pl && bound_project_index >= 0) {
+				pl->select_project(bound_project_index, !has_focus(true));
+				pl->emit_signal(SNAME(ProjectList::SIGNAL_SELECTION_CHANGED));
 			}
 		} break;
 
 		case NOTIFICATION_DRAW: {
+			const Rect2 r(Point2(), get_size());
 			if (is_selected && is_hovering) {
-				draw_style_box(get_theme_stylebox(SNAME("hover_pressed"), SNAME("ProjectList")), Rect2(Point2(), get_size()));
+				draw_style_box(get_theme_stylebox(SNAME("hover_pressed"), SNAME("ProjectList")), r);
 			} else if (is_selected) {
-				draw_style_box(get_theme_stylebox(SNAME("selected"), SNAME("ProjectList")), Rect2(Point2(), get_size()));
+				draw_style_box(get_theme_stylebox(SNAME("selected"), SNAME("ProjectList")), r);
 			} else if (is_hovering) {
-				draw_style_box(get_theme_stylebox(SNAME("hovered"), SNAME("ProjectList")), Rect2(Point2(), get_size()));
+				draw_style_box(get_theme_stylebox(SNAME("hovered"), SNAME("ProjectList")), r);
+			} else if (project_is_missing && has_theme_stylebox(SNAME("missing"), SNAME("ProjectList"))) {
+				draw_style_box(get_theme_stylebox(SNAME("missing"), SNAME("ProjectList")), r);
+			} else if (has_theme_stylebox(CoreStringName(normal), SNAME("ProjectList"))) {
+				draw_style_box(get_theme_stylebox(CoreStringName(normal), SNAME("ProjectList")), r);
 			}
-			// Due to how this control works, we can't rely on the built-in way of checking for focus visibility.
 			if (has_focus() && !is_focus_hidden) {
-				draw_style_box(get_theme_stylebox(SNAME("focus"), SNAME("ProjectList")), Rect2(Point2(), get_size()));
+				draw_style_box(get_theme_stylebox(SNAME("focus"), SNAME("ProjectList")), r);
 			}
-
-			draw_line(Point2(0, get_size().y + 1), Point2(get_size().x, get_size().y + 1), get_theme_color(SNAME("guide_color"), SNAME("ProjectList")));
 		} break;
 
 		case NOTIFICATION_READY: {
-			set_project_title_autowrap();
+			_update_path_display();
 		} break;
 	}
 }
 
 ProjectList *ProjectListItemControl::get_list() const {
-	if (!is_inside_tree()) {
+	if (!is_inside_tree() || !get_parent()) {
 		return nullptr;
 	}
-	ProjectList *pl = Object::cast_to<ProjectList>(get_parent()->get_parent());
-	return pl;
+	return Object::cast_to<ProjectList>(get_parent()->get_parent());
 }
 
 void ProjectListItemControl::_accessibility_action_scroll_into_view(const Variant &p_data) {
 	ProjectList *pl = get_list();
-	if (pl) {
-		int idx = pl->get_index(this);
-		if (idx >= 0) {
-			pl->ensure_project_visible(idx);
-		}
+	if (pl && bound_project_index >= 0) {
+		pl->ensure_project_visible(bound_project_index);
 	}
 }
 
@@ -207,31 +215,156 @@ void ProjectListItemControl::_accessibility_action_open(const Variant &p_data) {
 
 void ProjectListItemControl::_accessibility_action_focus(const Variant &p_data) {
 	ProjectList *pl = get_list();
-	if (pl) {
-		int idx = pl->get_index(this);
-		if (idx >= 0) {
-			pl->ensure_project_visible(idx);
-			pl->select_project(idx);
-		}
+	if (pl && bound_project_index >= 0) {
+		pl->ensure_project_visible(bound_project_index);
+		pl->select_project(bound_project_index);
 	}
 }
 
 void ProjectListItemControl::_accessibility_action_blur(const Variant &p_data) {
 	ProjectList *pl = get_list();
-	if (pl) {
-		int idx = pl->get_index(this);
-		if (idx >= 0) {
-			pl->ensure_project_visible(idx);
-			pl->deselect_project(idx);
-		}
+	if (pl && bound_project_index >= 0) {
+		pl->ensure_project_visible(bound_project_index);
+		pl->deselect_project(bound_project_index);
 	}
 }
+
+void ProjectListItemControl::_update_favorite_icon() {
+	if (!favorite_button) {
+		return;
+	}
+	if (is_favorite) {
+		favorite_button->set_texture_normal(get_editor_theme_icon(SNAME("Favorites")));
+		favorite_button->set_accessibility_name(TTRC("Remove from Favorites"));
+	} else {
+		favorite_button->set_texture_normal(get_editor_theme_icon(SNAME("Unfavorite")));
+		favorite_button->set_accessibility_name(TTRC("Add to Favorites"));
+	}
+	_update_favorite_button_focus_color();
+}
+
 void ProjectListItemControl::_update_favorite_button_focus_color() {
 	if (favorite_button->has_focus()) {
 		favorite_button->set_self_modulate(favorite_focus_color);
+	} else if (is_favorite) {
+		favorite_button->set_self_modulate(favorite_active_color);
 	} else {
-		favorite_button->set_self_modulate(Color(1.0, 1.0, 1.0, 1.0));
+		favorite_button->set_self_modulate(Color(1.0, 1.0, 1.0, 0.55));
 	}
+}
+
+void ProjectListItemControl::_update_path_display() {
+	if (!project_path) {
+		return;
+	}
+	project_path->set_tooltip_text(full_path_cache);
+	const Ref<Font> font = project_path->get_theme_font(SceneStringName(font));
+	const int font_size = project_path->get_theme_font_size(SceneStringName(font_size));
+	float max_w = project_path->get_size().x;
+	if (card_view_mode == ProjectList::VIEW_GRID && get_size().x > 80.0f) {
+		const float grid_budget = MAX(90.0f, get_size().x - 56.0f * EDSCALE);
+		max_w = (max_w > 8.0f) ? MIN(max_w, grid_budget) : grid_budget;
+	} else if (max_w <= 8.0f && get_size().x > 80.0f) {
+		max_w = MAX(110.0f, get_size().x - 320.0f * EDSCALE);
+	}
+	if (max_w > 8.0f && font.is_valid()) {
+		project_path->set_text(ProjectList::elide_path_middle(full_path_cache, font, font_size, max_w));
+	} else {
+		project_path->set_text(full_path_cache);
+	}
+}
+
+void ProjectListItemControl::apply_view_mode(int p_view_mode) {
+	if (card_view_mode == p_view_mode && ((p_view_mode == 0 && root_hbox->is_visible()) || (p_view_mode == 1 && root_vbox->is_visible()))) {
+		return;
+	}
+	card_view_mode = p_view_mode;
+
+	// Mover controles compartidos entre diseño horizontal (Lista) y vertical (Cuadrícula)
+	auto _reparent_to = [](Control *p_node, Node *p_new_parent) {
+		if (!p_node || !p_new_parent || p_node->get_parent() == p_new_parent) {
+			return;
+		}
+		if (p_node->get_parent()) {
+			p_node->get_parent()->remove_child(p_node);
+		}
+		p_new_parent->add_child(p_node);
+	};
+
+	if (p_view_mode == ProjectList::VIEW_GRID) {
+		root_hbox->hide();
+		root_vbox->show();
+
+		_reparent_to(favorite_button, grid_top_hb);
+		if (favorite_button->get_parent() == grid_top_hb) {
+			grid_top_hb->move_child(favorite_button, 0);
+		}
+		_reparent_to(missing_badge, grid_top_hb);
+		_reparent_to(project_version, grid_top_hb);
+
+		_reparent_to(project_icon, root_vbox);
+		_reparent_to(main_vbox, root_vbox);
+		_reparent_to(last_edited_info, root_vbox);
+		_reparent_to(tag_container, root_vbox);
+
+		root_vbox->move_child(grid_top_hb, 0);
+		root_vbox->move_child(project_icon, 1);
+		root_vbox->move_child(main_vbox, 2);
+		root_vbox->move_child(last_edited_info, 3);
+		root_vbox->move_child(tag_container, 4);
+
+		project_icon->set_custom_minimum_size(Size2(48, 48) * EDSCALE);
+		project_icon->set_h_size_flags(SIZE_SHRINK_CENTER);
+		main_vbox->set_v_size_flags(SIZE_SHRINK_CENTER);
+		project_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		project_path->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		last_edited_info->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		tag_container->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	} else {
+		root_vbox->hide();
+		root_hbox->show();
+
+		_reparent_to(favorite_button, root_hbox);
+		_reparent_to(project_icon, root_hbox);
+		_reparent_to(main_vbox, root_hbox);
+		_reparent_to(right_meta_vb, root_hbox);
+		if (touch_menu_button) {
+			_reparent_to(touch_menu_button, root_hbox);
+		}
+
+		root_hbox->move_child(favorite_button, 0);
+		root_hbox->move_child(project_icon, 1);
+		root_hbox->move_child(main_vbox, 2);
+		root_hbox->move_child(right_meta_vb, 3);
+		if (touch_menu_button && touch_menu_button->get_parent() == root_hbox) {
+			root_hbox->move_child(touch_menu_button, 4);
+		}
+
+		_reparent_to(missing_badge, title_hb);
+		_reparent_to(project_version, title_hb);
+		_reparent_to(project_unsupported_features, title_hb);
+		_reparent_to(project_different_version, title_hb);
+
+		title_hb->move_child(project_title, 0);
+		title_hb->move_child(missing_badge, 1);
+		title_hb->move_child(project_version, 2);
+
+		_reparent_to(last_edited_info, right_meta_vb);
+		_reparent_to(tag_container, right_meta_vb);
+		right_meta_vb->move_child(last_edited_info, 0);
+		right_meta_vb->move_child(tag_container, 1);
+
+		favorite_button->set_v_size_flags(SIZE_SHRINK_CENTER);
+		project_icon->set_custom_minimum_size(Size2(64, 64) * EDSCALE);
+		project_icon->set_h_size_flags(SIZE_SHRINK_BEGIN);
+		project_icon->set_v_size_flags(SIZE_SHRINK_CENTER);
+		main_vbox->set_v_size_flags(SIZE_SHRINK_CENTER);
+		project_title->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		project_path->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT);
+		last_edited_info->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+		tag_container->set_alignment(BoxContainer::ALIGNMENT_END);
+	}
+	callable_mp(this, &ProjectListItemControl::_update_path_display).call_deferred();
 }
 
 void ProjectListItemControl::_favorite_button_pressed() {
@@ -248,34 +381,53 @@ void ProjectListItemControl::_request_menu() {
 
 void ProjectListItemControl::set_project_title(const String &p_title) {
 	project_title->set_text(p_title);
+	project_title->set_tooltip_text(p_title);
 	project_title->set_accessibility_name(TTRC("Project Name"));
 	queue_accessibility_update();
 }
 
 void ProjectListItemControl::set_project_path(const String &p_path) {
-	project_path->set_text(p_path);
+	full_path_cache = p_path;
+	_update_path_display();
 	project_path->set_accessibility_name(TTRC("Project Path"));
 	queue_accessibility_update();
 }
 
 void ProjectListItemControl::set_tags(const PackedStringArray &p_tags, ProjectList *p_parent_list) {
-	for (const String &tag : p_tags) {
+	if (cached_tags == p_tags) {
+		return;
+	}
+	cached_tags = p_tags;
+	while (tag_container->get_child_count() > 0) {
+		Node *ch = tag_container->get_child(0);
+		tag_container->remove_child(ch);
+		memdelete(ch);
+	}
+	const int max_visible_tags = 3;
+	const int show_n = MIN((int)p_tags.size(), max_visible_tags);
+	for (int i = 0; i < show_n; i++) {
+		const String &tag = p_tags[i];
 		ProjectTag *tag_control = memnew(ProjectTag(tag));
 		tag_container->add_child(tag_control);
 		tag_control->connect_button_to(callable_mp(p_parent_list, &ProjectList::add_search_tag).bind(tag));
 	}
+	tag_container->set_visible(show_n > 0);
 }
 
 void ProjectListItemControl::set_project_icon(const Ref<Texture2D> &p_icon) {
-	icon_needs_reload = false;
+	icon_needs_reload = p_icon.is_null();
 
-	// The default project icon is 128×128 to look crisp on hiDPI displays,
-	// but we want the actual displayed size to be 64×64 on loDPI displays.
 	project_icon->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-	project_icon->set_custom_minimum_size(Size2(64, 64) * EDSCALE);
+	const float icon_px = (card_view_mode == ProjectList::VIEW_GRID) ? 48.0f : 64.0f;
+	project_icon->set_custom_minimum_size(Size2(icon_px, icon_px) * EDSCALE);
 	project_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	project_icon->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 
-	project_icon->set_texture(p_icon);
+	if (p_icon.is_valid()) {
+		project_icon->set_texture(p_icon);
+	} else {
+		project_icon->set_texture(get_editor_theme_icon(SNAME("ProjectIconLoading")));
+	}
 }
 
 void ProjectListItemControl::set_last_edited_info(const String &p_info) {
@@ -283,7 +435,15 @@ void ProjectListItemControl::set_last_edited_info(const String &p_info) {
 }
 
 void ProjectListItemControl::set_project_version(const String &p_info) {
-	project_version->set_text(p_info);
+	String v = p_info.strip_edges();
+	if (v == "?") {
+		v = String();
+	}
+	if (!v.is_empty() && !v.begins_with("v")) {
+		v = "v" + v;
+	}
+	project_version->set_text(v);
+	project_version->set_visible(!v.is_empty());
 }
 
 void ProjectListItemControl::set_unsupported_features(PackedStringArray p_features) {
@@ -322,9 +482,8 @@ void ProjectListItemControl::set_unsupported_features(PackedStringArray p_featur
 						project_version_tooltip_text += vformat(TTR("Opening it will downgrade it to ClockGears Engine %s.%s."), GODOT_VERSION_MAJOR, GODOT_VERSION_MINOR) + "\n";
 						project_version_tooltip_text += TTR("Downgrading projects is not recommended.") + "\n";
 					}
-					project_different_version->set_focus_mode(FOCUS_ACCESSIBILITY);
-					project_different_version->set_tooltip_text(project_version_tooltip_text);
-					project_different_version->show();
+					project_version->set_tooltip_text(project_version_tooltip_text);
+					project_different_version->hide(); // Una sola insignia de versión en la tarjeta (sin ícono duplicado).
 				} else {
 					project_different_version->hide();
 				}
@@ -359,13 +518,11 @@ void ProjectListItemControl::set_unsupported_features(PackedStringArray p_featur
 			tooltip_text += TTR("This project uses features unsupported by the current build:") + "\n" + unsupported_features_str;
 		}
 
-		if (tooltip_text.is_empty()) {
-			return;
+		if (!tooltip_text.is_empty() && project_version) {
+			project_version->set_tooltip_text(tooltip_text);
 		}
-		project_version->set_tooltip_text(tooltip_text);
-		project_unsupported_features->set_focus_mode(FOCUS_ACCESSIBILITY);
-		project_unsupported_features->set_tooltip_text(tooltip_text);
-		project_unsupported_features->show();
+		project_different_version->hide();
+		project_unsupported_features->hide();
 	} else {
 		project_different_version->hide();
 		project_unsupported_features->hide();
@@ -385,97 +542,56 @@ void ProjectListItemControl::set_selected(bool p_selected, bool p_hide_focus) {
 
 void ProjectListItemControl::set_is_favorite(bool p_favorite) {
 	is_favorite = p_favorite;
-	if (p_favorite) {
-		favorite_button->set_texture_normal(get_editor_theme_icon(SNAME("Favorites")));
-		favorite_button->set_accessibility_name(TTRC("Remove from Favorites"));
-	} else {
-		favorite_button->set_texture_normal(get_editor_theme_icon(SNAME("Unfavorite")));
-		favorite_button->set_accessibility_name(TTRC("Add to Favorites"));
-	}
+	_update_favorite_icon();
 }
 
 void ProjectListItemControl::set_is_missing(bool p_missing) {
 	project_is_missing = p_missing;
+	if (missing_badge) {
+		missing_badge->set_visible(p_missing);
+	}
 
 	if (project_is_missing) {
-		project_icon->set_modulate(Color(1, 1, 1, 0.5));
-
+		project_icon->set_modulate(Color(1, 1, 1, 0.45));
 		explore_button->set_button_icon(get_editor_theme_icon(SNAME("FileBroken")));
 		explore_button->set_tooltip_text(TTRC("Error: Project is missing on the filesystem."));
 	} else {
+		project_icon->set_modulate(Color(1, 1, 1, 1.0));
 #if defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
-		// Opening the system file manager is not supported on the Android and web editors.
 		explore_button->hide();
-#else // !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
-		explore_button->set_button_icon(get_editor_theme_icon(SNAME("Load")));
+#else
+		explore_button->set_button_icon(get_editor_theme_icon(SNAME("ClockGearsFolderLine")));
 		explore_button->set_tooltip_text(OS::get_singleton()->get_platform_string(OS::PLATFORM_STRING_FILE_MANAGER_OPEN));
-#endif // defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
+#endif
 	}
+	queue_redraw();
 }
 
 void ProjectListItemControl::set_is_grayed(bool p_grayed) {
+	is_grayed = p_grayed;
 	if (p_grayed) {
-		main_vbox->set_modulate(Color(1, 1, 1, 0.5));
-		// Don't make the icon less prominent if the parent is already grayed out.
-		explore_button->set_modulate(Color(1, 1, 1, 1.0));
+		project_title->set_modulate(Color(1, 1, 1, 0.65));
+		project_path->set_modulate(Color(1, 1, 1, 0.55));
+		last_edited_info->set_modulate(Color(1, 1, 1, 0.55));
+		explore_button->set_modulate(Color(1, 1, 1, 0.85));
 	} else {
-		main_vbox->set_modulate(Color(1, 1, 1, 1.0));
-		explore_button->set_modulate(Color(1, 1, 1, 0.5));
+		project_title->set_modulate(Color(1, 1, 1, 1.0));
+		project_path->set_modulate(Color(1, 1, 1, 1.0));
+		last_edited_info->set_modulate(Color(1, 1, 1, 1.0));
+		explore_button->set_modulate(Color(1, 1, 1, 0.85));
 	}
 }
 
 void ProjectListItemControl::set_project_title_autowrap() {
-	ProjectList *pl = get_list();
-
-	title_fullsize_cache = project_title->get_size().x;
-	pl->window_size_cache = get_window()->get_size().x;
-
-	int tag_maxsize = 0;
-	int tag_size = 0;
-	for (Node *child : tag_container->iterate_children()) {
-		ProjectTag *tag = Object::cast_to<ProjectTag>(child);
-
-		tag_size += tag->get_size().x;
-
-		if (tag_maxsize == 0) {
-			tag_maxsize = tag->get_custom_maximum_size().x;
-		}
-	}
-	tag_size_cache = MIN(tag_size, tag_maxsize);
-
-	int &title_size = pl->title_size_cache;
-	const int size_check = 800 * EDSCALE;
-	if (title_size == 0) {
-		title_size = size_check;
-	}
-
-	if (title_fullsize_cache > size_check - tag_size_cache) {
-		resize_project_title(title_size);
-	}
+	_update_path_display();
 }
 
 void ProjectListItemControl::resize_project_title(const int p_title_size) {
-	bool autowrap = project_title->get_autowrap_mode() != TextServer::AUTOWRAP_OFF;
-	if (autowrap && p_title_size > title_fullsize_cache + tag_size_cache) {
-		project_title->set_custom_maximum_size(Vector2(-1, -1));
-		project_title->set_custom_minimum_size(Vector2(0, 0));
-		project_title->set_autowrap_mode(TextServer::AUTOWRAP_OFF);
+	_update_path_display();
+}
 
-		return;
-	}
-
-	int abs_minsize = (200 * EDSCALE);
-	if (title_fullsize_cache > abs_minsize && p_title_size < title_fullsize_cache + tag_size_cache) {
-		ProjectTag *tag = memnew(ProjectTag("dummy"));
-		int tag_maxsize = tag->get_custom_maximum_size().x;
-		memdelete(tag);
-		int title_maxsize = p_title_size - tag_size_cache;
-		int title_minsize = abs_minsize + tag_maxsize - tag_size_cache;
-
-		project_title->set_custom_maximum_size(Vector2(MAX(title_maxsize, title_minsize), -1));
-		project_title->set_custom_minimum_size(Vector2(MAX(title_maxsize, title_minsize), 0));
-		project_title->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	}
+Ref<Texture2D> ProjectListItemControl::get_icon_texture() const {
+	return project_icon ? project_icon->get_texture() : Ref<Texture2D>();
 }
 
 void ProjectListItemControl::_bind_methods() {
@@ -487,60 +603,112 @@ void ProjectListItemControl::_bind_methods() {
 ProjectListItemControl::ProjectListItemControl() {
 	set_focus_mode(FocusMode::FOCUS_ALL);
 	set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	set_clip_contents(true);
 
-	// Left spacer.
-	add_child(memnew(Control));
+	Ref<StyleBoxEmpty> pad_sb;
+	pad_sb.instantiate();
+	pad_sb->set_content_margin_individual(int(10 * EDSCALE), int(6 * EDSCALE), int(10 * EDSCALE), int(6 * EDSCALE));
+	add_theme_style_override(SceneStringName(panel), pad_sb);
 
-	VBoxContainer *favorite_box = memnew(VBoxContainer);
-	favorite_box->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-	add_child(favorite_box);
+	root_hbox = memnew(HBoxContainer);
+	root_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	root_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	root_hbox->add_theme_constant_override("separation", int(10 * EDSCALE));
+	add_child(root_hbox);
+
+	root_vbox = memnew(VBoxContainer);
+	root_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	root_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	root_vbox->add_theme_constant_override("separation", int(4 * EDSCALE));
+	root_vbox->hide();
+	add_child(root_vbox);
+
+	grid_top_hb = memnew(HBoxContainer);
+	grid_top_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	grid_top_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	root_vbox->add_child(grid_top_hb);
+
+	Control *grid_top_spacer = memnew(Control);
+	grid_top_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	grid_top_spacer->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	grid_top_hb->add_child(grid_top_spacer);
 
 	favorite_button = memnew(TextureButton);
 	favorite_button->set_name("FavoriteButton");
 	favorite_button->set_tooltip_text(TTRC("Toggle Favorite"));
 	favorite_button->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
-	// This makes the project's "hover" style display correctly when hovering the favorite icon.
 	favorite_button->set_mouse_filter(MOUSE_FILTER_PASS);
-	favorite_box->add_child(favorite_button);
+	favorite_button->set_v_size_flags(SIZE_SHRINK_CENTER);
+	root_hbox->add_child(favorite_button);
 	favorite_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectListItemControl::_favorite_button_pressed));
 	favorite_button->connect(SceneStringName(focus_entered), callable_mp(this, &ProjectListItemControl::_update_favorite_button_focus_color));
 	favorite_button->connect(SceneStringName(focus_exited), callable_mp(this, &ProjectListItemControl::_update_favorite_button_focus_color));
 
 	project_icon = memnew(TextureRect);
 	project_icon->set_name("ProjectIcon");
+	project_icon->set_custom_minimum_size(Size2(64, 64) * EDSCALE);
+	project_icon->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	project_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	project_icon->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	project_icon->set_v_size_flags(SIZE_SHRINK_CENTER);
-	add_child(project_icon);
+	root_hbox->add_child(project_icon);
 
 	main_vbox = memnew(VBoxContainer);
 	main_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	add_child(main_vbox);
+	main_vbox->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	main_vbox->add_theme_constant_override("separation", int(4 * EDSCALE));
+	root_hbox->add_child(main_vbox);
 
-	Control *ec = memnew(Control);
-	ec->set_custom_minimum_size(Size2(0, 1));
-	ec->set_mouse_filter(MOUSE_FILTER_PASS);
-	main_vbox->add_child(ec);
-
-	// Top half, title, tags and unsupported features labels.
+	// Top row: título + insignias (faltante, versión).
 	{
-		HBoxContainer *title_hb = memnew(HBoxContainer);
+		title_hb = memnew(HBoxContainer);
+		title_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		title_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 		main_vbox->add_child(title_hb);
 
 		project_title = memnew(Label);
 		project_title->set_focus_mode(FOCUS_ACCESSIBILITY);
 		project_title->set_name("ProjectName");
-		project_title->set_h_size_flags(Control::SIZE_FILL);
+		project_title->set_clip_text(true);
+		project_title->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		project_title->set_custom_minimum_size(Size2(1, 0));
+		project_title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		title_hb->add_child(project_title);
 
-		tag_container = memnew(HFlowContainer);
-		tag_container->set_alignment(FlowContainer::ALIGNMENT_END);
-		tag_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		title_hb->add_child(tag_container);
+		missing_badge = memnew(Label);
+		missing_badge->set_name("MissingBadge");
+		missing_badge->set_text(String::utf8("Faltante"));
+		missing_badge->set_theme_type_variation("ProjectMissingBadge");
+		missing_badge->set_v_size_flags(SIZE_SHRINK_CENTER);
+		missing_badge->hide();
+		title_hb->add_child(missing_badge);
+
+		project_version = memnew(Label);
+		project_version->set_focus_mode(FOCUS_ACCESSIBILITY);
+		project_version->set_name("ProjectVersion");
+		project_version->set_theme_type_variation("ProjectVersionBadge");
+		project_version->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+		project_version->set_v_size_flags(SIZE_SHRINK_CENTER);
+		title_hb->add_child(project_version);
+
+		project_unsupported_features = memnew(TextureRect);
+		project_unsupported_features->set_name("ProjectUnsupportedFeatures");
+		project_unsupported_features->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+		title_hb->add_child(project_unsupported_features);
+		project_unsupported_features->hide();
+
+		project_different_version = memnew(TextureRect);
+		project_different_version->set_name("ProjectDifferentVersion");
+		project_different_version->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+		title_hb->add_child(project_different_version);
+		project_different_version->hide();
 	}
 
-	// Bottom half, containing the path and view folder button.
+	// Bottom row: icono carpeta + ruta recortada en medio.
 	{
-		HBoxContainer *path_hb = memnew(HBoxContainer);
+		path_hb = memnew(HBoxContainer);
 		path_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		path_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
 		main_vbox->add_child(path_hb);
 
 		explore_button = memnew(Button);
@@ -557,49 +725,38 @@ ProjectListItemControl::ProjectListItemControl() {
 		project_path->set_focus_mode(FOCUS_ACCESSIBILITY);
 		project_path->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
 		project_path->set_clip_text(true);
+		project_path->set_custom_minimum_size(Size2(1, 0));
 		project_path->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		project_path->set_modulate(Color(1, 1, 1, 0.5));
 		path_hb->add_child(project_path);
-
-		project_unsupported_features = memnew(TextureRect);
-		project_unsupported_features->set_name("ProjectUnsupportedFeatures");
-		project_unsupported_features->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
-		path_hb->add_child(project_unsupported_features);
-		project_unsupported_features->hide();
-
-		project_different_version = memnew(TextureRect);
-		project_different_version->set_name("ProjectDifferentVersion");
-		project_different_version->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
-		path_hb->add_child(project_different_version);
-		project_different_version->hide();
-
-		project_version = memnew(Label);
-		project_version->set_focus_mode(FOCUS_ACCESSIBILITY);
-		project_version->set_name("ProjectVersion");
-		project_version->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-		path_hb->add_child(project_version);
-
-		last_edited_info = memnew(Label);
-		last_edited_info->set_focus_mode(FOCUS_ACCESSIBILITY);
-		last_edited_info->set_name("LastEditedInfo");
-		last_edited_info->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-		last_edited_info->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
-		last_edited_info->set_tooltip_text(TTRC("Last edited timestamp"));
-		last_edited_info->set_modulate(Color(1, 1, 1, 0.5));
-		path_hb->add_child(last_edited_info);
 	}
+
+	right_meta_vb = memnew(VBoxContainer);
+	right_meta_vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	right_meta_vb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	root_hbox->add_child(right_meta_vb);
+
+	last_edited_info = memnew(Label);
+	last_edited_info->set_focus_mode(FOCUS_ACCESSIBILITY);
+	last_edited_info->set_name("LastEditedInfo");
+	last_edited_info->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+	last_edited_info->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	last_edited_info->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
+	last_edited_info->set_tooltip_text(TTRC("Last edited timestamp"));
+	right_meta_vb->add_child(last_edited_info);
+
+	tag_container = memnew(HBoxContainer);
+	tag_container->set_alignment(BoxContainer::ALIGNMENT_END);
+	tag_container->add_theme_constant_override("separation", int(4 * EDSCALE));
+	right_meta_vb->add_child(tag_container);
 
 	if (DisplayServer::get_singleton()->is_touchscreen_available()) {
 		touch_menu_button = memnew(Button);
 		touch_menu_button->set_theme_type_variation(SceneStringName(FlatButton));
 		touch_menu_button->set_v_size_flags(SIZE_SHRINK_CENTER);
-		add_child(touch_menu_button);
+		root_hbox->add_child(touch_menu_button);
 		touch_menu_button->set_mouse_filter(MOUSE_FILTER_PASS);
 		touch_menu_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectListItemControl::_request_menu));
 	}
-
-	// Right spacer.
-	add_child(memnew(Control));
 }
 
 struct ProjectListComparator {
@@ -641,6 +798,38 @@ bool ProjectList::project_feature_looks_like_version(const String &p_feature) {
 	return p_feature.contains_char('.') && p_feature.substr(0, 3).is_numeric();
 }
 
+String ProjectList::elide_path_middle(const String &p_path, const Ref<Font> &p_font, int p_font_size, float p_max_width) {
+	if (p_path.is_empty() || p_font.is_null() || p_max_width <= 8.0f) {
+		return p_path;
+	}
+	if (p_font->get_string_size(p_path, HORIZONTAL_ALIGNMENT_LEFT, -1, p_font_size).x <= p_max_width) {
+		return p_path;
+	}
+	const String ellipsis = String::utf8("…");
+	const int len = p_path.length();
+	if (len <= 6) {
+		return p_path;
+	}
+
+	// Conservar prefijo inicial (~35%) y carpeta final del proyecto (~65%) con "…" en medio.
+	int best_head = 3;
+	int best_tail = 3;
+	for (int total_keep = len - 1; total_keep >= 6; total_keep--) {
+		int head = MAX(3, (int)Math::round((double)total_keep * 0.35));
+		int tail = MAX(3, total_keep - head);
+		if (head + tail >= len) {
+			continue;
+		}
+		const String cand = p_path.substr(0, head) + ellipsis + p_path.substr(len - tail, tail);
+		if (p_font->get_string_size(cand, HORIZONTAL_ALIGNMENT_LEFT, -1, p_font_size).x <= p_max_width) {
+			best_head = head;
+			best_tail = tail;
+			return cand;
+		}
+	}
+	return p_path.substr(0, best_head) + ellipsis + p_path.substr(len - best_tail, best_tail);
+}
+
 // Notifications.
 
 void ProjectList::_notification(int p_what) {
@@ -648,7 +837,9 @@ void ProjectList::_notification(int p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			if (is_ready()) {
 				for (const Item &item : _projects) {
-					_update_project_control_translatable_fields(item);
+					if (item.control) {
+						_update_project_control_translatable_fields(item);
+					}
 				}
 				update_dock_menu();
 			}
@@ -658,18 +849,36 @@ void ProjectList::_notification(int p_what) {
 			if (project_context_menu) {
 				_update_menu_icons();
 			}
+			_layout_visible_cards();
+		} break;
+
+		case NOTIFICATION_RESIZED: {
+			_layout_visible_cards();
 		} break;
 
 		case NOTIFICATION_PROCESS: {
-			// Load icons as a coroutine to speed up launch when you have hundreds of projects.
-			if (_icon_load_index < _projects.size()) {
-				Item &item = _projects.write[_icon_load_index];
-				if (item.control->should_load_project_icon()) {
-					_load_project_icon(_icon_load_index);
+			// Priorizar carga de iconos visibles primero; luego continuar en segundo plano con el resto.
+			bool loaded_visible = false;
+			for (ProjectListItemControl *ctrl : _card_pool) {
+				if (!ctrl->is_visible()) {
+					continue;
 				}
+				const int pidx = ctrl->get_bound_project_index();
+				if (pidx >= 0 && pidx < _projects.size() && !_projects[pidx].icon_loaded) {
+					_load_project_icon(pidx);
+					loaded_visible = true;
+					break;
+				}
+			}
+			if (loaded_visible) {
+				break;
+			}
+			while (_icon_load_index < _projects.size() && _projects[_icon_load_index].icon_loaded) {
 				_icon_load_index++;
-
-				// Scan directories in thread to avoid blocking the window.
+			}
+			if (_icon_load_index < _projects.size()) {
+				_load_project_icon(_icon_load_index);
+				_icon_load_index++;
 			} else if (scan_data && scan_data->scan_in_progress.is_set()) {
 				// Wait for the thread.
 			} else {
@@ -920,35 +1129,30 @@ void ProjectList::_load_project_icon(int p_index) {
 		icon = default_icon;
 	}
 
-	item.control->set_project_icon(icon);
+	item.loaded_icon = icon;
+	item.icon_loaded = true;
+	if (item.control) {
+		item.control->set_project_icon(icon);
+	}
+	if (_selected_project_paths.has(item.path)) {
+		emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
+	}
 }
 
 // Project list updates.
 
 void ProjectList::update_project_list() {
-	// This is a full, hard reload of the list. Don't call this unless really required, it's expensive.
-	// If you have 150 projects, it may read through 150 files on your disk at once + load 150 icons.
-	// FIXME: Does it really have to be a full, hard reload? Runtime updates should be made much cheaper.
-
-	if (ProjectManager::get_singleton()->is_initialized()) {
-		// Clear whole list
+	if (ProjectManager::get_singleton() && ProjectManager::get_singleton()->is_initialized()) {
 		for (int i = 0; i < _projects.size(); ++i) {
-			Item &project = _projects.write[i];
-			CRASH_COND(project.control == nullptr);
-
-			memdelete(project.control); // Why not queue_free()?
+			_projects.write[i].control = nullptr;
 		}
 
 		_projects.clear();
+		_filtered_indices.clear();
 		_last_clicked = "";
 		_selected_project_paths.clear();
 
 		load_project_list();
-	}
-
-	// Create controls
-	for (int i = 0; i < _projects.size(); ++i) {
-		_create_project_item_control(i);
 	}
 
 	sort_projects();
@@ -956,11 +1160,16 @@ void ProjectList::update_project_list() {
 	update_dock_menu();
 
 	set_v_scroll(0);
+	_layout_visible_cards();
 	emit_signal(SNAME(SIGNAL_LIST_CHANGED));
 	queue_accessibility_update();
 }
 
 void ProjectList::sort_projects() {
+	for (int i = 0; i < _projects.size(); ++i) {
+		_projects.write[i].control = nullptr;
+	}
+
 	SortArray<Item, ProjectListComparator> sorter;
 	sorter.compare.order_option = _order_option;
 	sorter.sort(_projects.ptrw(), _projects.size());
@@ -979,25 +1188,19 @@ void ProjectList::sort_projects() {
 					remaining.append(part);
 				}
 			}
-			search_term = String(" ").join(remaining); // Search term without tags.
+			search_term = String(" ").join(remaining);
 		} else {
 			search_term = _search_term;
 		}
 	}
 
+	_filtered_indices.clear();
 	for (int i = 0; i < _projects.size(); ++i) {
-		Item &item = _projects.write[i];
+		const Item &item = _projects[i];
 
 		bool item_visible = true;
 		if (!_search_term.is_empty()) {
-			String search_path;
-			if (search_term.contains_char('/')) {
-				// Search path will match the whole path
-				search_path = item.path;
-			} else {
-				// Search path will only match the last path component to make searching more strict
-				search_path = item.path.get_file();
-			}
+			String search_path = search_term.contains_char('/') ? item.path : item.path.get_file();
 
 			bool missing_tags = false;
 			for (const String &tag : tags) {
@@ -1007,21 +1210,18 @@ void ProjectList::sort_projects() {
 				}
 			}
 
-			// When searching, display projects whose name or path contain the search term and whose tags match the searched tags.
 			item_visible = !missing_tags && (search_term.is_empty() || item.project_name.containsn(search_term) || search_path.containsn(search_term));
 		}
 
-		item.control->set_visible(item_visible);
+		if (item_visible) {
+			_filtered_indices.push_back(i);
+		}
 	}
 
-	for (int i = 0; i < _projects.size(); ++i) {
-		Item &item = _projects.write[i];
-		item.control->get_parent()->move_child(item.control, i);
-	}
-
-	// Rewind the coroutine because order of projects changed
+	_layout_visible_cards();
 	_update_icons_async();
 	update_dock_menu();
+	emit_signal(SNAME(SIGNAL_LIST_CHANGED));
 	queue_accessibility_update();
 }
 
@@ -1150,83 +1350,199 @@ int ProjectList::refresh_project(const String &dir_path) {
 
 	int index = -1;
 	if (should_be_in_list) {
-		// Recreate it with updated info
-
 		Item item = load_project_data(dir_path, is_favorite);
-
 		item.project_title_index = temp_title_index;
 		_projects.push_back(item);
-		_create_project_item_control(_projects.size() - 1);
 
 		sort_projects();
 
 		for (int i = 0; i < _projects.size(); ++i) {
 			if (_projects[i].path == dir_path) {
 				if (was_selected) {
+					_selected_project_paths.insert(dir_path);
 					ensure_project_visible(i);
 				}
 				_load_project_icon(i);
-
 				index = i;
 				break;
 			}
 		}
+	} else {
+		sort_projects();
 	}
 
 	return index;
 }
 
 int ProjectList::get_index(const ProjectListItemControl *p_control) const {
-	for (int i = 0; i < _projects.size(); ++i) {
-		if (_projects[i].control == p_control) {
-			return i;
+	if (!p_control) {
+		return -1;
+	}
+	return p_control->get_bound_project_index();
+}
+
+int ProjectList::get_visible_bound_count() const {
+	int c = 0;
+	for (ProjectListItemControl *ctrl : _card_pool) {
+		if (ctrl && ctrl->is_visible() && ctrl->get_bound_project_index() >= 0) {
+			c++;
 		}
 	}
-	return -1;
+	return c;
+}
+
+ProjectListItemControl *ProjectList::get_bound_control_for_project(int p_project_index) const {
+	if (p_project_index < 0 || p_project_index >= _projects.size()) {
+		return nullptr;
+	}
+	return _projects[p_project_index].control;
 }
 
 void ProjectList::ensure_project_visible(int p_index) {
-	const Item &item = _projects[p_index];
-	// Since follow focus is enabled.
-	item.control->grab_focus(true);
+	if (p_index < 0 || p_index >= _projects.size()) {
+		return;
+	}
+	int filtered_pos = -1;
+	for (int i = 0; i < _filtered_indices.size(); i++) {
+		if (_filtered_indices[i] == p_index) {
+			filtered_pos = i;
+			break;
+		}
+	}
+	if (filtered_pos >= 0) {
+		const int cols = MAX(1, _layout_cols);
+		const int row = filtered_pos / cols;
+		const float row_top = (float)row * (_layout_card_h + _layout_gap);
+		const float row_bot = row_top + _layout_card_h;
+		const float view_h = get_size().y > 10.0f ? get_size().y : 420.0f * EDSCALE;
+		const float cur_scroll = (float)get_v_scroll();
+		if (row_top < cur_scroll) {
+			set_v_scroll((int)Math::floor(row_top));
+		} else if (row_bot > cur_scroll + view_h) {
+			set_v_scroll((int)Math::ceil(row_bot - view_h));
+		}
+	}
+	_layout_visible_cards();
+	if (_projects[p_index].control) {
+		_projects[p_index].control->grab_focus(true);
+	}
 }
 
-void ProjectList::_create_project_item_control(int p_index) {
-	// Will be added last in the list, so make sure indexes match
-	ERR_FAIL_COND(p_index != project_list_vbox->get_child_count());
+void ProjectList::_ensure_pool_size(int p_needed) {
+	while (_card_pool.size() < p_needed) {
+		ProjectListItemControl *hb = memnew(ProjectListItemControl);
+		hb->hide();
+		hb->connect(SceneStringName(gui_input), callable_mp(this, &ProjectList::_list_item_input).bind(hb));
+		hb->connect("favorite_pressed", callable_mp(this, &ProjectList::_on_favorite_pressed).bind(hb));
+		hb->connect("explore_pressed", callable_mp(this, &ProjectList::_on_explore_item_pressed).bind(hb));
+		hb->connect("request_menu", callable_mp(this, &ProjectList::_open_menu).bind(hb));
+		content_canvas->add_child(hb);
+		_card_pool.push_back(hb);
+	}
+}
 
-	Item &item = _projects.write[p_index];
-	ERR_FAIL_COND(item.control != nullptr); // Already created
-
-	ProjectListItemControl *hb = memnew(ProjectListItemControl);
-	item.control = hb;
-
-	hb->add_theme_constant_override("separation", 10 * EDSCALE);
+void ProjectList::_bind_item_to_control(int p_project_index, int p_filtered_index, ProjectListItemControl *p_ctrl) {
+	Item &item = _projects.write[p_project_index];
+	item.control = p_ctrl;
+	p_ctrl->set_bound_indices(p_project_index, p_filtered_index);
+	p_ctrl->apply_view_mode((int)_view_mode);
 
 	_update_project_control_translatable_fields(item);
+	p_ctrl->set_project_path(item.path);
+	p_ctrl->set_tooltip_text(item.description.is_empty() ? item.path : item.description + "\n" + item.path);
+	p_ctrl->set_tags(item.tags, this);
+	p_ctrl->set_project_version(item.project_version);
+	p_ctrl->set_is_favorite(item.favorite);
+	p_ctrl->set_is_missing(item.missing);
+	p_ctrl->set_is_grayed(item.grayed);
+	p_ctrl->set_selected(_selected_project_paths.has(item.path), true);
 
-	hb->set_project_path(item.path);
-	hb->set_tooltip_text(item.description);
-	hb->set_tags(item.tags, this);
-	hb->set_project_version(item.project_version);
+	if (item.icon_loaded && item.loaded_icon.is_valid()) {
+		p_ctrl->set_project_icon(item.loaded_icon);
+	} else {
+		p_ctrl->set_project_icon(Ref<Texture2D>());
+	}
+}
 
-	hb->set_is_favorite(item.favorite);
-	hb->set_is_missing(item.missing);
-	hb->set_is_grayed(item.grayed);
+void ProjectList::_layout_visible_cards() {
+	if (!content_canvas) {
+		return;
+	}
+	for (int i = 0; i < _projects.size(); i++) {
+		_projects.write[i].control = nullptr;
+	}
 
-	hb->connect(SceneStringName(gui_input), callable_mp(this, &ProjectList::_list_item_input).bind(hb));
-	hb->connect("favorite_pressed", callable_mp(this, &ProjectList::_on_favorite_pressed).bind(hb));
+	const float sb_w = (get_v_scroll_bar() && get_v_scroll_bar()->is_visible()) ? get_v_scroll_bar()->get_combined_minimum_size().x : 0.0f;
+	const float avail_w = MAX(220.0f * EDSCALE, get_size().x - sb_w - 6.0f * EDSCALE);
+	const float view_h = get_size().y > 10.0f ? get_size().y : 440.0f * EDSCALE;
 
-#if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
-	hb->connect("explore_pressed", callable_mp(this, &ProjectList::_on_explore_pressed).bind(item.path));
-#endif
-	hb->connect("request_menu", callable_mp(this, &ProjectList::_open_menu).bind(hb));
+	_layout_gap = 8.0f * EDSCALE;
+	if (_view_mode == VIEW_GRID) {
+		_layout_cols = MAX(2, (int)Math::floor((avail_w + _layout_gap) / (230.0f * EDSCALE)));
+		_layout_card_w = MAX(180.0f * EDSCALE, Math::floor((avail_w - _layout_gap * (_layout_cols - 1)) / _layout_cols));
+		_layout_card_h = 224.0f * EDSCALE;
+	} else {
+		_layout_cols = 1;
+		_layout_card_w = avail_w;
+		_layout_card_h = 76.0f * EDSCALE;
+	}
 
-	project_list_vbox->add_child(hb);
+	const int total_items = _filtered_indices.size();
+	const int rows = total_items > 0 ? ((total_items + _layout_cols - 1) / _layout_cols) : 0;
+	const float total_h = rows > 0 ? ((float)rows * _layout_card_h + (float)(rows - 1) * _layout_gap) : 0.0f;
+	content_canvas->set_custom_minimum_size(Size2(0, total_h));
+	content_canvas->set_size(Size2(avail_w, total_h));
+
+	if (total_items == 0) {
+		for (ProjectListItemControl *ctrl : _card_pool) {
+			ctrl->set_bound_indices(-1, -1);
+			ctrl->hide();
+		}
+		return;
+	}
+
+	const float scroll_y = CLAMP((float)get_v_scroll(), 0.0f, MAX(0.0f, total_h - view_h));
+	const float stride = _layout_card_h + _layout_gap;
+	const int first_row = MAX(0, (int)Math::floor(scroll_y / stride) - 1);
+	const int last_row = MIN(rows - 1, (int)Math::ceil((scroll_y + view_h) / stride) + 1);
+	const int first_vis = first_row * _layout_cols;
+	const int last_vis = MIN(total_items - 1, (last_row + 1) * _layout_cols - 1);
+	const int needed = MAX(0, last_vis - first_vis + 1);
+
+	_ensure_pool_size(needed);
+
+	for (int p = 0; p < _card_pool.size(); p++) {
+		ProjectListItemControl *ctrl = _card_pool[p];
+		if (p >= needed) {
+			ctrl->set_bound_indices(-1, -1);
+			ctrl->hide();
+			continue;
+		}
+		const int fi = first_vis + p;
+		const int pidx = _filtered_indices[fi];
+		const int row = fi / _layout_cols;
+		const int col = fi % _layout_cols;
+		const Vector2 pos((float)col * (_layout_card_w + _layout_gap), (float)row * stride);
+		const Size2 sz(_layout_card_w, _layout_card_h);
+
+		_bind_item_to_control(pidx, fi, ctrl);
+		ctrl->set_custom_minimum_size(Size2());
+		ctrl->set_position(pos);
+		ctrl->set_size(sz);
+		ctrl->show();
+		ctrl->resize_project_title(0);
+	}
+}
+
+void ProjectList::_on_vscroll_changed(double p_val) {
+	_layout_visible_cards();
 }
 
 void ProjectList::_update_project_control_translatable_fields(const Item &item) {
 	ProjectListItemControl *control = item.control;
+	if (!control) {
+		return;
+	}
 
 	control->set_project_title(!item.missing ? item.project_name : TTR("Missing Project"));
 	control->set_last_edited_info(item.get_last_edited_string());
@@ -1234,8 +1550,6 @@ void ProjectList::_update_project_control_translatable_fields(const Item &item) 
 }
 
 void ProjectList::_toggle_project(int p_index) {
-	// This methods adds to the selection or removes from the
-	// selection.
 	Item &item = _projects.write[p_index];
 
 	if (_selected_project_paths.has(item.path)) {
@@ -1246,20 +1560,20 @@ void ProjectList::_toggle_project(int p_index) {
 }
 
 void ProjectList::_remove_project(int p_index, bool p_update_config) {
-	const Item item = _projects[p_index]; // Take a copy
+	Item &item_ref = _projects.write[p_index];
+	item_ref.control = nullptr;
+	const String item_path = item_ref.path;
 
-	_selected_project_paths.erase(item.path);
+	_selected_project_paths.erase(item_path);
 
-	if (_last_clicked == item.path) {
+	if (_last_clicked == item_path) {
 		_last_clicked = "";
 	}
 
-	memdelete(item.control);
 	_projects.remove_at(p_index);
 
 	if (p_update_config) {
-		_config.erase_section(item.path);
-		// Not actually saving the file, in case you are doing more changes to settings
+		_config.erase_section(item_path);
 	}
 
 	queue_accessibility_update();
@@ -1267,23 +1581,33 @@ void ProjectList::_remove_project(int p_index, bool p_update_config) {
 }
 
 void ProjectList::_list_item_input(const Ref<InputEvent> &p_ev, Control *p_hb) {
-	Ref<InputEventMouseButton> mb = p_ev;
-	int clicked_index = p_hb->get_index();
+	ProjectListItemControl *item_ctrl = Object::cast_to<ProjectListItemControl>(p_hb);
+	if (!item_ctrl) {
+		return;
+	}
+	int clicked_index = item_ctrl->get_bound_project_index();
+	int clicked_filtered = item_ctrl->get_bound_filtered_index();
+	if (clicked_index < 0 || clicked_index >= _projects.size()) {
+		return;
+	}
 	const Item &clicked_project = _projects[clicked_index];
 
+	Ref<InputEventMouseButton> mb = p_ev;
 	if (mb.is_valid() && mb->is_pressed()) {
 		if (mb->get_button_index() == MouseButton::LEFT) {
 			if (mb->is_shift_pressed() && _selected_project_paths.size() > 0 && !_last_clicked.is_empty() && clicked_project.path != _last_clicked) {
-				int anchor_index = -1;
-				for (int i = 0; i < _projects.size(); ++i) {
-					const Item &p = _projects[i];
-					if (p.path == _last_clicked) {
-						anchor_index = p.control->get_index();
+				int anchor_filtered = -1;
+				for (int fi = 0; fi < _filtered_indices.size(); fi++) {
+					if (_projects[_filtered_indices[fi]].path == _last_clicked) {
+						anchor_filtered = fi;
 						break;
 					}
 				}
-				CRASH_COND(anchor_index == -1);
-				_select_project_range(anchor_index, clicked_index);
+				if (anchor_filtered >= 0 && clicked_filtered >= 0) {
+					_select_project_range(anchor_filtered, clicked_filtered);
+				} else {
+					select_project(clicked_index, true);
+				}
 
 			} else if (mb->is_command_or_control_pressed()) {
 				_toggle_project(clicked_index);
@@ -1295,8 +1619,6 @@ void ProjectList::_list_item_input(const Ref<InputEvent> &p_ev, Control *p_hb) {
 
 			emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
 
-			// Do not allow opening a project more than once using a single project manager instance.
-			// Opening the same project in several editor instances at once can lead to various issues.
 			if (!mb->is_command_or_control_pressed() && mb->is_double_click() && !project_opening_initiated) {
 				emit_signal(SNAME(SIGNAL_PROJECT_ASK_OPEN));
 			}
@@ -1309,6 +1631,32 @@ void ProjectList::_list_item_input(const Ref<InputEvent> &p_ev, Control *p_hb) {
 
 	if (kev.is_valid() && kev->is_pressed()) {
 		switch (kev->get_keycode()) {
+			case Key::UP:
+			case Key::DOWN:
+			case Key::LEFT:
+			case Key::RIGHT: {
+				if (clicked_filtered >= 0 && !_filtered_indices.is_empty()) {
+					int step = 0;
+					if (kev->get_keycode() == Key::UP) {
+						step = -MAX(1, _layout_cols);
+					} else if (kev->get_keycode() == Key::DOWN) {
+						step = MAX(1, _layout_cols);
+					} else if (kev->get_keycode() == Key::LEFT && _layout_cols > 1) {
+						step = -1;
+					} else if (kev->get_keycode() == Key::RIGHT && _layout_cols > 1) {
+						step = 1;
+					}
+					if (step != 0) {
+						const int next_fi = CLAMP(clicked_filtered + step, 0, _filtered_indices.size() - 1);
+						const int next_pidx = _filtered_indices[next_fi];
+						_last_clicked = _projects[next_pidx].path;
+						select_project(next_pidx, false);
+						ensure_project_visible(next_pidx);
+						emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
+						accept_event();
+					}
+				}
+			} break;
 			case Key::ENTER: {
 				if (!project_opening_initiated) {
 					emit_signal(SNAME(SIGNAL_PROJECT_ASK_OPEN));
@@ -1321,7 +1669,7 @@ void ProjectList::_list_item_input(const Ref<InputEvent> &p_ev, Control *p_hb) {
 			} break;
 			case Key::F: {
 				if (kev->is_command_or_control_pressed()) {
-					return; // Focus the search box by the ProjectManager.
+					return;
 				}
 				_on_favorite_pressed(p_hb);
 				accept_event();
@@ -1334,29 +1682,31 @@ void ProjectList::_list_item_input(const Ref<InputEvent> &p_ev, Control *p_hb) {
 
 void ProjectList::_on_favorite_pressed(Node *p_hb) {
 	ProjectListItemControl *control = Object::cast_to<ProjectListItemControl>(p_hb);
-
-	int index = control->get_index();
-	Item item = _projects.write[index]; // Take copy
-
+	if (!control) {
+		return;
+	}
+	const int index = control->get_bound_project_index();
+	if (index < 0 || index >= _projects.size()) {
+		return;
+	}
+	const String target_path = _projects[index].path;
+	Item item = _projects.write[index];
 	item.favorite = !item.favorite;
 
 	_config.set_value(item.path, "favorite", item.favorite);
 	save_config();
 
 	_projects.write[index] = item;
-
 	control->set_is_favorite(item.favorite);
 
 	sort_projects();
 
-	// As controls are sorted, the calls are delayed in case follow focus does not take effect.
-	if (Input::get_singleton()->is_key_pressed(Key::ALT)) {
-		callable_mp((ScrollContainer *)this, &ScrollContainer::ensure_control_visible).call_deferred(control);
-	} else {
-		// Do not follow the control when toggling.
-		callable_mp(this, &ProjectList::ensure_project_visible).call_deferred(index);
+	for (int i = 0; i < _projects.size(); i++) {
+		if (_projects[i].path == target_path) {
+			callable_mp(this, &ProjectList::ensure_project_visible).call_deferred(i);
+			break;
+		}
 	}
-
 	update_dock_menu();
 }
 
@@ -1364,8 +1714,26 @@ void ProjectList::_on_explore_pressed(const String &p_path) {
 	OS::get_singleton()->shell_show_in_file_manager(p_path, true);
 }
 
+void ProjectList::_on_explore_item_pressed(Node *p_hb) {
+	ProjectListItemControl *control = Object::cast_to<ProjectListItemControl>(p_hb);
+	if (!control) {
+		return;
+	}
+	const int index = control->get_bound_project_index();
+	if (index >= 0 && index < _projects.size()) {
+		_on_explore_pressed(_projects[index].path);
+	}
+}
+
 void ProjectList::_open_menu(const Vector2 &p_at, Control *p_hb) {
-	int clicked_index = p_hb->get_index();
+	ProjectListItemControl *control = Object::cast_to<ProjectListItemControl>(p_hb);
+	if (!control) {
+		return;
+	}
+	int clicked_index = control->get_bound_project_index();
+	if (clicked_index < 0 || clicked_index >= _projects.size()) {
+		return;
+	}
 	const Item &clicked_project = _projects[clicked_index];
 
 	if (!project_context_menu) {
@@ -1388,7 +1756,9 @@ void ProjectList::_open_menu(const Vector2 &p_at, Control *p_hb) {
 		project_context_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ProjectList::_menu_option));
 		_update_menu_icons();
 	}
-	clicked_project.control->grab_focus(true);
+	select_project(clicked_index, true);
+	emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
+	control->grab_focus(true);
 
 	for (int id : Vector<int>{
 				 MENU_EDIT,
@@ -1419,11 +1789,11 @@ void ProjectList::_update_menu_icons() {
 	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_EDIT_RECOVERY), get_editor_theme_icon("NodeWarning"));
 	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_RUN), get_editor_theme_icon("Play"));
 #if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
-	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_SHOW_IN_FILE_MANAGER), get_editor_theme_icon("Load"));
+	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_SHOW_IN_FILE_MANAGER), get_editor_theme_icon("ClockGearsFolderLine"));
 #endif
 	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_COPY_PATH), get_editor_theme_icon("ActionCopy"));
 	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_RENAME), get_editor_theme_icon("Rename"));
-	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_MANAGE_TAGS), get_editor_theme_icon("Script"));
+	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_MANAGE_TAGS), get_editor_theme_icon("ClockGearsTag"));
 	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_DUPLICATE), get_editor_theme_icon("Duplicate"));
 	project_context_menu->set_item_icon(project_context_menu->get_item_index(MENU_REMOVE), get_editor_theme_icon("Remove"));
 }
@@ -1431,26 +1801,37 @@ void ProjectList::_update_menu_icons() {
 // Project list selection.
 
 void ProjectList::_clear_project_selection() {
-	Vector<Item> previous_selected_items = get_selected_projects();
 	_selected_project_paths.clear();
 
-	for (int i = 0; i < previous_selected_items.size(); ++i) {
-		previous_selected_items[i].control->set_selected(false);
+	for (ProjectListItemControl *ctrl : _card_pool) {
+		if (ctrl) {
+			ctrl->set_selected(false);
+		}
 	}
 	queue_accessibility_update();
 }
 
 void ProjectList::_select_project_nocheck(int p_index, bool p_hide_focus) {
+	if (p_index < 0 || p_index >= _projects.size()) {
+		return;
+	}
 	Item &item = _projects.write[p_index];
 	_selected_project_paths.insert(item.path);
-	item.control->set_selected(true, p_hide_focus);
+	if (item.control) {
+		item.control->set_selected(true, p_hide_focus);
+	}
 	queue_accessibility_update();
 }
 
 void ProjectList::_deselect_project_nocheck(int p_index) {
+	if (p_index < 0 || p_index >= _projects.size()) {
+		return;
+	}
 	Item &item = _projects.write[p_index];
 	_selected_project_paths.erase(item.path);
-	item.control->set_selected(false);
+	if (item.control) {
+		item.control->set_selected(false);
+	}
 	queue_accessibility_update();
 }
 
@@ -1462,49 +1843,46 @@ inline void _sort_project_range(int &a, int &b) {
 	}
 }
 
-void ProjectList::_select_project_range(int p_begin, int p_end) {
+void ProjectList::_select_project_range(int p_begin_filtered, int p_end_filtered) {
 	_clear_project_selection();
 
-	_sort_project_range(p_begin, p_end);
-	for (int i = p_begin; i <= p_end; ++i) {
-		_select_project_nocheck(i);
+	_sort_project_range(p_begin_filtered, p_end_filtered);
+	p_begin_filtered = MAX(0, p_begin_filtered);
+	p_end_filtered = MIN(_filtered_indices.size() - 1, p_end_filtered);
+	for (int fi = p_begin_filtered; fi <= p_end_filtered; ++fi) {
+		_select_project_nocheck(_filtered_indices[fi]);
 	}
 }
 
 void ProjectList::select_project(int p_index, bool p_hide_focus) {
-	// This method keeps only one project selected.
 	_clear_project_selection();
 	_select_project_nocheck(p_index, p_hide_focus);
+	emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
 }
 
 void ProjectList::deselect_project(int p_index) {
 	_deselect_project_nocheck(p_index);
+	emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
 }
 
 void ProjectList::select_first_visible_project() {
 	_clear_project_selection();
 
-	for (int i = 0; i < _projects.size(); i++) {
-		if (_projects[i].control->is_visible()) {
-			_select_project_nocheck(i);
-			break;
-		}
+	if (!_filtered_indices.is_empty()) {
+		_select_project_nocheck(_filtered_indices[0]);
 	}
+	emit_signal(SNAME(SIGNAL_SELECTION_CHANGED));
 }
 
 void ProjectList::deselect_all_visible_projects() {
-	for (int i = 0; i < _projects.size(); i++) {
-		if (_projects[i].control->is_visible()) {
-			_deselect_project_nocheck(i);
-		}
+	for (int pidx : _filtered_indices) {
+		_deselect_project_nocheck(pidx);
 	}
 }
 
 void ProjectList::select_all_visible_projects() {
-	for (int i = 0; i < _projects.size(); i++) {
-		if (_projects[i].control->is_visible()) {
-			_select_project_nocheck(i);
-		}
+	for (int pidx : _filtered_indices) {
+		_select_project_nocheck(pidx);
 	}
 }
 
@@ -1556,20 +1934,17 @@ void ProjectList::erase_selected_projects(bool p_delete_project_contents) {
 		return;
 	}
 
-	for (int i = 0; i < _projects.size(); ++i) {
+	HashSet<int> visible_set;
+	for (int pidx : _filtered_indices) {
+		visible_set.insert(pidx);
+	}
+
+	for (int i = _projects.size() - 1; i >= 0; --i) {
 		Item &item = _projects.write[i];
-		if (_selected_project_paths.has(item.path) && item.control->is_visible()) {
+		if (_selected_project_paths.has(item.path) && visible_set.has(i)) {
 			_config.erase_section(item.path);
-
-			// Comment out for now until we have a better warning system to
-			// ensure users delete their project only.
-			//if (p_delete_project_contents) {
-			//	OS::get_singleton()->move_to_trash(item.path);
-			//}
-
-			memdelete(item.control);
+			item.control = nullptr;
 			_projects.remove_at(i);
-			--i;
 		}
 	}
 
@@ -1577,23 +1952,19 @@ void ProjectList::erase_selected_projects(bool p_delete_project_contents) {
 	_selected_project_paths.clear();
 	_last_clicked = "";
 
+	sort_projects();
 	update_dock_menu();
 }
 
 // Resize project titles.
 
 void ProjectList::resize_project_titles() {
-	if (window_size_cache == 0) {
-		return;
+	for (ProjectListItemControl *ctrl : _card_pool) {
+		if (ctrl && ctrl->is_visible()) {
+			ctrl->resize_project_title(0);
+		}
 	}
-	const int window_size = get_window()->get_size().x;
-	const int difference = window_size - window_size_cache;
-	window_size_cache = window_size;
-
-	title_size_cache += difference;
-	for (Item &item : _projects) {
-		item.control->resize_project_title(title_size_cache);
-	}
+	_layout_visible_cards();
 }
 
 // Missing projects.
@@ -1630,9 +2001,24 @@ void ProjectList::erase_missing_projects() {
 
 	print_line("Removed " + itos(deleted_count) + " projects from the list, remaining " + itos(remaining_count) + " projects");
 	save_config();
+	sort_projects();
 }
 
 // Project list sorting and filtering.
+
+void ProjectList::set_view_mode(int p_mode, bool p_save) {
+	const ViewMode target = (p_mode == VIEW_GRID) ? VIEW_GRID : VIEW_LIST;
+	if (p_save && EditorSettings::get_singleton()) {
+		EditorSettings::get_singleton()->set("project_manager/view_mode", (int)target);
+		EditorSettings::get_singleton()->save();
+	}
+	if (_view_mode == target) {
+		return;
+	}
+	_view_mode = target;
+	set_v_scroll(0);
+	_layout_visible_cards();
+}
 
 void ProjectList::set_search_term(String p_search_term) {
 	_search_term = p_search_term;
@@ -1720,14 +2106,64 @@ void ProjectList::_bind_methods() {
 	ADD_SIGNAL(MethodInfo(SIGNAL_SELECTION_CHANGED));
 	ADD_SIGNAL(MethodInfo(SIGNAL_PROJECT_ASK_OPEN));
 	ADD_SIGNAL(MethodInfo(SIGNAL_MENU_OPTION_SELECTED));
+
+	ClassDB::bind_method(D_METHOD("get_project_count"), &ProjectList::get_project_count);
+	ClassDB::bind_method(D_METHOD("get_filtered_project_count"), &ProjectList::get_filtered_project_count);
+	ClassDB::bind_method(D_METHOD("get_pool_control_count"), &ProjectList::get_pool_control_count);
+	ClassDB::bind_method(D_METHOD("get_visible_bound_count"), &ProjectList::get_visible_bound_count);
+	ClassDB::bind_method(D_METHOD("set_view_mode", "mode", "save"), &ProjectList::set_view_mode, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_view_mode"), &ProjectList::get_view_mode);
+	ClassDB::bind_method(D_METHOD("set_order_option", "option", "save"), &ProjectList::set_order_option);
+	ClassDB::bind_method(D_METHOD("set_search_term", "term"), &ProjectList::set_search_term);
+	ClassDB::bind_method(D_METHOD("sort_projects"), &ProjectList::sort_projects);
+	ClassDB::bind_method(D_METHOD("select_project", "index", "hide_focus"), &ProjectList::select_project, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("select_first_visible_project"), &ProjectList::select_first_visible_project);
+	ClassDB::bind_method(D_METHOD("get_selected_project_paths"), &ProjectList::get_selected_project_paths);
+	ClassDB::bind_method(D_METHOD("erase_selected_projects", "delete_contents"), &ProjectList::erase_selected_projects);
+	ClassDB::bind_method(D_METHOD("is_any_project_missing"), &ProjectList::is_any_project_missing);
+	ClassDB::bind_method(D_METHOD("erase_missing_projects"), &ProjectList::erase_missing_projects);
+}
+
+PackedStringArray ProjectList::get_selected_project_paths() const {
+	PackedStringArray out;
+	for (const String &k : _selected_project_paths) {
+		out.push_back(k);
+	}
+	return out;
+}
+
+void ProjectList::set_config_path_for_test(const String &p_cfg_path) {
+	_config_path = p_cfg_path;
+	_config.clear();
+	_config.load(_config_path);
+	for (int i = 0; i < _projects.size(); i++) {
+		_projects.write[i].control = nullptr;
+	}
+	_projects.clear();
+	_filtered_indices.clear();
+	_selected_project_paths.clear();
+	_last_clicked = "";
+	load_project_list();
+	sort_projects();
+	_update_icons_async();
+	set_v_scroll(0);
+	_layout_visible_cards();
+	emit_signal(SNAME(SIGNAL_LIST_CHANGED));
 }
 
 ProjectList::ProjectList() {
-	set_follow_focus(true);
+	set_follow_focus(false);
+	if (!EditorPaths::get_singleton()) {
+		EditorPaths::create();
+	}
 
-	project_list_vbox = memnew(VBoxContainer);
-	project_list_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	add_child(project_list_vbox);
+	content_canvas = memnew(Control);
+	content_canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	add_child(content_canvas);
+
+	if (get_v_scroll_bar()) {
+		get_v_scroll_bar()->connect(SceneStringName(value_changed), callable_mp(this, &ProjectList::_on_vscroll_changed));
+	}
 
 	_config_path = EditorPaths::get_singleton()->get_data_dir().path_join("projects.cfg");
 	_migrate_config();

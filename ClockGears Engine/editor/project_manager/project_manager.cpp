@@ -43,6 +43,7 @@
 #include "editor/asset_library/asset_library_editor_plugin.h"
 #include "editor/doc/editor_help.h"
 #include "editor/editor_string_names.h"
+#include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_about.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_icon_manager.h"
@@ -81,7 +82,14 @@
 #include "servers/physics_3d/physics_server_3d.h"
 #endif // PHYSICS_3D_DISABLED
 
-#include "modules/modules_enabled.gen.h" // For gdscript, mono. (For editor help highlighter).
+#include "modules/modules_enabled.gen.h" // For gdscript, mono, clockgears.
+
+#ifdef MODULE_CLOCKGEARS_ENABLED
+#include "modules/clockgears/editor/clockgears_theme.h"
+#endif
+
+#include "scene/gui/button.h"
+#include "scene/gui/texture_rect.h"
 
 constexpr int GODOT4_CONFIG_VERSION = 5;
 
@@ -97,7 +105,10 @@ void ProjectManager::_notification(int p_what) {
 			Window *main_window = get_window();
 			if (main_window) {
 				// Handle macOS fullscreen and extend-to-title changes.
-				main_window->connect("titlebar_changed", callable_mp(this, &ProjectManager::_titlebar_resized));
+				Callable tb_cb = callable_mp(this, &ProjectManager::_titlebar_resized);
+				if (!main_window->is_connected("titlebar_changed", tb_cb)) {
+					main_window->connect("titlebar_changed", tb_cb);
+				}
 			}
 
 			// Theme has already been created in the constructor, so we can skip that step.
@@ -107,23 +118,33 @@ void ProjectManager::_notification(int p_what) {
 		case NOTIFICATION_READY: {
 			DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/display/keep_screen_on"));
 			const int default_sorting = (int)EDITOR_GET("project_manager/sorting_order");
-			filter_option->select(default_sorting);
+			if (default_sorting >= 0 && default_sorting < filter_option->get_item_count()) {
+				filter_option->select(default_sorting);
+			}
 			project_list->set_order_option(default_sorting, false);
+
+			const int default_view_mode = CLAMP((int)EDITOR_GET("project_manager/view_mode"), 0, 1);
+			if (view_list_btn && view_grid_btn) {
+				view_list_btn->set_pressed_no_signal(default_view_mode == 0);
+				view_grid_btn->set_pressed_no_signal(default_view_mode == 1);
+			}
+			project_list->set_view_mode(default_view_mode, false);
 
 			_select_main_view(MAIN_VIEW_PROJECTS);
 			_update_list_placeholder();
+			_update_project_buttons();
+			_update_selected_preview();
 			_titlebar_resized();
 			_update_compact_mode(true);
 		} break;
 
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			// TRANSLATORS: This refers to the application where users manage their Godot projects.
-			SceneTree::get_singleton()->get_root()->set_title(GODOT_VERSION_NAME + String(" - ") + TTR("Project Manager", "Application"));
+			if (SceneTree::get_singleton() && SceneTree::get_singleton()->get_root()) {
+				SceneTree::get_singleton()->get_root()->set_title(String::utf8("ClockGears Engine - Proyectos"));
+			}
 
-			const String line1 = TTR("You don't have any projects yet.");
-			const String line2 = TTR("Get started by creating a new one,\nimporting one that exists, or by downloading a project template from the Asset Store!");
-			empty_list_message->set_text(vformat("[center][b]%s[/b] %s[/center]", line1, line2));
-
+			_update_list_placeholder();
+			_update_selected_preview();
 			_titlebar_resized();
 
 			EditorHelpBit::clear_cache();
@@ -146,9 +167,11 @@ void ProjectManager::_notification(int p_what) {
 				_update_theme();
 			}
 			_update_list_placeholder();
+			_update_selected_preview();
 		} break;
 		case NOTIFICATION_RESIZED: {
 			project_list->resize_project_titles();
+			_update_selected_preview();
 			_update_compact_mode();
 		} break;
 	}
@@ -185,15 +208,24 @@ void ProjectManager::_build_icon_type_cache(Ref<Theme> p_theme) {
 
 // Main layout.
 
-// Hides certain parts of the Project Manager when window width gets smaller than combined_minimum_size.
 void ProjectManager::_update_compact_mode(bool p_reset_threshold) {
-	if (p_reset_threshold) {
+	if (p_reset_threshold && project_list_sidebar) {
 		project_list_sidebar->show();
-		compact_mode_threshold = root_container->get_combined_minimum_size().width;
+		compact_mode_threshold = root_container ? root_container->get_combined_minimum_size().width : 0;
 	}
 
-	bool compact_mode = get_size().width < compact_mode_threshold;
-	project_list_sidebar->set_visible(!compact_mode);
+	const float width = get_size().width;
+	// Mantener visible el panel derecho "Acciones de proyecto" desde 960 px en adelante;
+	// ajustar suavemente su ancho entre 960x540 y resoluciones mayores sin recortes ni scroll horizontal.
+	if (sidebar_panel) {
+		const int target_sidebar_w = (width > 0.0f && width < 1120.0f * EDSCALE) ? int(290 * EDSCALE) : int(340 * EDSCALE);
+		sidebar_panel->set_custom_minimum_size(Size2(target_sidebar_w, 0));
+		const bool ultra_narrow = (width > 0.0f && width < 680.0f * EDSCALE);
+		sidebar_panel->set_visible(!ultra_narrow);
+		if (project_list_sidebar) {
+			project_list_sidebar->set_visible(!ultra_narrow);
+		}
+	}
 }
 
 void ProjectManager::_update_size_limits() {
@@ -229,10 +261,22 @@ void ProjectManager::_update_size_limits() {
 void ProjectManager::_update_theme(bool p_skip_creation) {
 	if (!p_skip_creation) {
 		theme = EditorThemeManager::generate_theme(theme);
-		DisplayServer::set_early_window_clear_color_override(true, theme->get_color("background", EditorStringName(Editor)));
 	}
 
 	Vector<Ref<Theme>> editor_themes;
+#ifdef MODULE_CLOCKGEARS_ENABLED
+	if (ClockGearsTheme *cg_inst = ClockGearsTheme::get_singleton()) {
+		cg_inst->sync_from_project_settings();
+		Ref<Theme> cg_theme = cg_inst->get_active_theme();
+		if (cg_theme.is_valid()) {
+			editor_themes.push_back(cg_theme);
+		}
+		Callable cb = callable_mp(this, &ProjectManager::_on_clockgears_theme_changed);
+		if (!cg_inst->is_connected("theme_changed", cb)) {
+			cg_inst->connect("theme_changed", cb);
+		}
+	}
+#endif
 	editor_themes.push_back(theme);
 	editor_themes.push_back(ThemeDB::get_singleton()->get_default_theme());
 
@@ -255,27 +299,76 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 
 	// Update styles.
 	{
-		const int top_bar_separation = get_theme_constant("top_bar_separation", EditorStringName(Editor));
-		root_container->add_theme_constant_override("margin_left", top_bar_separation);
-		root_container->add_theme_constant_override("margin_top", top_bar_separation);
-		root_container->add_theme_constant_override("margin_bottom", top_bar_separation);
-		root_container->add_theme_constant_override("margin_right", top_bar_separation);
+		const Color bg_clear = has_theme_color("background_color", "ProjectManager") ? get_theme_color("background_color", "ProjectManager") : get_theme_color("background", EditorStringName(Editor));
+		DisplayServer::set_early_window_clear_color_override(true, bg_clear);
+
+		const int top_bar_separation = int(10 * EDSCALE);
+		root_container->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+		root_container->add_theme_constant_override("margin_top", int(10 * EDSCALE));
+		root_container->add_theme_constant_override("margin_bottom", int(10 * EDSCALE));
+		root_container->add_theme_constant_override("margin_right", int(12 * EDSCALE));
 		main_vbox->add_theme_constant_override("separation", top_bar_separation);
 
-		background_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("Background", EditorStringName(EditorStyles)));
+		if (has_theme_stylebox("background_panel", "ProjectManager")) {
+			background_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("background_panel", "ProjectManager"));
+		} else {
+			background_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("Background", EditorStringName(EditorStyles)));
+		}
+		if (header_bar) {
+			header_bar->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SceneStringName(panel), "ProjectHeaderBar"));
+		}
 		main_view_container->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("panel_container", "ProjectManager"));
 
-		title_bar_logo->set_button_icon(get_editor_theme_icon("TitleBarLogo"));
+		Ref<Texture2D> engine_icon = get_editor_theme_icon("DefaultProjectIcon");
+		title_bar_logo->set_button_icon(engine_icon);
+
+		if (header_title_label) {
+			header_title_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
+			header_title_label->add_theme_font_size_override(SceneStringName(font_size), int(16 * EDSCALE));
+			header_title_label->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_color", "Label"));
+		}
+		if (header_subtitle_label) {
+			header_subtitle_label->add_theme_font_size_override(SceneStringName(font_size), int(11 * EDSCALE));
+			header_subtitle_label->add_theme_color_override(SceneStringName(font_color), get_theme_color("subtitle_color", "ProjectManager"));
+		}
+		if (section_title_label) {
+			section_title_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
+			section_title_label->add_theme_font_size_override(SceneStringName(font_size), int(15 * EDSCALE));
+			section_title_label->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_color", "Label"));
+		}
 
 		_set_main_view_icon(MAIN_VIEW_PROJECTS, get_editor_theme_icon("ProjectList"));
 
-		// Project list.
+		// Project list & actions panel.
 		{
 			loading_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
 			project_list_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("project_list", "ProjectManager"));
+			if (sidebar_panel) {
+				sidebar_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("action_panel", "ProjectManager"));
+			}
+			if (sidebar_header_label) {
+				sidebar_header_label->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
+				sidebar_header_label->add_theme_font_size_override(SceneStringName(font_size), int(14 * EDSCALE));
+				sidebar_header_label->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_color", "Label"));
+			}
+			if (sidebar_preview_panel) {
+				sidebar_preview_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox("preview_card", "ProjectManager"));
+			}
+			if (sidebar_preview_name) {
+				sidebar_preview_name->add_theme_font_override(SceneStringName(font), get_theme_font("bold", EditorStringName(EditorFonts)));
+				sidebar_preview_name->add_theme_font_size_override(SceneStringName(font_size), int(14 * EDSCALE));
+				sidebar_preview_name->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_color", "Label"));
+			}
+			if (sidebar_preview_path) {
+				sidebar_preview_path->add_theme_font_size_override(SceneStringName(font_size), int(11 * EDSCALE));
+				sidebar_preview_path->add_theme_color_override(SceneStringName(font_color), get_theme_color("subtitle_color", "ProjectManager"));
+			}
 
 			empty_list_create_project->set_button_icon(get_editor_theme_icon("Add"));
-			empty_list_import_project->set_button_icon(get_editor_theme_icon("Load"));
+			empty_list_import_project->set_button_icon(get_editor_theme_icon("ClockGearsFolderLine"));
+			if (empty_list_clear_filter_btn) {
+				empty_list_clear_filter_btn->set_button_icon(get_editor_theme_icon("Clear"));
+			}
 			if (empty_list_open_assetlib) {
 				empty_list_open_assetlib->set_button_icon(get_editor_theme_icon("AssetStore"));
 			}
@@ -285,20 +378,28 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 				empty_list_online_warning->add_theme_color_override(SceneStringName(font_color), get_theme_color("font_placeholder_color", EditorStringName(Editor)));
 			}
 
-			// Top bar.
+			// Top bar & toolbar.
 			search_box->set_right_icon(get_editor_theme_icon("Search"));
-			quick_settings_button->set_button_icon(get_editor_theme_icon("Tools"));
+			quick_settings_button->set_button_icon(get_editor_theme_icon("ClockGearsGear"));
+			if (view_list_btn) {
+				view_list_btn->set_button_icon(get_editor_theme_icon("ClockGearsViewList"));
+			}
+			if (view_grid_btn) {
+				view_grid_btn->set_button_icon(get_editor_theme_icon("ClockGearsViewGrid"));
+			}
 
-			// Sidebar.
-			create_btn->set_button_icon(get_editor_theme_icon("Add"));
-			import_btn->set_button_icon(get_editor_theme_icon("Load"));
+			create_btn->set_button_icon(Ref<Texture2D>());
+			import_btn->set_button_icon(get_editor_theme_icon("ClockGearsFolderLine"));
 			scan_btn->set_button_icon(get_editor_theme_icon("Search"));
 			open_btn->set_button_icon(get_editor_theme_icon("Edit"));
 			open_options_btn->set_button_icon(get_editor_theme_icon("Collapse"));
 			run_btn->set_button_icon(get_editor_theme_icon("Play"));
 			rename_btn->set_button_icon(get_editor_theme_icon("Rename"));
 			duplicate_btn->set_button_icon(get_editor_theme_icon("Duplicate"));
-			manage_tags_btn->set_button_icon(get_editor_theme_icon("Script"));
+			manage_tags_btn->set_button_icon(get_editor_theme_icon("ClockGearsTag"));
+			if (show_in_folder_btn) {
+				show_in_folder_btn->set_button_icon(get_editor_theme_icon("ClockGearsFolderLine"));
+			}
 			erase_btn->set_button_icon(get_editor_theme_icon("Remove"));
 			erase_missing_btn->set_button_icon(get_editor_theme_icon("Clear"));
 			create_tag_btn->set_button_icon(get_editor_theme_icon("Add"));
@@ -318,10 +419,13 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 			rename_btn->add_theme_constant_override("h_separation", h_separation);
 			duplicate_btn->add_theme_constant_override("h_separation", h_separation);
 			manage_tags_btn->add_theme_constant_override("h_separation", h_separation);
+			if (show_in_folder_btn) {
+				show_in_folder_btn->add_theme_constant_override("h_separation", h_separation);
+			}
 			erase_btn->add_theme_constant_override("h_separation", h_separation);
 			erase_missing_btn->add_theme_constant_override("h_separation", h_separation);
 
-			open_btn_container->add_theme_constant_override("separation", 0);
+			open_btn_container->add_theme_constant_override("separation", int(2 * EDSCALE));
 			open_options_popup->set_item_icon(0, get_editor_theme_icon("Notification"));
 			open_options_popup->set_item_icon(1, get_editor_theme_icon("NodeWarning"));
 		}
@@ -335,6 +439,9 @@ void ProjectManager::_update_theme(bool p_skip_creation) {
 			asset_library->add_theme_style_override(SceneStringName(panel), memnew(StyleBoxEmpty));
 		}
 	}
+
+	_update_selected_preview();
+	_update_list_placeholder();
 
 #if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
 	EditorHelpHighlighter::get_singleton()->clear_cache();
@@ -529,10 +636,12 @@ void ProjectManager::_restart_confirmed() {
 // Project list.
 
 void ProjectManager::_update_list_placeholder() {
-	if (project_list->get_project_count() > 0) {
-		empty_list_placeholder->hide();
+	if (!is_inside_tree() || !project_list || !empty_list_placeholder || !empty_list_message) {
 		return;
 	}
+
+	const int total_count = project_list->get_project_count();
+	const int filtered_count = project_list->get_filtered_project_count();
 
 	if (empty_list_open_assetlib) {
 		empty_list_open_assetlib->hide();
@@ -541,7 +650,37 @@ void ProjectManager::_update_list_placeholder() {
 		empty_list_online_warning->hide();
 	}
 
-	empty_list_placeholder->show();
+	if (total_count == 0) {
+		const String title_col = get_theme_color("empty_title_color", "ProjectManager").to_html(false);
+		const String sub_col = get_theme_color("empty_sub_color", "ProjectManager").to_html(false);
+		empty_list_message->set_text(vformat("[center][color=#%s][b]%s[/b][/color]\n[color=#%s]%s[/color][/center]",
+				title_col, String::utf8("Aún no tienes proyectos"),
+				sub_col, String::utf8("Crea un proyecto nuevo o importa uno existente para empezar.")));
+		empty_list_create_project->set_visible(true);
+		empty_list_import_project->set_visible(true);
+		if (empty_list_clear_filter_btn) {
+			empty_list_clear_filter_btn->set_visible(false);
+		}
+		empty_list_placeholder->show();
+		return;
+	}
+
+	if (filtered_count == 0) {
+		const String title_col = get_theme_color("empty_title_color", "ProjectManager").to_html(false);
+		const String sub_col = get_theme_color("empty_sub_color", "ProjectManager").to_html(false);
+		empty_list_message->set_text(vformat("[center][color=#%s][b]%s[/b][/color]\n[color=#%s]%s[/color][/center]",
+				title_col, String::utf8("No hay proyectos que coincidan"),
+				sub_col, String::utf8("Prueba otra búsqueda o limpia el filtro actual.")));
+		empty_list_create_project->set_visible(false);
+		empty_list_import_project->set_visible(false);
+		if (empty_list_clear_filter_btn) {
+			empty_list_clear_filter_btn->set_visible(true);
+		}
+		empty_list_placeholder->show();
+		return;
+	}
+
+	empty_list_placeholder->hide();
 }
 
 void ProjectManager::_scan_projects() {
@@ -868,18 +1007,17 @@ void ProjectManager::_erase_project() {
 
 	String confirm_message;
 	if (selected_list.size() >= 2) {
-		confirm_message = vformat(TTR("Remove %d projects from the list?"), selected_list.size());
+		confirm_message = vformat(String::utf8("¿Eliminar %d proyectos de la lista?\nNo se borrarán los archivos de sus carpetas."), selected_list.size());
 	} else {
-		confirm_message = TTRC("Remove this project from the list?");
+		confirm_message = String::utf8("¿Eliminar este proyecto de la lista?\nNo se borrarán los archivos de su carpeta.");
 	}
 
 	erase_ask_label->set_text(confirm_message);
-	//delete_project_contents->set_pressed(false);
 	erase_ask->popup_centered();
 }
 
 void ProjectManager::_erase_missing_projects() {
-	erase_missing_ask->set_text(TTRC("Remove all missing projects from the list?\nThe project folders' contents won't be modified."));
+	erase_missing_ask->set_text(String::utf8("¿Eliminar todos los proyectos faltantes de la lista?\nNo se modificará el contenido de las carpetas en disco."));
 	erase_missing_ask->popup_centered();
 }
 
@@ -913,9 +1051,13 @@ void ProjectManager::_update_project_buttons() {
 	rename_btn->set_disabled(empty_selection || is_missing_project_selected);
 	duplicate_btn->set_disabled(empty_selection || is_missing_project_selected);
 	manage_tags_btn->set_disabled(empty_selection || is_missing_project_selected || selected_projects.size() > 1);
+	if (show_in_folder_btn) {
+		show_in_folder_btn->set_disabled(empty_selection || is_missing_project_selected);
+	}
 	run_btn->set_disabled(empty_selection || is_missing_project_selected);
 
 	erase_missing_btn->set_disabled(!project_list->is_any_project_missing());
+	_update_selected_preview();
 }
 
 void ProjectManager::_open_options_popup() {
@@ -1027,6 +1169,86 @@ void ProjectManager::_on_order_option_changed(int p_idx) {
 	}
 }
 
+void ProjectManager::_on_view_mode_pressed(int p_mode) {
+	const int clamped = CLAMP(p_mode, 0, 1);
+	if (view_list_btn && view_grid_btn) {
+		view_list_btn->set_pressed_no_signal(clamped == 0);
+		view_grid_btn->set_pressed_no_signal(clamped == 1);
+	}
+	if (project_list) {
+		project_list->set_view_mode(clamped, true);
+	}
+}
+
+void ProjectManager::_clear_search_filter() {
+	if (search_box) {
+		search_box->clear();
+	}
+	_on_search_term_changed(String());
+}
+
+void ProjectManager::_on_clockgears_theme_changed(const String &p_theme_id) {
+	if (is_inside_tree()) {
+		_update_theme(true);
+	}
+}
+
+void ProjectManager::_update_selected_preview() {
+	if (!is_inside_tree() || !sidebar_preview_panel || !sidebar_preview_icon || !sidebar_preview_name || !sidebar_preview_path || !project_list) {
+		return;
+	}
+
+	Vector<ProjectList::Item> selected_projects = project_list->get_selected_projects();
+	if (selected_projects.is_empty()) {
+		Ref<Texture2D> default_icon = get_editor_theme_icon("DefaultProjectIcon");
+		sidebar_preview_icon->set_texture(default_icon);
+		sidebar_preview_icon->set_self_modulate(Color(1, 1, 1, 0.45f));
+		sidebar_preview_name->set_text(String::utf8("Sin proyecto seleccionado"));
+		sidebar_preview_path->set_text(String::utf8("Elige un proyecto de la lista para ver sus acciones."));
+		sidebar_preview_path->set_tooltip_text(String());
+		return;
+	}
+
+	if (selected_projects.size() > 1) {
+		Ref<Texture2D> icon = get_editor_theme_icon("DefaultProjectIcon");
+		int single_idx = project_list->get_single_selected_index();
+		if (ProjectListItemControl *ctrl = project_list->get_bound_control_for_project(single_idx)) {
+			if (!ctrl->should_load_project_icon() && ctrl->get_icon_texture().is_valid()) {
+				icon = ctrl->get_icon_texture();
+			}
+		}
+		sidebar_preview_icon->set_texture(icon);
+		sidebar_preview_icon->set_self_modulate(Color(1, 1, 1, 1));
+		sidebar_preview_name->set_text(vformat(String::utf8("%d proyectos seleccionados"), selected_projects.size()));
+		sidebar_preview_path->set_text(String::utf8("Usa Editar, Ejecutar o Eliminar de la lista."));
+		sidebar_preview_path->set_tooltip_text(String());
+		return;
+	}
+
+	const ProjectList::Item &item = selected_projects[0];
+	Ref<Texture2D> icon = get_editor_theme_icon("DefaultProjectIcon");
+	int single_idx = project_list->get_single_selected_index();
+	if (ProjectListItemControl *ctrl = project_list->get_bound_control_for_project(single_idx)) {
+		if (!ctrl->should_load_project_icon() && ctrl->get_icon_texture().is_valid()) {
+			icon = ctrl->get_icon_texture();
+		}
+	}
+	sidebar_preview_icon->set_texture(icon);
+	sidebar_preview_icon->set_self_modulate(item.missing ? Color(1, 1, 1, 0.55f) : Color(1, 1, 1, 1));
+	sidebar_preview_name->set_text(item.project_name.is_empty() ? String::utf8("Proyecto sin título") : item.project_name);
+
+	Ref<Font> path_font = sidebar_preview_path->get_theme_font(SceneStringName(font));
+	int path_size = sidebar_preview_path->get_theme_font_size(SceneStringName(font_size));
+	float max_w = MAX(140.0f * EDSCALE, sidebar_preview_path->get_size().x);
+	String elided = ProjectList::elide_path_middle(item.path, path_font, path_size, max_w);
+	if (item.missing) {
+		sidebar_preview_path->set_text(String::utf8("Faltante • ") + elided);
+	} else {
+		sidebar_preview_path->set_text(elided);
+	}
+	sidebar_preview_path->set_tooltip_text(item.path);
+}
+
 void ProjectManager::_on_search_term_changed(const String &p_term) {
 	project_list->set_search_term(p_term);
 	project_list->sort_projects();
@@ -1036,6 +1258,7 @@ void ProjectManager::_on_search_term_changed(const String &p_term) {
 	// as the search field is automatically focused on startup.
 	project_list->select_first_visible_project();
 	_update_project_buttons();
+	_update_list_placeholder();
 }
 
 void ProjectManager::_on_search_term_submitted(const String &p_text) {
@@ -1459,8 +1682,14 @@ ProjectManager::ProjectManager() {
 
 	// Initialize settings.
 	{
+		if (!EditorPaths::get_singleton()) {
+			EditorPaths::create();
+		}
 		if (!EditorSettings::get_singleton()) {
+			const bool was_editor_hint = Engine::get_singleton()->is_editor_hint();
+			Engine::get_singleton()->set_editor_hint(true);
 			EditorSettings::create();
+			Engine::get_singleton()->set_editor_hint(was_editor_hint);
 		}
 		EditorSettings::get_singleton()->set_optimize_save(false); // Just write settings as they come.
 
@@ -1550,15 +1779,17 @@ ProjectManager::ProjectManager() {
 	main_vbox = memnew(VBoxContainer);
 	root_container->add_child(main_vbox);
 
-	// Title bar.
+	// Header bar (Cabecera).
 	bool can_expand = bool(EDITOR_GET("interface/editor/appearance/expand_to_title")) && DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_EXTEND_TO_TITLE);
 
 	{
+		header_bar = memnew(PanelContainer);
+		main_vbox->add_child(header_bar);
+
 		title_bar = memnew(EditorTitleBar);
-		main_vbox->add_child(title_bar);
+		header_bar->add_child(title_bar);
 
 		if (can_expand) {
-			// Add spacer to avoid other controls under window minimize/maximize/close buttons (left side).
 			left_menu_spacer = memnew(Control);
 			left_menu_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 			title_bar->add_child(left_menu_spacer);
@@ -1567,19 +1798,37 @@ ProjectManager::ProjectManager() {
 		HBoxContainer *left_hbox = memnew(HBoxContainer);
 		left_hbox->set_alignment(BoxContainer::ALIGNMENT_BEGIN);
 		left_hbox->set_h_size_flags(Control::SIZE_FILL);
-		left_hbox->set_stretch_ratio(1.0);
+		left_hbox->add_theme_constant_override("separation", int(10 * EDSCALE));
 		title_bar->add_child(left_hbox);
 
 		title_bar_logo = memnew(Button);
 		title_bar_logo->set_flat(true);
-		title_bar_logo->set_tooltip_text(TTR("About ClockGears Engine"));
+		title_bar_logo->set_expand_icon(true);
+		title_bar_logo->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+		title_bar_logo->add_theme_constant_override("icon_max_width", int(32 * EDSCALE));
+		title_bar_logo->set_custom_minimum_size(Size2(38, 38) * EDSCALE);
+		title_bar_logo->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		title_bar_logo->set_tooltip_text(String::utf8("Acerca de ClockGears Engine"));
 		left_hbox->add_child(title_bar_logo);
 		title_bar_logo->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_show_about));
+
+		VBoxContainer *brand_vb = memnew(VBoxContainer);
+		brand_vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+		brand_vb->add_theme_constant_override("separation", int(1 * EDSCALE));
+		left_hbox->add_child(brand_vb);
+
+		header_title_label = memnew(Label);
+		header_title_label->set_text("ClockGears Engine");
+		brand_vb->add_child(header_title_label);
+
+		header_subtitle_label = memnew(Label);
+		header_subtitle_label->set_text(String::utf8("Administrador de proyectos"));
+		brand_vb->add_child(header_subtitle_label);
 
 		bool global_menu = !bool(EDITOR_GET("interface/editor/appearance/use_embedded_menu")) && NativeMenu::get_singleton()->has_feature(NativeMenu::FEATURE_GLOBAL_MENU);
 		if (global_menu) {
 			MenuBar *main_menu_bar = memnew(MenuBar);
-			main_menu_bar->set_start_index(0); // Main menu, add to the start of global menu.
+			main_menu_bar->set_start_index(0);
 			main_menu_bar->set_prefer_global_menu(true);
 			left_hbox->add_child(main_menu_bar);
 
@@ -1596,45 +1845,56 @@ ProjectManager::ProjectManager() {
 				main_menu_bar->add_child(help_menu);
 			}
 		}
-		if (can_expand) {
-			// Spacer to center main toggles.
-			left_spacer = memnew(Control);
-			left_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-			left_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			title_bar->add_child(left_spacer);
-		}
 
 		main_view_toggles = memnew(HBoxContainer);
-		main_view_toggles->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-		main_view_toggles->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		main_view_toggles->set_stretch_ratio(2.0);
-		title_bar->add_child(main_view_toggles);
-		title_bar->set_center_control(main_view_toggles);
+		main_view_toggles->hide(); // Una única vista ("Proyectos locales"); estructura conservada para futuras pestañas.
+		left_hbox->add_child(main_view_toggles);
+		main_view_toggles_group.instantiate();
 
+		left_spacer = memnew(Control);
+		left_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+		left_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		left_spacer->set_stretch_ratio(0.5f);
+		left_spacer->set_custom_minimum_size(Size2(8 * EDSCALE, 0));
+		title_bar->add_child(left_spacer);
+
+		search_box = memnew(LineEdit);
+		search_box->set_placeholder(String::utf8("Buscar proyectos…"));
+		search_box->set_accessibility_name(String::utf8("Buscar proyectos"));
+		search_box->set_tooltip_text(String::utf8("Filtra proyectos por nombre, etiqueta o componente de ruta.\nIncluye `/` para filtrar también por ruta completa."));
+		search_box->set_clear_button_enabled(true);
+		search_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		search_box->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		search_box->set_stretch_ratio(1.6f);
+		search_box->set_custom_minimum_size(Size2(200 * EDSCALE, 34 * EDSCALE));
+		search_box->connect(SceneStringName(text_changed), callable_mp(this, &ProjectManager::_on_search_term_changed));
+		search_box->connect(SceneStringName(text_submitted), callable_mp(this, &ProjectManager::_on_search_term_submitted));
+		title_bar->add_child(search_box);
 		if (can_expand) {
-			// Spacer to center main toggles.
-			right_spacer = memnew(Control);
-			right_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-			right_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			title_bar->add_child(right_spacer);
+			title_bar->set_center_control(search_box);
 		}
 
-		main_view_toggles_group.instantiate();
+		right_spacer = memnew(Control);
+		right_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+		right_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		right_spacer->set_stretch_ratio(0.5f);
+		right_spacer->set_custom_minimum_size(Size2(8 * EDSCALE, 0));
+		title_bar->add_child(right_spacer);
 
 		HBoxContainer *right_hbox = memnew(HBoxContainer);
 		right_hbox->set_alignment(BoxContainer::ALIGNMENT_END);
 		right_hbox->set_h_size_flags(Control::SIZE_FILL);
-		right_hbox->set_stretch_ratio(1.0);
 		title_bar->add_child(right_hbox);
 
 		quick_settings_button = memnew(Button);
-		quick_settings_button->set_flat(true);
-		quick_settings_button->set_text(TTRC("Settings"));
+		quick_settings_button->set_text(String::utf8("Configuración"));
+		quick_settings_button->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		quick_settings_button->set_custom_minimum_size(Size2(0, 34) * EDSCALE);
+		quick_settings_button->add_theme_constant_override("h_separation", int(6 * EDSCALE));
 		right_hbox->add_child(quick_settings_button);
 		quick_settings_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_show_quick_settings));
 
 		if (can_expand) {
-			// Add spacer to avoid other controls under the window minimize/maximize/close buttons (right side).
 			right_menu_spacer = memnew(Control);
 			right_menu_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 			title_bar->add_child(right_menu_spacer);
@@ -1649,22 +1909,36 @@ ProjectManager::ProjectManager() {
 	{
 		local_projects_vb = memnew(VBoxContainer);
 		local_projects_vb->set_name("LocalProjectsTab");
-		_add_main_view(MAIN_VIEW_PROJECTS, TTRC("Proyectos locales"), Ref<Texture2D>(), local_projects_vb);
+		local_projects_vb->add_theme_constant_override("separation", int(10 * EDSCALE));
+		_add_main_view(MAIN_VIEW_PROJECTS, String::utf8("Proyectos locales"), Ref<Texture2D>(), local_projects_vb);
 
-		// Project list's top bar.
+		// Barra de herramientas (Toolbar).
 		{
 			HBoxContainer *hb = memnew(HBoxContainer);
 			hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			hb->add_theme_constant_override("separation", int(8 * EDSCALE));
 			local_projects_vb->add_child(hb);
 
+			section_title_label = memnew(Label);
+			section_title_label->set_text(String::utf8("Proyectos locales"));
+			section_title_label->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+			hb->add_child(section_title_label);
+
+			Control *toolbar_gap = memnew(Control);
+			toolbar_gap->set_custom_minimum_size(Size2(4 * EDSCALE, 0));
+			hb->add_child(toolbar_gap);
+
 			create_btn = memnew(Button);
-			create_btn->set_text(TTRC("Crear"));
+			create_btn->set_text(String::utf8("+ Crear Proyecto"));
+			create_btn->set_theme_type_variation("ClockGearsPrimaryButton");
+			create_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			create_btn->set_shortcut(ED_SHORTCUT("project_manager/new_project", TTRC("New Project"), KeyModifierMask::CMD_OR_CTRL | Key::N));
 			create_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_new_project));
 			hb->add_child(create_btn);
 
 			import_btn = memnew(Button);
-			import_btn->set_text(TTRC("Importar"));
+			import_btn->set_text(String::utf8("Importar"));
+			import_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			import_btn->set_shortcut(ED_SHORTCUT("project_manager/import_project", TTRC("Import Project"), KeyModifierMask::CMD_OR_CTRL | Key::I));
 			import_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_import_project));
 			hb->add_child(import_btn);
@@ -1673,52 +1947,74 @@ ProjectManager::ProjectManager() {
 			scan_btn->set_text(TTRC("Scan"));
 			scan_btn->set_shortcut(ED_SHORTCUT("project_manager/scan_projects", TTRC("Scan Projects"), KeyModifierMask::CMD_OR_CTRL | Key::S));
 			scan_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_scan_projects));
-			scan_btn->hide(); // Clean layout: only Crear and Importar
+			scan_btn->hide(); // Limpieza: solo Crear e Importar visibles en la barra.
 			hb->add_child(scan_btn);
 
 			loading_label = memnew(Label(TTRC("Loading, please wait...")));
 			loading_label->set_accessibility_live(AccessibilityServerEnums::AccessibilityLiveMode::LIVE_ASSERTIVE);
-			loading_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			loading_label->hide();
 			hb->add_child(loading_label);
 
-			search_box = memnew(LineEdit);
-			search_box->set_placeholder(TTRC("Filter Projects"));
-			search_box->set_accessibility_name(TTRC("Filter Projects"));
-			search_box->set_tooltip_text(TTRC("This field filters projects by name and last path component.\nTo filter projects by name and full path, the query must contain at least one `/` character."));
-			search_box->set_clear_button_enabled(true);
-			search_box->connect(SceneStringName(text_changed), callable_mp(this, &ProjectManager::_on_search_term_changed));
-			search_box->connect(SceneStringName(text_submitted), callable_mp(this, &ProjectManager::_on_search_term_submitted));
-			search_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			hb->add_child(search_box);
+			Control *toolbar_spacer = memnew(Control);
+			toolbar_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			toolbar_spacer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+			hb->add_child(toolbar_spacer);
+
+			view_mode_group.instantiate();
+			HBoxContainer *view_switch_hb = memnew(HBoxContainer);
+			view_switch_hb->add_theme_constant_override("separation", int(2 * EDSCALE));
+			hb->add_child(view_switch_hb);
+
+			view_list_btn = memnew(Button);
+			view_list_btn->set_toggle_mode(true);
+			view_list_btn->set_button_group(view_mode_group);
+			view_list_btn->set_pressed_no_signal(true);
+			view_list_btn->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+			view_list_btn->set_custom_minimum_size(Size2(32, 32) * EDSCALE);
+			view_list_btn->set_tooltip_text(String::utf8("Vista de lista"));
+			view_list_btn->set_accessibility_name(String::utf8("Vista de lista"));
+			view_list_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_on_view_mode_pressed).bind(0));
+			view_switch_hb->add_child(view_list_btn);
+
+			view_grid_btn = memnew(Button);
+			view_grid_btn->set_toggle_mode(true);
+			view_grid_btn->set_button_group(view_mode_group);
+			view_grid_btn->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+			view_grid_btn->set_custom_minimum_size(Size2(32, 32) * EDSCALE);
+			view_grid_btn->set_tooltip_text(String::utf8("Vista de cuadrícula"));
+			view_grid_btn->set_accessibility_name(String::utf8("Vista de cuadrícula"));
+			view_grid_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_on_view_mode_pressed).bind(1));
+			view_switch_hb->add_child(view_grid_btn);
 
 			sort_label = memnew(Label);
-			sort_label->set_text(TTRC("Sort:"));
+			sort_label->set_text(String::utf8("Ordenar por"));
+			sort_label->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 			hb->add_child(sort_label);
 
 			filter_option = memnew(OptionButton);
 			filter_option->set_clip_text(true);
 			filter_option->set_fit_to_longest_item(false);
-			filter_option->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			filter_option->set_stretch_ratio(0.3);
-			filter_option->set_accessibility_name(TTRC("Sort:"));
+			filter_option->set_custom_minimum_size(Size2(138 * EDSCALE, 32 * EDSCALE));
+			filter_option->set_accessibility_name(String::utf8("Ordenar por"));
 			filter_option->connect(SceneStringName(item_selected), callable_mp(this, &ProjectManager::_on_order_option_changed));
 			hb->add_child(filter_option);
 
-			filter_option->add_item(TTRC("Last Edited"));
-			filter_option->add_item(TTRC("Name"));
-			filter_option->add_item(TTRC("Path"));
-			filter_option->add_item(TTRC("Tags"));
+			filter_option->add_item(String::utf8("Último editado"));
+			filter_option->add_item(String::utf8("Nombre"));
+			filter_option->add_item(String::utf8("Ruta"));
+			filter_option->add_item(String::utf8("Etiquetas"));
 		}
 
-		// Project list and its sidebar.
+		// Project list and right panel ("Acciones de proyecto").
 		{
 			HBoxContainer *project_list_hbox = memnew(HBoxContainer);
-			local_projects_vb->add_child(project_list_hbox);
+			project_list_hbox->add_theme_constant_override("separation", int(12 * EDSCALE));
 			project_list_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+			local_projects_vb->add_child(project_list_hbox);
 
 			project_list_panel = memnew(PanelContainer);
 			project_list_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			project_list_panel->set_clip_contents(true);
 			project_list_hbox->add_child(project_list_panel);
 
 			project_list = memnew(ProjectList);
@@ -1731,11 +2027,13 @@ ProjectManager::ProjectManager() {
 			project_list->connect(ProjectList::SIGNAL_MENU_OPTION_SELECTED, callable_mp(this, &ProjectManager::_project_list_menu_option));
 			project_list->connect(SceneStringName(minimum_size_changed), callable_mp(this, &ProjectManager::_update_compact_mode).bind(true));
 
-			// Empty project list placeholder.
+			// Empty / no-match placeholder centered over list panel.
 			{
 				empty_list_placeholder = memnew(VBoxContainer);
+				empty_list_placeholder->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 				empty_list_placeholder->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-				empty_list_placeholder->add_theme_constant_override("separation", 16 * EDSCALE);
+				empty_list_placeholder->set_custom_minimum_size(Size2(320, 0) * EDSCALE);
+				empty_list_placeholder->add_theme_constant_override("separation", int(14 * EDSCALE));
 				empty_list_placeholder->hide();
 				project_list_panel->add_child(empty_list_placeholder);
 
@@ -1745,58 +2043,115 @@ ProjectManager::ProjectManager() {
 				empty_list_message->set_fit_content(true);
 				empty_list_message->set_h_size_flags(SIZE_EXPAND_FILL);
 				empty_list_message->add_theme_style_override(CoreStringName(normal), memnew(StyleBoxEmpty));
-
 				empty_list_placeholder->add_child(empty_list_message);
 
 				FlowContainer *empty_list_actions = memnew(FlowContainer);
 				empty_list_actions->set_alignment(FlowContainer::ALIGNMENT_CENTER);
+				empty_list_actions->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+				empty_list_actions->add_theme_constant_override("v_separation", int(8 * EDSCALE));
 				empty_list_placeholder->add_child(empty_list_actions);
 
 				empty_list_create_project = memnew(Button);
-				empty_list_create_project->set_text(TTRC("Create New Project"));
-				empty_list_create_project->set_theme_type_variation("PanelBackgroundButton");
+				empty_list_create_project->set_text(String::utf8("Crear Proyecto"));
+				empty_list_create_project->set_theme_type_variation("ClockGearsPrimaryButton");
+				empty_list_create_project->set_custom_minimum_size(Size2(0, 34) * EDSCALE);
 				empty_list_actions->add_child(empty_list_create_project);
 				empty_list_create_project->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_new_project));
 
 				empty_list_import_project = memnew(Button);
-				empty_list_import_project->set_text(TTRC("Import Existing Project"));
-				empty_list_import_project->set_theme_type_variation("PanelBackgroundButton");
+				empty_list_import_project->set_text(String::utf8("Importar"));
+				empty_list_import_project->set_custom_minimum_size(Size2(0, 34) * EDSCALE);
 				empty_list_actions->add_child(empty_list_import_project);
 				empty_list_import_project->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_import_project));
+
+				empty_list_clear_filter_btn = memnew(Button);
+				empty_list_clear_filter_btn->set_text(String::utf8("Limpiar búsqueda"));
+				empty_list_clear_filter_btn->set_custom_minimum_size(Size2(0, 34) * EDSCALE);
+				empty_list_clear_filter_btn->hide();
+				empty_list_actions->add_child(empty_list_clear_filter_btn);
+				empty_list_clear_filter_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_clear_search_filter));
 
 				empty_list_open_assetlib = nullptr;
 				empty_list_online_warning = nullptr;
 			}
 
-			// The side bar with the edit, run, rename, etc. buttons.
+			// Right panel: "Acciones de proyecto".
+			sidebar_panel = memnew(PanelContainer);
+			sidebar_panel->set_custom_minimum_size(Size2(340, 0) * EDSCALE);
+			sidebar_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+			project_list_hbox->add_child(sidebar_panel);
+
 			project_list_sidebar = memnew(VBoxContainer);
-			project_list_sidebar->set_custom_minimum_size(Size2(120, 120) * EDSCALE);
-			project_list_hbox->add_child(project_list_sidebar);
+			project_list_sidebar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			project_list_sidebar->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+			project_list_sidebar->add_theme_constant_override("separation", int(10 * EDSCALE));
+			sidebar_panel->add_child(project_list_sidebar);
 
-			project_list_sidebar->add_child(memnew(HSeparator));
+			sidebar_header_label = memnew(Label);
+			sidebar_header_label->set_text(String::utf8("Acciones de proyecto"));
+			project_list_sidebar->add_child(sidebar_header_label);
 
-			ScrollContainer *sidebar_scroll_containter = memnew(ScrollContainer);
-			sidebar_scroll_containter->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-			sidebar_scroll_containter->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-			project_list_sidebar->add_child(sidebar_scroll_containter);
-			VBoxContainer *sidebar_buttons_containter = memnew(VBoxContainer);
-			sidebar_scroll_containter->add_child(sidebar_buttons_containter);
+			sidebar_preview_panel = memnew(PanelContainer);
+			sidebar_preview_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			project_list_sidebar->add_child(sidebar_preview_panel);
+
+			HBoxContainer *preview_hb = memnew(HBoxContainer);
+			preview_hb->add_theme_constant_override("separation", int(10 * EDSCALE));
+			sidebar_preview_panel->add_child(preview_hb);
+
+			sidebar_preview_icon = memnew(TextureRect);
+			sidebar_preview_icon->set_custom_minimum_size(Size2(48, 48) * EDSCALE);
+			sidebar_preview_icon->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+			sidebar_preview_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+			sidebar_preview_icon->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+			sidebar_preview_icon->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+			preview_hb->add_child(sidebar_preview_icon);
+
+			VBoxContainer *preview_text_vb = memnew(VBoxContainer);
+			preview_text_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			preview_text_vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+			preview_text_vb->add_theme_constant_override("separation", int(2 * EDSCALE));
+			preview_hb->add_child(preview_text_vb);
+
+			sidebar_preview_name = memnew(Label);
+			sidebar_preview_name->set_clip_text(true);
+			sidebar_preview_name->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			sidebar_preview_name->set_custom_minimum_size(Size2(1, 0));
+			preview_text_vb->add_child(sidebar_preview_name);
+
+			sidebar_preview_path = memnew(Label);
+			sidebar_preview_path->set_clip_text(true);
+			sidebar_preview_path->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+			sidebar_preview_path->set_custom_minimum_size(Size2(1, 0));
+			preview_text_vb->add_child(sidebar_preview_path);
+
+			ScrollContainer *sidebar_scroll_container = memnew(ScrollContainer);
+			sidebar_scroll_container->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+			sidebar_scroll_container->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+			project_list_sidebar->add_child(sidebar_scroll_container);
+
+			VBoxContainer *sidebar_buttons_container = memnew(VBoxContainer);
+			sidebar_buttons_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			sidebar_buttons_container->add_theme_constant_override("separation", int(6 * EDSCALE));
+			sidebar_scroll_container->add_child(sidebar_buttons_container);
 
 			open_btn_container = memnew(HBoxContainer);
-			open_btn_container->set_anchors_preset(Control::PRESET_FULL_RECT);
-			sidebar_buttons_containter->add_child(open_btn_container);
+			open_btn_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			sidebar_buttons_container->add_child(open_btn_container);
 
 			open_btn = memnew(Button);
-			open_btn->set_text(TTRC("Edit"));
+			open_btn->set_text(String::utf8("Editar Proyecto"));
+			open_btn->set_theme_type_variation("ClockGearsPrimaryButton");
+			open_btn->set_custom_minimum_size(Size2(0, 36) * EDSCALE);
 			open_btn->set_shortcut(ED_SHORTCUT("project_manager/edit_project", TTRC("Edit Project"), KeyModifierMask::CMD_OR_CTRL | Key::E));
 			open_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_open_selected_projects_check_recovery_mode));
 			open_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			open_btn_container->add_child(open_btn);
 
-			open_btn_container->add_child(memnew(VSeparator));
-
 			open_options_btn = memnew(Button);
-			open_options_btn->set_accessibility_name(TTRC("Options"));
+			open_options_btn->set_custom_minimum_size(Size2(34, 36) * EDSCALE);
+			open_options_btn->set_accessibility_name(String::utf8("Opciones de edición"));
+			open_options_btn->set_tooltip_text(String::utf8("Más opciones para abrir el proyecto"));
 			open_options_btn->set_icon_alignment(HorizontalAlignment::HORIZONTAL_ALIGNMENT_CENTER);
 			open_options_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_open_options_popup));
 			open_btn_container->add_child(open_options_btn);
@@ -1807,41 +2162,59 @@ ProjectManager::ProjectManager() {
 			open_options_popup->connect(SceneStringName(id_pressed), callable_mp(this, &ProjectManager::_on_open_options_selected));
 			open_options_btn->add_child(open_options_popup);
 
-			open_btn_container->set_custom_minimum_size(Size2(120, open_btn->get_combined_minimum_size().y));
-
 			run_btn = memnew(Button);
-			run_btn->set_text(TTRC("Run"));
+			run_btn->set_text(String::utf8("Ejecutar / Probar"));
+			run_btn->set_custom_minimum_size(Size2(0, 34) * EDSCALE);
 			run_btn->set_shortcut(ED_SHORTCUT("project_manager/run_project", TTRC("Run Project"), KeyModifierMask::CMD_OR_CTRL | Key::R));
 			run_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_run_project));
-			sidebar_buttons_containter->add_child(run_btn);
+			sidebar_buttons_container->add_child(run_btn);
+
+			HBoxContainer *row_rename_dup = memnew(HBoxContainer);
+			row_rename_dup->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			row_rename_dup->add_theme_constant_override("separation", int(6 * EDSCALE));
+			sidebar_buttons_container->add_child(row_rename_dup);
 
 			rename_btn = memnew(Button);
-			rename_btn->set_text(TTRC("Rename"));
-			// The F2 shortcut isn't overridden with Enter on macOS as Enter is already used to edit a project.
+			rename_btn->set_text(String::utf8("Renombrar"));
+			rename_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			rename_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			rename_btn->set_shortcut(ED_SHORTCUT("project_manager/rename_project", TTRC("Rename Project"), Key::F2));
 			rename_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_rename_project));
-			sidebar_buttons_containter->add_child(rename_btn);
+			row_rename_dup->add_child(rename_btn);
 
 			duplicate_btn = memnew(Button);
-			duplicate_btn->set_text(TTRC("Duplicate"));
+			duplicate_btn->set_text(String::utf8("Duplicar"));
+			duplicate_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			duplicate_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			duplicate_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_duplicate_project));
-			sidebar_buttons_containter->add_child(duplicate_btn);
+			row_rename_dup->add_child(duplicate_btn);
 
 			manage_tags_btn = memnew(Button);
-			manage_tags_btn->set_text(TTRC("Manage Tags"));
+			manage_tags_btn->set_text(String::utf8("Administrar Etiquetas"));
+			manage_tags_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			manage_tags_btn->set_shortcut(ED_SHORTCUT("project_manager/project_tags", TTRC("Manage Tags"), KeyModifierMask::CMD_OR_CTRL | Key::T));
-			sidebar_buttons_containter->add_child(manage_tags_btn);
+			sidebar_buttons_container->add_child(manage_tags_btn);
+
+			show_in_folder_btn = memnew(Button);
+			show_in_folder_btn->set_text(String::utf8("Ver en Carpeta"));
+			show_in_folder_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
+			show_in_folder_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_show_project_in_file_manager));
+			sidebar_buttons_container->add_child(show_in_folder_btn);
 
 			erase_btn = memnew(Button);
-			erase_btn->set_text(TTRC("Remove"));
+			erase_btn->set_text(String::utf8("Eliminar de la lista"));
+			erase_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			erase_btn->set_shortcut(ED_SHORTCUT("project_manager/remove_project", TTRC("Remove Project"), Key::KEY_DELETE));
 			erase_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_erase_project));
-			sidebar_buttons_containter->add_child(erase_btn);
+			sidebar_buttons_container->add_child(erase_btn);
+
+			sidebar_buttons_container->add_child(memnew(HSeparator));
 
 			erase_missing_btn = memnew(Button);
-			erase_missing_btn->set_text(TTRC("Remove Missing"));
+			erase_missing_btn->set_text(String::utf8("Eliminar Faltantes"));
+			erase_missing_btn->set_custom_minimum_size(Size2(0, 32) * EDSCALE);
 			erase_missing_btn->connect(SceneStringName(pressed), callable_mp(this, &ProjectManager::_erase_missing_projects));
-			sidebar_buttons_containter->add_child(erase_missing_btn);
+			sidebar_buttons_container->add_child(erase_missing_btn);
 
 			/* donate_btn purged for ClockGears Engine */
 		}
@@ -1850,22 +2223,30 @@ ProjectManager::ProjectManager() {
 	// Asset store view purged for ClockGears Engine.
 	asset_library = nullptr;
 
-	// Footer bar.
+	// Footer bar (Pie de página: izquierda sin conexión, derecha versión).
 	{
 		HBoxContainer *footer_bar = memnew(HBoxContainer);
-		footer_bar->set_alignment(BoxContainer::ALIGNMENT_END);
-		footer_bar->add_theme_constant_override("separation", 20 * EDSCALE);
+		footer_bar->add_theme_constant_override("separation", int(12 * EDSCALE));
 		main_vbox->add_child(footer_bar);
 
 #ifdef ENGINE_UPDATE_CHECK_ENABLED
 		EngineUpdateLabel *update_label = memnew(EngineUpdateLabel);
 		footer_bar->add_child(update_label);
 		update_label->connect("offline_clicked", callable_mp(this, &ProjectManager::_show_quick_settings));
+#else
+		Label *offline_footer_lbl = memnew(Label);
+		offline_footer_lbl->set_text(String::utf8("Modo sin conexión • Comprobación de actualizaciones deshabilitada"));
+		offline_footer_lbl->set_self_modulate(Color(1, 1, 1, 0.72f));
+		footer_bar->add_child(offline_footer_lbl);
 #endif
 
+		Control *footer_spacer = memnew(Control);
+		footer_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		footer_spacer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		footer_bar->add_child(footer_spacer);
+
 		EditorVersionButton *version_btn = memnew(EditorVersionButton(EditorVersionButton::FORMAT_WITH_BUILD));
-		// Fade the version label to be less prominent, but still readable.
-		version_btn->set_self_modulate(Color(1, 1, 1, 0.6));
+		version_btn->set_self_modulate(Color(1, 1, 1, 0.72f));
 		footer_bar->add_child(version_btn);
 	}
 
@@ -2103,4 +2484,100 @@ ProjectManager::~ProjectManager() {
 	}
 
 	EditorThemeManager::finalize();
+}
+
+void ProjectManager::reload_projects_from_config_for_test(const String &p_cfg_path) {
+	if (!project_list) {
+		return;
+	}
+	project_list->set_config_path_for_test(p_cfg_path);
+	project_list->load_project_list();
+	project_list->update_project_list();
+	_update_project_buttons();
+	_update_list_placeholder();
+}
+
+void ProjectManager::simulate_select_view_mode(int p_mode) {
+	_on_view_mode_pressed(p_mode);
+}
+
+void ProjectManager::simulate_select_order_option(int p_idx) {
+	if (filter_option && p_idx >= 0 && p_idx < filter_option->get_item_count()) {
+		filter_option->select(p_idx);
+	}
+	_on_order_option_changed(p_idx);
+}
+
+Dictionary ProjectManager::inspect_layout_metrics() const {
+	Dictionary out;
+	const Rect2 root_rect = get_rect();
+	out["root_size"] = root_rect.size;
+	out["window_title"] = (SceneTree::get_singleton() && SceneTree::get_singleton()->get_root()) ? SceneTree::get_singleton()->get_root()->get_title() : String();
+	out["header_pos"] = header_bar ? header_bar->get_global_rect().position : Vector2();
+	out["header_size"] = header_bar ? header_bar->get_global_rect().size : Vector2();
+	out["search_rect"] = search_box ? search_box->get_global_rect() : Rect2();
+	out["settings_rect"] = quick_settings_button ? quick_settings_button->get_global_rect() : Rect2();
+	out["list_panel_rect"] = project_list_panel ? project_list_panel->get_global_rect() : Rect2();
+	out["sidebar_visible"] = sidebar_panel ? sidebar_panel->is_visible_in_tree() : false;
+	out["sidebar_rect"] = sidebar_panel ? sidebar_panel->get_global_rect() : Rect2();
+	out["preview_name"] = sidebar_preview_name ? sidebar_preview_name->get_text() : String();
+	out["preview_path"] = sidebar_preview_path ? sidebar_preview_path->get_text() : String();
+	out["preview_tooltip"] = sidebar_preview_path ? sidebar_preview_path->get_tooltip_text() : String();
+	out["placeholder_visible"] = empty_list_placeholder ? empty_list_placeholder->is_visible_in_tree() : false;
+	out["placeholder_text"] = empty_list_message ? empty_list_message->get_text() : String();
+	out["clear_filter_visible"] = empty_list_clear_filter_btn ? empty_list_clear_filter_btn->is_visible_in_tree() : false;
+	out["view_mode"] = project_list ? project_list->get_view_mode() : 0;
+	out["order_option"] = filter_option ? filter_option->get_selected() : 0;
+	out["project_count"] = project_list ? project_list->get_project_count() : 0;
+	out["filtered_count"] = project_list ? project_list->get_filtered_project_count() : 0;
+	out["pool_count"] = project_list ? project_list->get_pool_control_count() : 0;
+	out["visible_bound_count"] = project_list ? project_list->get_visible_bound_count() : 0;
+	out["hscroll_max"] = (project_list && project_list->get_h_scroll_bar()) ? project_list->get_h_scroll_bar()->get_max() : 0.0;
+	out["hscroll_visible"] = (project_list && project_list->get_h_scroll_bar()) ? project_list->get_h_scroll_bar()->is_visible_in_tree() : false;
+
+	out["open_disabled"] = open_btn ? open_btn->is_disabled() : true;
+	out["open_options_disabled"] = open_options_btn ? open_options_btn->is_disabled() : true;
+	out["run_disabled"] = run_btn ? run_btn->is_disabled() : true;
+	out["rename_disabled"] = rename_btn ? rename_btn->is_disabled() : true;
+	out["duplicate_disabled"] = duplicate_btn ? duplicate_btn->is_disabled() : true;
+	out["tags_disabled"] = manage_tags_btn ? manage_tags_btn->is_disabled() : true;
+	out["folder_disabled"] = show_in_folder_btn ? show_in_folder_btn->is_disabled() : true;
+	out["erase_disabled"] = erase_btn ? erase_btn->is_disabled() : true;
+	out["erase_missing_disabled"] = erase_missing_btn ? erase_missing_btn->is_disabled() : true;
+
+	// Detectar cualquier hijo visible cuyo rect se salga horizontalmente del root o tenga solape en barras horizontales.
+	PackedStringArray overflows;
+	Vector<Node *> stack;
+	stack.push_back(const_cast<ProjectManager *>(this));
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		if (Control *c = Object::cast_to<Control>(n)) {
+			if (!c->is_visible_in_tree()) {
+				continue;
+			}
+			// No inspeccionar el interior del ScrollContainer vertical salvo su propio viewport.
+			if (c != project_list && Object::cast_to<ScrollContainer>(c->get_parent()) == project_list) {
+				continue;
+			}
+			Rect2 r = c->get_global_rect();
+			if (r.position.x < -2.0f || r.position.x + r.size.x > root_rect.size.x + 2.0f) {
+				overflows.push_back(c->get_class() + ":" + String(c->get_name()) + " (" + String::num(r.position.x) + ".." + String::num(r.position.x + r.size.x) + " vs " + String::num(root_rect.size.x) + ")");
+			}
+		}
+		for (int i = 0; i < n->get_child_count(); i++) {
+			stack.push_back(n->get_child(i));
+		}
+	}
+	out["horizontal_overflows"] = overflows;
+	return out;
+}
+
+void ProjectManager::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_search_box"), &ProjectManager::get_search_box);
+	ClassDB::bind_method(D_METHOD("get_project_list"), &ProjectManager::get_project_list);
+	ClassDB::bind_method(D_METHOD("reload_projects_from_config_for_test", "cfg_path"), &ProjectManager::reload_projects_from_config_for_test);
+	ClassDB::bind_method(D_METHOD("simulate_select_view_mode", "mode"), &ProjectManager::simulate_select_view_mode);
+	ClassDB::bind_method(D_METHOD("simulate_select_order_option", "idx"), &ProjectManager::simulate_select_order_option);
+	ClassDB::bind_method(D_METHOD("inspect_layout_metrics"), &ProjectManager::inspect_layout_metrics);
 }

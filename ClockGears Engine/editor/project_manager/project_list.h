@@ -30,8 +30,10 @@
 
 #pragma once
 
+#include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "scene/gui/box_container.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/scroll_container.h"
 
 class AcceptDialog;
@@ -43,28 +45,42 @@ class ProjectList;
 class TextureButton;
 class TextureRect;
 
-class ProjectListItemControl : public HBoxContainer {
-	GDCLASS(ProjectListItemControl, HBoxContainer)
+class ProjectListItemControl : public PanelContainer {
+	GDCLASS(ProjectListItemControl, PanelContainer)
 
+	int bound_project_index = -1;
+	int bound_filtered_index = -1;
+	int card_view_mode = 0; // 0 = List, 1 = Grid
+
+	HBoxContainer *root_hbox = nullptr;
+	VBoxContainer *root_vbox = nullptr;
 	VBoxContainer *main_vbox = nullptr;
+	HBoxContainer *title_hb = nullptr;
+	HBoxContainer *path_hb = nullptr;
+	VBoxContainer *right_meta_vb = nullptr;
+	HBoxContainer *grid_top_hb = nullptr;
+
 	TextureButton *favorite_button = nullptr;
 	Button *explore_button = nullptr;
 
 	TextureRect *project_icon = nullptr;
 	Label *project_title = nullptr;
+	Label *missing_badge = nullptr;
 	Label *project_path = nullptr;
 	Label *last_edited_info = nullptr;
 	Label *project_version = nullptr;
 	TextureRect *project_unsupported_features = nullptr;
 	TextureRect *project_different_version = nullptr;
-	HFlowContainer *tag_container = nullptr;
+	HBoxContainer *tag_container = nullptr;
 	Button *touch_menu_button = nullptr;
 
+	String full_path_cache;
+	PackedStringArray cached_tags;
 	Color favorite_focus_color;
-
-	int project_title_index = -1;
+	Color favorite_active_color;
 
 	bool project_is_missing = false;
+	bool is_grayed = false;
 	bool icon_needs_reload = true;
 	bool is_selected = false;
 	bool is_focus_hidden = false;
@@ -82,6 +98,8 @@ class ProjectListItemControl : public HBoxContainer {
 	VersionMatchType version_match_type = VersionMatchType::PROJECT_USES_SAME;
 
 	void _update_favorite_button_focus_color();
+	void _update_favorite_icon();
+	void _update_path_display();
 	void _favorite_button_pressed();
 	void _explore_button_pressed();
 	void _request_menu();
@@ -93,17 +111,19 @@ class ProjectListItemControl : public HBoxContainer {
 	void _accessibility_action_focus(const Variant &p_data);
 	void _accessibility_action_blur(const Variant &p_data);
 
-private:
-	// Caches for resizing project titles.
-
-	int title_fullsize_cache = 0;
-	int tag_size_cache = 0;
-
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
+	void apply_view_mode(int p_view_mode);
+	void set_bound_indices(int p_project_idx, int p_filtered_idx) {
+		bound_project_index = p_project_idx;
+		bound_filtered_index = p_filtered_idx;
+	}
+	int get_bound_project_index() const { return bound_project_index; }
+	int get_bound_filtered_index() const { return bound_filtered_index; }
+
 	void set_project_title(const String &p_title);
 	void set_project_path(const String &p_path);
 	void set_tags(const PackedStringArray &p_tags, ProjectList *p_parent_list);
@@ -122,6 +142,7 @@ public:
 	void set_project_title_autowrap();
 
 	void resize_project_title(const int p_title_size);
+	Ref<Texture2D> get_icon_texture() const;
 
 	ProjectListItemControl();
 };
@@ -138,6 +159,11 @@ public:
 		NAME,
 		PATH,
 		TAGS,
+	};
+
+	enum ViewMode {
+		VIEW_LIST = 0,
+		VIEW_GRID = 1,
 	};
 
 	enum MenuOption {
@@ -173,8 +199,19 @@ public:
 		int project_title_index = -1;
 
 		ProjectListItemControl *control = nullptr;
+		Ref<Texture2D> loaded_icon;
+		bool icon_loaded = false;
 
 		Item() {}
+
+		bool is_older_version() const {
+			for (const String &feat : unsupported_features) {
+				if (feat == "3.x") {
+					return true;
+				}
+			}
+			return version < ProjectSettings::CONFIG_VERSION;
+		}
 
 		Item(const String &p_name,
 				const String &p_description,
@@ -234,10 +271,18 @@ private:
 
 	String _search_term;
 	FilterOption _order_option = FilterOption::EDIT_DATE;
+	ViewMode _view_mode = VIEW_LIST;
 	HashSet<String> _selected_project_paths;
 	String _last_clicked; // Project key
 
-	VBoxContainer *project_list_vbox = nullptr;
+	Control *content_canvas = nullptr;
+	Vector<int> _filtered_indices;
+	Vector<ProjectListItemControl *> _card_pool;
+	int _layout_cols = 1;
+	float _layout_card_w = 400.0f;
+	float _layout_card_h = 72.0f;
+	float _layout_gap = 8.0f;
+	bool _layout_dirty = false;
 	PopupMenu *project_context_menu = nullptr;
 
 	// Projects scan.
@@ -268,7 +313,10 @@ private:
 
 	// Project list items.
 
-	void _create_project_item_control(int p_index);
+	void _bind_item_to_control(int p_project_index, int p_filtered_index, ProjectListItemControl *p_ctrl);
+	void _layout_visible_cards();
+	void _ensure_pool_size(int p_needed);
+	void _on_vscroll_changed(double p_val);
 	void _update_project_control_translatable_fields(const Item &item);
 	void _toggle_project(int p_index);
 	void _remove_project(int p_index, bool p_update_settings);
@@ -276,6 +324,7 @@ private:
 	void _list_item_input(const Ref<InputEvent> &p_ev, Control *p_hb);
 	void _on_favorite_pressed(Node *p_hb);
 	void _on_explore_pressed(const String &p_path);
+	void _on_explore_item_pressed(Node *p_hb);
 
 	void _open_menu(const Vector2 &p_at, Control *p_hb);
 	void _menu_option(int p_option);
@@ -304,10 +353,12 @@ public:
 	static inline const char *SIGNAL_MENU_OPTION_SELECTED = "menu_option_selected";
 
 	static bool project_feature_looks_like_version(const String &p_feature);
+	static String elide_path_middle(const String &p_path, const Ref<Font> &p_font, int p_font_size, float p_max_width);
 
 	// Initialization & loading.
 
 	void save_config();
+	void set_config_path_for_test(const String &p_cfg_path);
 
 	// Project list updates.
 
@@ -315,6 +366,13 @@ public:
 	void update_project_list();
 	void sort_projects();
 	int get_project_count() const;
+	int get_filtered_project_count() const { return _filtered_indices.size(); }
+	int get_pool_control_count() const { return _card_pool.size(); }
+	int get_visible_bound_count() const;
+	ProjectListItemControl *get_bound_control_for_project(int p_project_index) const;
+
+	void set_view_mode(int p_mode, bool p_save = false);
+	int get_view_mode() const { return (int)_view_mode; }
 
 	void find_projects(const String &p_path);
 	void find_projects_multiple(const PackedStringArray &p_paths);
@@ -336,6 +394,7 @@ public:
 	void deselect_all_visible_projects();
 	Vector<Item> get_selected_projects() const;
 	const HashSet<String> &get_selected_project_keys() const;
+	PackedStringArray get_selected_project_paths() const;
 	int get_single_selected_index() const;
 	void erase_selected_projects(bool p_delete_project_contents);
 

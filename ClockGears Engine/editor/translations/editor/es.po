@@ -8811,10 +8811,10 @@ msgid "Update available: %s."
 msgstr "Actualización disponible: %s."
 
 msgid "Offline mode, update checks disabled."
-msgstr "Modo sin conexión, comprobación de actualizaciones desabilitada."
+msgstr "Modo sin conexión • Comprobación de actualizaciones deshabilitada."
 
 msgid "Update checks disabled."
-msgstr "Comprobación de actualizaciones desabilitada."
+msgstr "Comprobación de actualizaciones deshabilitada."
 
 msgid "An error has occurred. Click to try again."
 msgstr "Ocurrió un error. Haz clic para intentar nuevamente."

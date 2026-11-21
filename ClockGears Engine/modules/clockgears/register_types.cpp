@@ -62,6 +62,8 @@
 #include "editor/clockgears_map_cell_selector.h"
 #include "editor/clockgears_ui_design_editor.h"
 #include "clockgears_camera_dialog.h"
+#include "editor/project_manager/project_list.h"
+#include "editor/project_manager/project_manager.h"
 #endif
 
 static ClockGearsSystemCatalog *cg_system_catalog_singleton = nullptr;
@@ -125,6 +127,9 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsUiDesignEditor);
 		GDREGISTER_CLASS(ClockGearsUiElementFloatingWindow);
 		GDREGISTER_CLASS(ClockGearsNewProjectDialog);
+		GDREGISTER_CLASS(ProjectListItemControl);
+		GDREGISTER_CLASS(ProjectList);
+		GDREGISTER_CLASS(ProjectManager);
 #endif
 
 		cg_system_catalog_singleton = memnew(ClockGearsSystemCatalog);

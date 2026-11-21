@@ -86,14 +86,23 @@ class ProjectManager : public Control {
 	VBoxContainer *main_vbox = nullptr;
 
 	EditorTitleBar *title_bar = nullptr;
+	PanelContainer *header_bar = nullptr;
 	Control *left_menu_spacer = nullptr;
 	Control *left_spacer = nullptr;
 	Control *right_menu_spacer = nullptr;
 	Control *right_spacer = nullptr;
 	Button *title_bar_logo = nullptr;
+	Label *header_title_label = nullptr;
+	Label *header_subtitle_label = nullptr;
 	HBoxContainer *main_view_toggles = nullptr;
 	Button *quick_settings_button = nullptr;
+	PanelContainer *sidebar_panel = nullptr;
 	VBoxContainer *project_list_sidebar = nullptr;
+	Label *sidebar_header_label = nullptr;
+	PanelContainer *sidebar_preview_panel = nullptr;
+	TextureRect *sidebar_preview_icon = nullptr;
+	Label *sidebar_preview_name = nullptr;
+	Label *sidebar_preview_path = nullptr;
 
 	int compact_mode_threshold = 0;
 	void _update_compact_mode(bool p_reset_threshold = false);
@@ -142,6 +151,7 @@ class ProjectManager : public Control {
 	RichTextLabel *empty_list_message = nullptr;
 	Button *empty_list_create_project = nullptr;
 	Button *empty_list_import_project = nullptr;
+	Button *empty_list_clear_filter_btn = nullptr;
 	Button *empty_list_open_assetlib = nullptr;
 	Label *empty_list_online_warning = nullptr;
 
@@ -152,8 +162,12 @@ class ProjectManager : public Control {
 
 	LineEdit *search_box = nullptr;
 	Label *loading_label = nullptr;
+	Label *section_title_label = nullptr;
 	Label *sort_label = nullptr;
 	OptionButton *filter_option = nullptr;
+	Button *view_list_btn = nullptr;
+	Button *view_grid_btn = nullptr;
+	Ref<ButtonGroup> view_mode_group;
 	PanelContainer *project_list_panel = nullptr;
 
 	Button *create_btn = nullptr;
@@ -165,6 +179,7 @@ class ProjectManager : public Control {
 	Button *rename_btn = nullptr;
 	Button *duplicate_btn = nullptr;
 	Button *manage_tags_btn = nullptr;
+	Button *show_in_folder_btn = nullptr;
 	Button *erase_btn = nullptr;
 	Button *erase_missing_btn = nullptr;
 	Button *donate_btn = nullptr;
@@ -218,6 +233,10 @@ class ProjectManager : public Control {
 	void _on_recovery_mode_popup_open_recovery();
 
 	void _on_order_option_changed(int p_idx);
+	void _on_view_mode_pressed(int p_mode);
+	void _clear_search_filter();
+	void _on_clockgears_theme_changed(const String &p_theme_id);
+	void _update_selected_preview();
 	void _on_search_term_changed(const String &p_term);
 	void _on_search_term_submitted(const String &p_text);
 
@@ -274,6 +293,7 @@ class ProjectManager : public Control {
 
 protected:
 	void _notification(int p_what);
+	static void _bind_methods();
 
 public:
 	static ProjectManager *get_singleton() { return singleton; }
@@ -285,6 +305,11 @@ public:
 
 	bool is_initialized() const { return initialized; }
 	LineEdit *get_search_box();
+	ProjectList *get_project_list() const { return project_list; }
+	void reload_projects_from_config_for_test(const String &p_cfg_path);
+	void simulate_select_view_mode(int p_mode);
+	void simulate_select_order_option(int p_idx);
+	Dictionary inspect_layout_metrics() const;
 
 	// Project tag management.
 
