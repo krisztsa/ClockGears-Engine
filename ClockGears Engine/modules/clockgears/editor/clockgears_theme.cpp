@@ -295,7 +295,6 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	const int m6 = int(6 * p_scale);
 	const int m8 = int(8 * p_scale);
 	const int m12 = int(12 * p_scale);
-	const Color border_subtle = p_light ? Color(0, 0, 0, 0.14f) : Color(1, 1, 1, 0.12f);
 	const Color container_border = color_menu_pill_border(false, p_light);
 
 	// 1. Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al botón píldora del menú, esquinas 6px)
@@ -407,6 +406,21 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 		th->set_color("icon_disabled_color", btype, Color(1, 1, 1, 0.5f));
 		th->set_constant("h_separation", btype, m6);
 	}
+
+	// 3a. Botón compacto de icono ("ClockGearsIconButton") para evitar saltos de altura al cambiar tema
+	Ref<StyleBoxFlat> ic_btn_n = btn_normal->duplicate();
+	ic_btn_n->set_content_margin_all(m4);
+	Ref<StyleBoxFlat> ic_btn_h = btn_hover->duplicate();
+	ic_btn_h->set_content_margin_all(m4);
+	Ref<StyleBoxFlat> ic_btn_p = btn_pressed->duplicate();
+	ic_btn_p->set_content_margin_all(m4);
+	th->set_type_variation("ClockGearsIconButton", "Button");
+	th->set_stylebox("normal", "ClockGearsIconButton", ic_btn_n);
+	th->set_stylebox("hover", "ClockGearsIconButton", ic_btn_h);
+	th->set_stylebox("pressed", "ClockGearsIconButton", ic_btn_p);
+	th->set_stylebox("hover_pressed", "ClockGearsIconButton", ic_btn_p);
+	th->set_stylebox("focus", "ClockGearsIconButton", ic_btn_h);
+	th->set_stylebox("disabled", "ClockGearsIconButton", ic_btn_n);
 
 	// 3b. CheckBox & CheckButton (borde 1px al pasar/enfocar/marcar, esquinas 6px, padding 8px)
 	Ref<StyleBoxFlat> chk_normal;
@@ -1019,6 +1033,21 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 		th->set_constant("h_separation", btype, m6);
 		th->set_constant("hover_transition_ms", btype, BRASS_TRANSITION_MS);
 	}
+
+	// 3a. Botón compacto de icono ("ClockGearsIconButton") para cabeceras sin variar la altura
+	Ref<ClockGearsBrassStyleBox> ic_btn_n = btn_normal->duplicate();
+	ic_btn_n->set_content_margin_all(m4);
+	Ref<ClockGearsBrassStyleBox> ic_btn_h = btn_hover->duplicate();
+	ic_btn_h->set_content_margin_all(m4);
+	Ref<ClockGearsBrassStyleBox> ic_btn_p = btn_pressed->duplicate();
+	ic_btn_p->set_content_margin_all(m4);
+	th->set_type_variation("ClockGearsIconButton", "Button");
+	th->set_stylebox("normal", "ClockGearsIconButton", ic_btn_n);
+	th->set_stylebox("hover", "ClockGearsIconButton", ic_btn_h);
+	th->set_stylebox("pressed", "ClockGearsIconButton", ic_btn_p);
+	th->set_stylebox("hover_pressed", "ClockGearsIconButton", ic_btn_p);
+	th->set_stylebox("focus", "ClockGearsIconButton", ic_btn_h);
+	th->set_stylebox("disabled", "ClockGearsIconButton", ic_btn_n);
 
 	// 3b. CheckBox & CheckButton
 	Ref<ClockGearsBrassStyleBox> chk_normal;

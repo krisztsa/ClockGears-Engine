@@ -37,6 +37,7 @@ static Ref<StyleBoxFlat> _clockgears_card_style() {
 
 static void _clockgears_icon_button(Button *p_button, const StringName &p_icon, const String &p_cg_fallback, const String &p_fallback_text, const String &p_tooltip) {
 	p_button->set_flat(true);
+	p_button->set_theme_type_variation("ClockGearsIconButton");
 	p_button->set_tooltip_text(p_tooltip);
 	p_button->set_focus_mode(Control::FOCUS_NONE);
 	p_button->set_custom_minimum_size(Size2(26, 26));
