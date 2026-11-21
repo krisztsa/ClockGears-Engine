@@ -26,7 +26,12 @@ private:
 	int gradient_mode = GRADIENT_NONE;
 	bool is_sunken = false;
 	bool is_gear_separator = false;
+	bool is_header_gradient_line = false;
+	Color header_gradient_color = Color(0.96f, 0.74f, 0.33f, 0.85f);
 	float top_highlight_alpha = 0.0f;
+	bool has_led_dot = false;
+	int led_dot_size_px = 4;
+	Color led_dot_color = Color(0.96f, 0.74f, 0.33f, 1.0f);
 
 protected:
 	static void _bind_methods();
@@ -41,8 +46,26 @@ public:
 	void set_gear_separator_style(bool p_sep) { is_gear_separator = p_sep; emit_changed(); }
 	bool is_gear_separator_style() const { return is_gear_separator; }
 
+	void set_header_gradient_line(bool p_enabled, const Color &p_col = Color(0.96f, 0.74f, 0.33f, 0.85f)) {
+		is_header_gradient_line = p_enabled;
+		header_gradient_color = p_col;
+		emit_changed();
+	}
+	bool is_header_gradient_line_enabled() const { return is_header_gradient_line; }
+	Color get_header_gradient_color() const { return header_gradient_color; }
+
 	void set_top_highlight_alpha(float p_alpha) { top_highlight_alpha = p_alpha; emit_changed(); }
 	float get_top_highlight_alpha() const { return top_highlight_alpha; }
+
+	void set_led_dot(bool p_enabled, int p_size_px = 4, const Color &p_col = Color(0.96f, 0.74f, 0.33f, 1.0f)) {
+		has_led_dot = p_enabled;
+		led_dot_size_px = MAX(2, p_size_px);
+		led_dot_color = p_col;
+		emit_changed();
+	}
+	bool is_led_dot_enabled() const { return has_led_dot; }
+	int get_led_dot_size_px() const { return led_dot_size_px; }
+	Color get_led_dot_color() const { return led_dot_color; }
 
 	virtual void draw(RID p_canvas_item, const Rect2 &p_rect) const override;
 };

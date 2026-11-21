@@ -43,13 +43,38 @@ void ClockGearsBrassStyleBox::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_sunken_style"), &ClockGearsBrassStyleBox::is_sunken_style);
 	ClassDB::bind_method(D_METHOD("set_gear_separator_style", "sep"), &ClockGearsBrassStyleBox::set_gear_separator_style);
 	ClassDB::bind_method(D_METHOD("is_gear_separator_style"), &ClockGearsBrassStyleBox::is_gear_separator_style);
+	ClassDB::bind_method(D_METHOD("set_header_gradient_line", "enabled", "color"), &ClockGearsBrassStyleBox::set_header_gradient_line, DEFVAL(Color(0.96f, 0.74f, 0.33f, 0.85f)));
+	ClassDB::bind_method(D_METHOD("is_header_gradient_line_enabled"), &ClockGearsBrassStyleBox::is_header_gradient_line_enabled);
+	ClassDB::bind_method(D_METHOD("get_header_gradient_color"), &ClockGearsBrassStyleBox::get_header_gradient_color);
 	ClassDB::bind_method(D_METHOD("set_top_highlight_alpha", "alpha"), &ClockGearsBrassStyleBox::set_top_highlight_alpha);
 	ClassDB::bind_method(D_METHOD("get_top_highlight_alpha"), &ClockGearsBrassStyleBox::get_top_highlight_alpha);
+	ClassDB::bind_method(D_METHOD("set_led_dot", "enabled", "size_px", "color"), &ClockGearsBrassStyleBox::set_led_dot, DEFVAL(4), DEFVAL(Color(0.96f, 0.74f, 0.33f, 1.0f)));
+	ClassDB::bind_method(D_METHOD("is_led_dot_enabled"), &ClockGearsBrassStyleBox::is_led_dot_enabled);
+	ClassDB::bind_method(D_METHOD("get_led_dot_size_px"), &ClockGearsBrassStyleBox::get_led_dot_size_px);
+	ClassDB::bind_method(D_METHOD("get_led_dot_color"), &ClockGearsBrassStyleBox::get_led_dot_color);
 }
 
 void ClockGearsBrassStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) const {
 	RenderingServer *rs = RenderingServer::get_singleton();
 	if (!rs) {
+		return;
+	}
+	if (is_header_gradient_line) {
+		const float cy = Math::round(p_rect.position.y + p_rect.size.y * 0.5f);
+		const int segs = 16;
+		const float total_w = MAX(1.0f, p_rect.size.x);
+		const float seg_w = total_w / float(segs);
+		for (int i = 0; i < segs; i++) {
+			const float t = float(i) / float(segs - 1);
+			const float alpha = header_gradient_color.a * (1.0f - t) * (1.0f - t * 0.45f);
+			if (alpha <= 0.01f) {
+				continue;
+			}
+			const Color c(header_gradient_color.r, header_gradient_color.g, header_gradient_color.b, alpha);
+			const float x0 = p_rect.position.x + float(i) * seg_w;
+			const float x1 = (i == segs - 1) ? (p_rect.position.x + total_w) : (x0 + seg_w + 0.5f);
+			rs->canvas_item_add_line(p_canvas_item, Point2(x0, cy), Point2(x1, cy), c, 1.5f);
+		}
 		return;
 	}
 	if (is_gear_separator) {
@@ -106,6 +131,16 @@ void ClockGearsBrassStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) const
 		if (p_rect.size.x > (r_bl + r_br + 2.0f)) {
 			rs->canvas_item_add_line(p_canvas_item, Point2(p_rect.position.x + r_bl, y_bot), Point2(p_rect.position.x + p_rect.size.x - r_br, y_bot), Color(0.95f, 0.74f, 0.32f, 0.24f), 1.0f);
 		}
+	}
+
+	if (has_led_dot && p_rect.size.x >= 14.0f && p_rect.size.y >= 10.0f) {
+		const float dot_sz = float(MAX(2, led_dot_size_px));
+		const float dx = Math::round(p_rect.position.x + 5.0f);
+		const float dy = Math::round(p_rect.position.y + (p_rect.size.y - dot_sz) * 0.5f);
+		// Halo sutil fijo detrás del punto LED de 4 px (sin parpadeo)
+		const Color glow_c(led_dot_color.r, led_dot_color.g, led_dot_color.b, 0.32f);
+		rs->canvas_item_add_rect(p_canvas_item, Rect2(dx - 1.0f, dy - 1.0f, dot_sz + 2.0f, dot_sz + 2.0f), glow_c);
+		rs->canvas_item_add_rect(p_canvas_item, Rect2(dx, dy, dot_sz, dot_sz), led_dot_color);
 	}
 }
 
@@ -834,6 +869,650 @@ static void _cg_populate_project_manager_styles(const Ref<Theme> &th, bool p_bra
 	th->set_color("font_hover_color", "ProjectTagButton", accent);
 }
 
+static Ref<ImageTexture> _cg_make_stepper_arrow_icon(bool p_up, const Color &p_color) {
+	Ref<Image> img = Image::create_empty(9, 5, false, Image::FORMAT_RGBA8);
+	img->fill(Color(0, 0, 0, 0));
+	for (int row = 0; row < 4; row++) {
+		const int y = p_up ? (row + 1) : (3 - row);
+		const int half_w = row;
+		for (int dx = -half_w; dx <= half_w; dx++) {
+			img->set_pixel(4 + dx, y, p_color);
+		}
+	}
+	return ImageTexture::create_from_image(img);
+}
+
+static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_brass, bool p_light, float p_scale, const ClockGearsTheme::NeonCopperTokens &tk, const Color &txt, const Color &txt_sec, const Color &txt_dis) {
+	if (th.is_null()) {
+		return;
+	}
+	const int r6 = int(6 * p_scale);
+	const int r4 = int(4 * p_scale);
+	const int m4 = int(4 * p_scale);
+	const int m6 = int(6 * p_scale);
+	const int m8 = int(8 * p_scale);
+	const int m12 = int(12 * p_scale);
+	const int led_sz = MAX(4, int(Math::round(4.0f * p_scale)));
+	const Color txt_bright = p_light ? txt : (p_brass ? Color::html("#fff8ea") : Color::html("#ffffff"));
+
+	// 1. Estados de Button, OptionButton y MenuButton (Normal, Hover, Pulsado, Seleccionado/Activo, Foco de teclado, Desactivado)
+	Ref<ClockGearsBrassStyleBox> btn_n;
+	btn_n.instantiate();
+	btn_n->set_anti_aliased(true);
+	btn_n->set_bg_color(p_brass ? Color::html("#2a231a") : (p_light ? Color::html("#e2e5ec") : Color::html("#2a2e38")));
+	btn_n->set_corner_radius_all(r6);
+	btn_n->set_border_width_all(1);
+	btn_n->set_border_color(tk.border_copper);
+	btn_n->set_content_margin_all(m8);
+	if (p_brass) {
+		btn_n->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_BUTTON);
+		btn_n->set_top_highlight_alpha(0.26f);
+	}
+
+	Ref<ClockGearsBrassStyleBox> btn_h = btn_n->duplicate();
+	btn_h->set_bg_color(p_brass ? Color::html("#332a1e") : (p_light ? Color::html("#d5d9e2") : Color::html("#353b48")));
+	btn_h->set_border_color(tk.border_copper_bright);
+	if (p_brass) {
+		btn_h->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_BUTTON_HOVER);
+		btn_h->set_top_highlight_alpha(0.36f);
+	}
+	btn_h->set_shadow_color(tk.halo_color);
+	btn_h->set_shadow_size(tk.halo_radius_px);
+	btn_h->set_shadow_offset(Vector2(0, 0));
+
+	// Pulsado: más oscuro y hundido, borde con el acento neón
+	Ref<ClockGearsBrassStyleBox> btn_p = btn_n->duplicate();
+	btn_p->set_bg_color(tk.surface_sunken);
+	btn_p->set_border_color(tk.accent_neon);
+	btn_p->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_NONE);
+	btn_p->set_top_highlight_alpha(0.0f);
+	btn_p->set_sunken_style(true);
+	btn_p->set_content_margin_individual(m8, m8 + 1, m8, MAX(0, m8 - 1));
+	btn_p->set_shadow_size(0);
+
+	// Seleccionado / Activo (hover_pressed / toggle activo): borde con el acento neón (1 a 2 px), halo y fondo con tinte ámbar suave
+	Ref<ClockGearsBrassStyleBox> btn_hp = btn_n->duplicate();
+	btn_hp->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, p_light ? 0.24f : 0.22f));
+	btn_hp->set_border_width_all(2);
+	btn_hp->set_border_color(tk.accent_neon);
+	btn_hp->set_shadow_color(tk.halo_color);
+	btn_hp->set_shadow_size(tk.halo_radius_px);
+	btn_hp->set_shadow_offset(Vector2(0, 0));
+
+	// Foco de teclado: anillo con el acento neón y halo
+	Ref<ClockGearsBrassStyleBox> btn_f = btn_n->duplicate();
+	btn_f->set_draw_center(false);
+	btn_f->set_border_width_all(1);
+	btn_f->set_border_color(tk.accent_neon);
+	btn_f->set_shadow_color(tk.halo_color);
+	btn_f->set_shadow_size(tk.halo_radius_px);
+	btn_f->set_shadow_offset(Vector2(0, 0));
+
+	// Desactivado: atenuado, sin halo
+	Ref<ClockGearsBrassStyleBox> btn_d = btn_n->duplicate();
+	btn_d->set_bg_color(p_brass ? Color::html("#181511") : (p_light ? Color::html("#ebedf2") : Color::html("#1d1f26")));
+	btn_d->set_border_color(tk.border_subtle);
+	btn_d->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_NONE);
+	btn_d->set_top_highlight_alpha(0.0f);
+	btn_d->set_shadow_size(0);
+
+	const char *btypes[] = { "Button", "OptionButton", "MenuButton", nullptr };
+	for (int i = 0; btypes[i] != nullptr; i++) {
+		const String bt = btypes[i];
+		th->set_stylebox("normal", bt, btn_n);
+		th->set_stylebox("hover", bt, btn_h);
+		th->set_stylebox("pressed", bt, btn_p);
+		th->set_stylebox("hover_pressed", bt, btn_hp);
+		th->set_stylebox("focus", bt, btn_f);
+		th->set_stylebox("disabled", bt, btn_d);
+		th->set_color("font_color", bt, txt);
+		th->set_color("font_hover_color", bt, txt_bright);
+		th->set_color("font_pressed_color", bt, tk.accent_neon);
+		th->set_color("font_hover_pressed_color", bt, txt_bright);
+		th->set_color("font_focus_color", bt, txt_bright);
+		th->set_color("font_disabled_color", bt, txt_dis);
+		th->set_color("icon_normal_color", bt, Color(1, 1, 1, 1));
+		th->set_color("icon_hover_color", bt, Color(1, 1, 1, 1));
+		th->set_color("icon_pressed_color", bt, Color(1, 1, 1, 1));
+		th->set_color("icon_hover_pressed_color", bt, Color(1, 1, 1, 1));
+		th->set_color("icon_focus_color", bt, Color(1, 1, 1, 1));
+		th->set_color("icon_disabled_color", bt, Color(1, 1, 1, 0.5f));
+		th->set_constant("h_separation", bt, m6);
+		th->set_constant("hover_transition_ms", bt, tk.transition_ms);
+	}
+
+	// ClockGearsIconButton con márgenes compactos m4 y mismos estados Neón Cobre
+	Ref<ClockGearsBrassStyleBox> ic_n = btn_n->duplicate();
+	ic_n->set_content_margin_all(m4);
+	Ref<ClockGearsBrassStyleBox> ic_h = btn_h->duplicate();
+	ic_h->set_content_margin_all(m4);
+	Ref<ClockGearsBrassStyleBox> ic_p = btn_p->duplicate();
+	ic_p->set_content_margin_all(m4);
+	Ref<ClockGearsBrassStyleBox> ic_hp = btn_hp->duplicate();
+	ic_hp->set_content_margin_all(m4);
+	Ref<ClockGearsBrassStyleBox> ic_d = btn_d->duplicate();
+	ic_d->set_content_margin_all(m4);
+	th->set_type_variation("ClockGearsIconButton", "Button");
+	th->set_stylebox("normal", "ClockGearsIconButton", ic_n);
+	th->set_stylebox("hover", "ClockGearsIconButton", ic_h);
+	th->set_stylebox("pressed", "ClockGearsIconButton", ic_p);
+	th->set_stylebox("hover_pressed", "ClockGearsIconButton", ic_hp);
+	th->set_stylebox("focus", "ClockGearsIconButton", btn_f);
+	th->set_stylebox("disabled", "ClockGearsIconButton", ic_d);
+
+	// 2. Casillas y conmutadores (CheckBox, CheckButton): redondeados (6 px), con brillo cuando están activos
+	Ref<ClockGearsBrassStyleBox> chk_n;
+	chk_n.instantiate();
+	chk_n->set_anti_aliased(true);
+	chk_n->set_bg_color(Color(0, 0, 0, 0));
+	chk_n->set_corner_radius_all(r6);
+	chk_n->set_border_width_all(1);
+	chk_n->set_border_color(tk.border_subtle);
+	chk_n->set_content_margin_individual(m8, m4, m8, m4);
+
+	Ref<ClockGearsBrassStyleBox> chk_h = chk_n->duplicate();
+	chk_h->set_bg_color(Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.10f));
+	chk_h->set_border_color(tk.border_copper_bright);
+	chk_h->set_shadow_color(tk.halo_color);
+	chk_h->set_shadow_size(tk.halo_radius_px);
+	chk_h->set_shadow_offset(Vector2(0, 0));
+
+	Ref<ClockGearsBrassStyleBox> chk_p = chk_n->duplicate();
+	chk_p->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, 0.20f));
+	chk_p->set_border_color(tk.accent_neon);
+	chk_p->set_shadow_color(tk.halo_color);
+	chk_p->set_shadow_size(tk.halo_radius_px);
+	chk_p->set_shadow_offset(Vector2(0, 0));
+
+	const char *ctypes[] = { "CheckBox", "CheckButton", nullptr };
+	for (int i = 0; ctypes[i] != nullptr; i++) {
+		const String ct = ctypes[i];
+		th->set_stylebox("normal", ct, chk_n);
+		th->set_stylebox("hover", ct, chk_h);
+		th->set_stylebox("pressed", ct, chk_p);
+		th->set_stylebox("hover_pressed", ct, chk_p);
+		th->set_stylebox("focus", ct, btn_f);
+		th->set_stylebox("disabled", ct, chk_n);
+		th->set_constant("hover_transition_ms", ct, tk.transition_ms);
+	}
+
+	// 3. Campos de texto (LineEdit, TextEdit): borde cobrizo fino, foco con acento y halo
+	const Color in_bg = p_brass ? ClockGearsTheme::color_brass_input() : (p_light ? Color::html("#f4f6fa") : tk.surface_panel);
+	const Color in_hover_bg = p_brass ? Color::html("#1d1914") : (p_light ? Color::html("#ffffff") : tk.surface_elevated);
+	const Color in_ro_bg = p_brass ? Color::html("#110f0c") : (p_light ? Color::html("#e8ebf2") : Color::html("#1b1e25"));
+	const Color in_dis_bg = p_brass ? Color::html("#100e0b") : (p_light ? Color::html("#eef0f5") : Color::html("#181a20"));
+	const Color in_help_col = p_brass ? txt_sec : (p_light ? Color::html("#4d5462") : Color::html("#a2a9b5"));
+
+	Ref<ClockGearsBrassStyleBox> le_n;
+	le_n.instantiate();
+	le_n->set_anti_aliased(true);
+	le_n->set_bg_color(in_bg);
+	le_n->set_corner_radius_all(r6);
+	le_n->set_border_width_all(1);
+	le_n->set_border_color(tk.border_copper);
+	le_n->set_content_margin_individual(m8, m6, m8, m6);
+	if (p_brass) {
+		le_n->set_sunken_style(true);
+	}
+
+	Ref<ClockGearsBrassStyleBox> le_h = le_n->duplicate();
+	le_h->set_bg_color(in_hover_bg);
+	le_h->set_border_color(tk.border_copper_bright);
+	le_h->set_shadow_color(tk.halo_color);
+	le_h->set_shadow_size(tk.halo_radius_px);
+	le_h->set_shadow_offset(Vector2(0, 0));
+
+	Ref<ClockGearsBrassStyleBox> le_f = le_n->duplicate();
+	le_f->set_border_color(tk.accent_neon);
+	le_f->set_shadow_color(tk.halo_color);
+	le_f->set_shadow_size(tk.halo_radius_px);
+	le_f->set_shadow_offset(Vector2(0, 0));
+
+	Ref<ClockGearsBrassStyleBox> le_ro = le_n->duplicate();
+	le_ro->set_bg_color(in_ro_bg);
+	le_ro->set_border_color(tk.border_subtle);
+
+	Ref<ClockGearsBrassStyleBox> le_dis = le_n->duplicate();
+	le_dis->set_bg_color(in_dis_bg);
+	le_dis->set_border_color(tk.border_subtle);
+
+	const char *itypes[] = { "LineEdit", "TextEdit", nullptr };
+	for (int i = 0; itypes[i] != nullptr; i++) {
+		const String it = itypes[i];
+		th->set_stylebox("normal", it, le_n);
+		th->set_stylebox("hover", it, le_h);
+		th->set_stylebox("focus", it, le_f);
+		th->set_stylebox("read_only", it, le_ro);
+		th->set_stylebox("disabled", it, le_dis);
+		th->set_color("font_color", it, txt);
+		th->set_color("font_placeholder_color", it, in_help_col);
+		th->set_color("caret_color", it, tk.accent_neon);
+		th->set_color("selection_color", it, Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.34f));
+	}
+	th->set_color("font_uneditable_color", "LineEdit", in_help_col);
+	th->set_color("font_readonly_color", "TextEdit", in_help_col);
+
+	// 4. Campos numéricos (SpinBox): stepper compacto integrado de dos mitades dentro del mismo campo
+	Ref<ClockGearsBrassStyleBox> sb_in_n = le_n->duplicate();
+	sb_in_n->set_corner_radius(CORNER_TOP_RIGHT, 0);
+	sb_in_n->set_corner_radius(CORNER_BOTTOM_RIGHT, 0);
+	sb_in_n->set_border_width(SIDE_RIGHT, 0);
+	Ref<ClockGearsBrassStyleBox> sb_in_h = le_h->duplicate();
+	sb_in_h->set_corner_radius(CORNER_TOP_RIGHT, 0);
+	sb_in_h->set_corner_radius(CORNER_BOTTOM_RIGHT, 0);
+	sb_in_h->set_border_width(SIDE_RIGHT, 0);
+	Ref<ClockGearsBrassStyleBox> sb_in_f = le_f->duplicate();
+	sb_in_f->set_corner_radius(CORNER_TOP_RIGHT, 0);
+	sb_in_f->set_corner_radius(CORNER_BOTTOM_RIGHT, 0);
+	sb_in_f->set_border_width(SIDE_RIGHT, 0);
+	Ref<ClockGearsBrassStyleBox> sb_in_ro = le_ro->duplicate();
+	sb_in_ro->set_corner_radius(CORNER_TOP_RIGHT, 0);
+	sb_in_ro->set_corner_radius(CORNER_BOTTOM_RIGHT, 0);
+	sb_in_ro->set_border_width(SIDE_RIGHT, 0);
+	Ref<ClockGearsBrassStyleBox> sb_in_dis = le_dis->duplicate();
+	sb_in_dis->set_corner_radius(CORNER_TOP_RIGHT, 0);
+	sb_in_dis->set_corner_radius(CORNER_BOTTOM_RIGHT, 0);
+	sb_in_dis->set_border_width(SIDE_RIGHT, 0);
+
+	th->set_type_variation("SpinBoxInnerLineEdit", "LineEdit");
+	th->set_stylebox("normal", "SpinBoxInnerLineEdit", sb_in_n);
+	th->set_stylebox("hover", "SpinBoxInnerLineEdit", sb_in_h);
+	th->set_stylebox("focus", "SpinBoxInnerLineEdit", sb_in_f);
+	th->set_stylebox("read_only", "SpinBoxInnerLineEdit", sb_in_ro);
+	th->set_stylebox("disabled", "SpinBoxInnerLineEdit", sb_in_dis);
+
+	Ref<ClockGearsBrassStyleBox> sb_up_n = le_n->duplicate();
+	sb_up_n->set_bg_color(tk.surface_elevated.lerp(in_bg, 0.45f));
+	sb_up_n->set_corner_radius_all(0);
+	sb_up_n->set_corner_radius(CORNER_TOP_RIGHT, r6);
+	sb_up_n->set_border_width_all(1);
+	sb_up_n->set_border_color(tk.border_copper);
+	sb_up_n->set_content_margin_individual(m4, 1, m4, 1);
+
+	Ref<ClockGearsBrassStyleBox> sb_up_h = sb_up_n->duplicate();
+	sb_up_h->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, 0.16f));
+	sb_up_h->set_border_color(tk.border_copper_bright);
+
+	Ref<ClockGearsBrassStyleBox> sb_up_p = sb_up_n->duplicate();
+	sb_up_p->set_bg_color(tk.surface_sunken);
+	sb_up_p->set_border_color(tk.accent_neon);
+	sb_up_p->set_sunken_style(true);
+
+	Ref<ClockGearsBrassStyleBox> sb_up_d = sb_up_n->duplicate();
+	sb_up_d->set_bg_color(in_dis_bg);
+	sb_up_d->set_border_color(tk.border_subtle);
+
+	Ref<ClockGearsBrassStyleBox> sb_dn_n = sb_up_n->duplicate();
+	sb_dn_n->set_corner_radius_all(0);
+	sb_dn_n->set_corner_radius(CORNER_BOTTOM_RIGHT, r6);
+	sb_dn_n->set_border_width(SIDE_TOP, 0);
+
+	Ref<ClockGearsBrassStyleBox> sb_dn_h = sb_up_h->duplicate();
+	sb_dn_h->set_corner_radius_all(0);
+	sb_dn_h->set_corner_radius(CORNER_BOTTOM_RIGHT, r6);
+
+	Ref<ClockGearsBrassStyleBox> sb_dn_p = sb_up_p->duplicate();
+	sb_dn_p->set_corner_radius_all(0);
+	sb_dn_p->set_corner_radius(CORNER_BOTTOM_RIGHT, r6);
+
+	Ref<ClockGearsBrassStyleBox> sb_dn_d = sb_up_d->duplicate();
+	sb_dn_d->set_corner_radius_all(0);
+	sb_dn_d->set_corner_radius(CORNER_BOTTOM_RIGHT, r6);
+	sb_dn_d->set_border_width(SIDE_TOP, 0);
+
+	th->set_stylebox("up_background", "SpinBox", sb_up_n);
+	th->set_stylebox("up_background_hovered", "SpinBox", sb_up_h);
+	th->set_stylebox("up_background_pressed", "SpinBox", sb_up_p);
+	th->set_stylebox("up_background_disabled", "SpinBox", sb_up_d);
+	th->set_stylebox("down_background", "SpinBox", sb_dn_n);
+	th->set_stylebox("down_background_hovered", "SpinBox", sb_dn_h);
+	th->set_stylebox("down_background_pressed", "SpinBox", sb_dn_p);
+	th->set_stylebox("down_background_disabled", "SpinBox", sb_dn_d);
+	th->set_constant("field_and_buttons_separation", "SpinBox", 0);
+	th->set_constant("buttons_vertical_separation", "SpinBox", 0);
+	th->set_constant("buttons_width", "SpinBox", int(Math::round(18.0f * p_scale)));
+	th->set_constant("set_min_buttons_width_from_icons", "SpinBox", 0);
+	if (th->has_icon("updown", "SpinBox")) {
+		th->clear_icon("updown", "SpinBox");
+	}
+	const Color arr_norm_c = Color(tk.border_copper_bright.r, tk.border_copper_bright.g, tk.border_copper_bright.b, 0.90f);
+	const Color arr_hov_c = tk.accent_neon.lightened(0.14f);
+	const Color arr_prs_c = txt_bright;
+	const Color arr_dis_c = Color(txt_dis.r, txt_dis.g, txt_dis.b, 0.40f);
+	th->set_icon("up", "SpinBox", _cg_make_stepper_arrow_icon(true, arr_norm_c));
+	th->set_icon("up_hover", "SpinBox", _cg_make_stepper_arrow_icon(true, arr_hov_c));
+	th->set_icon("up_pressed", "SpinBox", _cg_make_stepper_arrow_icon(true, arr_prs_c));
+	th->set_icon("up_disabled", "SpinBox", _cg_make_stepper_arrow_icon(true, arr_dis_c));
+	th->set_icon("down", "SpinBox", _cg_make_stepper_arrow_icon(false, arr_norm_c));
+	th->set_icon("down_hover", "SpinBox", _cg_make_stepper_arrow_icon(false, arr_hov_c));
+	th->set_icon("down_pressed", "SpinBox", _cg_make_stepper_arrow_icon(false, arr_prs_c));
+	th->set_icon("down_disabled", "SpinBox", _cg_make_stepper_arrow_icon(false, arr_dis_c));
+
+	// 5. Listas (ItemList, Tree, ClockGearsSunkenList, ProjectList): punto LED fijo de 4 px a la izquierda del elemento seleccionado, sin parpadeo
+	Ref<ClockGearsBrassStyleBox> item_sel;
+	item_sel.instantiate();
+	item_sel->set_anti_aliased(true);
+	item_sel->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, p_light ? 0.22f : 0.22f));
+	item_sel->set_corner_radius_all(r6);
+	item_sel->set_border_width_all(1);
+	item_sel->set_border_color(tk.accent_neon);
+	item_sel->set_led_dot(true, led_sz, tk.accent_neon);
+	item_sel->set_shadow_color(tk.halo_color);
+	item_sel->set_shadow_size(tk.halo_radius_px);
+	item_sel->set_shadow_offset(Vector2(0, 0));
+	if (p_brass) {
+		item_sel->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_BUTTON_HOVER);
+		item_sel->set_top_highlight_alpha(0.30f);
+	}
+
+	Ref<ClockGearsBrassStyleBox> item_hov;
+	item_hov.instantiate();
+	item_hov->set_anti_aliased(true);
+	item_hov->set_bg_color(p_brass ? Color::html("#2a2219") : (p_light ? Color(0, 0, 0, 0.06f) : Color::html("#262a34")));
+	item_hov->set_corner_radius_all(r6);
+	item_hov->set_border_width_all(1);
+	item_hov->set_border_color(tk.border_copper_bright);
+	item_hov->set_shadow_color(tk.halo_color);
+	item_hov->set_shadow_size(tk.halo_radius_px);
+	item_hov->set_shadow_offset(Vector2(0, 0));
+
+	Ref<ClockGearsBrassStyleBox> item_hov_sel = item_sel->duplicate();
+	item_hov_sel->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, p_light ? 0.28f : 0.30f));
+
+	const char *ltypes[] = { "ItemList", "Tree", "ClockGearsSunkenList", nullptr };
+	for (int i = 0; ltypes[i] != nullptr; i++) {
+		const String lt = ltypes[i];
+		th->set_stylebox("hovered", lt, item_hov);
+		th->set_stylebox("hovered_selected", lt, item_hov_sel);
+		th->set_stylebox("hovered_selected_focus", lt, item_hov_sel);
+		th->set_stylebox("selected", lt, item_sel);
+		th->set_stylebox("selected_focus", lt, item_sel);
+		th->set_stylebox("focus", lt, btn_f);
+	}
+
+	Ref<ClockGearsBrassStyleBox> pm_card_sel = item_sel->duplicate();
+	pm_card_sel->set_content_margin_individual(m12, m4, m8, m4);
+	Ref<ClockGearsBrassStyleBox> pm_card_hp = item_hov_sel->duplicate();
+	pm_card_hp->set_content_margin_individual(m12, m4, m8, m4);
+	th->set_stylebox("selected", "ProjectList", pm_card_sel);
+	th->set_stylebox("hover_pressed", "ProjectList", pm_card_hp);
+
+	// 6. Pestañas (TabBar, TabContainer, ClockGearsTabButton): activa con línea inferior de acento (2 px), halo y punto LED de 4 px; inactivas en tono apagado; sin franja negra a la derecha (tabbar_background = surface_panel)
+	Ref<ClockGearsBrassStyleBox> tab_sel;
+	tab_sel.instantiate();
+	tab_sel->set_anti_aliased(true);
+	tab_sel->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, p_light ? 0.16f : 0.18f));
+	tab_sel->set_corner_radius(CORNER_TOP_LEFT, r6);
+	tab_sel->set_corner_radius(CORNER_TOP_RIGHT, r6);
+	tab_sel->set_border_width_all(1);
+	tab_sel->set_border_width(SIDE_BOTTOM, 2);
+	tab_sel->set_border_color(tk.accent_neon);
+	tab_sel->set_content_margin_individual(m12 + int(4 * p_scale), m8, m12, m8);
+	tab_sel->set_led_dot(true, led_sz, tk.accent_neon);
+	tab_sel->set_shadow_color(tk.halo_color);
+	tab_sel->set_shadow_size(tk.halo_radius_px);
+	tab_sel->set_shadow_offset(Vector2(0, 0));
+	if (p_brass) {
+		tab_sel->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_HEADER);
+		tab_sel->set_top_highlight_alpha(0.36f);
+	}
+
+	Ref<ClockGearsBrassStyleBox> tab_unsel;
+	tab_unsel.instantiate();
+	tab_unsel->set_anti_aliased(true);
+	tab_unsel->set_bg_color(p_brass ? Color::html("#181511") : (p_light ? Color::html("#e3e6ee") : Color::html("#17191f")));
+	tab_unsel->set_corner_radius(CORNER_TOP_LEFT, r6);
+	tab_unsel->set_corner_radius(CORNER_TOP_RIGHT, r6);
+	tab_unsel->set_border_width_all(1);
+	tab_unsel->set_border_color(tk.border_subtle);
+	tab_unsel->set_content_margin_individual(m12, m8, m12, m8);
+	if (p_brass) {
+		tab_unsel->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_PANEL);
+	}
+
+	Ref<ClockGearsBrassStyleBox> tab_hov = tab_unsel->duplicate();
+	tab_hov->set_bg_color(p_brass ? Color::html("#282118") : (p_light ? Color::html("#edf0f7") : Color::html("#272b35")));
+	tab_hov->set_border_color(tk.border_copper_bright);
+	tab_hov->set_shadow_color(tk.halo_color);
+	tab_hov->set_shadow_size(tk.halo_radius_px);
+	tab_hov->set_shadow_offset(Vector2(0, 0));
+
+	Ref<ClockGearsBrassStyleBox> tab_hov_sel = tab_sel->duplicate();
+	tab_hov_sel->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, p_light ? 0.22f : 0.24f));
+
+	Ref<ClockGearsBrassStyleBox> tab_dis = tab_unsel->duplicate();
+	tab_dis->set_bg_color(p_brass ? Color::html("#13110e") : (p_light ? Color::html("#eceef4") : Color::html("#13151a")));
+	tab_dis->set_border_color(Color(tk.border_subtle.r, tk.border_subtle.g, tk.border_subtle.b, 0.10f));
+	tab_dis->set_shadow_size(0);
+
+	Ref<ClockGearsBrassStyleBox> tab_foc = tab_unsel->duplicate();
+	tab_foc->set_draw_center(false);
+	tab_foc->set_border_color(tk.accent_neon);
+	tab_foc->set_shadow_color(tk.halo_color);
+	tab_foc->set_shadow_size(tk.halo_radius_px);
+	tab_foc->set_shadow_offset(Vector2(0, 0));
+
+	Ref<StyleBoxFlat> tabbar_bg;
+	tabbar_bg.instantiate();
+	tabbar_bg->set_anti_aliased(true);
+	tabbar_bg->set_bg_color(tk.surface_panel);
+	tabbar_bg->set_corner_radius(CORNER_TOP_LEFT, r6);
+	tabbar_bg->set_corner_radius(CORNER_TOP_RIGHT, r6);
+	tabbar_bg->set_border_width(SIDE_BOTTOM, 1);
+	tabbar_bg->set_border_color(tk.border_subtle);
+	tabbar_bg->set_content_margin_all(0);
+
+	const char *ttypes[] = { "TabBar", "TabContainer", nullptr };
+	for (int i = 0; ttypes[i] != nullptr; i++) {
+		const String tt = ttypes[i];
+		th->set_stylebox("tab_selected", tt, tab_sel);
+		th->set_stylebox("tab_unselected", tt, tab_unsel);
+		th->set_stylebox("tab_hovered", tt, tab_hov);
+		th->set_stylebox("tab_disabled", tt, tab_dis);
+		th->set_stylebox("tab_focus", tt, tab_foc);
+		th->set_stylebox("tabbar_background", tt, tabbar_bg);
+		th->set_color("font_selected_color", tt, tk.accent_neon);
+		th->set_color("font_hovered_color", tt, txt_bright);
+		th->set_color("font_unselected_color", tt, txt_sec);
+		th->set_color("font_disabled_color", tt, txt_dis);
+		th->set_constant("tab_transition_ms", tt, tk.transition_ms);
+	}
+
+	th->set_type_variation("ClockGearsTabButton", "Button");
+	th->set_stylebox("normal", "ClockGearsTabButton", tab_unsel);
+	th->set_stylebox("hover", "ClockGearsTabButton", tab_hov);
+	th->set_stylebox("pressed", "ClockGearsTabButton", tab_sel);
+	th->set_stylebox("hover_pressed", "ClockGearsTabButton", tab_hov_sel);
+	th->set_stylebox("focus", "ClockGearsTabButton", tab_foc);
+	th->set_stylebox("disabled", "ClockGearsTabButton", tab_dis);
+	th->set_color("font_color", "ClockGearsTabButton", txt_sec);
+	th->set_color("font_hover_color", "ClockGearsTabButton", txt_bright);
+	th->set_color("font_pressed_color", "ClockGearsTabButton", tk.accent_neon);
+	th->set_color("font_hover_pressed_color", "ClockGearsTabButton", txt_bright);
+	th->set_color("font_focus_color", "ClockGearsTabButton", txt_bright);
+	th->set_color("font_disabled_color", "ClockGearsTabButton", txt_dis);
+	th->set_constant("hover_transition_ms", "ClockGearsTabButton", tk.transition_ms);
+
+	// 7. Barras de desplazamiento (VScrollBar, HScrollBar): finas (8 px), redondeadas, con tirador cobrizo al pasar el ratón
+	const int scroll_px = MAX(6, int(Math::round(8.0f * p_scale)));
+	const int scroll_r = MAX(3, scroll_px / 2);
+
+	Ref<StyleBoxFlat> sb_vscroll;
+	sb_vscroll.instantiate();
+	sb_vscroll->set_anti_aliased(true);
+	sb_vscroll->set_bg_color(Color(tk.surface_sunken.r, tk.surface_sunken.g, tk.surface_sunken.b, 0.55f));
+	sb_vscroll->set_corner_radius_all(scroll_r);
+	sb_vscroll->set_content_margin_individual(scroll_px / 2, 0, scroll_px - (scroll_px / 2), 0);
+
+	Ref<StyleBoxFlat> sb_hscroll = sb_vscroll->duplicate();
+	sb_hscroll->set_content_margin_individual(0, scroll_px / 2, 0, scroll_px - (scroll_px / 2));
+
+	Ref<StyleBoxFlat> grab_n;
+	grab_n.instantiate();
+	grab_n->set_anti_aliased(true);
+	grab_n->set_bg_color(Color(tk.border_copper.r, tk.border_copper.g, tk.border_copper.b, 0.48f));
+	grab_n->set_corner_radius_all(scroll_r);
+
+	Ref<StyleBoxFlat> grab_h = grab_n->duplicate();
+	grab_h->set_bg_color(tk.border_copper_bright);
+	grab_h->set_shadow_color(tk.halo_color);
+	grab_h->set_shadow_size(MAX(0, tk.halo_radius_px / 2));
+	grab_h->set_shadow_offset(Vector2(0, 0));
+
+	Ref<StyleBoxFlat> grab_p = grab_n->duplicate();
+	grab_p->set_bg_color(tk.accent_neon);
+
+	th->set_stylebox("scroll", "VScrollBar", sb_vscroll);
+	th->set_stylebox("scroll_focus", "VScrollBar", sb_vscroll);
+	th->set_stylebox("grabber", "VScrollBar", grab_n);
+	th->set_stylebox("grabber_highlight", "VScrollBar", grab_h);
+	th->set_stylebox("grabber_pressed", "VScrollBar", grab_p);
+
+	th->set_stylebox("scroll", "HScrollBar", sb_hscroll);
+	th->set_stylebox("scroll_focus", "HScrollBar", sb_hscroll);
+	th->set_stylebox("grabber", "HScrollBar", grab_n);
+	th->set_stylebox("grabber_highlight", "HScrollBar", grab_h);
+	th->set_stylebox("grabber_pressed", "HScrollBar", grab_p);
+
+	// 8. Separadores: línea cobriza fina con baja opacidad (border_subtle) + línea con degradado cobrizo a transparente ("ClockGearsSectionHeaderLine")
+	Ref<StyleBoxLine> sep_subtle;
+	sep_subtle.instantiate();
+	sep_subtle->set_color(tk.border_subtle);
+	sep_subtle->set_thickness(1);
+	if (!p_brass) {
+		th->set_stylebox("separator", "HSeparator", sep_subtle);
+	}
+	th->set_stylebox("separator", "PopupMenu", sep_subtle);
+
+	Ref<StyleBoxLine> vsep_subtle = sep_subtle->duplicate();
+	vsep_subtle->set_vertical(true);
+	th->set_stylebox("separator", "VSeparator", vsep_subtle);
+
+	Ref<ClockGearsBrassStyleBox> hdr_grad_line;
+	hdr_grad_line.instantiate();
+	hdr_grad_line->set_header_gradient_line(true, Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.85f));
+	hdr_grad_line->set_content_margin_individual(0, 1, 0, 1);
+	th->set_type_variation("ClockGearsSectionHeaderLine", "HSeparator");
+	th->set_stylebox("separator", "ClockGearsSectionHeaderLine", hdr_grad_line);
+	th->set_constant("separation", "ClockGearsSectionHeaderLine", 3);
+
+	// 9. Menús desplegables (PopupMenu) y Tooltips (TooltipPanel, TooltipLabel)
+	Ref<ClockGearsBrassStyleBox> pop_p;
+	pop_p.instantiate();
+	pop_p->set_anti_aliased(true);
+	pop_p->set_bg_color(p_brass ? Color::html("#1b1713") : (p_light ? Color::html("#ffffff") : tk.surface_panel));
+	pop_p->set_corner_radius_all(r6);
+	pop_p->set_border_width_all(1);
+	pop_p->set_border_color(tk.border_copper);
+	pop_p->set_content_margin_all(m6);
+	if (p_brass) {
+		pop_p->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_PANEL);
+		pop_p->set_top_highlight_alpha(0.30f);
+	}
+	pop_p->set_shadow_color(Color(0.0f, 0.0f, 0.0f, 0.42f));
+	pop_p->set_shadow_size(int(6 * p_scale));
+	pop_p->set_shadow_offset(Vector2(0, int(2 * p_scale)));
+
+	Ref<ClockGearsBrassStyleBox> pop_h;
+	pop_h.instantiate();
+	pop_h->set_anti_aliased(true);
+	pop_h->set_bg_color(Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.24f));
+	pop_h->set_corner_radius_all(r6);
+	pop_h->set_border_width_all(1);
+	pop_h->set_border_color(tk.accent_neon);
+	pop_h->set_content_margin_individual(m8, m4, m8, m4);
+	pop_h->set_shadow_color(tk.halo_color);
+	pop_h->set_shadow_size(tk.halo_radius_px);
+	pop_h->set_shadow_offset(Vector2(0, 0));
+
+	th->set_stylebox("panel", "PopupMenu", pop_p);
+	th->set_stylebox("hover", "PopupMenu", pop_h);
+	th->set_color("font_color", "PopupMenu", txt);
+	th->set_color("font_hover_color", "PopupMenu", txt_bright);
+	th->set_color("font_disabled_color", "PopupMenu", txt_dis);
+	th->set_color("font_accelerator_color", "PopupMenu", txt_sec);
+
+	Ref<ClockGearsBrassStyleBox> tt_p = pop_p->duplicate();
+	tt_p->set_bg_color(p_light ? Color::html("#ffffff") : tk.surface_base);
+	tt_p->set_border_color(tk.border_copper);
+	tt_p->set_corner_radius_all(r6);
+	tt_p->set_content_margin_all(m8);
+	th->set_type_variation("TooltipPanel", "PopupPanel");
+	th->set_stylebox("panel", "TooltipPanel", tt_p);
+	th->set_type_variation("TooltipLabel", "Label");
+	th->set_color("font_color", "TooltipLabel", txt);
+	th->set_color("font_shadow_color", "TooltipLabel", Color(0, 0, 0, 0));
+
+	// 10. Marcos de lienzo y vistas previas con halo exterior muy sutil
+	Ref<StyleBoxFlat> sb_canvas;
+	sb_canvas.instantiate();
+	sb_canvas->set_anti_aliased(true);
+	sb_canvas->set_draw_center(false);
+	sb_canvas->set_bg_color(Color(0, 0, 0, 0));
+	sb_canvas->set_corner_radius_all(r6);
+	sb_canvas->set_border_width_all(1);
+	sb_canvas->set_border_color(tk.border_copper);
+	sb_canvas->set_content_margin_all(0);
+	sb_canvas->set_shadow_color(Color(tk.halo_color.r, tk.halo_color.g, tk.halo_color.b, tk.halo_color.a * 0.55f));
+	sb_canvas->set_shadow_size(tk.halo_radius_px);
+	sb_canvas->set_shadow_offset(Vector2(0, 0));
+	th->set_type_variation("ClockGearsCanvasFrame", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsCanvasFrame", sb_canvas);
+
+	Ref<StyleBoxFlat> sb_preview = sb_canvas->duplicate();
+	sb_preview->set_draw_center(true);
+	sb_preview->set_bg_color(tk.surface_sunken);
+	sb_preview->set_content_margin_all(m4);
+	th->set_type_variation("ClockGearsPreviewFrame", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsPreviewFrame", sb_preview);
+
+	// 11. MenuBar / MainMenuBar (píldoras del menú principal en ambos temas)
+	Ref<ClockGearsBrassStyleBox> mb_n;
+	mb_n.instantiate();
+	mb_n->set_anti_aliased(true);
+	mb_n->set_bg_color(p_brass ? ClockGearsTheme::color_brass_header() : (p_light ? Color::html("#e8ebf2") : tk.surface_panel));
+	mb_n->set_corner_radius_all(r6);
+	mb_n->set_border_width_all(1);
+	mb_n->set_border_color(tk.border_copper);
+	mb_n->set_content_margin_individual(m8, m4, m8, m4);
+	if (p_brass) {
+		mb_n->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_HEADER);
+		mb_n->set_top_highlight_alpha(0.32f);
+	}
+
+	Ref<ClockGearsBrassStyleBox> mb_h = mb_n->duplicate();
+	mb_h->set_bg_color(p_brass ? Color::html("#332a1e") : (p_light ? Color::html("#dce1ec") : tk.surface_elevated));
+	mb_h->set_border_color(tk.border_copper_bright);
+	mb_h->set_shadow_color(tk.halo_color);
+	mb_h->set_shadow_size(tk.halo_radius_px);
+	mb_h->set_shadow_offset(Vector2(0, 0));
+
+	Ref<ClockGearsBrassStyleBox> mb_p = mb_n->duplicate();
+	mb_p->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, 0.22f));
+	mb_p->set_border_color(tk.accent_neon);
+	mb_p->set_sunken_style(true);
+	mb_p->set_shadow_color(tk.halo_color);
+	mb_p->set_shadow_size(tk.halo_radius_px);
+	mb_p->set_shadow_offset(Vector2(0, 0));
+
+	const char *mbtypes[] = { "MenuBar", "MainMenuBar", nullptr };
+	th->set_type_variation("MainMenuBar", "MenuBar");
+	for (int i = 0; mbtypes[i] != nullptr; i++) {
+		const String mbt = mbtypes[i];
+		th->set_stylebox("normal", mbt, mb_n);
+		th->set_stylebox("hover", mbt, mb_h);
+		th->set_stylebox("pressed", mbt, mb_p);
+		th->set_stylebox("hover_pressed", mbt, mb_p);
+		th->set_stylebox("disabled", mbt, mb_n);
+		th->set_color("font_color", mbt, txt);
+		th->set_color("font_hover_color", mbt, txt_bright);
+		th->set_color("font_pressed_color", mbt, tk.accent_neon);
+		th->set_color("font_hover_pressed_color", mbt, txt_bright);
+		th->set_color("font_disabled_color", mbt, txt_dis);
+		th->set_constant("h_separation", mbt, m6);
+	}
+}
+
 Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_has_editor_base) const {
 	Ref<Theme> th;
 	bool has_base = false;
@@ -1343,6 +2022,7 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_constant("v_separation", "GridContainer", m8);
 
 	_cg_populate_project_manager_styles(th, false, p_light, p_scale, bg, panel_col, container_border, accent, txt, txt_sec, txt_dis);
+	_cg_apply_common_neon_copper_controls(th, false, p_light, p_scale, tk, txt, txt_sec, txt_dis);
 
 	return th;
 }
@@ -1996,6 +2676,7 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_constant("v_separation", "GridContainer", m8);
 
 	_cg_populate_project_manager_styles(th, true, false, p_scale, bg, panel_col, container_border, accent, txt, txt_sec, txt_dis);
+	_cg_apply_common_neon_copper_controls(th, true, false, p_scale, tk, txt, txt_sec, txt_dis);
 
 	return th;
 }
@@ -2281,15 +2962,18 @@ static Ref<ClockGearsBrassStyleBox> _cg_clone_flat_to_brass(const Ref<StyleBoxFl
 }
 
 void ClockGearsTheme::_on_brass_control_hover_entered(ObjectID p_id) {
-	if (active_theme_id != "brass") {
+	const bool is_brass = (active_theme_id == "brass");
+	const bool is_light = (active_theme_id == "light");
+	const int trans_ms = get_neon_copper_tokens(is_brass, is_light, 1.0f).transition_ms;
+	if (trans_ms <= 0) {
 		return;
 	}
 	Control *c = Object::cast_to<Control>(ObjectDB::get_instance(p_id));
 	if (!c || !c->is_inside_tree() || !c->is_visible_in_tree()) {
 		return;
 	}
-	const float dur = float(BRASS_TRANSITION_MS) / 1000.0f;
-	c->set_self_modulate(Color(1.08f, 1.05f, 0.96f, 1.0f));
+	const float dur = float(trans_ms) / 1000.0f;
+	c->set_self_modulate(Color(1.07f, 1.04f, 0.96f, 1.0f));
 	Ref<Tween> tw = c->create_tween();
 	if (tw.is_valid()) {
 		tw->set_trans(Tween::TRANS_QUAD);
@@ -2299,7 +2983,10 @@ void ClockGearsTheme::_on_brass_control_hover_entered(ObjectID p_id) {
 }
 
 void ClockGearsTheme::_on_brass_tab_changed(int p_tab, ObjectID p_id) {
-	if (active_theme_id != "brass") {
+	const bool is_brass = (active_theme_id == "brass");
+	const bool is_light = (active_theme_id == "light");
+	const int trans_ms = get_neon_copper_tokens(is_brass, is_light, 1.0f).transition_ms;
+	if (trans_ms <= 0) {
 		return;
 	}
 	Control *c = Object::cast_to<Control>(ObjectDB::get_instance(p_id));
@@ -2312,8 +2999,8 @@ void ClockGearsTheme::_on_brass_tab_changed(int p_tab, ObjectID p_id) {
 			target = tab_c;
 		}
 	}
-	const float dur = float(BRASS_TRANSITION_MS) / 1000.0f;
-	target->set_self_modulate(Color(1.06f, 1.03f, 0.94f, 1.0f));
+	const float dur = float(trans_ms) / 1000.0f;
+	target->set_self_modulate(Color(1.05f, 1.03f, 0.95f, 1.0f));
 	Ref<Tween> tw = target->create_tween();
 	if (tw.is_valid()) {
 		tw->set_trans(Tween::TRANS_QUAD);
@@ -2477,20 +3164,21 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 			c->connect(SceneStringName(mouse_exited), callable_mp(this, &ClockGearsTheme::_on_input_hover_exited).bind(c->get_instance_id()));
 		}
 
+		// Conectar transiciones cortas de 120 a 150 ms SOLO al cambiar de estado (sin animación continua en reposo)
+		if (Object::cast_to<Button>(c) && !c->has_meta("_cg_brass_hov_conn")) {
+			c->set_meta("_cg_brass_hov_conn", true);
+			c->connect(SceneStringName(mouse_entered), callable_mp(this, &ClockGearsTheme::_on_brass_control_hover_entered).bind(c->get_instance_id()));
+		}
+		if ((Object::cast_to<TabContainer>(c) || Object::cast_to<TabBar>(c)) && !c->has_meta("_cg_brass_tab_conn")) {
+			c->set_meta("_cg_brass_tab_conn", true);
+			c->connect("tab_changed", callable_mp(this, &ClockGearsTheme::_on_brass_tab_changed).bind(c->get_instance_id()));
+		}
+
 		if (!is_brass && !had_brass_before) {
 			continue;
 		}
 
 		if (is_brass) {
-			// Conectar transiciones cortas (120 ms <= 150 ms) por evento en botones y pestañas
-			if (Object::cast_to<Button>(c) && !c->has_meta("_cg_brass_hov_conn")) {
-				c->set_meta("_cg_brass_hov_conn", true);
-				c->connect(SceneStringName(mouse_entered), callable_mp(this, &ClockGearsTheme::_on_brass_control_hover_entered).bind(c->get_instance_id()));
-			}
-			if ((Object::cast_to<TabContainer>(c) || Object::cast_to<TabBar>(c)) && !c->has_meta("_cg_brass_tab_conn")) {
-				c->set_meta("_cg_brass_tab_conn", true);
-				c->connect("tab_changed", callable_mp(this, &ClockGearsTheme::_on_brass_tab_changed).bind(c->get_instance_id()));
-			}
 
 			// Adaptar overrides locales de tarjetas/cabeceras oscuras a ClockGearsBrassStyleBox
 			// (Omitir contenedores gestionados directamente por el tema vía _cg_theme_managed_container)
