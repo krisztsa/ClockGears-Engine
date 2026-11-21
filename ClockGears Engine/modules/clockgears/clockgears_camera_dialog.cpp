@@ -3,6 +3,7 @@
 #include "core/clockgears_data_manager.h"
 #include "core/config/project_settings.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/clockgears_theme.h"
 #include "editor/editor_node.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/separator.h"
@@ -12,14 +13,7 @@
 #define CG_CAM_TR(m_str) String::utf8(m_str)
 
 static Ref<StyleBoxFlat> _camera_card_style() {
-	Ref<StyleBoxFlat> style;
-	style.instantiate();
-	style->set_bg_color(Color(0.10f, 0.11f, 0.13f));
-	style->set_corner_radius_all(6);
-	style->set_content_margin_all(8);
-	style->set_border_width_all(1);
-	style->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.08f));
-	return style;
+	return ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 8, 0);
 }
 
 // ============================================================================

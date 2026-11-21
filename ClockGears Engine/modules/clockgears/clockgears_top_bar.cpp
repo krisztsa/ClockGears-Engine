@@ -9,6 +9,7 @@
 #include "core/io/image.h"
 #include "core/os/os.h"
 #include "editor/clockgears_project_manager.h"
+#include "editor/clockgears_theme.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -332,8 +333,10 @@ void ClockGearsTopBar::_notification(int p_what) {
 			}
 		}
 		sync_active_layer_display();
+		_apply_bar_container_style();
 		_refresh_icon_scale();
 	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		_apply_bar_container_style();
 		_refresh_icon_scale();
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
 		if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsTopBar::_on_editor_settings_changed))) {
@@ -611,6 +614,18 @@ void ClockGearsTopBar::set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEve
 	export_dialog = p_exp;
 }
 
+void ClockGearsTopBar::_apply_bar_container_style() {
+	if (applying_bar_style) {
+		return;
+	}
+	applying_bar_style = true;
+	const int ui_scale = _get_ui_scale_int();
+	set_meta("_cg_theme_managed_container", true);
+	add_theme_style_override(SceneStringName(panel), ClockGearsTheme::make_container_stylebox(float(ui_scale), 6, 3, 1));
+	bar_h_padding = float(12 * ui_scale + 2);
+	applying_bar_style = false;
+}
+
 ClockGearsTopBar::ClockGearsTopBar() {
 	singleton = this;
 	set_process_shortcut_input(true);
@@ -619,16 +634,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
 	last_icon_scale = int_scale;
 
-	Ref<StyleBoxFlat> bar_style;
-	bar_style.instantiate();
-	bar_style->set_anti_aliased(true);
-	bar_style->set_bg_color(Color(0.088f, 0.096f, 0.115f));
-	bar_style->set_corner_radius_all(6 * ui_scale);
-	bar_style->set_content_margin_individual(6 * ui_scale, 3 * ui_scale, 6 * ui_scale, 3 * ui_scale);
-	bar_style->set_border_width_all(1);
-	bar_style->set_border_color(Color(1, 1, 1, 0.08f));
-	add_theme_style_override(SceneStringName(panel), bar_style);
-	bar_h_padding = float(12 * ui_scale + 2);
+	_apply_bar_container_style();
 
 	Ref<StyleBoxEmpty> scroll_empty;
 	scroll_empty.instantiate();

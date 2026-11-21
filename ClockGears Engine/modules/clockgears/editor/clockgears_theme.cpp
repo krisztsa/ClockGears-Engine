@@ -27,6 +27,7 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #define CG_SCALE EDSCALE
 #else
@@ -108,16 +109,80 @@ void ClockGearsBrassStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) const
 
 ClockGearsTheme *ClockGearsTheme::singleton = nullptr;
 
-Ref<StyleBoxFlat> ClockGearsTheme::make_card_stylebox(float p_scale) {
+Color ClockGearsTheme::color_menu_pill_border(bool p_brass, bool p_light) {
+	if (p_brass) {
+		const Color b = color_brass_border();
+		return Color(b.r, b.g, b.b, 0.65f);
+	}
+	if (p_light) {
+		return Color(0.75f, 0.50f, 0.16f, 0.65f);
+	}
+	// Idéntico al borde de los botones píldora del menú superior ("Capas · Suelo", etc.).
+	return Color(0.88f, 0.63f, 0.25f, 0.62f);
+}
+
+Color ClockGearsTheme::get_active_container_border_color() {
+	const String tid = singleton ? singleton->get_active_theme_id() : String("dark");
+	const bool is_brass = (tid == "brass");
+	const bool is_light = (tid == "light") || (singleton && singleton->is_light_mode() && !is_brass);
+	return color_menu_pill_border(is_brass, is_light);
+}
+
+Ref<StyleBoxFlat> ClockGearsTheme::make_container_stylebox(float p_scale, int p_margin_h, int p_margin_v, int p_variant) {
+	const String tid = singleton ? singleton->get_active_theme_id() : String("dark");
+	const bool is_brass = (tid == "brass");
+	const bool is_light = (tid == "light") || (singleton && singleton->is_light_mode() && !is_brass);
+	const Color bd = color_menu_pill_border(is_brass, is_light);
+	const int bw = get_container_border_width();
+	const int r6 = get_container_corner_radius(p_scale);
+
 	Ref<StyleBoxFlat> sb;
-	sb.instantiate();
+	if (is_brass && p_variant != 3) {
+		Ref<ClockGearsBrassStyleBox> bsb;
+		bsb.instantiate();
+		bsb->set_gradient_mode((p_variant == 1) ? ClockGearsBrassStyleBox::GRADIENT_HEADER : ClockGearsBrassStyleBox::GRADIENT_PANEL);
+		bsb->set_top_highlight_alpha((p_variant == 1) ? 0.30f : 0.24f);
+		bsb->set_shadow_color(Color(0.02f, 0.01f, 0.0f, 0.32f));
+		bsb->set_shadow_size(int(3 * p_scale));
+		bsb->set_shadow_offset(Vector2(0, int(1 * p_scale)));
+		sb = bsb;
+	} else {
+		sb.instantiate();
+	}
+
 	sb->set_anti_aliased(true);
-	sb->set_bg_color(color_panel());
-	sb->set_corner_radius_all(int(6 * p_scale));
-	sb->set_border_width_all(1);
-	sb->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.10f));
-	sb->set_content_margin_all(int(12 * p_scale));
+	if (p_variant == 3) {
+		sb->set_draw_center(false);
+		sb->set_bg_color(Color(0, 0, 0, 0));
+	} else if (is_brass) {
+		sb->set_bg_color((p_variant == 1) ? color_brass_header() : color_brass_panel());
+	} else if (is_light) {
+		sb->set_bg_color((p_variant == 1) ? Color::html("#e8ebf2") : ((p_variant == 2) ? Color::html("#f4f6fa") : Color::html("#ffffff")));
+	} else {
+		if (p_variant == 1) {
+			sb->set_bg_color(Color(0.11f, 0.12f, 0.15f, 1.0f));
+		} else if (p_variant == 2) {
+			sb->set_bg_color(Color(0.14f, 0.15f, 0.19f, 1.0f));
+		} else {
+			sb->set_bg_color(color_panel());
+		}
+	}
+
+	sb->set_corner_radius_all(r6);
+	sb->set_border_width_all(bw);
+	sb->set_border_color(bd);
+	if (p_margin_h <= 0 && p_margin_v <= 0) {
+		sb->set_content_margin_all(0);
+	} else if (p_margin_h == p_margin_v) {
+		sb->set_content_margin_all(int(p_margin_h * p_scale));
+	} else {
+		sb->set_content_margin_individual(int(p_margin_h * p_scale), int(p_margin_v * p_scale), int(p_margin_h * p_scale), int(p_margin_v * p_scale));
+	}
 	return sb;
+}
+
+Ref<StyleBoxFlat> ClockGearsTheme::make_card_stylebox(float p_scale) {
+	return make_container_stylebox(p_scale, 12, 12, 0);
 }
 
 Ref<StyleBoxFlat> ClockGearsTheme::make_input_stylebox(bool p_has_error, bool p_focused, float p_scale) {
@@ -182,18 +247,46 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	const int m8 = int(8 * p_scale);
 	const int m12 = int(12 * p_scale);
 	const Color border_subtle = p_light ? Color(0, 0, 0, 0.14f) : Color(1, 1, 1, 0.12f);
+	const Color container_border = color_menu_pill_border(false, p_light);
 
-	// 1. Panel & PanelContainer (esquinas redondeadas 6px, borde fino 1px, margen 12px)
+	// 1. Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al botón píldora del menú, esquinas 6px)
+	th->set_color("container_border", "ClockGears", container_border);
+	th->set_constant("container_border_width", "ClockGears", get_container_border_width());
+	th->set_constant("container_corner_radius", "ClockGears", r6);
+
 	Ref<StyleBoxFlat> sb_panel;
 	sb_panel.instantiate();
 	sb_panel->set_anti_aliased(true);
 	sb_panel->set_bg_color(panel_col);
 	sb_panel->set_corner_radius_all(r6);
-	sb_panel->set_border_width_all(1);
-	sb_panel->set_border_color(border_subtle);
+	sb_panel->set_border_width_all(get_container_border_width());
+	sb_panel->set_border_color(container_border);
 	sb_panel->set_content_margin_all(m12);
 	th->set_stylebox("panel", "Panel", sb_panel);
 	th->set_stylebox("panel", "PanelContainer", sb_panel);
+	th->set_color("container_border", "PanelContainer", container_border);
+
+	Ref<StyleBoxFlat> sb_bar_container = sb_panel->duplicate();
+	sb_bar_container->set_bg_color(p_light ? Color::html("#e8ebf2") : Color(0.11f, 0.12f, 0.15f, 1.0f));
+	sb_bar_container->set_content_margin_individual(m8, m6, m8, m6);
+
+	Ref<StyleBoxFlat> sb_subbar_container = sb_panel->duplicate();
+	sb_subbar_container->set_bg_color(p_light ? Color::html("#f4f6fa") : Color(0.14f, 0.15f, 0.19f, 1.0f));
+	sb_subbar_container->set_content_margin_individual(m8, m6, m8, m6);
+
+	Ref<StyleBoxFlat> sb_canvas_frame = sb_panel->duplicate();
+	sb_canvas_frame->set_draw_center(false);
+	sb_canvas_frame->set_bg_color(Color(0, 0, 0, 0));
+	sb_canvas_frame->set_content_margin_all(0);
+
+	th->set_type_variation("ClockGearsContainer", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsContainer", sb_panel);
+	th->set_type_variation("ClockGearsBarContainer", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsBarContainer", sb_bar_container);
+	th->set_type_variation("ClockGearsSubBarContainer", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsSubBarContainer", sb_subbar_container);
+	th->set_type_variation("ClockGearsCanvasFrame", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsCanvasFrame", sb_canvas_frame);
 
 	// 2. AcceptDialog / ConfirmationDialog / FileDialog / Window
 	Ref<StyleBoxFlat> sb_win;
@@ -536,12 +629,16 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_color("font_unselected_color", "TabBar", txt_sec);
 	th->set_color("font_disabled_color", "TabBar", txt_dis);
 
+	Ref<StyleBoxFlat> sb_tab_panel = sb_panel->duplicate();
+	sb_tab_panel->set_content_margin_all(m6);
+
 	th->set_stylebox("tab_selected", "TabContainer", tab_sel);
 	th->set_stylebox("tab_unselected", "TabContainer", tab_unsel);
 	th->set_stylebox("tab_hovered", "TabContainer", tab_hov);
 	th->set_stylebox("tab_disabled", "TabContainer", tab_dis);
 	th->set_stylebox("tab_focus", "TabContainer", tab_foc);
-	th->set_stylebox("panel", "TabContainer", sb_panel);
+	th->set_stylebox("panel", "TabContainer", sb_tab_panel);
+	th->set_color("container_border", "TabContainer", container_border);
 	th->set_color("font_selected_color", "TabContainer", accent);
 	th->set_color("font_hovered_color", "TabContainer", p_light ? txt : Color::html("#ffffff"));
 	th->set_color("font_unselected_color", "TabContainer", txt_sec);
@@ -638,14 +735,20 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	const int m8 = int(8 * p_scale);
 	const int m12 = int(12 * p_scale);
 
-	// 1. Panel & PanelContainer (degradado suave, borde latón con brillo superior, sombra suave)
+	const Color container_border = color_menu_pill_border(true, false);
+
+	// 1. Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al menú Latón, 6px)
+	th->set_color("container_border", "ClockGears", container_border);
+	th->set_constant("container_border_width", "ClockGears", get_container_border_width());
+	th->set_constant("container_corner_radius", "ClockGears", r6);
+
 	Ref<ClockGearsBrassStyleBox> sb_panel;
 	sb_panel.instantiate();
 	sb_panel->set_anti_aliased(true);
 	sb_panel->set_bg_color(panel_col);
 	sb_panel->set_corner_radius_all(r6);
-	sb_panel->set_border_width_all(1);
-	sb_panel->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.56f));
+	sb_panel->set_border_width_all(get_container_border_width());
+	sb_panel->set_border_color(container_border);
 	sb_panel->set_content_margin_all(m12);
 	sb_panel->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_PANEL);
 	sb_panel->set_top_highlight_alpha(0.28f);
@@ -654,6 +757,35 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	sb_panel->set_shadow_offset(Vector2(0, 2 * p_scale));
 	th->set_stylebox("panel", "Panel", sb_panel);
 	th->set_stylebox("panel", "PanelContainer", sb_panel);
+	th->set_color("container_border", "PanelContainer", container_border);
+
+	Ref<ClockGearsBrassStyleBox> sb_bar_container = sb_panel->duplicate();
+	sb_bar_container->set_bg_color(header_col);
+	sb_bar_container->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_HEADER);
+	sb_bar_container->set_top_highlight_alpha(0.32f);
+	sb_bar_container->set_content_margin_individual(m8, m6, m8, m6);
+
+	Ref<ClockGearsBrassStyleBox> sb_subbar_container = sb_panel->duplicate();
+	sb_subbar_container->set_content_margin_individual(m8, m6, m8, m6);
+
+	Ref<StyleBoxFlat> sb_canvas_frame;
+	sb_canvas_frame.instantiate();
+	sb_canvas_frame->set_anti_aliased(true);
+	sb_canvas_frame->set_draw_center(false);
+	sb_canvas_frame->set_bg_color(Color(0, 0, 0, 0));
+	sb_canvas_frame->set_corner_radius_all(r6);
+	sb_canvas_frame->set_border_width_all(get_container_border_width());
+	sb_canvas_frame->set_border_color(container_border);
+	sb_canvas_frame->set_content_margin_all(0);
+
+	th->set_type_variation("ClockGearsContainer", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsContainer", sb_panel);
+	th->set_type_variation("ClockGearsBarContainer", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsBarContainer", sb_bar_container);
+	th->set_type_variation("ClockGearsSubBarContainer", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsSubBarContainer", sb_subbar_container);
+	th->set_type_variation("ClockGearsCanvasFrame", "PanelContainer");
+	th->set_stylebox("panel", "ClockGearsCanvasFrame", sb_canvas_frame);
 
 	// 1b. MenuBar / Cabecera de barra
 	Ref<ClockGearsBrassStyleBox> sb_menubar;
@@ -1104,12 +1236,16 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_color("font_disabled_color", "TabBar", txt_dis);
 	th->set_constant("tab_transition_ms", "TabBar", BRASS_TRANSITION_MS);
 
+	Ref<StyleBoxFlat> sb_tab_panel = sb_panel->duplicate();
+	sb_tab_panel->set_content_margin_all(m6);
+
 	th->set_stylebox("tab_selected", "TabContainer", tab_sel);
 	th->set_stylebox("tab_unselected", "TabContainer", tab_unsel);
 	th->set_stylebox("tab_hovered", "TabContainer", tab_hov);
 	th->set_stylebox("tab_disabled", "TabContainer", tab_dis);
 	th->set_stylebox("tab_focus", "TabContainer", tab_foc);
-	th->set_stylebox("panel", "TabContainer", sb_panel);
+	th->set_stylebox("panel", "TabContainer", sb_tab_panel);
+	th->set_color("container_border", "TabContainer", container_border);
 	th->set_color("font_selected_color", "TabContainer", accent);
 	th->set_color("font_hovered_color", "TabContainer", txt_bright);
 	th->set_color("font_unselected_color", "TabContainer", txt_sec);
@@ -1570,6 +1706,8 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 				rc->set_theme(orig_th.is_valid() ? target_theme : Ref<Theme>());
 			} else if (rc->get_theme().is_valid()) {
 				rc->set_theme(target_theme);
+			} else {
+				rc->propagate_notification(Control::NOTIFICATION_THEME_CHANGED);
 			}
 		}
 	}
@@ -1662,7 +1800,8 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 			}
 
 			// Adaptar overrides locales de tarjetas/cabeceras oscuras a ClockGearsBrassStyleBox
-			if (Object::cast_to<PanelContainer>(c) || Object::cast_to<Panel>(c)) {
+			// (Omitir contenedores gestionados directamente por el tema vía _cg_theme_managed_container)
+			if ((Object::cast_to<PanelContainer>(c) || Object::cast_to<Panel>(c)) && !c->has_meta("_cg_theme_managed_container")) {
 				if (c->has_theme_stylebox_override(SceneStringName(panel))) {
 					Ref<StyleBox> cur_sb = c->get_theme_stylebox(SceneStringName(panel));
 					if (Object::cast_to<ClockGearsBrassStyleBox>(cur_sb.ptr()) == nullptr) {
@@ -1676,7 +1815,7 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 								}
 								bool is_bar_or_hdr = (c->get_class() == "ClockGearsTopBar" || (c->get_size().y > 0 && c->get_size().y <= 72));
 								Color new_bg = (bgc.get_v() < 0.13f) ? color_brass_bg() : (is_bar_or_hdr ? color_brass_header() : color_brass_panel());
-								Color new_bd = Color(color_brass_border().r, color_brass_border().g, color_brass_border().b, is_bar_or_hdr ? 0.68f : 0.55f);
+								Color new_bd = color_menu_pill_border(true, false);
 								int gmode = is_bar_or_hdr ? ClockGearsBrassStyleBox::GRADIENT_HEADER : ClockGearsBrassStyleBox::GRADIENT_PANEL;
 								Ref<ClockGearsBrassStyleBox> bsb = _cg_clone_flat_to_brass(sbf, new_bg, new_bd, gmode, 0.28f, false, 3, Color(0.02f, 0.01f, 0.0f, 0.34f));
 								c->add_theme_style_override(SceneStringName(panel), bsb);
@@ -1914,6 +2053,11 @@ void ClockGearsTheme::refresh_all_themed_roots() {
 		}
 	}
 	registered_roots = alive_ids;
+#ifdef TOOLS_ENABLED
+	if (CanvasItemEditor::get_singleton()) {
+		CanvasItemEditor::get_singleton()->update_viewport();
+	}
+#endif
 }
 
 void ClockGearsTheme::apply_to_control(Control *p_control) {
@@ -2263,6 +2407,10 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("inspect_theme_metrics", "theme_id"), &ClockGearsTheme::inspect_theme_metrics, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("check_tree_legibility_and_layout", "root", "viewport_size"), &ClockGearsTheme::check_tree_legibility_and_layout, DEFVAL(Vector2i(1366, 768)));
 	ClassDB::bind_method(D_METHOD("audit_inputs_and_popups_in_tree", "root"), &ClockGearsTheme::audit_inputs_and_popups_in_tree);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_active_container_border_color"), &ClockGearsTheme::get_active_container_border_color);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_border_width"), &ClockGearsTheme::get_container_border_width);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));
+	ClassDB::bind_method(D_METHOD("get_container_stylebox", "scale", "margin_h", "margin_v", "variant"), &ClockGearsTheme::get_container_stylebox, DEFVAL(1.0f), DEFVAL(12), DEFVAL(12), DEFVAL(0));
 
 	ADD_SIGNAL(MethodInfo("theme_changed", PropertyInfo(Variant::STRING, "theme_id")));
 }

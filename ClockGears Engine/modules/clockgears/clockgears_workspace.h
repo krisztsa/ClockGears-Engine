@@ -82,6 +82,8 @@ class ClockGearsMapPanel : public VBoxContainer {
 	static ClockGearsMapPanel *singleton;
 	static constexpr int PALETTE_TABS = 6; // A, B, C, D, E, R
 
+	PanelContainer *tileset_panel = nullptr;
+	PanelContainer *maps_panel = nullptr;
 	TabContainer *tileset_tabs = nullptr;
 	ClockGearsTilePalette *palettes[PALETTE_TABS] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 	FileDialog *tileset_file_dialog = nullptr;
@@ -142,6 +144,7 @@ class ClockGearsMapPanel : public VBoxContainer {
 	int _count_maps(TreeItem *p_item) const;
 	void _select_map_item(TreeItem *p_item);
 	void _refresh_icon_scale();
+	void _apply_panel_styles();
 	void _on_editor_settings_changed();
 
 	Control *_make_section_header(const String &p_title, bool p_with_tileset_action);

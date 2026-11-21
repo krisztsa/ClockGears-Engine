@@ -1635,6 +1635,9 @@ void CanvasItemEditor::_draw_percentage_at_position(real_t p_value, Point2 p_pos
 }
 
 void CanvasItemEditor::_draw_focus() {
+	if (clockgears_workspace) {
+		return;
+	}
 	// Draw the focus around the base viewport
 	if (viewport->has_focus()) {
 		get_theme_stylebox(SNAME("FocusViewport"), EditorStringName(EditorStyles))->draw(viewport->get_canvas_item(), Rect2(Point2(), viewport->get_size()));
@@ -2824,6 +2827,12 @@ void CanvasItemEditor::_draw_viewport() {
 	if (clockgears_event_mode) {
 		_draw_clockgears_event_grid();
 	}
+	if (clockgears_workspace && viewport) {
+		Ref<StyleBox> cg_frame = get_clockgears_canvas_frame_stylebox();
+		if (cg_frame.is_valid()) {
+			cg_frame->draw(viewport->get_canvas_item(), Rect2(Point2(), viewport->get_size()));
+		}
+	}
 }
 
 void CanvasItemEditor::update_viewport() {
@@ -3845,6 +3854,7 @@ void CanvasItemEditor::_bind_methods() {
 	ClassDB::bind_method("_set_owner_for_node_and_children", &CanvasItemEditor::_set_owner_for_node_and_children);
 
 	ClassDB::bind_method(D_METHOD("is_clockgears_workspace"), &CanvasItemEditor::is_clockgears_workspace);
+	ClassDB::bind_method(D_METHOD("get_clockgears_canvas_frame_stylebox"), &CanvasItemEditor::get_clockgears_canvas_frame_stylebox);
 	ClassDB::bind_method(D_METHOD("set_clockgears_layer", "layer"), &CanvasItemEditor::set_clockgears_current_layer);
 	ClassDB::bind_method(D_METHOD("get_clockgears_layer"), &CanvasItemEditor::get_clockgears_current_layer);
 	ClassDB::bind_method(D_METHOD("set_clockgears_custom_layer", "custom_id"), &CanvasItemEditor::set_clockgears_current_custom_layer);
@@ -4299,6 +4309,22 @@ void CanvasItemEditor::set_clockgears_workspace(bool p_enabled) {
 
 	update_viewport();
 	queue_redraw();
+}
+
+Ref<StyleBox> CanvasItemEditor::get_clockgears_canvas_frame_stylebox() const {
+	if (viewport && viewport->has_theme_stylebox(SceneStringName(panel), SNAME("ClockGearsCanvasFrame"))) {
+		return viewport->get_theme_stylebox(SceneStringName(panel), SNAME("ClockGearsCanvasFrame"));
+	}
+	if (Engine::get_singleton()) {
+		if (Object *cg_theme = Engine::get_singleton()->get_singleton_object("ClockGearsTheme")) {
+			Variant v = cg_theme->call("get_container_stylebox", MAX(1.0f, EDSCALE), 0, 0, 3);
+			Ref<StyleBox> sb = v;
+			if (sb.is_valid()) {
+				return sb;
+			}
+		}
+	}
+	return Ref<StyleBox>();
 }
 
 void CanvasItemEditor::set_clockgears_event_mode(bool p_enabled) {

@@ -526,6 +526,7 @@ public:
 	// ClockGears map viewport: no toolbars, rulers, gizmos or scrollbars.
 	void set_clockgears_workspace(bool p_enabled);
 	bool is_clockgears_workspace() const { return clockgears_workspace; }
+	Ref<StyleBox> get_clockgears_canvas_frame_stylebox() const;
 	void set_view_zoom(real_t p_zoom) { _zoom_on_position(p_zoom); }
 	void set_clockgears_event_mode(bool p_enabled);
 	bool is_clockgears_event_mode() const { return clockgears_event_mode; }

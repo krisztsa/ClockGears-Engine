@@ -9,6 +9,7 @@
 #include "core/object/callable_mp.h"
 #include "editor/clockgears_project_manager.h"
 #include "editor/clockgears_map_cell_selector.h"
+#include "editor/clockgears_theme.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -43,14 +44,7 @@ static void s_parse_hud_visibility_cmd(const Dictionary &p_cmd, String &r_scope,
 }
 
 static Ref<StyleBoxFlat> _event_card_style() {
-	Ref<StyleBoxFlat> style;
-	style.instantiate();
-	style->set_bg_color(Color(0.12, 0.13, 0.15));
-	style->set_corner_radius_all(6);
-	style->set_content_margin_all(8);
-	style->set_border_width_all(1);
-	style->set_border_color(Color(1, 1, 1, 0.08));
-	return style;
+	return ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 8, 2);
 }
 
 void ClockGearsEventEditorDialog::_bind_methods() {

@@ -53,6 +53,7 @@ class ClockGearsTopBar : public PanelContainer {
 	PopupMenu *folders_popup = nullptr;
 
 	int current_combat_mode = COMBAT_MODE_TURN_BASED;
+	bool applying_bar_style = false;
 
 	ClockGearsDatabaseDialog *database_dialog = nullptr;
 	ClockGearsEventEditorDialog *event_editor_dialog = nullptr;
@@ -66,6 +67,7 @@ class ClockGearsTopBar : public PanelContainer {
 	Control *_make_group_separator(int p_int_scale) const;
 	void _relayout_rows();
 	void _refresh_icon_scale();
+	void _apply_bar_container_style();
 	void _on_editor_settings_changed();
 
 	void _on_undo_pressed();

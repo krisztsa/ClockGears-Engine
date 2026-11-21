@@ -119,12 +119,19 @@ private:
 	Vector<ChapterDef> chapters;
 	Vector<Button *> chapter_buttons;
 	Vector<Button *> category_buttons;
+	PanelContainer *chapters_panel = nullptr;
+	PanelContainer *cats_panel = nullptr;
 	int current_chapter = 0;
 	int current_category = CAT_ACTORS;
 	int last_icon_scale = 0;
+	String last_container_theme_id;
+	float last_container_theme_scale = 0.0f;
+	String last_open_applied_theme_id;
+	bool applying_db_container_styles = false;
 
 	void _refresh_icon_scale();
 	void _refresh_slot_icons();
+	void _apply_db_container_styles();
 	void _on_editor_settings_changed();
 
 	// Editor Tabs (Enemigos: General | Combate | Animaciones; Actores: General | Animaciones; Resto: General sin pestañas)

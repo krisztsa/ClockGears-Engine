@@ -553,12 +553,14 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 			}
 #endif
 			_refresh_slot_icons();
+			_apply_db_container_styles();
 			if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
 				_refresh_icon_scale();
 			}
 		} break;
 		case NOTIFICATION_THEME_CHANGED: {
 			_refresh_slot_icons();
+			_apply_db_container_styles();
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 #ifdef TOOLS_ENABLED
@@ -599,6 +601,37 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 			}
 		} break;
 	}
+}
+
+void ClockGearsDatabaseDialog::_apply_db_container_styles() {
+	if (applying_db_container_styles) {
+		return;
+	}
+	const String tid = ClockGearsTheme::get_singleton() ? ClockGearsTheme::get_singleton()->get_active_theme_id() : String("dark");
+	const float sc = EDSCALE;
+	if (tid == last_container_theme_id && Math::is_equal_approx(sc, last_container_theme_scale)) {
+		return;
+	}
+	applying_db_container_styles = true;
+	last_container_theme_id = tid;
+	last_container_theme_scale = sc;
+	if (chapters_panel) {
+		chapters_panel->set_meta("_cg_theme_managed_container", true);
+		chapters_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(sc, 8, 6, 1));
+	}
+	if (cats_panel) {
+		cats_panel->set_meta("_cg_theme_managed_container", true);
+		cats_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(sc, 8, 6, 2));
+	}
+	if (tileset_collision_panel) {
+		tileset_collision_panel->set_meta("_cg_theme_managed_container", true);
+		tileset_collision_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(sc, 8, 4, 2));
+	}
+	if (sys_arpg_realtime_panel) {
+		sys_arpg_realtime_panel->set_meta("_cg_theme_managed_container", true);
+		sys_arpg_realtime_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(sc, 14, 14, 2));
+	}
+	applying_db_container_styles = false;
 }
 
 String ClockGearsDatabaseDialog::_get_slot_key(int p_slot_idx) {
@@ -5666,16 +5699,11 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	// ========================================================================
 	// TOP BAR 1: CAPÍTULOS (Personajes, Equipo, Objetos, Combate, Animaciones, Mundo, Sistema)
 	// ========================================================================
-	PanelContainer *chapters_panel = memnew(PanelContainer);
+	chapters_panel = memnew(PanelContainer);
+	chapters_panel->set_name("ClockGearsDbChaptersPanel");
+	chapters_panel->set_meta("_cg_theme_managed_container", true);
 	chapters_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	Ref<StyleBoxFlat> chap_bar_style = memnew(StyleBoxFlat);
-	chap_bar_style->set_anti_aliased(true);
-	chap_bar_style->set_bg_color(Color(0.11f, 0.12f, 0.15f, 1.0f));
-	chap_bar_style->set_border_width_all(1);
-	chap_bar_style->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.10f));
-	chap_bar_style->set_content_margin_individual(int(8 * EDSCALE), int(6 * EDSCALE), int(8 * EDSCALE), int(6 * EDSCALE));
-	chap_bar_style->set_corner_radius_all(int(6 * EDSCALE));
-	chapters_panel->add_theme_style_override("panel", chap_bar_style);
+	chapters_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 6, 1));
 	main_vbox->add_child(chapters_panel);
 
 	HBoxContainer *chapters_bar = memnew(HBoxContainer);
@@ -5698,16 +5726,11 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	// ========================================================================
 	// TOP BAR 2: CATEGORÍAS DEL CAPÍTULO ACTIVO (Icono 32x32*entero + Nombre)
 	// ========================================================================
-	PanelContainer *cats_panel = memnew(PanelContainer);
+	cats_panel = memnew(PanelContainer);
+	cats_panel->set_name("ClockGearsDbCatsPanel");
+	cats_panel->set_meta("_cg_theme_managed_container", true);
 	cats_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	Ref<StyleBoxFlat> cat_bar_style = memnew(StyleBoxFlat);
-	cat_bar_style->set_anti_aliased(true);
-	cat_bar_style->set_bg_color(Color(0.14f, 0.15f, 0.19f, 1.0f));
-	cat_bar_style->set_border_width_all(1);
-	cat_bar_style->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.10f));
-	cat_bar_style->set_content_margin_individual(int(8 * EDSCALE), int(6 * EDSCALE), int(8 * EDSCALE), int(6 * EDSCALE));
-	cat_bar_style->set_corner_radius_all(int(6 * EDSCALE));
-	cats_panel->add_theme_style_override("panel", cat_bar_style);
+	cats_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 6, 2));
 	main_vbox->add_child(cats_panel);
 
 	HFlowContainer *cats_bar = memnew(HFlowContainer);
@@ -5814,35 +5837,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	// --- COLUMNA 2: Editor (todo el ancho restante) ---
 	main_editor_tabs = memnew(TabContainer);
+	main_editor_tabs->set_name("ClockGearsDbMainTabs");
 	main_editor_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_editor_tabs->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	main_editor_tabs->set_tabs_visible(true);
-	{
-		Ref<StyleBoxFlat> db_tab_sel = memnew(StyleBoxFlat);
-		db_tab_sel->set_bg_color(Color(0.18f, 0.21f, 0.27f, 1.0f));
-		db_tab_sel->set_border_color(Color(0.38f, 0.56f, 0.85f, 0.85f));
-		db_tab_sel->set_border_width(SIDE_TOP, 2);
-		db_tab_sel->set_corner_radius(CORNER_TOP_LEFT, int(7 * EDSCALE));
-		db_tab_sel->set_corner_radius(CORNER_TOP_RIGHT, int(7 * EDSCALE));
-		db_tab_sel->set_content_margin_individual(int(12 * EDSCALE), int(6 * EDSCALE), int(12 * EDSCALE), int(6 * EDSCALE));
-
-		Ref<StyleBoxFlat> db_tab_unsel = memnew(StyleBoxFlat);
-		db_tab_unsel->set_bg_color(Color(0.12f, 0.13f, 0.17f, 0.9f));
-		db_tab_unsel->set_corner_radius(CORNER_TOP_LEFT, int(7 * EDSCALE));
-		db_tab_unsel->set_corner_radius(CORNER_TOP_RIGHT, int(7 * EDSCALE));
-		db_tab_unsel->set_content_margin_individual(int(12 * EDSCALE), int(6 * EDSCALE), int(12 * EDSCALE), int(6 * EDSCALE));
-
-		Ref<StyleBoxFlat> db_tab_panel = memnew(StyleBoxFlat);
-		db_tab_panel->set_bg_color(Color(0.14f, 0.15f, 0.19f, 0.96f));
-		db_tab_panel->set_border_width_all(1);
-		db_tab_panel->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.08f));
-		db_tab_panel->set_corner_radius_all(int(8 * EDSCALE));
-
-		main_editor_tabs->add_theme_style_override("tab_selected", db_tab_sel);
-		main_editor_tabs->add_theme_style_override("tab_hovered", db_tab_sel);
-		main_editor_tabs->add_theme_style_override("tab_unselected", db_tab_unsel);
-		main_editor_tabs->add_theme_style_override("panel", db_tab_panel);
-	}
 	two_col_hbox->add_child(main_editor_tabs);
 
 	// Pestaña 0: "General"
@@ -7355,18 +7353,11 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	sys_grid->add_child(cam_flags_vb);
 
 	sys_arpg_realtime_panel = memnew(PanelContainer);
+	sys_arpg_realtime_panel->set_name("ClockGearsDbSysArpgPanel");
+	sys_arpg_realtime_panel->set_meta("_cg_theme_managed_container", true);
 	sys_arpg_realtime_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_arpg_realtime_panel->set_visible(false);
-	{
-		Ref<StyleBoxFlat> rt_sb = memnew(StyleBoxFlat);
-		rt_sb->set_anti_aliased(true);
-		rt_sb->set_bg_color(Color(0.11f, 0.13f, 0.18f, 0.92f));
-		rt_sb->set_border_width_all(1);
-		rt_sb->set_border_color(Color(0.32f, 0.56f, 0.88f, 0.38f));
-		rt_sb->set_corner_radius_all(int(8 * EDSCALE));
-		rt_sb->set_content_margin_all(int(14 * EDSCALE));
-		sys_arpg_realtime_panel->add_theme_style_override("panel", rt_sb);
-	}
+	sys_arpg_realtime_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 14, 14, 2));
 	system_panel->add_child(sys_arpg_realtime_panel);
 
 	VBoxContainer *rt_vb = memnew(VBoxContainer);
@@ -8086,18 +8077,13 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	// Tileset Collision Panel (shown on the right when CAT_TILESETS is active)
 	tileset_collision_panel = memnew(PanelContainer);
+	tileset_collision_panel->set_name("ClockGearsDbTilesetCollisionPanel");
+	tileset_collision_panel->set_meta("_cg_theme_managed_container", true);
 	tileset_collision_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_collision_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_collision_panel->set_stretch_ratio(0.64f);
 	tileset_collision_panel->set_custom_minimum_size(Size2(340 * EDSCALE, 0));
-	Ref<StyleBoxFlat> ts_panel_sb = memnew(StyleBoxFlat);
-	ts_panel_sb->set_anti_aliased(true);
-	ts_panel_sb->set_bg_color(Color::html("#1a1d24"));
-	ts_panel_sb->set_corner_radius_all(int(6 * EDSCALE));
-	ts_panel_sb->set_border_width_all(1);
-	ts_panel_sb->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.12f));
-	ts_panel_sb->set_content_margin_individual(int(8 * EDSCALE), int(4 * EDSCALE), int(8 * EDSCALE), int(4 * EDSCALE));
-	tileset_collision_panel->add_theme_style_override("panel", ts_panel_sb);
+	tileset_collision_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 4, 2));
 	tileset_collision_panel->hide();
 	tileset_main_hbox->add_child(tileset_collision_panel);
 
@@ -8393,7 +8379,11 @@ void ClockGearsDatabaseDialog::_on_editor_settings_changed() {
 
 void ClockGearsDatabaseDialog::open_database() {
 	if (ClockGearsTheme::get_singleton()) {
-		ClockGearsTheme::get_singleton()->apply_to_window(this);
+		const String cur_tid = ClockGearsTheme::get_singleton()->get_active_theme_id();
+		if (last_open_applied_theme_id != cur_tid || get_theme().is_null()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(this);
+			last_open_applied_theme_id = cur_tid;
+		}
 	}
 	if (ClockGearsIcons::get_editor_icon_scale(this) != last_icon_scale) {
 		_refresh_icon_scale();
@@ -8405,9 +8395,6 @@ void ClockGearsDatabaseDialog::open_database() {
 		current_category = (last_cat == DB_CAT_UI_DESIGNER) ? DB_CAT_MAIN_MENU : last_cat;
 	}
 	_on_category_selected(current_category);
-	if (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass") {
-		ClockGearsTheme::get_singleton()->apply_to_window(this);
-	}
 
 	Size2i screen_sz(1920, 1080);
 	if (DisplayServer::get_singleton()) {

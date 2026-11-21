@@ -14,6 +14,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "editor/clockgears_project_manager.h"
+#include "editor/clockgears_theme.h"
 #include "editor/clockgears_tile_picker.h"
 #include "editor/editor_node.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -31,15 +32,7 @@
 #include "scene/resources/theme.h"
 
 static Ref<StyleBoxFlat> _clockgears_card_style() {
-	Ref<StyleBoxFlat> style;
-	style.instantiate();
-	style->set_anti_aliased(true);
-	style->set_bg_color(Color(0.098, 0.106, 0.125));
-	style->set_corner_radius_all(6);
-	style->set_content_margin_all(12);
-	style->set_border_width_all(1);
-	style->set_border_color(Color(1, 1, 1, 0.08));
-	return style;
+	return ClockGearsTheme::make_container_stylebox(EDSCALE, 12, 12, 0);
 }
 
 static void _clockgears_icon_button(Button *p_button, const StringName &p_icon, const String &p_cg_fallback, const String &p_fallback_text, const String &p_tooltip) {
@@ -1405,7 +1398,9 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 	// ---------------------------------------------------------
 	// Top half: tileset palette with A, B, C, D, E, R tabs.
 	// ---------------------------------------------------------
-	PanelContainer *tileset_panel = memnew(PanelContainer);
+	tileset_panel = memnew(PanelContainer);
+	tileset_panel->set_name("ClockGearsTilesetPanel");
+	tileset_panel->set_meta("_cg_theme_managed_container", true);
 	tileset_panel->add_theme_style_override("panel", _clockgears_card_style());
 	tileset_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tileset_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1441,7 +1436,9 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 	// ---------------------------------------------------------
 	// Bottom half: hierarchical map tree.
 	// ---------------------------------------------------------
-	PanelContainer *maps_panel = memnew(PanelContainer);
+	maps_panel = memnew(PanelContainer);
+	maps_panel->set_name("ClockGearsMapsPanel");
+	maps_panel->set_meta("_cg_theme_managed_container", true);
 	maps_panel->add_theme_style_override("panel", _clockgears_card_style());
 	maps_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	maps_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1536,13 +1533,27 @@ void ClockGearsMapPanel::_on_editor_settings_changed() {
 	}
 }
 
+void ClockGearsMapPanel::_apply_panel_styles() {
+	Ref<StyleBoxFlat> sb = ClockGearsTheme::make_container_stylebox(EDSCALE, 12, 12, 0);
+	if (tileset_panel) {
+		tileset_panel->set_meta("_cg_theme_managed_container", true);
+		tileset_panel->add_theme_style_override("panel", sb);
+	}
+	if (maps_panel) {
+		maps_panel->set_meta("_cg_theme_managed_container", true);
+		maps_panel->add_theme_style_override("panel", sb);
+	}
+}
+
 void ClockGearsMapPanel::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE) {
 		if (EditorSettings::get_singleton() && !EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed))) {
 			EditorSettings::get_singleton()->connect("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed));
 		}
+		_apply_panel_styles();
 		_refresh_icon_scale();
 	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		_apply_panel_styles();
 		_refresh_icon_scale();
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
 		if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &ClockGearsMapPanel::_on_editor_settings_changed))) {
