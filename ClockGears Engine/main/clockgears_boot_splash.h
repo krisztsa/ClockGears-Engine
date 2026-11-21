@@ -15,6 +15,10 @@ public:
 	static constexpr int SPLASH_WIDTH = 1920;
 	static constexpr int SPLASH_HEIGHT = 1080;
 	static constexpr int TOTAL_STAGES = 7;
+	static constexpr int MAX_PARTICLES = 120;
+	static constexpr int MAX_AMBIENT_MOTES = 20;
+	static constexpr int MAX_HEAD_SPARKS = 100;
+	static constexpr float FRAME_BUDGET_MS = 16.7f;
 	static constexpr uint64_t WATCHDOG_DEFAULT_TIMEOUT_MS = 15000;
 
 	struct Palette {
@@ -55,12 +59,20 @@ public:
 		float head_y = 0.0f;
 		bool indeterminate = false;
 		bool glow_enabled = true;
+		int active_particle_count = 0;
+		int active_spark_count = 0;
+		int active_ambient_count = 0;
+		int particle_cap = MAX_PARTICLES;
+		int pool_capacity = MAX_PARTICLES;
 	};
 
 	static bool is_saved_brass_theme();
 	static bool are_glow_effects_enabled();
 	static void set_glow_effects_override(bool p_has_override, bool p_enabled);
 	static float compute_breathing_intensity(float p_time_sec);
+	static void reset_particles(uint32_t p_seed = 0xC6E00004u, const Vector2i &p_screen_size = Vector2i(BASE_DESIGN_WIDTH, BASE_DESIGN_HEIGHT), bool p_brass = false);
+	static void step_particles(float p_dt, float p_progress, bool p_completed, const Vector2i &p_screen_size = Vector2i(BASE_DESIGN_WIDTH, BASE_DESIGN_HEIGHT), bool p_brass = false, float p_last_frame_ms = 2.0f);
+	static Dictionary get_particle_state();
 	static Palette get_active_palette(bool p_force_brass = false, bool p_override_brass = false);
 	static Color get_active_clear_color();
 	static Vector<Vector2> get_rounded_window_polygon(int p_width = SPLASH_WIDTH, int p_height = SPLASH_HEIGHT, int p_radius = -1);

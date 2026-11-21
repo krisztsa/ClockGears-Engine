@@ -163,6 +163,7 @@ public:
 	Dictionary check_tree_legibility_and_layout(Node *p_root, const Vector2i &p_viewport_size = Vector2i(1366, 768));
 	Dictionary audit_inputs_and_popups_in_tree(Node *p_root);
 	static Dictionary inspect_boot_splash(int p_stage, int p_total_stages, const String &p_status, const String &p_save_png_path = "", bool p_brass = false, const Vector2i &p_screen_size = Vector2i(1920, 1080), float p_anim_time_sec = -1.0f);
+	static Dictionary simulate_boot_splash_particles(int p_frames = 600, int p_seed = 12345, float p_simulated_frame_ms = 2.0f, bool p_glow_enabled = true, const Vector2i &p_screen_size = Vector2i(1920, 1080));
 
 	static Ref<StyleBoxFlat> make_container_stylebox(float p_scale = 1.0f, int p_margin_h = 12, int p_margin_v = 12, int p_variant = 0);
 	static Ref<StyleBoxFlat> make_sunken_list_stylebox(float p_scale = 1.0f);

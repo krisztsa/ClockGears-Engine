@@ -633,6 +633,161 @@ static float cg_splash_base_dpi = 1.0f;
 static Vector<uint8_t> cg_splash_base_bytes;
 static ClockGearsBootSplash::LayoutMetrics cg_splash_cached_metrics;
 
+// Pool fijo reutilizable de partículas pixel-art (máximo 120 activas en total: 20 motas de ambiente + 100 chispas de la cabeza).
+// Cero reservas ni liberaciones de memoria por fotograma.
+struct SplashParticle {
+	bool active = false;
+	bool ambient = false;
+	float x = 0.0f;
+	float y = 0.0f;
+	float vx = 0.0f;
+	float vy = 0.0f;
+	float age = 0.0f;
+	float lifetime = 1.0f;
+	int base_size_px = 3; // 2 a 4 px escalados por el píxel base entero de la pantalla
+	uint8_t tone_idx = 0; // 0 = ámbar, 1 = dorado claro, 2 = cobrizo
+	float base_alpha = 0.85f;
+};
+
+static SplashParticle cg_particle_pool[ClockGearsBootSplash::MAX_PARTICLES];
+static bool cg_particles_initialized = false;
+static uint32_t cg_particle_rng_state = 0xC6E00004u;
+static int cg_particle_cap = ClockGearsBootSplash::MAX_PARTICLES;
+static float cg_particle_spawn_accum = 0.0f;
+static float cg_particle_last_progress = -2.0f;
+static bool cg_particle_burst_done = false;
+static int cg_particle_screen_w = ClockGearsBootSplash::BASE_DESIGN_WIDTH;
+static int cg_particle_screen_h = ClockGearsBootSplash::BASE_DESIGN_HEIGHT;
+static int cg_active_total_count = 0;
+static int cg_active_spark_count = 0;
+static int cg_active_ambient_count = 0;
+static uint64_t cg_particle_total_spawns = 0;
+
+static inline uint32_t _cg_rng_next() {
+	uint32_t x = cg_particle_rng_state ? cg_particle_rng_state : 0xC6E00004u;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	cg_particle_rng_state = x;
+	return x;
+}
+
+static inline float _cg_rng_float01() {
+	return (float)(_cg_rng_next() & 0x00FFFFFFu) / 16777215.0f;
+}
+
+static inline float _cg_rng_range(float p_min, float p_max) {
+	return p_min + (p_max - p_min) * _cg_rng_float01();
+}
+
+static void _cg_recount_particles() {
+	int total = 0;
+	int sparks = 0;
+	int ambient = 0;
+	for (int i = 0; i < ClockGearsBootSplash::MAX_PARTICLES; i++) {
+		if (!cg_particle_pool[i].active) {
+			continue;
+		}
+		total++;
+		if (cg_particle_pool[i].ambient) {
+			ambient++;
+		} else {
+			sparks++;
+		}
+	}
+	cg_active_total_count = total;
+	cg_active_spark_count = sparks;
+	cg_active_ambient_count = ambient;
+}
+
+static void _cg_init_ambient_mote(SplashParticle &r_p, int p_w, int p_h, float p_s, bool p_random_age) {
+	r_p.active = true;
+	r_p.ambient = true;
+	r_p.x = _cg_rng_range(32.0f * p_s, (float)p_w - 32.0f * p_s);
+	r_p.y = _cg_rng_range(32.0f * p_s, (float)p_h - 32.0f * p_s);
+	r_p.vx = _cg_rng_range(-9.0f * p_s, 9.0f * p_s);
+	r_p.vy = _cg_rng_range(-14.0f * p_s, -4.5f * p_s);
+	r_p.lifetime = _cg_rng_range(3.2f, 6.4f);
+	r_p.age = p_random_age ? _cg_rng_range(0.0f, r_p.lifetime * 0.85f) : 0.0f;
+	r_p.base_size_px = 2 + (int)(_cg_rng_next() % 2); // 2..3 px para motas suaves
+	r_p.tone_idx = (uint8_t)(_cg_rng_next() % 3);
+	r_p.base_alpha = _cg_rng_range(0.18f, 0.34f); // más tenues que las chispas
+}
+
+static bool _cg_spawn_head_spark(float p_head_x, float p_head_y, float p_s, bool p_burst) {
+	_cg_recount_particles();
+	if (cg_active_total_count >= cg_particle_cap || cg_active_spark_count >= ClockGearsBootSplash::MAX_HEAD_SPARKS) {
+		return false;
+	}
+	for (int i = ClockGearsBootSplash::MAX_AMBIENT_MOTES; i < ClockGearsBootSplash::MAX_PARTICLES; i++) {
+		if (!cg_particle_pool[i].active) {
+			SplashParticle &sp = cg_particle_pool[i];
+			sp.active = true;
+			sp.ambient = false;
+			sp.x = p_head_x + _cg_rng_range(-6.0f * p_s, 6.0f * p_s);
+			sp.y = p_head_y + _cg_rng_range(-4.0f * p_s, 4.0f * p_s);
+			// Suben y se desvían ligeramente con gravedad suave
+			sp.vx = p_burst ? _cg_rng_range(-115.0f * p_s, 115.0f * p_s) : _cg_rng_range(-42.0f * p_s, 36.0f * p_s);
+			sp.vy = p_burst ? _cg_rng_range(-135.0f * p_s, -32.0f * p_s) : _cg_rng_range(-88.0f * p_s, -26.0f * p_s);
+			sp.age = 0.0f;
+			sp.lifetime = _cg_rng_range(0.6f, 1.4f);
+			sp.base_size_px = 2 + (int)(_cg_rng_next() % 3); // 2 a 4 px
+			sp.tone_idx = (uint8_t)(_cg_rng_next() % 3);
+			sp.base_alpha = _cg_rng_range(0.72f, 0.98f);
+			cg_active_total_count++;
+			cg_active_spark_count++;
+			cg_particle_total_spawns++;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void _cg_draw_pixel_art_particles(uint8_t *p_dst, int p_w, int p_h, float p_s, const ClockGearsBootSplash::Palette &p_pal, bool p_ambient_pass, float p_breath) {
+	const int int_scale = MAX(1, (int)Math::round(p_s));
+	const Color tones[3] = {
+		p_pal.accent_amber,
+		p_pal.progress_fill.lightened(0.45f),
+		Color(p_pal.card_border.r, p_pal.card_border.g, p_pal.card_border.b, 1.0f).lightened(0.15f)
+	};
+
+	for (int i = 0; i < ClockGearsBootSplash::MAX_PARTICLES; i++) {
+		const SplashParticle &pt = cg_particle_pool[i];
+		if (!pt.active || pt.ambient != p_ambient_pass) {
+			continue;
+		}
+		const float life_t = _clamp01(pt.age / MAX(0.05f, pt.lifetime));
+		float fade = 1.0f;
+		int sq_base = pt.base_size_px;
+		if (pt.ambient) {
+			// Entrada y salida suave para las motas de ambiente
+			fade = sinf(life_t * (float)Math::PI) * pt.base_alpha * p_breath;
+		} else {
+			// Las chispas se desvanecen y encogen al final de su vida (0.6..1.4 s)
+			const float end_t = _clamp01(1.0f - life_t);
+			fade = (end_t * end_t) * pt.base_alpha * p_breath;
+			if (life_t > 0.72f) {
+				sq_base = MAX(1, pt.base_size_px - 2);
+			} else if (life_t > 0.45f) {
+				sq_base = MAX(2, pt.base_size_px - 1);
+			}
+		}
+		if (fade <= 0.005f) {
+			continue;
+		}
+		// Cuadrados pixel-art (2..4 px escalados por el múltiplo entero del píxel base, alineados a rejilla nearest) con mezcla aditiva.
+		const int px_size = sq_base * int_scale;
+		const int x0 = ((int)Math::round(pt.x) / int_scale) * int_scale - (px_size / 2);
+		const int y0 = ((int)Math::round(pt.y) / int_scale) * int_scale - (px_size / 2);
+		const Color &col = tones[pt.tone_idx % 3];
+		for (int yy = 0; yy < px_size; yy++) {
+			for (int xx = 0; xx < px_size; xx++) {
+				_blend_pixel_additive_rgba(p_dst, p_w, p_h, x0 + xx, y0 + yy, col, fade);
+			}
+		}
+	}
+}
+
 // Estado del ciclo de vida de la ventana propia de carga y trazas por evento (nunca por fotograma).
 static bool cg_splash_window_open = false;
 static bool cg_splash_was_opened = false;
@@ -1095,6 +1250,181 @@ float ClockGearsBootSplash::compute_breathing_intensity(float p_time_sec) {
 	return CLAMP(0.925f + 0.075f * sinf(phase), 0.85f, 1.00f);
 }
 
+void ClockGearsBootSplash::reset_particles(uint32_t p_seed, const Vector2i &p_screen_size, bool p_brass) {
+	(void)p_brass;
+	const int W = MAX(320, p_screen_size.x);
+	const int H = MAX(200, p_screen_size.y);
+	const float s = MIN((float)W / (float)BASE_DESIGN_WIDTH, (float)H / (float)BASE_DESIGN_HEIGHT);
+
+	cg_particle_rng_state = (p_seed != 0) ? p_seed : 0xC6E00004u;
+	cg_particle_cap = MAX_PARTICLES;
+	cg_particle_spawn_accum = 0.0f;
+	cg_particle_last_progress = -2.0f;
+	cg_particle_burst_done = false;
+	cg_particle_screen_w = W;
+	cg_particle_screen_h = H;
+	cg_particle_total_spawns = 0;
+
+	for (int i = 0; i < MAX_PARTICLES; i++) {
+		cg_particle_pool[i] = SplashParticle();
+	}
+
+	if (!are_glow_effects_enabled()) {
+		cg_particles_initialized = true;
+		_cg_recount_particles();
+		return;
+	}
+
+	// Sembrar hasta 20 motas doradas flotando despacio por toda la pantalla
+	for (int i = 0; i < MAX_AMBIENT_MOTES; i++) {
+		_cg_init_ambient_mote(cg_particle_pool[i], W, H, s, true);
+	}
+	cg_particles_initialized = true;
+	_cg_recount_particles();
+}
+
+void ClockGearsBootSplash::step_particles(float p_dt, float p_progress, bool p_completed, const Vector2i &p_screen_size, bool p_brass, float p_last_frame_ms) {
+	(void)p_brass;
+	const int W = MAX(320, p_screen_size.x);
+	const int H = MAX(200, p_screen_size.y);
+	const float s = MIN((float)W / (float)BASE_DESIGN_WIDTH, (float)H / (float)BASE_DESIGN_HEIGHT);
+	const float dt = CLAMP(p_dt, 0.001f, 0.10f);
+
+	if (!are_glow_effects_enabled()) {
+		for (int i = 0; i < MAX_PARTICLES; i++) {
+			cg_particle_pool[i].active = false;
+		}
+		_cg_recount_particles();
+		return;
+	}
+
+	if (!cg_particles_initialized || cg_particle_screen_w != W || cg_particle_screen_h != H) {
+		reset_particles(cg_particle_rng_state, Vector2i(W, H), p_brass);
+	}
+
+	// Si el fotograma tarda más de 16,7 ms, reduce automáticamente la cantidad máxima de partículas activas.
+	if (p_last_frame_ms > FRAME_BUDGET_MS) {
+		cg_particle_cap = MAX(24, cg_particle_cap - 12);
+		_cg_recount_particles();
+		for (int i = MAX_PARTICLES - 1; i >= MAX_AMBIENT_MOTES && cg_active_total_count > cg_particle_cap; i--) {
+			if (cg_particle_pool[i].active) {
+				cg_particle_pool[i].active = false;
+				cg_active_total_count--;
+				cg_active_spark_count--;
+			}
+		}
+	} else if (p_last_frame_ms < FRAME_BUDGET_MS * 0.70f && cg_particle_cap < MAX_PARTICLES) {
+		cg_particle_cap = MIN(MAX_PARTICLES, cg_particle_cap + 2);
+	}
+
+	// Actualizar motas de ambiente (slots 0..MAX_AMBIENT_MOTES-1) y chispas (slots MAX_AMBIENT_MOTES..MAX_PARTICLES-1)
+	const float gravity = 32.0f * s; // gravedad suave
+	for (int i = 0; i < MAX_PARTICLES; i++) {
+		SplashParticle &pt = cg_particle_pool[i];
+		if (!pt.active) {
+			if (i < MAX_AMBIENT_MOTES && cg_active_total_count < cg_particle_cap) {
+				_cg_init_ambient_mote(pt, W, H, s, false);
+				cg_active_total_count++;
+				cg_active_ambient_count++;
+			}
+			continue;
+		}
+		pt.age += dt;
+		if (pt.age >= pt.lifetime) {
+			if (pt.ambient) {
+				_cg_init_ambient_mote(pt, W, H, s, false);
+			} else {
+				pt.active = false;
+			}
+			continue;
+		}
+		pt.x += pt.vx * dt;
+		pt.y += pt.vy * dt;
+		if (pt.ambient) {
+			// Deriva senoidal lenta y suave por toda la pantalla
+			pt.x += sinf(pt.age * 1.4f + (float)i) * 4.0f * s * dt;
+			if (pt.y < 16.0f * s) {
+				pt.y = (float)H - 24.0f * s;
+			}
+			if (pt.x < 16.0f * s) {
+				pt.x = (float)W - 24.0f * s;
+			} else if (pt.x > (float)W - 16.0f * s) {
+				pt.x = 24.0f * s;
+			}
+		} else {
+			pt.vy += gravity * dt;
+		}
+	}
+	_cg_recount_particles();
+
+	// Calcular posición actual de la cabeza de avance de la barra de progreso
+	const int bar_w = MAX(200, (int)Math::round((float)W * 0.40f));
+	const int bar_h = MAX(6, (int)Math::round(10.0f * s));
+	const int bar_x = (W - bar_w) / 2;
+	const int bar_y = (int)Math::round((float)H * 0.79f);
+	float head_x = (float)bar_x;
+	const float head_y = (float)bar_y + (float)bar_h * 0.5f;
+	if (!p_completed && p_progress < 0.0f) {
+		const float seg_w = MAX((float)bar_h * 3.0f, (float)bar_w * 0.28f);
+		const float travel = MAX(1.0f, (float)bar_w - seg_w);
+		const float anim_t = OS::get_singleton() ? ((float)OS::get_singleton()->get_ticks_msec() * 0.001f) : 0.0f;
+		const float sweep = 0.5f + 0.5f * sinf(anim_t * ((float)Math::TAU / 1.8f));
+		head_x = (float)bar_x + travel * sweep + seg_w * 0.5f;
+	} else {
+		const float frac = p_completed ? 1.0f : _clamp01(p_progress);
+		const float seg_w = (frac > 0.001f) ? MAX((float)bar_h, (float)bar_w * frac) : 0.0f;
+		head_x = (float)bar_x + seg_w;
+	}
+
+	// Emisión desde la cabeza de avance: la emisión sube un poco cuando la barra avanza
+	float emit_rate = 24.0f; // chispas por segundo base
+	if (cg_particle_last_progress >= 0.0f && p_progress > cg_particle_last_progress + 0.001f) {
+		const float delta_prog = _clamp01(p_progress - cg_particle_last_progress);
+		emit_rate += 38.0f + delta_prog * 140.0f;
+		// Ráfaga suave inmediata al avanzar de etapa
+		const int step_sparks = MIN(8, (int)Math::round(2.0f + delta_prog * 20.0f));
+		for (int k = 0; k < step_sparks; k++) {
+			_cg_spawn_head_spark(head_x, head_y, s, false);
+		}
+	}
+	cg_particle_last_progress = p_progress;
+
+	cg_particle_spawn_accum += emit_rate * dt;
+	while (cg_particle_spawn_accum >= 1.0f) {
+		cg_particle_spawn_accum -= 1.0f;
+		if (!_cg_spawn_head_spark(head_x, head_y, s, false)) {
+			cg_particle_spawn_accum = 0.0f;
+			break;
+		}
+	}
+
+	// Al llegar al 100 % ("Listo"), ráfaga de partículas a lo largo de la barra y la cabeza
+	if (p_completed && !cg_particle_burst_done) {
+		cg_particle_burst_done = true;
+		for (int k = 0; k < 28; k++) {
+			const float bx = (float)bar_x + (float)bar_w * _cg_rng_range(0.35f, 1.0f);
+			_cg_spawn_head_spark(bx, head_y, s, true);
+		}
+	}
+	_cg_recount_particles();
+}
+
+Dictionary ClockGearsBootSplash::get_particle_state() {
+	_cg_recount_particles();
+	Dictionary d;
+	d["active_total"] = cg_active_total_count;
+	d["active_sparks"] = cg_active_spark_count;
+	d["active_ambient"] = cg_active_ambient_count;
+	d["particle_cap"] = cg_particle_cap;
+	d["max_particles"] = (int)MAX_PARTICLES;
+	d["max_ambient_motes"] = (int)MAX_AMBIENT_MOTES;
+	d["pool_capacity"] = (int)MAX_PARTICLES;
+	d["total_spawns"] = (uint64_t)cg_particle_total_spawns;
+	d["glow_enabled"] = are_glow_effects_enabled();
+	d["burst_done"] = cg_particle_burst_done;
+	return d;
+}
+
 ClockGearsBootSplash::Palette ClockGearsBootSplash::get_active_palette(bool p_force_brass, bool p_override_brass) {
 	const bool use_brass = p_override_brass ? p_force_brass : is_saved_brass_theme();
 	Palette out;
@@ -1188,6 +1518,17 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 	metrics.glow_enabled = glow_enabled;
 	metrics.glow_breath_factor = breath;
 	metrics.indeterminate = indeterminate;
+
+	if (glow_enabled) {
+		if (!cg_particles_initialized || cg_particle_screen_w != W || cg_particle_screen_h != H || cg_active_total_count == 0) {
+			reset_particles(cg_particle_rng_state, Vector2i(W, H), p_brass);
+			step_particles(0.033f, p_progress, p_completed, Vector2i(W, H), p_brass, 2.0f);
+		}
+		// 20 motas doradas flotando despacio por toda la pantalla
+		_cg_draw_pixel_art_particles(dst, W, H, s, pal, true, breath);
+	} else {
+		_cg_recount_particles();
+	}
 
 	// Bloque de la barra de progreso centrado en el tercio inferior, con un ancho de ~40 % de la pantalla.
 	SplashFontCache &fc = get_font_cache();
@@ -1323,8 +1664,18 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 					_stamp_additive_glow_sprite(dst, W, H, cx, metrics.head_y, flare_rx * 1.45f, flare_ry * 1.15f, col_head_bright, 0.28f * breath, false);
 				}
 			}
+
+			// Chispas pixel-art (cuadrados 2..4 px con filtro nearest y mezcla aditiva) saliendo de la cabeza de avance.
+			_cg_draw_pixel_art_particles(dst, W, H, s, pal, false, breath);
 		}
 	}
+
+	_cg_recount_particles();
+	metrics.active_particle_count = glow_enabled ? cg_active_total_count : 0;
+	metrics.active_spark_count = glow_enabled ? cg_active_spark_count : 0;
+	metrics.active_ambient_count = glow_enabled ? cg_active_ambient_count : 0;
+	metrics.particle_cap = cg_particle_cap;
+	metrics.pool_capacity = MAX_PARTICLES;
 
 	if (r_metrics) {
 		*r_metrics = metrics;
@@ -1346,6 +1697,7 @@ void ClockGearsBootSplash::present_stage(int p_stage, int p_total_stages, const 
 
 	float dpi_scale = 1.0f;
 	const Vector2i mon_sz = get_primary_monitor_size(nullptr, nullptr, &dpi_scale);
+	step_particles(0.033f, progress, p_completed, mon_sz, is_brass, 2.0f);
 	Ref<Image> card = render_card(progress, full_status, spinner_deg, p_completed, is_brass, nullptr, mon_sz, dpi_scale);
 	cg_splash_last_card = card;
 

@@ -30,6 +30,7 @@ private:
 	CheckBox *dim_inactive_layers_check = nullptr;
 	SpinBox *inactive_layer_opacity_spin = nullptr;
 	OptionButton *editor_theme_opt = nullptr;
+	CheckBox *glow_effects_check = nullptr;
 
 	// Tab 2: Exportación
 	LineEdit *windows_path_edit = nullptr;
@@ -60,6 +61,8 @@ public:
 	String get_selected_editor_theme_id() const;
 	bool select_editor_theme_by_id(const String &p_theme_id);
 	OptionButton *get_editor_theme_option_button() const { return editor_theme_opt; }
+	bool is_glow_effects_checked() const;
+	void set_glow_effects_checked(bool p_enabled);
 	void apply_and_save_preferences();
 
 	ClockGearsPreferencesDialog();

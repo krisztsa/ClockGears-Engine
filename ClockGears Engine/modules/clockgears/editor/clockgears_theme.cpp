@@ -269,6 +269,11 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	out["indeterminate"] = metrics.indeterminate;
 	out["head_x"] = metrics.head_x;
 	out["head_y"] = metrics.head_y;
+	out["active_particle_count"] = metrics.active_particle_count;
+	out["active_spark_count"] = metrics.active_spark_count;
+	out["active_ambient_count"] = metrics.active_ambient_count;
+	out["particle_cap"] = metrics.particle_cap;
+	out["pool_capacity"] = metrics.pool_capacity;
 	out["fill_left_luma"] = fill_left_luma;
 	out["fill_right_luma"] = fill_right_luma;
 	out["outer_halo_delta"] = outer_halo_delta;
@@ -288,6 +293,64 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	out["version_text"] = String::utf8(CLOCKGEARS_SPLASH_VERSION);
 	out["corner_radius"] = metrics.corner_radius;
 	out["polygon_points"] = ClockGearsBootSplash::get_rounded_window_polygon(target_size.x, target_size.y).size();
+	return out;
+}
+
+Dictionary ClockGearsTheme::simulate_boot_splash_particles(int p_frames, int p_seed, float p_simulated_frame_ms, bool p_glow_enabled, const Vector2i &p_screen_size) {
+	const int frames = CLAMP(p_frames, 1, 2000);
+	const Vector2i sz(MAX(320, p_screen_size.x), MAX(200, p_screen_size.y));
+
+	ClockGearsBootSplash::set_glow_effects_override(true, p_glow_enabled);
+	ClockGearsBootSplash::reset_particles((uint32_t)MAX(1, p_seed), sz, false);
+
+	int max_observed_total = 0;
+	int max_observed_sparks = 0;
+	int max_observed_ambient = 0;
+	int min_observed_cap = ClockGearsBootSplash::MAX_PARTICLES;
+	int pool_capacity_constant = ClockGearsBootSplash::MAX_PARTICLES;
+	bool pool_never_grew = true;
+	int sparks_at_burst = 0;
+
+	for (int f = 0; f < frames; f++) {
+		const float prog = (float)f / (float)MAX(1, frames - 1);
+		const bool completed = (f == frames - 1);
+		ClockGearsBootSplash::step_particles(1.0f / 60.0f, prog, completed, sz, false, p_simulated_frame_ms);
+		const Dictionary st = ClockGearsBootSplash::get_particle_state();
+		const int tot = (int)st.get("active_total", 0);
+		const int spk = (int)st.get("active_sparks", 0);
+		const int amb = (int)st.get("active_ambient", 0);
+		const int cap = (int)st.get("particle_cap", 120);
+		const int pcap = (int)st.get("pool_capacity", 120);
+
+		max_observed_total = MAX(max_observed_total, tot);
+		max_observed_sparks = MAX(max_observed_sparks, spk);
+		max_observed_ambient = MAX(max_observed_ambient, amb);
+		min_observed_cap = MIN(min_observed_cap, cap);
+		if (pcap != pool_capacity_constant) {
+			pool_never_grew = false;
+		}
+		if (completed) {
+			sparks_at_burst = spk;
+		}
+	}
+
+	const Dictionary final_st = ClockGearsBootSplash::get_particle_state();
+	ClockGearsBootSplash::set_glow_effects_override(false, true);
+
+	Dictionary out;
+	out["frames_simulated"] = frames;
+	out["seed"] = p_seed;
+	out["glow_enabled"] = p_glow_enabled;
+	out["max_observed_total"] = max_observed_total;
+	out["max_observed_sparks"] = max_observed_sparks;
+	out["max_observed_ambient"] = max_observed_ambient;
+	out["min_observed_cap"] = min_observed_cap;
+	out["final_cap"] = final_st.get("particle_cap", 120);
+	out["pool_capacity"] = pool_capacity_constant;
+	out["pool_never_grew"] = pool_never_grew;
+	out["sparks_at_burst"] = sparks_at_burst;
+	out["total_spawns"] = final_st.get("total_spawns", 0);
+	out["burst_done"] = final_st.get("burst_done", false);
 	return out;
 }
 
@@ -2870,6 +2933,7 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("check_tree_legibility_and_layout", "root", "viewport_size"), &ClockGearsTheme::check_tree_legibility_and_layout, DEFVAL(Vector2i(1366, 768)));
 	ClassDB::bind_method(D_METHOD("audit_inputs_and_popups_in_tree", "root"), &ClockGearsTheme::audit_inputs_and_popups_in_tree);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("inspect_boot_splash", "stage", "total_stages", "status", "save_png_path", "brass", "screen_size", "anim_time_sec"), &ClockGearsTheme::inspect_boot_splash, DEFVAL(""), DEFVAL(false), DEFVAL(Vector2i(1920, 1080)), DEFVAL(-1.0f));
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("simulate_boot_splash_particles", "frames", "seed", "simulated_frame_ms", "glow_enabled", "screen_size"), &ClockGearsTheme::simulate_boot_splash_particles, DEFVAL(600), DEFVAL(12345), DEFVAL(2.0f), DEFVAL(true), DEFVAL(Vector2i(1920, 1080)));
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_active_container_border_color"), &ClockGearsTheme::get_active_container_border_color);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_border_width"), &ClockGearsTheme::get_container_border_width);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));

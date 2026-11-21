@@ -30,6 +30,8 @@ void ClockGearsPreferencesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_selected_editor_theme_id"), &ClockGearsPreferencesDialog::get_selected_editor_theme_id);
 	ClassDB::bind_method(D_METHOD("select_editor_theme_by_id", "theme_id"), &ClockGearsPreferencesDialog::select_editor_theme_by_id);
 	ClassDB::bind_method(D_METHOD("get_editor_theme_option_button"), &ClockGearsPreferencesDialog::get_editor_theme_option_button);
+	ClassDB::bind_method(D_METHOD("is_glow_effects_checked"), &ClockGearsPreferencesDialog::is_glow_effects_checked);
+	ClassDB::bind_method(D_METHOD("set_glow_effects_checked", "enabled"), &ClockGearsPreferencesDialog::set_glow_effects_checked);
 	ClassDB::bind_method(D_METHOD("apply_and_save_preferences"), &ClockGearsPreferencesDialog::apply_and_save_preferences);
 }
 
@@ -186,6 +188,9 @@ void ClockGearsPreferencesDialog::_load_settings() {
 		}
 		editor_theme_opt->select(found_idx);
 	}
+	if (glow_effects_check) {
+		glow_effects_check->set_pressed(bool(ps->get_setting("clockgears/editor/glow_effects", true)));
+	}
 }
 
 void ClockGearsPreferencesDialog::_save_settings() {
@@ -233,6 +238,9 @@ void ClockGearsPreferencesDialog::_save_settings() {
 		if (ClockGearsTheme::get_singleton()) {
 			ClockGearsTheme::get_singleton()->set_active_theme_id(th_id);
 		}
+	}
+	if (glow_effects_check) {
+		ps->set_setting("clockgears/editor/glow_effects", glow_effects_check->is_pressed());
 	}
 
 	ps->save();
@@ -315,6 +323,16 @@ int ClockGearsPreferencesDialog::get_inactive_layer_opacity_value() const {
 void ClockGearsPreferencesDialog::set_inactive_layer_opacity_value(int p_pct) {
 	if (inactive_layer_opacity_spin) {
 		inactive_layer_opacity_spin->set_value(CLAMP(p_pct, 10, 100));
+	}
+}
+
+bool ClockGearsPreferencesDialog::is_glow_effects_checked() const {
+	return glow_effects_check ? glow_effects_check->is_pressed() : true;
+}
+
+void ClockGearsPreferencesDialog::set_glow_effects_checked(bool p_enabled) {
+	if (glow_effects_check) {
+		glow_effects_check->set_pressed(p_enabled);
 	}
 }
 
@@ -405,6 +423,11 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	editor_theme_opt->connect(SceneStringName(item_selected), callable_mp(this, &ClockGearsPreferencesDialog::_on_editor_theme_selected));
 	theme_hb->add_child(editor_theme_opt);
 	theme_box->add_child(theme_hb);
+
+	glow_effects_check = memnew(CheckBox(CG_TR("Efectos de brillo")));
+	glow_effects_check->set_pressed(true);
+	glow_effects_check->set_tooltip_text(CG_TR("Activa o desactiva el brillo animado y las partículas en la pantalla de carga y la interfaz."));
+	theme_box->add_child(glow_effects_check);
 
 	PanelContainer *res_card = memnew(PanelContainer);
 	res_card->add_theme_style_override("panel", _pref_card_style());
