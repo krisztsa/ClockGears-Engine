@@ -5,7 +5,9 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/math/math_funcs.h"
+#include "core/os/mutex.h"
 #include "core/os/os.h"
+#include "core/os/thread.h"
 #include "main/app_icon.gen.h"
 #include "modules/modules_enabled.gen.h"
 #include "servers/display/display_server.h"
@@ -33,6 +35,9 @@
 
 #include <cmath>
 #include <cstring>
+#include <atomic>
+#include <mutex>
+#include <thread>
 
 namespace {
 
@@ -632,6 +637,7 @@ static int cg_splash_base_h = 0;
 static float cg_splash_base_dpi = 1.0f;
 static Vector<uint8_t> cg_splash_base_bytes;
 static ClockGearsBootSplash::LayoutMetrics cg_splash_cached_metrics;
+static std::recursive_mutex cg_splash_render_mutex;
 
 // Pool fijo reutilizable de partículas pixel-art (máximo 120 activas en total: 20 motas de ambiente + 100 chispas de la cabeza).
 // Cero reservas ni liberaciones de memoria por fotograma.
@@ -802,6 +808,7 @@ static bool cg_splash_close_fade_logged = false;
 static bool cg_splash_watchdog_triggered = false;
 static String cg_splash_closed_reason;
 static uint64_t cg_splash_open_msec = 0;
+static uint64_t cg_splash_first_frame_elapsed_msec = 0;
 static uint64_t cg_splash_watchdog_timeout_ms = ClockGearsBootSplash::WATCHDOG_DEFAULT_TIMEOUT_MS;
 static Ref<Image> cg_splash_last_card;
 static Vector<String> cg_splash_pending_logs;
@@ -811,6 +818,17 @@ static bool cg_splash_log_file_initialized = false;
 static HWND cg_splash_hwnd = nullptr;
 static bool cg_splash_wndclass_registered = false;
 static constexpr UINT_PTR CG_SPLASH_WATCHDOG_TIMER_ID = 0xC6E1;
+static std::thread cg_splash_anim_thread;
+static std::atomic<bool> cg_splash_anim_running{ false };
+static std::atomic<int> cg_splash_anim_frames_drawn{ 0 };
+static std::mutex cg_splash_stage_mutex;
+static float cg_splash_live_progress = 0.0f;
+static String cg_splash_live_status = String::utf8("Iniciando motor...");
+static bool cg_splash_live_completed = false;
+static bool cg_splash_live_brass = false;
+static Vector2i cg_splash_live_mon_sz = Vector2i(ClockGearsBootSplash::BASE_DESIGN_WIDTH, ClockGearsBootSplash::BASE_DESIGN_HEIGHT);
+static float cg_splash_live_dpi_scale = 1.0f;
+static float cg_splash_last_render_ms = 2.0f;
 
 static void _cg_pump_splash_hwnd_messages() {
 	if (!cg_splash_hwnd) {
@@ -900,7 +918,73 @@ static bool _cg_update_layered_splash(const Ref<Image> &p_card, uint8_t p_global
 	return ok != FALSE;
 }
 
+static void _cg_stop_splash_anim_thread() {
+	cg_splash_anim_running.store(false);
+	if (cg_splash_anim_thread.joinable()) {
+		if (cg_splash_anim_thread.get_id() != std::this_thread::get_id()) {
+			cg_splash_anim_thread.join();
+		} else {
+			cg_splash_anim_thread.detach();
+		}
+	}
+}
+
+static void _cg_start_splash_anim_thread() {
+	_cg_stop_splash_anim_thread();
+	if (!cg_splash_hwnd) {
+		return;
+	}
+	cg_splash_anim_running.store(true);
+	cg_splash_anim_thread = std::thread([]() {
+		uint64_t prev_ticks = GetTickCount64();
+		while (cg_splash_anim_running.load()) {
+			Sleep(28); // ~35 FPS constantes en segundo plano mientras el hilo principal carga etapas pesadas
+			if (!cg_splash_anim_running.load() || !cg_splash_hwnd) {
+				break;
+			}
+			const uint64_t now_ticks = GetTickCount64();
+			const float dt = CLAMP((float)(now_ticks - prev_ticks) * 0.001f, 0.010f, 0.100f);
+			prev_ticks = now_ticks;
+
+			float prog = 0.0f;
+			String st_txt;
+			bool comp = false;
+			bool brass = false;
+			Vector2i mon_sz;
+			float dpi_s = 1.0f;
+			float last_ms = 2.0f;
+			{
+				std::lock_guard<std::mutex> lk(cg_splash_stage_mutex);
+				prog = cg_splash_live_progress;
+				st_txt = cg_splash_live_status;
+				comp = cg_splash_live_completed;
+				brass = cg_splash_live_brass;
+				mon_sz = cg_splash_live_mon_sz;
+				dpi_s = cg_splash_live_dpi_scale;
+				last_ms = cg_splash_last_render_ms;
+			}
+
+			const uint64_t r0 = GetTickCount64();
+			const float spin_deg = (float)((now_ticks * 180ULL / 1000ULL) % 360ULL);
+			const float anim_sec = (float)now_ticks * 0.001f;
+			ClockGearsBootSplash::step_particles(dt, prog, comp, mon_sz, brass, last_ms);
+			Ref<Image> frame = ClockGearsBootSplash::render_card(prog, st_txt, spin_deg, comp, brass, nullptr, mon_sz, dpi_s, anim_sec);
+			if (cg_splash_anim_running.load() && cg_splash_hwnd && frame.is_valid()) {
+				_cg_update_layered_splash(frame, 255);
+				cg_splash_anim_frames_drawn.fetch_add(1);
+			}
+			const float elapsed_render = (float)(GetTickCount64() - r0);
+			{
+				std::lock_guard<std::mutex> lk(cg_splash_stage_mutex);
+				cg_splash_last_card = frame;
+				cg_splash_last_render_ms = elapsed_render;
+			}
+		}
+	});
+}
+
 static void _cg_destroy_splash_hwnd() {
+	_cg_stop_splash_anim_thread();
 	if (cg_splash_hwnd) {
 		KillTimer(cg_splash_hwnd, CG_SPLASH_WATCHDOG_TIMER_ID);
 		DestroyWindow(cg_splash_hwnd);
@@ -1065,6 +1149,13 @@ bool ClockGearsBootSplash::open_window(int p_screen) {
 
 		SetTimer(cg_splash_hwnd, CG_SPLASH_WATCHDOG_TIMER_ID, 200, nullptr);
 		ShowWindow(cg_splash_hwnd, SW_SHOWNOACTIVATE);
+		{
+			std::lock_guard<std::mutex> lk(cg_splash_stage_mutex);
+			cg_splash_live_mon_sz = mon_sz;
+			cg_splash_live_dpi_scale = dpi_scale;
+		}
+		cg_splash_anim_frames_drawn.store(0);
+		_cg_start_splash_anim_thread();
 
 		log_event(vformat("event=created window_type=\"Win32FullscreenPopup\" parent=\"%s\" borderless=%s titlebar=%s taskbar_button=%s size=%dx%d pos=(%d,%d) dpi_scale=%.2f",
 				cg_splash_has_parent ? "HWND" : "NONE",
@@ -1104,6 +1195,7 @@ void ClockGearsBootSplash::notify_first_frame_drawn(const String &p_context) {
 		cg_splash_first_frame_logged = true;
 		const uint64_t now = OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0;
 		const uint64_t elapsed = (now >= cg_splash_open_msec) ? (now - cg_splash_open_msec) : 0;
+		cg_splash_first_frame_elapsed_msec = elapsed;
 		log_event(vformat("event=first_frame_drawn context=\"%s\" elapsed_ms=%d", p_context, (int)elapsed));
 	}
 	if (cg_splash_window_open) {
@@ -1122,6 +1214,7 @@ void ClockGearsBootSplash::close_with_fade(const String &p_reason) {
 	}
 
 #ifdef WINDOWS_ENABLED
+	_cg_stop_splash_anim_thread();
 	if (cg_splash_hwnd && cg_splash_last_card.is_valid()) {
 		const uint8_t alphas[5] = { 200, 145, 95, 45, 0 };
 		for (int i = 0; i < 5; i++) {
@@ -1198,6 +1291,12 @@ Dictionary ClockGearsBootSplash::get_last_lifecycle_state() {
 	d["version_badge_unclipped"] = badge_unclipped;
 	d["monitor_size"] = mon_sz;
 	d["inner_frame_rect"] = m.inner_frame_rect;
+	d["first_frame_elapsed_ms"] = (int)cg_splash_first_frame_elapsed_msec;
+#ifdef WINDOWS_ENABLED
+	d["anim_frames_drawn"] = cg_splash_anim_frames_drawn.load();
+#else
+	d["anim_frames_drawn"] = 0;
+#endif
 	if (OS::get_singleton() && !OS::get_singleton()->get_user_data_dir().is_empty()) {
 		d["trace_log_path"] = OS::get_singleton()->get_user_data_dir().path_join("boot_splash_trace.log");
 	} else {
@@ -1251,6 +1350,7 @@ float ClockGearsBootSplash::compute_breathing_intensity(float p_time_sec) {
 }
 
 void ClockGearsBootSplash::reset_particles(uint32_t p_seed, const Vector2i &p_screen_size, bool p_brass) {
+	std::lock_guard<std::recursive_mutex> lk(cg_splash_render_mutex);
 	(void)p_brass;
 	const int W = MAX(320, p_screen_size.x);
 	const int H = MAX(200, p_screen_size.y);
@@ -1284,6 +1384,7 @@ void ClockGearsBootSplash::reset_particles(uint32_t p_seed, const Vector2i &p_sc
 }
 
 void ClockGearsBootSplash::step_particles(float p_dt, float p_progress, bool p_completed, const Vector2i &p_screen_size, bool p_brass, float p_last_frame_ms) {
+	std::lock_guard<std::recursive_mutex> lk(cg_splash_render_mutex);
 	(void)p_brass;
 	const int W = MAX(320, p_screen_size.x);
 	const int H = MAX(200, p_screen_size.y);
@@ -1410,6 +1511,7 @@ void ClockGearsBootSplash::step_particles(float p_dt, float p_progress, bool p_c
 }
 
 Dictionary ClockGearsBootSplash::get_particle_state() {
+	std::lock_guard<std::recursive_mutex> lk(cg_splash_render_mutex);
 	_cg_recount_particles();
 	Dictionary d;
 	d["active_total"] = cg_active_total_count;
@@ -1488,6 +1590,7 @@ Vector<Vector2> ClockGearsBootSplash::get_rounded_window_polygon(int p_width, in
 }
 
 Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics, const Vector2i &p_screen_size, float p_dpi_scale, float p_anim_time_sec) {
+	std::lock_guard<std::recursive_mutex> lk(cg_splash_render_mutex);
 	const int W = MAX(320, p_screen_size.x);
 	const int H = MAX(200, p_screen_size.y);
 	const float s = MIN((float)W / (float)BASE_DESIGN_WIDTH, (float)H / (float)BASE_DESIGN_HEIGHT);
@@ -1697,13 +1800,42 @@ void ClockGearsBootSplash::present_stage(int p_stage, int p_total_stages, const 
 
 	float dpi_scale = 1.0f;
 	const Vector2i mon_sz = get_primary_monitor_size(nullptr, nullptr, &dpi_scale);
-	step_particles(0.033f, progress, p_completed, mon_sz, is_brass, 2.0f);
-	Ref<Image> card = render_card(progress, full_status, spinner_deg, p_completed, is_brass, nullptr, mon_sz, dpi_scale);
-	cg_splash_last_card = card;
+
+#ifdef WINDOWS_ENABLED
+	{
+		std::lock_guard<std::mutex> lk(cg_splash_stage_mutex);
+		cg_splash_live_progress = progress;
+		cg_splash_live_status = full_status;
+		cg_splash_live_completed = p_completed;
+		cg_splash_live_brass = is_brass;
+		cg_splash_live_mon_sz = mon_sz;
+		cg_splash_live_dpi_scale = dpi_scale;
+	}
+#endif
 
 	if (!cg_splash_window_open && !p_completed) {
 		open_window(0);
 	}
+
+#ifdef WINDOWS_ENABLED
+	// Si el hilo de animación en segundo plano ya está dibujando a ~35 FPS y aún no es la etapa final "Listo",
+	// dejamos que el hilo de animación renderice el fotograma para no añadir latencia al hilo principal.
+	if (cg_splash_anim_running.load() && cg_splash_anim_frames_drawn.load() > 0 && !p_completed) {
+		_cg_pump_splash_hwnd_messages();
+		poll_watchdog();
+		return;
+	}
+#endif
+
+	step_particles(0.033f, progress, p_completed, mon_sz, is_brass, 2.0f);
+	Ref<Image> card = render_card(progress, full_status, spinner_deg, p_completed, is_brass, nullptr, mon_sz, dpi_scale);
+	{
+#ifdef WINDOWS_ENABLED
+		std::lock_guard<std::mutex> lk(cg_splash_stage_mutex);
+#endif
+		cg_splash_last_card = card;
+	}
+
 #ifdef WINDOWS_ENABLED
 	if (cg_splash_hwnd && card.is_valid()) {
 		_cg_update_layered_splash(card, 255);

@@ -5317,6 +5317,8 @@ bool Main::iteration() {
 			cf->set_value("boot_test", "closed_reason", String(state.get("closed_reason", "")));
 			cf->set_value("boot_test", "version_badge_unclipped", bool(state.get("version_badge_unclipped", false)));
 			cf->set_value("boot_test", "trace_log_path", String(state.get("trace_log_path", "")));
+			cf->set_value("boot_test", "anim_frames_drawn", int(state.get("anim_frames_drawn", 0)));
+			cf->set_value("boot_test", "first_frame_elapsed_ms", int(state.get("first_frame_elapsed_ms", 0)));
 			cf->set_value("boot_test", "frames_drawn", (int)drawn_frames);
 			cf->set_value("boot_test", "process_frames", (int)proc_frames);
 			cf->set_value("boot_test", "elapsed_ms", (int)elapsed_ms);
