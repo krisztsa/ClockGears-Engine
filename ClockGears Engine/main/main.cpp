@@ -4877,14 +4877,8 @@ int Main::start() {
 	}
 
 	if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_ICON) && !has_icon && OS::get_singleton()->get_bundle_icon_path().is_empty()) {
-		Ref<Image> icon;
-		icon.instantiate();
-		if (ImageLoader::load_image("C:/Proyectos/NEW MOTOR/ICONO/ClockGearsEngineIcon.png", icon) == OK) {
-			DisplayServer::get_singleton()->set_icon(icon);
-		} else {
-			icon = memnew(Image(app_icon_png));
-			DisplayServer::get_singleton()->set_icon(icon);
-		}
+		Ref<Image> icon = memnew(Image(app_icon_png));
+		DisplayServer::get_singleton()->set_icon(icon);
 	}
 
 	if (movie_writer) {

@@ -4845,14 +4845,49 @@ void DisplayServerWindows::window_set_icon(const Ref<Image> &p_icon, DisplayServ
 		wd.icon_big = CreateIconFromResourceEx(icon_bmp, icon_len, TRUE, 0x00030000, 0, 0, LR_DEFAULTSIZE);
 		ERR_FAIL_NULL(wd.icon_big);
 
+		const int sm_w = MAX(16, GetSystemMetrics(SM_CXSMICON));
+		const int sm_h = MAX(16, GetSystemMetrics(SM_CYSMICON));
+		if (w != sm_w || h != sm_h) {
+			Ref<Image> sm_img = img->duplicate();
+			sm_img->resize(sm_w, sm_h, Image::INTERPOLATE_NEAREST);
+			int sm_len = 40 + sm_h * sm_w * 4;
+			wd.icon_buffer_small.resize(sm_len);
+			BYTE *sm_bmp = wd.icon_buffer_small.ptrw();
+			encode_uint32(40, &sm_bmp[0]);
+			encode_uint32(sm_w, &sm_bmp[4]);
+			encode_uint32(sm_h * 2, &sm_bmp[8]);
+			encode_uint16(1, &sm_bmp[12]);
+			encode_uint16(32, &sm_bmp[14]);
+			encode_uint32(BI_RGB, &sm_bmp[16]);
+			encode_uint32(sm_w * sm_h * 4, &sm_bmp[20]);
+			encode_uint32(0, &sm_bmp[24]);
+			encode_uint32(0, &sm_bmp[28]);
+			encode_uint32(0, &sm_bmp[32]);
+			encode_uint32(0, &sm_bmp[36]);
+			uint8_t *sm_wr = &sm_bmp[40];
+			const uint8_t *sm_r = sm_img->get_data().ptr();
+			for (int i = 0; i < sm_h; i++) {
+				for (int j = 0; j < sm_w; j++) {
+					const uint8_t *rpx = &sm_r[((sm_h - i - 1) * sm_w + j) * 4];
+					uint8_t *wpx = &sm_wr[(i * sm_w + j) * 4];
+					wpx[0] = rpx[2];
+					wpx[1] = rpx[1];
+					wpx[2] = rpx[0];
+					wpx[3] = rpx[3];
+				}
+			}
+			wd.icon_small = CreateIconFromResourceEx(sm_bmp, sm_len, TRUE, 0x00030000, sm_w, sm_h, LR_DEFAULTCOLOR);
+		}
+		HICON small_ic = wd.icon_small ? wd.icon_small : wd.icon_big;
+
 		wd.icon_set = true;
-		SendMessage(wd.hWnd, WM_SETICON, ICON_SMALL, (LPARAM)wd.icon_big);
+		SendMessage(wd.hWnd, WM_SETICON, ICON_SMALL, (LPARAM)small_ic);
 		SendMessage(wd.hWnd, WM_SETICON, ICON_BIG, (LPARAM)wd.icon_big);
 
 		if (p_window == DisplayServerEnums::MAIN_WINDOW_ID) {
 			for (const KeyValue<DisplayServerEnums::WindowID, WindowData> &E : windows) {
 				if (!E.value.icon_set && E.key != DisplayServerEnums::MAIN_WINDOW_ID) {
-					SendMessage(E.value.hWnd, WM_SETICON, ICON_SMALL, (LPARAM)wd.icon_big);
+					SendMessage(E.value.hWnd, WM_SETICON, ICON_SMALL, (LPARAM)small_ic);
 					SendMessage(E.value.hWnd, WM_SETICON, ICON_BIG, (LPARAM)wd.icon_big);
 				}
 			}
@@ -8034,7 +8069,8 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Dis
 
 	OleInitialize(nullptr);
 
-	HICON default_icon = (HICON)LoadImageW(nullptr, L"C:\\Proyectos\\NEW MOTOR\\ICONO\\ClockGearsEngineIcon.ico", IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+	HICON default_icon = (HICON)LoadImageW(GetModuleHandle(nullptr), L"GODOT_ICON", IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+	HICON default_icon_sm = (HICON)LoadImageW(GetModuleHandle(nullptr), L"GODOT_ICON", IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
 	if (default_icon == nullptr) {
 		default_icon = LoadIconW(GetModuleHandle(nullptr), L"GODOT_ICON");
 	}
@@ -8050,6 +8086,7 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Dis
 	wc.cbWndExtra = 0;
 	wc.hInstance = hInstance ? hInstance : GetModuleHandle(nullptr);
 	wc.hIcon = default_icon;
+	wc.hIconSm = default_icon_sm ? default_icon_sm : default_icon;
 	wc.hCursor = nullptr;
 	wc.hbrBackground = nullptr;
 	wc.lpszMenuName = nullptr;

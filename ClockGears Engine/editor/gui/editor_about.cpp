@@ -86,7 +86,7 @@ void EditorAbout::_notification(int p_what) {
 			license_text_label->add_theme_constant_override(SceneStringName(line_separation), 4 * EDSCALE);
 			license_text_label->end_bulk_theme_override();
 
-			_logo->set_texture(get_editor_theme_icon(SNAME("Logo")));
+			_logo->set_texture(get_editor_theme_icon(SNAME("DefaultProjectIcon")));
 
 			for (ItemList *il : name_lists) {
 				for (int i = 0; i < il->get_item_count(); i++) {
@@ -222,7 +222,10 @@ EditorAbout::EditorAbout() {
 	vbc->add_child(hbc);
 
 	_logo = memnew(TextureRect);
+	_logo->set_custom_minimum_size(Size2(96, 96) * EDSCALE);
+	_logo->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 	_logo->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+	_logo->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	hbc->add_child(_logo);
 
 	VBoxContainer *version_info_vbc = memnew(VBoxContainer);

@@ -11,6 +11,7 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/file_system/editor_file_system.h"
+#include "editor/themes/editor_icons.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
@@ -204,7 +205,7 @@ Error ClockGearsProjectStructure::initialize_new_project(const String &p_project
 				"pixel_art/base_height=540\n"
 				"pixel_art/integer_scaling=true\n"
 				"\n"
-				"[display]\n"),
+				"[display]\n"
 				"\n"
 				"window/size/viewport_width=960\n"
 				"window/size/viewport_height=540\n"
@@ -240,11 +241,23 @@ Error ClockGearsProjectStructure::initialize_new_project(const String &p_project
 				"\n"
 				"textures/canvas_textures/default_texture_filter=0\n"
 				"2d/snap/snap_2d_transforms_to_pixel=true\n"
-				"2d/snap/snap_2d_vertices_to_pixel=true\n",
+				"2d/snap/snap_2d_vertices_to_pixel=true\n"),
 				safe_title);
 
 		fa->store_string(godot_cfg);
 		fa->close();
+
+		String icon_svg_path = base_dir.path_join("icon.svg");
+		if (!FileAccess::exists(icon_svg_path)) {
+			String def_svg = get_default_project_icon();
+			if (!def_svg.is_empty()) {
+				Ref<FileAccess> fa_icon = FileAccess::open(icon_svg_path, FileAccess::WRITE);
+				if (fa_icon.is_valid()) {
+					fa_icon->store_string(def_svg);
+					fa_icon->close();
+				}
+			}
+		}
 	}
 
 	ClockGearsTitleScreen::ensure_title_screen_scene(base_dir.path_join("title_screen.tscn"));

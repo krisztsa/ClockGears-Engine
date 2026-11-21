@@ -124,6 +124,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsUiCanvasOverlay);
 		GDREGISTER_CLASS(ClockGearsUiDesignEditor);
 		GDREGISTER_CLASS(ClockGearsUiElementFloatingWindow);
+		GDREGISTER_CLASS(ClockGearsNewProjectDialog);
 #endif
 
 		cg_system_catalog_singleton = memnew(ClockGearsSystemCatalog);
@@ -220,7 +221,6 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(ClockGearsSimplifiedExportDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsAutomationPanel);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsUIEditorPanel);
-		GDREGISTER_INTERNAL_CLASS(ClockGearsNewProjectDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsResourceManagerDialog);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsExportPlugin);
 		GDREGISTER_INTERNAL_CLASS(ClockGearsEditorPlugin);

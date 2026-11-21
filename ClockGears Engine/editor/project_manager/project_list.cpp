@@ -901,11 +901,18 @@ void ProjectList::_load_project_icon(int p_index) {
 		Ref<Image> img;
 		img.instantiate();
 		const String icon_file = item.icon.replace_first("res://", item.path + "/");
-		// ClockGears Engine: projects still using the default Godot robot get the ClockGears icon (the file is not touched).
-		const bool is_godot_default_icon = icon_file.get_extension().to_lower() == "svg" && FileAccess::get_file_as_string(icon_file).contains("M105 673v33q407 354 814 0v-33z");
-		Error err = is_godot_default_icon ? ERR_UNAVAILABLE : img->load(icon_file);
+		// ClockGears Engine: proyectos que aún usan el icono antiguo por defecto (SVG o PNG antiguo o robot Godot)
+		// muestran el nuevo icono por defecto sin modificar el archivo original del proyecto.
+		const String ext = icon_file.get_extension().to_lower();
+		const String sha = FileAccess::exists(icon_file) ? FileAccess::get_sha256(icon_file).to_lower() : String();
+		const bool is_old_default_svg = (ext == "svg") && (
+				sha == "9fea9f6c539dbb932419a16655e15c2bc628a18dbefb0db96e03aa33f586683d" ||
+				FileAccess::get_file_as_string(icon_file).contains("M105 673v33q407 354 814 0v-33z"));
+		const bool is_old_default_png = (ext == "png") && (sha == "3bbc01c14134041a4184acd8244b432a008ad5966d10af74e47656267c798358");
+		Error err = (is_old_default_svg || is_old_default_png) ? ERR_UNAVAILABLE : img->load(icon_file);
 		if (err == OK) {
-			img->resize(default_icon->get_width(), default_icon->get_height(), Image::INTERPOLATE_LANCZOS);
+			const bool is_int_pixel = (img->get_width() > 0 && img->get_width() == img->get_height() && (default_icon->get_width() % img->get_width()) == 0);
+			img->resize(default_icon->get_width(), default_icon->get_height(), is_int_pixel ? Image::INTERPOLATE_NEAREST : Image::INTERPOLATE_LANCZOS);
 			icon = ImageTexture::create_from_image(img);
 		}
 	}
