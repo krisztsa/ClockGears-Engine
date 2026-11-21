@@ -56,6 +56,89 @@ inline void _blend_pixel_rgba(uint8_t *p_dst, int p_w, int p_h, int p_x, int p_y
 	px[3] = (uint8_t)CLAMP((int)Math::round(MAX((float)px[3], sa * 255.0f)), 0, 255);
 }
 
+inline void _blend_pixel_additive_rgba(uint8_t *p_dst, int p_w, int p_h, int p_x, int p_y, const Color &p_col, float p_intensity = 1.0f) {
+	if (p_x < 0 || p_y < 0 || p_x >= p_w || p_y >= p_h) {
+		return;
+	}
+	const float sa = _clamp01(p_col.a * p_intensity);
+	if (sa <= 0.001f) {
+		return;
+	}
+	uint8_t *px = p_dst + ((p_y * p_w + p_x) * 4);
+	const int add_r = (int)Math::round(p_col.r * 255.0f * sa);
+	const int add_g = (int)Math::round(p_col.g * 255.0f * sa);
+	const int add_b = (int)Math::round(p_col.b * 255.0f * sa);
+	px[0] = (uint8_t)CLAMP((int)px[0] + add_r, 0, 255);
+	px[1] = (uint8_t)CLAMP((int)px[1] + add_g, 0, 255);
+	px[2] = (uint8_t)CLAMP((int)px[2] + add_b, 0, 255);
+	px[3] = 255;
+}
+
+// Sprites de degradado radial y destello precalculados una sola vez (64x64) con mezcla aditiva (sin desenfoque ni shaders en tiempo real).
+static constexpr int CG_GLOW_LUT_SIZE = 64;
+static float cg_radial_glow_lut[CG_GLOW_LUT_SIZE * CG_GLOW_LUT_SIZE];
+static float cg_head_flare_lut[CG_GLOW_LUT_SIZE * CG_GLOW_LUT_SIZE];
+static bool cg_glow_luts_ready = false;
+
+static void _ensure_glow_luts_ready() {
+	if (cg_glow_luts_ready) {
+		return;
+	}
+	const float half = (float)CG_GLOW_LUT_SIZE * 0.5f;
+	for (int y = 0; y < CG_GLOW_LUT_SIZE; y++) {
+		const float ny = ((float)y + 0.5f - half) / half;
+		for (int x = 0; x < CG_GLOW_LUT_SIZE; x++) {
+			const float nx = ((float)x + 0.5f - half) / half;
+			const float r2 = nx * nx + ny * ny;
+			const float r = sqrtf(r2);
+			float radial = 0.0f;
+			if (r < 1.0f) {
+				const float u = 1.0f - r;
+				radial = u * u * (3.0f - 2.0f * u) * expf(-1.85f * r2);
+			}
+			// Destello cruzado suave en la cabeza de avance
+			const float ax = expf(-fabsf(ny) * 8.5f) * _clamp01(1.0f - fabsf(nx));
+			const float ay = expf(-fabsf(nx) * 7.0f) * _clamp01(1.0f - fabsf(ny));
+			const float core = (r < 1.0f) ? expf(-3.4f * r2) : 0.0f;
+			cg_radial_glow_lut[y * CG_GLOW_LUT_SIZE + x] = _clamp01(radial);
+			cg_head_flare_lut[y * CG_GLOW_LUT_SIZE + x] = _clamp01(core + (ax * 0.55f + ay * 0.45f) * _clamp01(1.0f - r * 0.85f));
+		}
+	}
+	cg_glow_luts_ready = true;
+}
+
+static void _stamp_additive_glow_sprite(uint8_t *p_dst, int p_w, int p_h, float p_cx, float p_cy, float p_rx, float p_ry, const Color &p_col, float p_intensity, bool p_use_flare) {
+	if (p_rx < 1.0f || p_ry < 1.0f || p_intensity <= 0.001f) {
+		return;
+	}
+	_ensure_glow_luts_ready();
+	const float *lut = p_use_flare ? cg_head_flare_lut : cg_radial_glow_lut;
+	const int x0 = MAX(0, (int)floorf(p_cx - p_rx));
+	const int y0 = MAX(0, (int)floorf(p_cy - p_ry));
+	const int x1 = MIN(p_w - 1, (int)ceilf(p_cx + p_rx));
+	const int y1 = MIN(p_h - 1, (int)ceilf(p_cy + p_ry));
+	const float inv_rx = 1.0f / p_rx;
+	const float inv_ry = 1.0f / p_ry;
+	for (int y = y0; y <= y1; y++) {
+		const float ny = ((float)y + 0.5f - p_cy) * inv_ry;
+		if (ny <= -1.0f || ny >= 1.0f) {
+			continue;
+		}
+		const int ly = CLAMP((int)((ny * 0.5f + 0.5f) * (float)(CG_GLOW_LUT_SIZE - 1)), 0, CG_GLOW_LUT_SIZE - 1);
+		for (int x = x0; x <= x1; x++) {
+			const float nx = ((float)x + 0.5f - p_cx) * inv_rx;
+			if (nx <= -1.0f || nx >= 1.0f) {
+				continue;
+			}
+			const int lx = CLAMP((int)((nx * 0.5f + 0.5f) * (float)(CG_GLOW_LUT_SIZE - 1)), 0, CG_GLOW_LUT_SIZE - 1);
+			const float w = lut[ly * CG_GLOW_LUT_SIZE + lx] * p_intensity;
+			if (w > 0.002f) {
+				_blend_pixel_additive_rgba(p_dst, p_w, p_h, x, y, p_col, w);
+			}
+		}
+	}
+}
+
 float _sd_rounded_box(float px, float py, float bx, float by, float bw, float bh, float r) {
 	const float cx = bx + bw * 0.5f;
 	const float cy = by + bh * 0.5f;
@@ -976,6 +1059,42 @@ bool ClockGearsBootSplash::is_saved_brass_theme() {
 	return false;
 }
 
+static bool cg_splash_glow_override_active = false;
+static bool cg_splash_glow_override_value = true;
+
+void ClockGearsBootSplash::set_glow_effects_override(bool p_has_override, bool p_enabled) {
+	cg_splash_glow_override_active = p_has_override;
+	cg_splash_glow_override_value = p_enabled;
+}
+
+bool ClockGearsBootSplash::are_glow_effects_enabled() {
+	if (cg_splash_glow_override_active) {
+		return cg_splash_glow_override_value;
+	}
+	if (OS::get_singleton() && OS::get_singleton()->has_environment("CG_SPLASH_GLOW_EFFECTS")) {
+		const String env_v = OS::get_singleton()->get_environment("CG_SPLASH_GLOW_EFFECTS").strip_edges().to_lower();
+		return !(env_v == "0" || env_v == "false" || env_v == "off" || env_v == "no");
+	}
+	if (ProjectSettings::get_singleton()) {
+		if (ProjectSettings::get_singleton()->has_setting("clockgears/editor/glow_effects")) {
+			return (bool)ProjectSettings::get_singleton()->get_setting("clockgears/editor/glow_effects");
+		}
+		if (ProjectSettings::get_singleton()->has_setting("clockgears/editor/appearance/glow_effects")) {
+			return (bool)ProjectSettings::get_singleton()->get_setting("clockgears/editor/appearance/glow_effects");
+		}
+		if (ProjectSettings::get_singleton()->has_setting("clockgears/appearance/glow_effects")) {
+			return (bool)ProjectSettings::get_singleton()->get_setting("clockgears/appearance/glow_effects");
+		}
+	}
+	return true;
+}
+
+float ClockGearsBootSplash::compute_breathing_intensity(float p_time_sec) {
+	// Respiración suave entre 85 % (0.85) y 100 % (1.00) con un ciclo de 2 s.
+	const float phase = p_time_sec * ((float)Math::TAU / 2.0f);
+	return CLAMP(0.925f + 0.075f * sinf(phase), 0.85f, 1.00f);
+}
+
 ClockGearsBootSplash::Palette ClockGearsBootSplash::get_active_palette(bool p_force_brass, bool p_override_brass) {
 	const bool use_brass = p_override_brass ? p_force_brass : is_saved_brass_theme();
 	Palette out;
@@ -1038,7 +1157,7 @@ Vector<Vector2> ClockGearsBootSplash::get_rounded_window_polygon(int p_width, in
 	return poly;
 }
 
-Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics, const Vector2i &p_screen_size, float p_dpi_scale) {
+Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics, const Vector2i &p_screen_size, float p_dpi_scale, float p_anim_time_sec) {
 	const int W = MAX(320, p_screen_size.x);
 	const int H = MAX(200, p_screen_size.y);
 	const float s = MIN((float)W / (float)BASE_DESIGN_WIDTH, (float)H / (float)BASE_DESIGN_HEIGHT);
@@ -1058,6 +1177,17 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 	Vector<uint8_t> frame_bytes = cg_splash_base_bytes;
 	uint8_t *dst = frame_bytes.ptrw();
 	LayoutMetrics metrics = cg_splash_cached_metrics;
+
+	const float anim_t = (p_anim_time_sec >= 0.0f)
+			? p_anim_time_sec
+			: (OS::get_singleton() ? ((float)OS::get_singleton()->get_ticks_msec() * 0.001f) : 0.0f);
+	const bool glow_enabled = are_glow_effects_enabled();
+	const float breath = glow_enabled ? compute_breathing_intensity(anim_t) : 1.0f;
+	const bool indeterminate = (!p_completed && p_progress < 0.0f);
+
+	metrics.glow_enabled = glow_enabled;
+	metrics.glow_breath_factor = breath;
+	metrics.indeterminate = indeterminate;
 
 	// Bloque de la barra de progreso centrado en el tercio inferior, con un ancho de ~40 % de la pantalla.
 	SplashFontCache &fc = get_font_cache();
@@ -1101,23 +1231,96 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 	const int right_x = (int)Math::round(spin_cx - spin_r - MAX(8.0f, 10.0f * s)) - right_w;
 	metrics.right_brand_rect = fc.draw_text(dst, W, H, right_txt, right_x, status_baseline, brand_font_px, pal.text_secondary, 0.25f * s, false);
 
-	// Barra de progreso redondeada (10 px de alto a 1080p).
+	// Barra de progreso redondeada (10 px de alto a 1080p) con degradado horizontal de ámbar a dorado claro, halo exterior y cabeza con destello.
 	const float bar_rad = (float)bar_h * 0.5f;
 	metrics.progress_bar_rect = Rect2i(bar_x, bar_y, bar_w, bar_h);
 	_draw_filled_rounded_rect(dst, W, H, (float)bar_x, (float)bar_y, (float)bar_w, (float)bar_h, bar_rad,
-			pal.progress_track, Color(pal.card_border.r, pal.card_border.g, pal.card_border.b, 0.34f), MAX(1.0f, s));
+			pal.progress_track, Color(pal.card_border.r, pal.card_border.g, pal.card_border.b, 0.36f), MAX(1.0f, s));
 
-	const float frac = _clamp01(p_progress);
-	if (frac > 0.001f) {
-		const float fill_w = MAX((float)bar_h, (float)bar_w * frac);
-		const Color fill_hi = pal.progress_fill.lightened(0.20f);
+	float seg_x0 = (float)bar_x;
+	float seg_w = 0.0f;
+	if (indeterminate) {
+		// Modo indeterminado: un segmento de brillo recorre la barra de lado a lado sin inventar un porcentaje.
+		seg_w = MAX((float)bar_h * 3.0f, (float)bar_w * 0.28f);
+		const float travel = MAX(1.0f, (float)bar_w - seg_w);
+		const float sweep = 0.5f + 0.5f * sinf(anim_t * ((float)Math::TAU / 1.8f));
+		seg_x0 = (float)bar_x + travel * sweep;
+		metrics.head_x = seg_x0 + seg_w * 0.5f;
+		metrics.head_y = (float)bar_y + (float)bar_h * 0.5f;
+	} else {
+		const float frac = p_completed ? 1.0f : _clamp01(p_progress);
+		if (frac > 0.001f) {
+			seg_w = MAX((float)bar_h, (float)bar_w * frac);
+		}
+		seg_x0 = (float)bar_x;
+		metrics.head_x = seg_x0 + seg_w;
+		metrics.head_y = (float)bar_y + (float)bar_h * 0.5f;
+	}
+
+	if (seg_w > 0.5f) {
+		const Color col_amber = pal.progress_fill;
+		const Color col_gold_light = pal.progress_fill.lightened(0.45f);
+		const Color col_head_bright = pal.progress_fill.lightened(0.68f);
+
+		// Halo exterior ámbar alrededor de la parte llena (mezcla aditiva con respiración 85%..100% en ciclo de 2 s).
+		if (glow_enabled) {
+			const float halo_pad_x = MAX(12.0f, 22.0f * s);
+			const float halo_pad_y = MAX(10.0f, 18.0f * s);
+			const int hx0 = MAX(0, (int)floorf(seg_x0 - halo_pad_x));
+			const int hx1 = MIN(W - 1, (int)ceilf(seg_x0 + seg_w + halo_pad_x));
+			const int hy0 = MAX(0, (int)floorf((float)bar_y - halo_pad_y));
+			const int hy1 = MIN(H - 1, (int)ceilf((float)(bar_y + bar_h) + halo_pad_y));
+			const float inv_pad = 1.0f / halo_pad_y;
+
+			for (int y = hy0; y <= hy1; y++) {
+				for (int x = hx0; x <= hx1; x++) {
+					const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, seg_x0, (float)bar_y, seg_w, (float)bar_h, bar_rad);
+					if (d > -1.0f && d < halo_pad_y) {
+						const float nd = MAX(0.0f, d) * inv_pad;
+						const float falloff = expf(-3.1f * nd * nd) * (1.0f - nd);
+						const float ht = _clamp01(((float)x - seg_x0) / MAX(1.0f, seg_w));
+						const Color hcol = col_amber.lerp(col_gold_light, ht * 0.7f);
+						_blend_pixel_additive_rgba(dst, W, H, x, y, hcol, falloff * 0.42f * breath);
+					}
+				}
+			}
+		}
+
+		// Relleno de la barra con degradado horizontal de ámbar a dorado claro + brillo superior sutil.
+		const int fx0 = MAX(0, (int)floorf(seg_x0 - 1.0f));
+		const int fx1 = MIN(W - 1, (int)ceilf(seg_x0 + seg_w + 1.0f));
 		for (int y = bar_y; y < bar_y + bar_h; y++) {
 			const float row_t = (float)(y - bar_y) / (float)MAX(1, bar_h - 1);
-			const Color row_col = fill_hi.lerp(pal.progress_fill, row_t);
-			for (int x = bar_x; x < (int)ceilf((float)bar_x + fill_w); x++) {
-				const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, (float)bar_x, (float)bar_y, fill_w, (float)bar_h, bar_rad);
+			const float v_highlight = (1.0f - row_t) * 0.16f;
+			for (int x = fx0; x <= fx1; x++) {
+				const float d = _sd_rounded_box((float)x + 0.5f, (float)y + 0.5f, seg_x0, (float)bar_y, seg_w, (float)bar_h, bar_rad);
 				if (d < 1.0f) {
-					_blend_pixel_rgba(dst, W, H, x, y, row_col, _clamp01(1.0f - d));
+					const float ht = _clamp01(((float)x + 0.5f - seg_x0) / MAX(1.0f, seg_w));
+					Color px_col = col_amber.lerp(col_gold_light, ht).lightened(v_highlight * breath);
+					if (indeterminate) {
+						// Suavizar extremos del segmento flotante indeterminado
+						const float edge_fade = sinf(ht * (float)Math::PI);
+						px_col = col_amber.lerp(col_head_bright, edge_fade);
+					}
+					_blend_pixel_rgba(dst, W, H, x, y, px_col, _clamp01(1.0f - d));
+				}
+			}
+		}
+
+		// Cabeza de avance más brillante con pequeño destello precalculado (mezcla aditiva).
+		if (glow_enabled) {
+			const float flare_rx = MAX(14.0f, 26.0f * s);
+			const float flare_ry = MAX(10.0f, 18.0f * s);
+			_stamp_additive_glow_sprite(dst, W, H, metrics.head_x, metrics.head_y, flare_rx, flare_ry, col_head_bright, 0.72f * breath, true);
+			_stamp_additive_glow_sprite(dst, W, H, metrics.head_x, metrics.head_y, flare_rx * 0.45f, flare_ry * 0.45f, Color(1.0f, 0.96f, 0.84f, 1.0f), 0.55f * breath, false);
+
+			// Al llegar al 100 % ("Listo"), destello breve a lo largo de toda la barra.
+			if (p_completed) {
+				const int flash_stamps = 9;
+				for (int i = 0; i < flash_stamps; i++) {
+					const float u = (float)i / (float)(flash_stamps - 1);
+					const float cx = seg_x0 + seg_w * u;
+					_stamp_additive_glow_sprite(dst, W, H, cx, metrics.head_y, flare_rx * 1.45f, flare_ry * 1.15f, col_head_bright, 0.28f * breath, false);
 				}
 			}
 		}
@@ -1133,10 +1336,11 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 
 void ClockGearsBootSplash::present_stage(int p_stage, int p_total_stages, const String &p_status, bool p_completed) {
 	const int total = MAX(1, p_total_stages);
-	const int stage = CLAMP(p_stage, 0, total);
-	const float progress = p_completed ? 1.0f : ((float)stage / (float)total);
-	const int pct = (int)Math::round(progress * 100.0f);
-	const String full_status = p_completed ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
+	const bool indeterminate = (!p_completed && p_stage < 0);
+	const int stage = indeterminate ? 0 : CLAMP(p_stage, 0, total);
+	const float progress = p_completed ? 1.0f : (indeterminate ? -1.0f : ((float)stage / (float)total));
+	const int pct = (int)Math::round(MAX(0.0f, progress) * 100.0f);
+	const String full_status = (p_completed || indeterminate) ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
 	const float spinner_deg = (float)(stage * 64 + (int)((OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0) % 360));
 	const bool is_brass = is_saved_brass_theme();
 

@@ -50,15 +50,23 @@ public:
 		int ornament_gear_count = 0;
 		int circuit_trace_count = 0;
 		float layout_scale = 1.0f;
+		float glow_breath_factor = 1.0f;
+		float head_x = 0.0f;
+		float head_y = 0.0f;
+		bool indeterminate = false;
+		bool glow_enabled = true;
 	};
 
 	static bool is_saved_brass_theme();
+	static bool are_glow_effects_enabled();
+	static void set_glow_effects_override(bool p_has_override, bool p_enabled);
+	static float compute_breathing_intensity(float p_time_sec);
 	static Palette get_active_palette(bool p_force_brass = false, bool p_override_brass = false);
 	static Color get_active_clear_color();
 	static Vector<Vector2> get_rounded_window_polygon(int p_width = SPLASH_WIDTH, int p_height = SPLASH_HEIGHT, int p_radius = -1);
 	static Vector2i get_primary_monitor_size(int *r_pos_x = nullptr, int *r_pos_y = nullptr, float *r_dpi_scale = nullptr);
 
-	static Ref<Image> render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics = nullptr, const Vector2i &p_screen_size = Vector2i(BASE_DESIGN_WIDTH, BASE_DESIGN_HEIGHT), float p_dpi_scale = 1.0f);
+	static Ref<Image> render_card(float p_progress, const String &p_status, float p_spinner_deg, bool p_completed, bool p_brass, LayoutMetrics *r_metrics = nullptr, const Vector2i &p_screen_size = Vector2i(BASE_DESIGN_WIDTH, BASE_DESIGN_HEIGHT), float p_dpi_scale = 1.0f, float p_anim_time_sec = -1.0f);
 	static void present_stage(int p_stage, int p_total_stages, const String &p_status, bool p_completed = false);
 
 	// Ventana propia independiente sin bordes, ciclo de vida y seguro anti-bloqueo (15 s).

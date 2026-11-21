@@ -179,18 +179,19 @@ ClockGearsTheme::SplashPalette ClockGearsTheme::get_splash_palette(bool p_brass)
 	return sp;
 }
 
-Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages, const String &p_status, const String &p_save_png_path, bool p_brass, const Vector2i &p_screen_size) {
+Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages, const String &p_status, const String &p_save_png_path, bool p_brass, const Vector2i &p_screen_size, float p_anim_time_sec) {
 	Dictionary out;
 	const int total = MAX(1, p_total_stages);
-	const int stage = CLAMP(p_stage, 0, total);
-	const bool completed = (stage >= total);
-	const float progress = completed ? 1.0f : ((float)stage / (float)total);
-	const int pct = (int)Math::round(progress * 100.0f);
-	const String full_status = completed ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
+	const bool indeterminate = (p_stage < 0);
+	const int stage = indeterminate ? 0 : CLAMP(p_stage, 0, total);
+	const bool completed = (!indeterminate && stage >= total);
+	const float progress = completed ? 1.0f : (indeterminate ? -1.0f : ((float)stage / (float)total));
+	const int pct = (int)Math::round(MAX(0.0f, progress) * 100.0f);
+	const String full_status = (completed || indeterminate) ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
 
 	const Vector2i target_size(MAX(320, p_screen_size.x), MAX(200, p_screen_size.y));
 	ClockGearsBootSplash::LayoutMetrics metrics;
-	Ref<Image> img = ClockGearsBootSplash::render_card(progress, full_status, (float)(stage * 64), completed, p_brass, &metrics, target_size, 1.0f);
+	Ref<Image> img = ClockGearsBootSplash::render_card(progress, full_status, (float)(stage * 64), completed, p_brass, &metrics, target_size, 1.0f, p_anim_time_sec);
 	ERR_FAIL_COND_V(img.is_null(), out);
 
 	if (!p_save_png_path.is_empty()) {
@@ -205,16 +206,47 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	const Color top_border_px = img->get_pixel(img->get_width() / 2, top_border_y);
 	const Color center_bg_px = img->get_pixel(img->get_width() / 2, CLAMP((int)(img->get_height() * 0.72f), 0, img->get_height() - 1));
 
-	// Medir ancho real ocupado por la parte rellena de la barra de progreso ámbar.
+	// Medir ancho real ocupado por la parte rellena de la barra de progreso ámbar, degradado horizontal, halo exterior y cabeza con destello.
 	int filled_bar_px = 0;
+	int first_fill_x = -1;
+	int last_fill_x = -1;
 	const int bar_sample_y = CLAMP(metrics.progress_bar_rect.position.y + metrics.progress_bar_rect.size.y / 2, 0, img->get_height() - 1);
 	const SplashPalette pal = get_splash_palette(p_brass);
 	for (int x = metrics.progress_bar_rect.position.x; x < metrics.progress_bar_rect.get_end().x; x++) {
 		const Color px = img->get_pixel(CLAMP(x, 0, img->get_width() - 1), bar_sample_y);
 		if (px.r > pal.progress_fill.r * 0.65f && px.g > pal.progress_fill.g * 0.50f) {
 			filled_bar_px++;
+			if (first_fill_x < 0) {
+				first_fill_x = x;
+			}
+			last_fill_x = x;
 		}
 	}
+
+	float fill_left_luma = 0.0f;
+	float fill_right_luma = 0.0f;
+	if (first_fill_x >= 0 && last_fill_x > first_fill_x + 8) {
+		const int sample_l = first_fill_x + 4;
+		const int sample_r = MAX(sample_l + 2, last_fill_x - 4);
+		fill_left_luma = img->get_pixel(CLAMP(sample_l, 0, img->get_width() - 1), bar_sample_y).get_luminance();
+		fill_right_luma = img->get_pixel(CLAMP(sample_r, 0, img->get_width() - 1), bar_sample_y).get_luminance();
+	}
+
+	const int halo_sample_x = (first_fill_x >= 0 && last_fill_x >= first_fill_x)
+			? ((first_fill_x + last_fill_x) / 2)
+			: (metrics.progress_bar_rect.position.x + 20);
+	const int halo_near_y = CLAMP(metrics.progress_bar_rect.get_end().y + 3, 0, img->get_height() - 1);
+	const int halo_far_y = CLAMP(metrics.progress_bar_rect.get_end().y + 42, 0, img->get_height() - 1);
+	const Color halo_near_px = img->get_pixel(CLAMP(halo_sample_x, 0, img->get_width() - 1), halo_near_y);
+	const Color halo_far_px = img->get_pixel(CLAMP(halo_sample_x, 0, img->get_width() - 1), halo_far_y);
+	const float outer_halo_delta = (halo_near_px.r - halo_far_px.r) + (halo_near_px.g - halo_far_px.g);
+
+	const int head_px_x = CLAMP((int)Math::round(metrics.head_x) - 1, 0, img->get_width() - 1);
+	const int head_px_y = CLAMP((int)Math::round(metrics.head_y), 0, img->get_height() - 1);
+	const float head_luma = img->get_pixel(head_px_x, head_px_y).get_luminance();
+	const int head_flare_above_y = CLAMP(metrics.progress_bar_rect.position.y - 3, 0, img->get_height() - 1);
+	const Color head_flare_above = img->get_pixel(head_px_x, head_flare_above_y);
+	const float head_flare_delta = (head_flare_above.r - halo_far_px.r) + (head_flare_above.g - halo_far_px.g);
 
 	out["width"] = img->get_width();
 	out["height"] = img->get_height();
@@ -232,6 +264,16 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	out["ornament_gear_count"] = metrics.ornament_gear_count;
 	out["circuit_trace_count"] = metrics.circuit_trace_count;
 	out["layout_scale"] = metrics.layout_scale;
+	out["glow_enabled"] = metrics.glow_enabled;
+	out["glow_breath_factor"] = metrics.glow_breath_factor;
+	out["indeterminate"] = metrics.indeterminate;
+	out["head_x"] = metrics.head_x;
+	out["head_y"] = metrics.head_y;
+	out["fill_left_luma"] = fill_left_luma;
+	out["fill_right_luma"] = fill_right_luma;
+	out["outer_halo_delta"] = outer_halo_delta;
+	out["head_luma"] = head_luma;
+	out["head_flare_delta"] = head_flare_delta;
 	out["icon_rect"] = metrics.icon_rect;
 	out["badge_rect"] = metrics.badge_rect;
 	out["title_rect"] = metrics.title_rect;
@@ -2827,7 +2869,7 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("inspect_theme_metrics", "theme_id"), &ClockGearsTheme::inspect_theme_metrics, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("check_tree_legibility_and_layout", "root", "viewport_size"), &ClockGearsTheme::check_tree_legibility_and_layout, DEFVAL(Vector2i(1366, 768)));
 	ClassDB::bind_method(D_METHOD("audit_inputs_and_popups_in_tree", "root"), &ClockGearsTheme::audit_inputs_and_popups_in_tree);
-	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("inspect_boot_splash", "stage", "total_stages", "status", "save_png_path", "brass", "screen_size"), &ClockGearsTheme::inspect_boot_splash, DEFVAL(""), DEFVAL(false), DEFVAL(Vector2i(1920, 1080)));
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("inspect_boot_splash", "stage", "total_stages", "status", "save_png_path", "brass", "screen_size", "anim_time_sec"), &ClockGearsTheme::inspect_boot_splash, DEFVAL(""), DEFVAL(false), DEFVAL(Vector2i(1920, 1080)), DEFVAL(-1.0f));
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_active_container_border_color"), &ClockGearsTheme::get_active_container_border_color);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_border_width"), &ClockGearsTheme::get_container_border_width);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));
