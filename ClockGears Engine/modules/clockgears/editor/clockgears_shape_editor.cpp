@@ -1226,8 +1226,6 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 	bz_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	bz_list->set_custom_minimum_size(Size2(0, 112.0f * CG_SE_EDSCALE));
 	bz_list->set_allow_reselect(true);
-	Ref<StyleBoxFlat> bzl_sb = _make_rounded_btn_style(Color(0.10f, 0.12f, 0.16f, 0.96f), Color(0.28f, 0.34f, 0.45f, 0.85f), 6);
-	bz_list->add_theme_style_override("panel", bzl_sb);
 	bz_list->connect("item_selected", callable_mp(this, &ClockGearsShapeEditor::_on_bz_list_selected));
 	bz_list_box->add_child(bz_list);
 

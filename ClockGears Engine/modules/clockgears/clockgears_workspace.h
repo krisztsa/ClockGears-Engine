@@ -93,6 +93,7 @@ class ClockGearsMapPanel : public VBoxContainer {
 	Tree *map_tree = nullptr;
 	Button *new_map_button = nullptr;
 	int last_icon_scale = 0;
+	bool applying_panel_styles = false;
 	struct HeaderIconEntry {
 		Button *button = nullptr;
 		StringName editor_icon;

@@ -60,6 +60,8 @@ public:
 	static Color color_error() { return Color::html("#e5534b"); }
 	static Color color_success() { return Color::html("#4cc38a"); }
 	static Color color_menu_pill_border(bool p_brass, bool p_light = false);
+	static Color color_sunken_list_bg(bool p_brass, bool p_light = false);
+	static Color color_sunken_list_border(bool p_brass, bool p_light = false);
 	static Color get_active_container_border_color();
 	static int get_container_border_width() { return 1; }
 	static int get_container_corner_radius(float p_scale = 1.0f) { return int(6 * p_scale); }
@@ -145,12 +147,16 @@ public:
 	Dictionary audit_inputs_and_popups_in_tree(Node *p_root);
 
 	static Ref<StyleBoxFlat> make_container_stylebox(float p_scale = 1.0f, int p_margin_h = 12, int p_margin_v = 12, int p_variant = 0);
+	static Ref<StyleBoxFlat> make_sunken_list_stylebox(float p_scale = 1.0f);
 	static Ref<StyleBoxFlat> make_card_stylebox(float p_scale = 1.0f);
 	static Ref<StyleBoxFlat> make_input_stylebox(bool p_has_error, bool p_focused, float p_scale = 1.0f);
 
 	// Variante instancia para llamadas desde GDScript / CanvasItemEditor
 	Ref<StyleBoxFlat> get_container_stylebox(float p_scale = 1.0f, int p_margin_h = 12, int p_margin_v = 12, int p_variant = 0) const {
 		return make_container_stylebox(p_scale, p_margin_h, p_margin_v, p_variant);
+	}
+	Ref<StyleBoxFlat> get_sunken_list_stylebox(float p_scale = 1.0f) const {
+		return make_sunken_list_stylebox(p_scale);
 	}
 
 	ClockGearsTheme();

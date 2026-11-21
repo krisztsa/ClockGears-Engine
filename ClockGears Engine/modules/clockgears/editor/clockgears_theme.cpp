@@ -121,6 +121,55 @@ Color ClockGearsTheme::color_menu_pill_border(bool p_brass, bool p_light) {
 	return Color(0.88f, 0.63f, 0.25f, 0.62f);
 }
 
+Color ClockGearsTheme::color_sunken_list_bg(bool p_brass, bool p_light) {
+	if (p_brass) {
+		// Color más oscuro de fondos de entrada/lista en Latón (#13110e)
+		return color_brass_input();
+	}
+	if (p_light) {
+		return Color::html("#e8ebf2");
+	}
+	// Más oscuro que color_panel (#23262e) y color_bg_dark (#1b1d23)
+	return Color::html("#13151b");
+}
+
+Color ClockGearsTheme::color_sunken_list_border(bool p_brass, bool p_light) {
+	if (p_brass) {
+		// Borde sutil no cobrizo: un tono más oscuro que color_brass_panel (#201c17)
+		return color_brass_panel().darkened(0.30f);
+	}
+	if (p_light) {
+		return Color::html("#cfd5e0");
+	}
+	// Borde sutil no cobrizo: un tono más oscuro que color_panel (#23262e)
+	return color_panel().darkened(0.32f);
+}
+
+Ref<StyleBoxFlat> ClockGearsTheme::make_sunken_list_stylebox(float p_scale) {
+	const String tid = singleton ? singleton->get_active_theme_id() : String("dark");
+	const bool is_brass = (tid == "brass");
+	const bool is_light = (tid == "light") || (singleton && singleton->is_light_mode() && !is_brass);
+	const int r6 = get_container_corner_radius(p_scale);
+	const int m6 = int(6 * p_scale);
+
+	Ref<StyleBoxFlat> sb;
+	if (is_brass) {
+		Ref<ClockGearsBrassStyleBox> bsb;
+		bsb.instantiate();
+		bsb->set_sunken_style(true);
+		sb = bsb;
+	} else {
+		sb.instantiate();
+	}
+	sb->set_anti_aliased(true);
+	sb->set_bg_color(color_sunken_list_bg(is_brass, is_light));
+	sb->set_corner_radius_all(r6);
+	sb->set_border_width_all(1);
+	sb->set_border_color(color_sunken_list_border(is_brass, is_light));
+	sb->set_content_margin_all(m6);
+	return sb;
+}
+
 Color ClockGearsTheme::get_active_container_border_color() {
 	const String tid = singleton ? singleton->get_active_theme_id() : String("dark");
 	const bool is_brass = (tid == "brass");
@@ -532,15 +581,23 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_stylebox("down_background_disabled", "SpinBox", sb_dn_dis);
 	th->set_constant("buttons_vertical_separation", "SpinBox", 2);
 
-	// 5. ItemList & Tree (6px, borde 1px, estados hovered/selected/focus)
+	// 5. ItemList, Tree & "ClockGearsSunkenList" ("lista hundida": fondo más oscuro, borde sutil 1px no cobrizo, 6px radio y 6px margen)
+	const Color sunken_bg = color_sunken_list_bg(false, p_light);
+	const Color sunken_bd = color_sunken_list_border(false, p_light);
+	th->set_color("sunken_list_bg", "ClockGears", sunken_bg);
+	th->set_color("sunken_list_border", "ClockGears", sunken_bd);
+	th->set_constant("sunken_list_border_width", "ClockGears", 1);
+	th->set_constant("sunken_list_corner_radius", "ClockGears", r6);
+	th->set_constant("sunken_list_margin", "ClockGears", m6);
+
 	Ref<StyleBoxFlat> list_bg;
 	list_bg.instantiate();
 	list_bg->set_anti_aliased(true);
-	list_bg->set_bg_color(p_light ? Color::html("#ffffff") : Color::html("#17191f"));
+	list_bg->set_bg_color(sunken_bg);
 	list_bg->set_corner_radius_all(r6);
 	list_bg->set_border_width_all(1);
-	list_bg->set_border_color(border_subtle);
-	list_bg->set_content_margin_all(m8);
+	list_bg->set_border_color(sunken_bd);
+	list_bg->set_content_margin_all(m6);
 
 	Ref<StyleBoxFlat> item_sel;
 	item_sel.instantiate();
@@ -577,11 +634,22 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_stylebox("panel", "Tree", list_bg);
 	th->set_stylebox("focus", "Tree", btn_focus);
 	th->set_stylebox("hovered", "Tree", item_hov);
+	th->set_stylebox("hovered_selected", "Tree", item_hov_sel);
+	th->set_stylebox("hovered_selected_focus", "Tree", item_hov_sel);
 	th->set_stylebox("selected", "Tree", item_sel);
 	th->set_stylebox("selected_focus", "Tree", item_sel);
 	th->set_color("font_color", "Tree", txt);
 	th->set_color("font_selected_color", "Tree", p_light ? txt : Color::html("#ffffff"));
 	th->set_color("guide_color", "Tree", Color(1, 1, 1, 0.05f));
+
+	th->set_type_variation("ClockGearsSunkenList", "Tree");
+	th->set_stylebox("panel", "ClockGearsSunkenList", list_bg);
+	th->set_stylebox("focus", "ClockGearsSunkenList", btn_focus);
+	th->set_stylebox("hovered", "ClockGearsSunkenList", item_hov);
+	th->set_stylebox("hovered_selected", "ClockGearsSunkenList", item_hov_sel);
+	th->set_stylebox("hovered_selected_focus", "ClockGearsSunkenList", item_hov_sel);
+	th->set_stylebox("selected", "ClockGearsSunkenList", item_sel);
+	th->set_stylebox("selected_focus", "ClockGearsSunkenList", item_sel);
 
 	// 6. TabContainer, TabBar & ClockGearsTabButton (activa con acento + redondeado arriba; inactivas apagadas)
 	Ref<StyleBoxFlat> tab_sel;
@@ -1122,15 +1190,23 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_stylebox("down_background_disabled", "SpinBox", sb_dn_dis);
 	th->set_constant("buttons_vertical_separation", "SpinBox", 2);
 
-	// 5. ItemList & Tree (selección con acento ámbar y resplandor en hover)
+	// 5. ItemList, Tree & "ClockGearsSunkenList" ("lista hundida": color de entrada más oscuro, borde sutil 1px no cobrizo, 6px radio y 6px margen)
+	const Color sunken_bg = color_sunken_list_bg(true, false);
+	const Color sunken_bd = color_sunken_list_border(true, false);
+	th->set_color("sunken_list_bg", "ClockGears", sunken_bg);
+	th->set_color("sunken_list_border", "ClockGears", sunken_bd);
+	th->set_constant("sunken_list_border_width", "ClockGears", 1);
+	th->set_constant("sunken_list_corner_radius", "ClockGears", r6);
+	th->set_constant("sunken_list_margin", "ClockGears", m6);
+
 	Ref<ClockGearsBrassStyleBox> list_bg;
 	list_bg.instantiate();
 	list_bg->set_anti_aliased(true);
-	list_bg->set_bg_color(Color::html("#15120f"));
+	list_bg->set_bg_color(sunken_bg);
 	list_bg->set_corner_radius_all(r6);
 	list_bg->set_border_width_all(1);
-	list_bg->set_border_color(Color(border_brass.r, border_brass.g, border_brass.b, 0.45f));
-	list_bg->set_content_margin_all(m8);
+	list_bg->set_border_color(sunken_bd);
+	list_bg->set_content_margin_all(m6);
 	list_bg->set_sunken_style(true);
 
 	Ref<ClockGearsBrassStyleBox> item_sel;
@@ -1172,11 +1248,22 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_stylebox("panel", "Tree", list_bg);
 	th->set_stylebox("focus", "Tree", btn_focus);
 	th->set_stylebox("hovered", "Tree", item_hov);
+	th->set_stylebox("hovered_selected", "Tree", item_hov_sel);
+	th->set_stylebox("hovered_selected_focus", "Tree", item_hov_sel);
 	th->set_stylebox("selected", "Tree", item_sel);
 	th->set_stylebox("selected_focus", "Tree", item_sel);
 	th->set_color("font_color", "Tree", txt);
 	th->set_color("font_selected_color", "Tree", txt_bright);
 	th->set_color("guide_color", "Tree", Color(accent.r, accent.g, accent.b, 0.12f));
+
+	th->set_type_variation("ClockGearsSunkenList", "Tree");
+	th->set_stylebox("panel", "ClockGearsSunkenList", list_bg);
+	th->set_stylebox("focus", "ClockGearsSunkenList", btn_focus);
+	th->set_stylebox("hovered", "ClockGearsSunkenList", item_hov);
+	th->set_stylebox("hovered_selected", "ClockGearsSunkenList", item_hov_sel);
+	th->set_stylebox("hovered_selected_focus", "ClockGearsSunkenList", item_hov_sel);
+	th->set_stylebox("selected", "ClockGearsSunkenList", item_sel);
+	th->set_stylebox("selected_focus", "ClockGearsSunkenList", item_sel);
 
 	// 6. TabContainer, TabBar & ClockGearsTabButton (degradado en pestañas, borde ámbar y transiciones <= 150 ms)
 	Ref<ClockGearsBrassStyleBox> tab_sel;
@@ -2411,6 +2498,7 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_border_width"), &ClockGearsTheme::get_container_border_width);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("get_container_stylebox", "scale", "margin_h", "margin_v", "variant"), &ClockGearsTheme::get_container_stylebox, DEFVAL(1.0f), DEFVAL(12), DEFVAL(12), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("get_sunken_list_stylebox", "scale"), &ClockGearsTheme::get_sunken_list_stylebox, DEFVAL(1.0f));
 
 	ADD_SIGNAL(MethodInfo("theme_changed", PropertyInfo(Variant::STRING, "theme_id")));
 }

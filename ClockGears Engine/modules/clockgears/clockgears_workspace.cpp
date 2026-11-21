@@ -1451,6 +1451,8 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 	maps_box->add_child(_make_section_header(CG_TR("ÁRBOL DE MAPAS"), false));
 
 	map_tree = memnew(Tree);
+	map_tree->set_name("ClockGearsMapTree");
+	map_tree->set_theme_type_variation("ClockGearsSunkenList");
 	map_tree->set_hide_root(true);
 	map_tree->set_columns(1);
 	map_tree->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -1461,6 +1463,7 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 	map_tree->connect("item_activated", callable_mp(this, &ClockGearsMapPanel::_on_map_activated));
 	map_tree->connect("item_mouse_selected", callable_mp(this, &ClockGearsMapPanel::_on_map_rmb_clicked));
 	maps_box->add_child(map_tree);
+	_apply_panel_styles();
 
 	TreeItem *root = map_tree->create_item();
 	root->set_text(0, "Mapas");
@@ -1534,6 +1537,10 @@ void ClockGearsMapPanel::_on_editor_settings_changed() {
 }
 
 void ClockGearsMapPanel::_apply_panel_styles() {
+	if (applying_panel_styles) {
+		return;
+	}
+	applying_panel_styles = true;
 	Ref<StyleBoxFlat> sb = ClockGearsTheme::make_container_stylebox(EDSCALE, 12, 12, 0);
 	if (tileset_panel) {
 		tileset_panel->set_meta("_cg_theme_managed_container", true);
@@ -1543,6 +1550,32 @@ void ClockGearsMapPanel::_apply_panel_styles() {
 		maps_panel->set_meta("_cg_theme_managed_container", true);
 		maps_panel->add_theme_style_override("panel", sb);
 	}
+	if (map_tree) {
+		map_tree->set_meta("_cg_theme_managed_list", true);
+		map_tree->add_theme_style_override("panel", ClockGearsTheme::make_sunken_list_stylebox(EDSCALE));
+		Ref<Theme> active_th = ClockGearsTheme::get_singleton() ? ClockGearsTheme::get_singleton()->get_active_theme() : Ref<Theme>();
+		if (active_th.is_valid()) {
+			const char *tree_sbs[5] = { "hovered", "hovered_selected", "hovered_selected_focus", "selected", "selected_focus" };
+			for (int i = 0; i < 5; i++) {
+				if (active_th->has_stylebox(StringName(tree_sbs[i]), SNAME("ClockGearsSunkenList"))) {
+					map_tree->add_theme_style_override(StringName(tree_sbs[i]), active_th->get_stylebox(StringName(tree_sbs[i]), SNAME("ClockGearsSunkenList")));
+				}
+			}
+			if (active_th->has_stylebox(SNAME("focus"), SNAME("Tree"))) {
+				map_tree->add_theme_style_override(SNAME("focus"), active_th->get_stylebox(SNAME("focus"), SNAME("Tree")));
+			}
+			if (active_th->has_color(SNAME("font_color"), SNAME("Tree"))) {
+				map_tree->add_theme_color_override(SNAME("font_color"), active_th->get_color(SNAME("font_color"), SNAME("Tree")));
+			}
+			if (active_th->has_color(SNAME("font_selected_color"), SNAME("Tree"))) {
+				map_tree->add_theme_color_override(SNAME("font_selected_color"), active_th->get_color(SNAME("font_selected_color"), SNAME("Tree")));
+			}
+			if (active_th->has_color(SNAME("guide_color"), SNAME("Tree"))) {
+				map_tree->add_theme_color_override(SNAME("guide_color"), active_th->get_color(SNAME("guide_color"), SNAME("Tree")));
+			}
+		}
+	}
+	applying_panel_styles = false;
 }
 
 void ClockGearsMapPanel::_notification(int p_what) {
