@@ -30,7 +30,7 @@ private:
 	CheckBox *dim_inactive_layers_check = nullptr;
 	SpinBox *inactive_layer_opacity_spin = nullptr;
 	OptionButton *editor_theme_opt = nullptr;
-	CheckBox *glow_effects_check = nullptr;
+	OptionButton *glow_effects_opt = nullptr;
 
 	// Tab 2: Exportación
 	LineEdit *windows_path_edit = nullptr;
@@ -44,13 +44,16 @@ private:
 	void _on_win_preset_selected(int p_idx);
 	void _on_dim_inactive_toggled(bool p_pressed);
 	void _on_editor_theme_selected(int p_idx);
+	void _on_glow_effects_selected(int p_idx);
 	void _on_export_now_pressed();
 	void _on_dialog_confirmed();
 	void _load_settings();
 	void _save_settings();
+	void _refresh_pref_theme_accents();
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
 	void open_preferences();
@@ -61,6 +64,9 @@ public:
 	String get_selected_editor_theme_id() const;
 	bool select_editor_theme_by_id(const String &p_theme_id);
 	OptionButton *get_editor_theme_option_button() const { return editor_theme_opt; }
+	int get_glow_effects_level_selected() const;
+	bool select_glow_effects_level(int p_level);
+	OptionButton *get_glow_effects_option_button() const { return glow_effects_opt; }
 	bool is_glow_effects_checked() const;
 	void set_glow_effects_checked(bool p_enabled);
 	void apply_and_save_preferences();

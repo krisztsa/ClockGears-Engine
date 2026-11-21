@@ -8,18 +8,6 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/panel_container.h"
 #include "scene/main/window.h"
-#include "scene/resources/style_box_flat.h"
-
-static Ref<StyleBoxFlat> _pref_card_style() {
-	Ref<StyleBoxFlat> style;
-	style.instantiate();
-	style->set_bg_color(Color(0.11, 0.12, 0.14));
-	style->set_corner_radius_all(6);
-	style->set_content_margin_all(10);
-	style->set_border_width_all(1);
-	style->set_border_color(Color(1, 1, 1, 0.08));
-	return style;
-}
 
 void ClockGearsPreferencesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("open_preferences"), &ClockGearsPreferencesDialog::open_preferences);
@@ -30,6 +18,9 @@ void ClockGearsPreferencesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_selected_editor_theme_id"), &ClockGearsPreferencesDialog::get_selected_editor_theme_id);
 	ClassDB::bind_method(D_METHOD("select_editor_theme_by_id", "theme_id"), &ClockGearsPreferencesDialog::select_editor_theme_by_id);
 	ClassDB::bind_method(D_METHOD("get_editor_theme_option_button"), &ClockGearsPreferencesDialog::get_editor_theme_option_button);
+	ClassDB::bind_method(D_METHOD("get_glow_effects_level_selected"), &ClockGearsPreferencesDialog::get_glow_effects_level_selected);
+	ClassDB::bind_method(D_METHOD("select_glow_effects_level", "level"), &ClockGearsPreferencesDialog::select_glow_effects_level);
+	ClassDB::bind_method(D_METHOD("get_glow_effects_option_button"), &ClockGearsPreferencesDialog::get_glow_effects_option_button);
 	ClassDB::bind_method(D_METHOD("is_glow_effects_checked"), &ClockGearsPreferencesDialog::is_glow_effects_checked);
 	ClassDB::bind_method(D_METHOD("set_glow_effects_checked", "enabled"), &ClockGearsPreferencesDialog::set_glow_effects_checked);
 	ClassDB::bind_method(D_METHOD("apply_and_save_preferences"), &ClockGearsPreferencesDialog::apply_and_save_preferences);
@@ -188,8 +179,13 @@ void ClockGearsPreferencesDialog::_load_settings() {
 		}
 		editor_theme_opt->select(found_idx);
 	}
-	if (glow_effects_check) {
-		glow_effects_check->set_pressed(bool(ps->get_setting("clockgears/editor/glow_effects", true)));
+	if (glow_effects_opt) {
+		const int glow_lvl = ClockGearsTheme::get_glow_effects_level();
+		int idx = glow_effects_opt->get_item_index(glow_lvl);
+		if (idx < 0) {
+			idx = glow_effects_opt->get_item_index(int(ClockGearsTheme::GLOW_SOFT));
+		}
+		glow_effects_opt->select(MAX(0, idx));
 	}
 }
 
@@ -239,8 +235,11 @@ void ClockGearsPreferencesDialog::_save_settings() {
 			ClockGearsTheme::get_singleton()->set_active_theme_id(th_id);
 		}
 	}
-	if (glow_effects_check) {
-		ps->set_setting("clockgears/editor/glow_effects", glow_effects_check->is_pressed());
+	if (glow_effects_opt) {
+		const int lvl = get_glow_effects_level_selected();
+		ps->set_setting("clockgears/editor/glow_effects_level", lvl);
+		ps->set_setting("clockgears/editor/glow_effects", lvl != int(ClockGearsTheme::GLOW_DISABLED));
+		ClockGearsTheme::set_glow_effects_level(lvl);
 	}
 
 	ps->save();
@@ -326,13 +325,73 @@ void ClockGearsPreferencesDialog::set_inactive_layer_opacity_value(int p_pct) {
 	}
 }
 
+void ClockGearsPreferencesDialog::_on_glow_effects_selected(int p_idx) {
+	if (!glow_effects_opt || p_idx < 0 || p_idx >= glow_effects_opt->get_item_count()) {
+		return;
+	}
+	const int lvl = CLAMP(glow_effects_opt->get_item_id(p_idx), int(ClockGearsTheme::GLOW_DISABLED), int(ClockGearsTheme::GLOW_INTENSE));
+	ClockGearsTheme::set_glow_effects_level(lvl);
+}
+
+int ClockGearsPreferencesDialog::get_glow_effects_level_selected() const {
+	if (!glow_effects_opt) {
+		return int(ClockGearsTheme::GLOW_SOFT);
+	}
+	const int sel = glow_effects_opt->get_selected();
+	if (sel >= 0 && sel < glow_effects_opt->get_item_count()) {
+		return CLAMP(glow_effects_opt->get_item_id(sel), int(ClockGearsTheme::GLOW_DISABLED), int(ClockGearsTheme::GLOW_INTENSE));
+	}
+	return int(ClockGearsTheme::GLOW_SOFT);
+}
+
+bool ClockGearsPreferencesDialog::select_glow_effects_level(int p_level) {
+	const int lvl = CLAMP(p_level, int(ClockGearsTheme::GLOW_DISABLED), int(ClockGearsTheme::GLOW_INTENSE));
+	if (glow_effects_opt) {
+		int idx = glow_effects_opt->get_item_index(lvl);
+		if (idx >= 0) {
+			glow_effects_opt->select(idx);
+		}
+	}
+	ClockGearsTheme::set_glow_effects_level(lvl);
+	return true;
+}
+
 bool ClockGearsPreferencesDialog::is_glow_effects_checked() const {
-	return glow_effects_check ? glow_effects_check->is_pressed() : true;
+	return get_glow_effects_level_selected() != int(ClockGearsTheme::GLOW_DISABLED);
 }
 
 void ClockGearsPreferencesDialog::set_glow_effects_checked(bool p_enabled) {
-	if (glow_effects_check) {
-		glow_effects_check->set_pressed(p_enabled);
+	select_glow_effects_level(p_enabled ? int(ClockGearsTheme::GLOW_SOFT) : int(ClockGearsTheme::GLOW_DISABLED));
+}
+
+void ClockGearsPreferencesDialog::_refresh_pref_theme_accents() {
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, EDSCALE);
+	Vector<Node *> stack;
+	stack.push_back(this);
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		for (int i = 0; i < n->get_child_count(); i++) {
+			stack.push_back(n->get_child(i));
+		}
+		if (Label *lb = Object::cast_to<Label>(n)) {
+			if (lb->has_meta("_cg_pref_section_title")) {
+				lb->add_theme_color_override("font_color", tk.accent_neon);
+			}
+		}
+	}
+}
+
+void ClockGearsPreferencesDialog::_notification(int p_what) {
+	if (p_what == NOTIFICATION_READY) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(this);
+		}
+		_refresh_pref_theme_accents();
+	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		_refresh_pref_theme_accents();
 	}
 }
 
@@ -370,6 +429,9 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	set_title(CG_TR("Preferencias del Proyecto - ClockGears Engine"));
 	set_min_size(Size2(520, 380) * EDSCALE);
 	set_ok_button_text(CG_TR("Guardar y Aplicar"));
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 
 	VBoxContainer *main_vb = memnew(VBoxContainer);
 	main_vb->add_theme_constant_override("separation", 8);
@@ -396,7 +458,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 
 	// Tarjeta destacada arriba del todo (visible sin hacer scroll): Tema visual del editor
 	PanelContainer *theme_card = memnew(PanelContainer);
-	theme_card->add_theme_style_override("panel", _pref_card_style());
+	theme_card->set_theme_type_variation("ClockGearsContainer");
 	res_tab->add_child(theme_card);
 
 	VBoxContainer *theme_box = memnew(VBoxContainer);
@@ -404,7 +466,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	theme_card->add_child(theme_box);
 
 	Label *theme_title = memnew(Label(CG_TR("Apariencia y Tema del Editor:")));
-	theme_title->add_theme_color_override("font_color", Color(0.95, 0.8, 0.35));
+	theme_title->set_meta("_cg_pref_section_title", true);
 	theme_box->add_child(theme_title);
 
 	HBoxContainer *theme_hb = memnew(HBoxContainer);
@@ -424,13 +486,22 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	theme_hb->add_child(editor_theme_opt);
 	theme_box->add_child(theme_hb);
 
-	glow_effects_check = memnew(CheckBox(CG_TR("Efectos de brillo")));
-	glow_effects_check->set_pressed(true);
-	glow_effects_check->set_tooltip_text(CG_TR("Activa o desactiva el brillo animado y las partículas en la pantalla de carga y la interfaz."));
-	theme_box->add_child(glow_effects_check);
+	HBoxContainer *glow_hb = memnew(HBoxContainer);
+	glow_hb->add_theme_constant_override("separation", 8);
+	glow_hb->add_child(memnew(Label(CG_TR("Efectos de brillo (Al instante):"))));
+	glow_effects_opt = memnew(OptionButton);
+	glow_effects_opt->add_item(CG_TR("Desactivado (Bordes cobrizos sin halo)"), int(ClockGearsTheme::GLOW_DISABLED));
+	glow_effects_opt->add_item(CG_TR("Suave (Por defecto)"), int(ClockGearsTheme::GLOW_SOFT));
+	glow_effects_opt->add_item(CG_TR("Intenso (Halo más marcado en el elemento activo)"), int(ClockGearsTheme::GLOW_INTENSE));
+	glow_effects_opt->select(1);
+	glow_effects_opt->set_tooltip_text(CG_TR("Ajusta al instante el halo cobrizo y la intensidad del brillo en la interfaz sin reiniciar."));
+	glow_effects_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	glow_effects_opt->connect(SceneStringName(item_selected), callable_mp(this, &ClockGearsPreferencesDialog::_on_glow_effects_selected));
+	glow_hb->add_child(glow_effects_opt);
+	theme_box->add_child(glow_hb);
 
 	PanelContainer *res_card = memnew(PanelContainer);
-	res_card->add_theme_style_override("panel", _pref_card_style());
+	res_card->set_theme_type_variation("ClockGearsContainer");
 	res_tab->add_child(res_card);
 
 	VBoxContainer *res_box = memnew(VBoxContainer);
@@ -438,7 +509,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	res_card->add_child(res_box);
 
 	Label *res_title = memnew(Label(CG_TR("Resolución Interna del Juego (Viewport):")));
-	res_title->add_theme_color_override("font_color", Color(0.95, 0.8, 0.35));
+	res_title->set_meta("_cg_pref_section_title", true);
 	res_box->add_child(res_title);
 
 	HBoxContainer *preset_hb = memnew(HBoxContainer);
@@ -555,7 +626,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 
 	// Tarjeta de edición de capas en el editor
 	PanelContainer *layer_edit_card = memnew(PanelContainer);
-	layer_edit_card->add_theme_style_override("panel", _pref_card_style());
+	layer_edit_card->set_theme_type_variation("ClockGearsContainer");
 	res_tab->add_child(layer_edit_card);
 
 	VBoxContainer *layer_edit_box = memnew(VBoxContainer);
@@ -563,7 +634,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	layer_edit_card->add_child(layer_edit_box);
 
 	Label *le_title = memnew(Label(CG_TR("Edición de Capas en el Mapa (Solo Editor):")));
-	le_title->add_theme_color_override("font_color", Color(0.95f, 0.8f, 0.35f));
+	le_title->set_meta("_cg_pref_section_title", true);
 	layer_edit_box->add_child(le_title);
 
 	dim_inactive_layers_check = memnew(CheckBox(CG_TR("Atenuar capas inactivas al editar (capa actual, eventos y jugador quedan al 100 %)")));
@@ -599,7 +670,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	exp_scroll->add_child(exp_tab);
 
 	PanelContainer *exp_card = memnew(PanelContainer);
-	exp_card->add_theme_style_override("panel", _pref_card_style());
+	exp_card->set_theme_type_variation("ClockGearsContainer");
 	exp_tab->add_child(exp_card);
 
 	VBoxContainer *exp_box = memnew(VBoxContainer);
@@ -607,7 +678,7 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	exp_card->add_child(exp_box);
 
 	Label *exp_title = memnew(Label(CG_TR("Rutas de Salida para Compilación:")));
-	exp_title->add_theme_color_override("font_color", Color(0.95, 0.8, 0.35));
+	exp_title->set_meta("_cg_pref_section_title", true);
 	exp_box->add_child(exp_title);
 
 	HBoxContainer *win_hb = memnew(HBoxContainer);
@@ -634,7 +705,9 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	and_hb->add_child(android_path_edit);
 	exp_box->add_child(and_hb);
 
-	exp_box->add_child(memnew(HSeparator));
+	HSeparator *exp_sep = memnew(HSeparator);
+	exp_sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	exp_box->add_child(exp_sep);
 
 	HBoxContainer *build_hb = memnew(HBoxContainer);
 	build_hb->add_child(memnew(Label(CG_TR("Tipo de Compilación:"))));
