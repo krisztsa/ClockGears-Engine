@@ -209,7 +209,6 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 	// Medir ancho real ocupado por la parte rellena de la barra de progreso ámbar, degradado horizontal, halo exterior y cabeza con destello.
 	int filled_bar_px = 0;
 	int first_fill_x = -1;
-	int last_fill_x = -1;
 	const int bar_sample_y = CLAMP(metrics.progress_bar_rect.position.y + metrics.progress_bar_rect.size.y / 2, 0, img->get_height() - 1);
 	const SplashPalette pal = get_splash_palette(p_brass);
 	for (int x = metrics.progress_bar_rect.position.x; x < metrics.progress_bar_rect.get_end().x; x++) {
@@ -219,21 +218,21 @@ Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages,
 			if (first_fill_x < 0) {
 				first_fill_x = x;
 			}
-			last_fill_x = x;
 		}
 	}
 
 	float fill_left_luma = 0.0f;
 	float fill_right_luma = 0.0f;
-	if (first_fill_x >= 0 && last_fill_x > first_fill_x + 8) {
+	const int actual_fill_end_x = CLAMP((int)Math::round(metrics.head_x), metrics.progress_bar_rect.position.x, metrics.progress_bar_rect.get_end().x - 1);
+	if (first_fill_x >= 0 && actual_fill_end_x > first_fill_x + 8) {
 		const int sample_l = first_fill_x + 4;
-		const int sample_r = MAX(sample_l + 2, last_fill_x - 4);
+		const int sample_r = MAX(sample_l + 2, actual_fill_end_x - 3);
 		fill_left_luma = img->get_pixel(CLAMP(sample_l, 0, img->get_width() - 1), bar_sample_y).get_luminance();
 		fill_right_luma = img->get_pixel(CLAMP(sample_r, 0, img->get_width() - 1), bar_sample_y).get_luminance();
 	}
 
-	const int halo_sample_x = (first_fill_x >= 0 && last_fill_x >= first_fill_x)
-			? ((first_fill_x + last_fill_x) / 2)
+	const int halo_sample_x = (first_fill_x >= 0 && actual_fill_end_x >= first_fill_x)
+			? ((first_fill_x + actual_fill_end_x) / 2)
 			: (metrics.progress_bar_rect.position.x + 20);
 	const int halo_near_y = CLAMP(metrics.progress_bar_rect.get_end().y + 3, 0, img->get_height() - 1);
 	const int halo_far_y = CLAMP(metrics.progress_bar_rect.get_end().y + 42, 0, img->get_height() - 1);
@@ -312,8 +311,8 @@ Dictionary ClockGearsTheme::simulate_boot_splash_particles(int p_frames, int p_s
 	int sparks_at_burst = 0;
 
 	for (int f = 0; f < frames; f++) {
-		const float prog = (float)f / (float)MAX(1, frames - 1);
-		const bool completed = (f == frames - 1);
+		const bool completed = (f == frames - 1) && (frames >= 60);
+		const float prog = completed ? 1.0f : CLAMP((float)f / (float)MAX(60, frames - 1), 0.0f, 0.72f);
 		ClockGearsBootSplash::step_particles(1.0f / 60.0f, prog, completed, sz, false, p_simulated_frame_ms);
 		const Dictionary st = ClockGearsBootSplash::get_particle_state();
 		const int tot = (int)st.get("active_total", 0);
