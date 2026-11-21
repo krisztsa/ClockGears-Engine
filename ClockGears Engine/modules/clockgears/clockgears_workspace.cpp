@@ -313,7 +313,7 @@ void ClockGearsTilePalette::_draw_palette() {
 	}
 
 	if (tileset_texture.is_null()) {
-		const String msg = empty_message.is_empty() ? CG_TR("Arrastra un tileset 32x32 o pulsa Cargar") : empty_message;
+		const String msg = empty_message.is_empty() ? CG_TR("Arrastra un tileset 32x32\no pulsa Cargar") : empty_message;
 		PackedStringArray lines = msg.split("\n");
 		float total_h = lines.size() * (font_size + 4);
 		float cur_y = (size.y - total_h) * 0.5f + font->get_ascent(font_size);
@@ -1437,7 +1437,7 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 	vsplit->set_name("ClockGearsLeftVSplit");
 	vsplit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	vsplit->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	vsplit->add_theme_constant_override("separation", 8);
+	vsplit->add_theme_constant_override("separation", 6);
 	// Both halves expand, so offset 0 places the divider exactly in the middle.
 	vsplit->set_split_offset(0);
 	add_child(vsplit);
@@ -1596,7 +1596,7 @@ void ClockGearsMapPanel::_apply_panel_styles() {
 		return;
 	}
 	applying_panel_styles = true;
-	Ref<StyleBoxFlat> sb = ClockGearsTheme::make_container_stylebox(EDSCALE, 12, 12, 0);
+	Ref<StyleBoxFlat> sb = ClockGearsTheme::make_container_stylebox(EDSCALE, 12, 10, 0);
 	if (tileset_panel) {
 		tileset_panel->set_meta("_cg_theme_managed_container", true);
 		tileset_panel->add_theme_style_override("panel", sb);

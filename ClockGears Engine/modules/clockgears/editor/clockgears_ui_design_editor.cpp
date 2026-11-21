@@ -55,8 +55,7 @@ static void s_make_rounded_action_btn(Button *p_btn) {
 	if (!p_btn) {
 		return;
 	}
-	p_btn->set_clip_text(true);
-	p_btn->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	p_btn->set_theme_type_variation("Button");
 }
 
 static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
@@ -1337,11 +1336,16 @@ void ClockGearsDesignCardRow::begin_inline_rename() {
 
 void ClockGearsDesignCardRow::_notification(int p_what) {
 	if (p_what == NOTIFICATION_THEME_CHANGED) {
+		if (has_meta("_cg_in_theme_refresh")) {
+			return;
+		}
+		set_meta("_cg_in_theme_refresh", true);
 		sb_normal.unref();
 		sb_hover.unref();
 		sb_selected.unref();
 		sb_drop_child.unref();
 		update_visual_state(elem_selected);
+		remove_meta("_cg_in_theme_refresh");
 		queue_redraw();
 		return;
 	}

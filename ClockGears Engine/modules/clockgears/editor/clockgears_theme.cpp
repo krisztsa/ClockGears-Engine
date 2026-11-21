@@ -61,20 +61,34 @@ void ClockGearsBrassStyleBox::draw(RID p_canvas_item, const Rect2 &p_rect) const
 	}
 	if (is_header_gradient_line) {
 		const float cy = Math::round(p_rect.position.y + p_rect.size.y * 0.5f);
-		const int segs = 16;
-		const float total_w = MAX(1.0f, p_rect.size.x);
-		const float seg_w = total_w / float(segs);
-		for (int i = 0; i < segs; i++) {
-			const float t = float(i) / float(segs - 1);
-			const float alpha = header_gradient_color.a * (1.0f - t) * (1.0f - t * 0.45f);
-			if (alpha <= 0.01f) {
-				continue;
-			}
-			const Color c(header_gradient_color.r, header_gradient_color.g, header_gradient_color.b, alpha);
-			const float x0 = p_rect.position.x + float(i) * seg_w;
-			const float x1 = (i == segs - 1) ? (p_rect.position.x + total_w) : (x0 + seg_w + 0.5f);
-			rs->canvas_item_add_line(p_canvas_item, Point2(x0, cy), Point2(x1, cy), c, 1.5f);
-		}
+		const float x0 = p_rect.position.x;
+		const float x1 = p_rect.position.x + MAX(1.0f, p_rect.size.x);
+		const float xmid = x0 + (x1 - x0) * 0.55f;
+		const Color c0(header_gradient_color.r, header_gradient_color.g, header_gradient_color.b, header_gradient_color.a);
+		const Color cm(header_gradient_color.r, header_gradient_color.g, header_gradient_color.b, header_gradient_color.a * 0.38f);
+		const Color c1(header_gradient_color.r, header_gradient_color.g, header_gradient_color.b, 0.0f);
+		Vector<Point2> pts1;
+		pts1.push_back(Point2(x0, cy));
+		pts1.push_back(Point2(xmid, cy));
+		pts1.push_back(Point2(xmid, cy + 1.5f));
+		pts1.push_back(Point2(x0, cy + 1.5f));
+		Vector<Color> cols1;
+		cols1.push_back(c0);
+		cols1.push_back(cm);
+		cols1.push_back(cm);
+		cols1.push_back(c0);
+		rs->canvas_item_add_polygon(p_canvas_item, pts1, cols1);
+		Vector<Point2> pts2;
+		pts2.push_back(Point2(xmid, cy));
+		pts2.push_back(Point2(x1, cy));
+		pts2.push_back(Point2(x1, cy + 1.5f));
+		pts2.push_back(Point2(xmid, cy + 1.5f));
+		Vector<Color> cols2;
+		cols2.push_back(cm);
+		cols2.push_back(c1);
+		cols2.push_back(c1);
+		cols2.push_back(cm);
+		rs->canvas_item_add_polygon(p_canvas_item, pts2, cols2);
 		return;
 	}
 	if (is_gear_separator) {
@@ -1312,7 +1326,7 @@ static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_b
 	tab_unsel->set_corner_radius(CORNER_TOP_RIGHT, r6);
 	tab_unsel->set_border_width_all(1);
 	tab_unsel->set_border_color(tk.border_subtle);
-	tab_unsel->set_content_margin_individual(m12, m8, m12, m8);
+	tab_unsel->set_content_margin_individual(m12 + int(4 * p_scale), m8, m12, m8);
 	if (p_brass) {
 		tab_unsel->set_gradient_mode(ClockGearsBrassStyleBox::GRADIENT_PANEL);
 	}

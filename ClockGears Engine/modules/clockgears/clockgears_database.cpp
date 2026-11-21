@@ -5733,7 +5733,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	set_title(CG_DB_TR("Base de Datos - ClockGears Engine"));
 	set_wrap_controls(false);
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
-	set_min_size(Size2i(960, 600));
+	set_min_size(Size2i(920, 520));
 	connect("size_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_window_size_changed));
 
 	_init_chapters();
