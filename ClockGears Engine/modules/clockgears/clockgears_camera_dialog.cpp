@@ -12,9 +12,7 @@
 
 #define CG_CAM_TR(m_str) String::utf8(m_str)
 
-static Ref<StyleBoxFlat> _camera_card_style() {
-	return ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 8, 0);
-}
+// Contenedores y recuadro de vista previa heredan estilos ClockGearsContainer / ClockGearsPreviewFrame del tema.
 
 // ============================================================================
 // ClockGearsCameraPreviewCanvas
@@ -407,7 +405,7 @@ ClockGearsCameraDialog::ClockGearsCameraDialog() {
 
 	// 1. Tarjeta de Vista Previa del Viewport
 	PanelContainer *prev_card = memnew(PanelContainer);
-	prev_card->add_theme_style_override("panel", _camera_card_style());
+	prev_card->set_theme_type_variation("ClockGearsPreviewFrame");
 	main_vb->add_child(prev_card);
 
 	VBoxContainer *prev_box = memnew(VBoxContainer);
@@ -418,13 +416,12 @@ ClockGearsCameraDialog::ClockGearsCameraDialog() {
 	prev_box->add_child(preview_canvas);
 
 	lbl_preview_info = memnew(Label(CG_CAM_TR("Área visible del juego...")));
-	lbl_preview_info->add_theme_color_override("font_color", Color(0.3f, 0.85f, 1.0f));
 	lbl_preview_info->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	prev_box->add_child(lbl_preview_info);
 
 	// 2. Tarjeta de Controles y Parámetros
 	PanelContainer *ctrl_card = memnew(PanelContainer);
-	ctrl_card->add_theme_style_override("panel", _camera_card_style());
+	ctrl_card->set_theme_type_variation("ClockGearsContainer");
 	main_vb->add_child(ctrl_card);
 
 	VBoxContainer *ctrl_box = memnew(VBoxContainer);
@@ -523,7 +520,9 @@ ClockGearsCameraDialog::ClockGearsCameraDialog() {
 
 	ctrl_box->add_child(cam_opts_row);
 
-	ctrl_box->add_child(memnew(HSeparator));
+	HSeparator *cam_sep = memnew(HSeparator);
+	cam_sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	ctrl_box->add_child(cam_sep);
 
 	// Modo de Pantalla (Punto 3)
 	HBoxContainer *screen_mode_row = memnew(HBoxContainer);
@@ -539,9 +538,14 @@ ClockGearsCameraDialog::ClockGearsCameraDialog() {
 	screen_mode_row->add_child(opt_screen_mode);
 	ctrl_box->add_child(screen_mode_row);
 
-	Label *lbl_fs_hint = memnew(Label(CG_CAM_TR("💡 Atajo de Pantalla Completa: pulsa F11 o Alt+Enter en cualquier momento durante la partida.")));
-	lbl_fs_hint->add_theme_color_override("font_color", Color(0.85f, 0.85f, 0.55f));
+	Label *lbl_fs_hint = memnew(Label(CG_CAM_TR("Atajo de Pantalla Completa: pulsa F11 o Alt+Enter en cualquier momento durante la partida.")));
 	ctrl_box->add_child(lbl_fs_hint);
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 }
 
 ClockGearsCameraDialog::~ClockGearsCameraDialog() {

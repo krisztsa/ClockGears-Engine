@@ -772,62 +772,6 @@ void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scal
 	}
 
 	// Estilo compacto redondeado (esquinas 6px, borde 1px) coherente con el tema
-	const int r6 = int(6 * s);
-	const Color accent = ClockGearsTheme::color_accent_amber();
-
-	Ref<StyleBoxFlat> sb_compact;
-	sb_compact.instantiate();
-	sb_compact->set_anti_aliased(true);
-	sb_compact->set_bg_color(Color::html("#2a2e38"));
-	sb_compact->set_corner_radius_all(r6);
-	sb_compact->set_border_width_all(1);
-	sb_compact->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.14f));
-	sb_compact->set_content_margin_individual(int(5 * s), int(2 * s), int(5 * s), int(2 * s));
-
-	Ref<StyleBoxFlat> sb_compact_hover = sb_compact->duplicate();
-	sb_compact_hover->set_bg_color(Color::html("#353b48"));
-	sb_compact_hover->set_border_color(Color(accent.r, accent.g, accent.b, 0.65f));
-
-	Ref<StyleBoxFlat> sb_compact_pressed = sb_compact->duplicate();
-	sb_compact_pressed->set_bg_color(Color(0.24f, 0.20f, 0.14f, 1.0f));
-	sb_compact_pressed->set_border_color(accent);
-
-	Ref<StyleBoxFlat> sb_compact_hover_pressed = sb_compact_pressed->duplicate();
-	sb_compact_hover_pressed->set_bg_color(Color(0.29f, 0.24f, 0.16f, 1.0f));
-
-	Ref<StyleBoxFlat> sb_icon_compact = sb_compact->duplicate();
-	sb_icon_compact->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
-	Ref<StyleBoxFlat> sb_icon_hover = sb_compact_hover->duplicate();
-	sb_icon_hover->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
-	Ref<StyleBoxFlat> sb_icon_pressed = sb_compact_pressed->duplicate();
-	sb_icon_pressed->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
-	Ref<StyleBoxFlat> sb_icon_hover_pressed = sb_compact_hover_pressed->duplicate();
-	sb_icon_hover_pressed->set_content_margin_individual(int(4 * s), int(2 * s), int(4 * s), int(2 * s));
-
-	// Estilo con acento para "O/X/★" (modo más importante)
-	Ref<StyleBoxFlat> sb_pass_norm = sb_compact->duplicate();
-	sb_pass_norm->set_bg_color(Color(0.21f, 0.18f, 0.13f, 1.0f));
-	sb_pass_norm->set_border_color(Color(accent.r, accent.g, accent.b, 0.55f));
-	sb_pass_norm->set_content_margin_individual(int(10 * s), int(3 * s), int(10 * s), int(3 * s));
-
-	Ref<StyleBoxFlat> sb_pass_hover = sb_pass_norm->duplicate();
-	sb_pass_hover->set_bg_color(Color(0.28f, 0.23f, 0.15f, 1.0f));
-	sb_pass_hover->set_border_color(accent);
-
-	Ref<StyleBoxFlat> sb_pass_pressed = sb_pass_norm->duplicate();
-	sb_pass_pressed->set_bg_color(Color(accent.r, accent.g, accent.b, 0.28f));
-	sb_pass_pressed->set_border_color(accent);
-
-	Ref<StyleBoxFlat> sb_pass_hover_pressed = sb_pass_pressed->duplicate();
-	sb_pass_hover_pressed->set_bg_color(Color(accent.r, accent.g, accent.b, 0.36f));
-
-	auto apply_compact_styles = [&](Control *p_ctrl, const Ref<StyleBoxFlat> &p_norm, const Ref<StyleBoxFlat> &p_hov, const Ref<StyleBoxFlat> &p_prs, const Ref<StyleBoxFlat> &p_hprs) {
-		p_ctrl->add_theme_style_override("normal", p_norm);
-		p_ctrl->add_theme_style_override("hover", p_hov);
-		p_ctrl->add_theme_style_override("pressed", p_prs);
-		p_ctrl->add_theme_style_override("hover_pressed", p_hprs);
-	};
-
 	// Reordenar árbol: a) Fila superior -> b) Hoja -> c) Estado -> d) Modos secundarios
 	if (top_row_1) {
 		top_row_1->add_theme_constant_override("separation", int(4 * s));
@@ -851,20 +795,20 @@ void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scal
 		bp->set_custom_minimum_size(Size2(0, int(32 * s)));
 		bp->set_tooltip_text(CG_TP_TR("Controla las colisiones: O pasa, X bloquea, ★ se dibuja por encima del jugador"));
 		bp->set_visible(metadata_editing_enabled);
-		apply_compact_styles(bp, sb_pass_norm, sb_pass_hover, sb_pass_pressed, sb_pass_hover_pressed);
+		bp->set_theme_type_variation("ClockGearsTabButton");
 	}
 
 	if (atlas_selector) {
 		atlas_selector->set_h_size_flags(SIZE_EXPAND_FILL);
 		atlas_selector->set_v_size_flags(SIZE_SHRINK_CENTER);
 		atlas_selector->set_custom_minimum_size(Size2(int(90 * s), int(28 * s)));
-		apply_compact_styles(atlas_selector, sb_compact, sb_compact_hover, sb_compact_pressed, sb_compact_hover_pressed);
+		atlas_selector->set_theme_type_variation("OptionButton");
 	}
 	if (btn_load_tileset) {
 		btn_load_tileset->set_h_size_flags(SIZE_SHRINK_CENTER);
 		btn_load_tileset->set_v_size_flags(SIZE_SHRINK_CENTER);
 		btn_load_tileset->set_custom_minimum_size(Size2(int(28 * s), int(28 * s)));
-		apply_compact_styles(btn_load_tileset, sb_icon_compact, sb_icon_hover, sb_icon_pressed, sb_icon_hover_pressed);
+		btn_load_tileset->set_theme_type_variation("ClockGearsCompactTabButton");
 		_refresh_theme_icons();
 	}
 	if (search_filter_edit) {
@@ -878,55 +822,18 @@ void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scal
 			tiny_btns[i]->set_h_size_flags(SIZE_SHRINK_CENTER);
 			tiny_btns[i]->set_v_size_flags(SIZE_SHRINK_CENTER);
 			tiny_btns[i]->set_custom_minimum_size(Size2(int(28 * s), int(28 * s)));
-			apply_compact_styles(tiny_btns[i], sb_icon_compact, sb_icon_hover, sb_icon_pressed, sb_icon_hover_pressed);
+			tiny_btns[i]->set_theme_type_variation("ClockGearsCompactTabButton");
 		}
 	}
 
-	// b) Marco de la hoja (todo el alto disponible) + barras de scroll (~12px, esquinas redondeadas)
+	// b) Marco de la hoja (todo el alto disponible) + scrollbars heredadas del tema (8 px cobrizas)
 	if (canvas_frame) {
 		canvas_frame->set_custom_minimum_size(Size2(140 * s, 128 * s));
-		Ref<StyleBoxFlat> cf_style = memnew(StyleBoxFlat);
-		cf_style->set_anti_aliased(true);
-		cf_style->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
-		cf_style->set_corner_radius_all(r6);
-		cf_style->set_border_width_all(1);
-		cf_style->set_border_color(Color(0.24f, 0.27f, 0.33f, 1.0f));
-		cf_style->set_content_margin_all(1);
-		canvas_frame->add_theme_style_override("panel", cf_style);
+		canvas_frame->set_theme_type_variation("ClockGearsPreviewFrame");
+		if (canvas_frame->has_theme_stylebox_override("panel")) {
+			canvas_frame->remove_theme_style_override("panel");
+		}
 		move_child(canvas_frame, 1);
-	}
-
-	Ref<StyleBoxFlat> sb_track;
-	sb_track.instantiate();
-	sb_track->set_anti_aliased(true);
-	sb_track->set_bg_color(Color(0.06f, 0.07f, 0.09f, 0.85f));
-	sb_track->set_corner_radius_all(r6);
-	sb_track->set_content_margin_all(int(5 * s));
-
-	Ref<StyleBoxFlat> sb_grab;
-	sb_grab.instantiate();
-	sb_grab->set_anti_aliased(true);
-	sb_grab->set_bg_color(Color(0.32f, 0.36f, 0.44f, 0.90f));
-	sb_grab->set_corner_radius_all(r6);
-
-	Ref<StyleBoxFlat> sb_grab_hov = sb_grab->duplicate();
-	sb_grab_hov->set_bg_color(Color(accent.r, accent.g, accent.b, 0.72f));
-	Ref<StyleBoxFlat> sb_grab_prs = sb_grab->duplicate();
-	sb_grab_prs->set_bg_color(accent);
-
-	if (v_scroll) {
-		v_scroll->set_custom_minimum_size(Size2(int(12 * s), 0));
-		v_scroll->add_theme_style_override("scroll", sb_track);
-		v_scroll->add_theme_style_override("grabber", sb_grab);
-		v_scroll->add_theme_style_override("grabber_highlight", sb_grab_hov);
-		v_scroll->add_theme_style_override("grabber_pressed", sb_grab_prs);
-	}
-	if (h_scroll) {
-		h_scroll->set_custom_minimum_size(Size2(0, int(12 * s)));
-		h_scroll->add_theme_style_override("scroll", sb_track);
-		h_scroll->add_theme_style_override("grabber", sb_grab);
-		h_scroll->add_theme_style_override("grabber_highlight", sb_grab_hov);
-		h_scroll->add_theme_style_override("grabber_pressed", sb_grab_prs);
 	}
 
 	// c) Línea de estado justo debajo del lienzo
@@ -962,7 +869,7 @@ void ClockGearsTilePicker::set_tileset_panel_mode(bool p_enabled, int p_int_scal
 		mb->set_v_size_flags(SIZE_SHRINK_CENTER);
 		mb->set_clip_text(false);
 		mb->set_custom_minimum_size(Size2(0, int(28 * s)));
-		apply_compact_styles(mb, sb_compact, sb_compact_hover, sb_compact_pressed, sb_compact_hover_pressed);
+		mb->set_theme_type_variation("ClockGearsCompactTabButton");
 	}
 
 	if (mode_buttons_box) {
@@ -1920,15 +1827,10 @@ ClockGearsTilePicker::ClockGearsTilePicker() {
 
 	// --- LIENZO CENTRAL CON BARRAS DE DESPLAZAMIENTO (HScrollBar y VScrollBar) ---
 	canvas_frame = memnew(PanelContainer);
+	canvas_frame->set_theme_type_variation("ClockGearsPreviewFrame");
 	canvas_frame->set_h_size_flags(SIZE_EXPAND_FILL);
 	canvas_frame->set_v_size_flags(SIZE_EXPAND_FILL);
 	canvas_frame->set_custom_minimum_size(Size2(180 * EDSCALE, 180 * EDSCALE));
-	Ref<StyleBoxFlat> cf_style = memnew(StyleBoxFlat);
-	cf_style->set_anti_aliased(false);
-	cf_style->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
-	cf_style->set_border_width_all(1);
-	cf_style->set_border_color(Color(0.24f, 0.27f, 0.33f, 1.0f));
-	canvas_frame->add_theme_style_override("panel", cf_style);
 	add_child(canvas_frame);
 
 	VBoxContainer *canvas_vbox = memnew(VBoxContainer);
@@ -2048,5 +1950,8 @@ ClockGearsTilePickerDialog::ClockGearsTilePickerDialog() {
 	picker->set_metadata_editing_enabled(false);
 	add_child(picker);
 
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	connect("confirmed", callable_mp(this, &ClockGearsTilePickerDialog::_on_dialog_confirmed));
 }

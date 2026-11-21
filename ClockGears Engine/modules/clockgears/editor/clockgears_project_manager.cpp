@@ -597,13 +597,7 @@ ClockGearsNewProjectDialog::ClockGearsNewProjectDialog() {
 	res_row->add_child(resolved_path_label);
 
 	PanelContainer *folders_box = memnew(PanelContainer);
-	Ref<StyleBoxFlat> fstyle = memnew(StyleBoxFlat);
-	fstyle->set_anti_aliased(false);
-	fstyle->set_bg_color(Color(0.09f, 0.10f, 0.12f, 1.0f));
-	fstyle->set_border_width_all(1);
-	fstyle->set_border_color(Color(0.24f, 0.27f, 0.33f, 1.0f));
-	fstyle->set_content_margin_all(8);
-	folders_box->add_theme_style_override("panel", fstyle);
+	folders_box->set_theme_type_variation("ClockGearsContainer");
 	vb->add_child(folders_box);
 
 	Label *folders_info = memnew(Label(CG_PM_TR(
@@ -622,6 +616,13 @@ ClockGearsNewProjectDialog::ClockGearsNewProjectDialog() {
 	status_label = memnew(Label);
 	status_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	vb->add_child(status_label);
+
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 
 	dir_dialog = memnew(FileDialog);
 	dir_dialog->set_access(FileDialog::ACCESS_FILESYSTEM);
@@ -1006,6 +1007,9 @@ void ClockGearsResourceManagerDialog::open_manager(const String &p_initial_folde
 ClockGearsResourceManagerDialog::ClockGearsResourceManagerDialog() {
 	set_title(CG_PM_TR("Gestor de Recursos — ClockGears Engine"));
 	set_ok_button_text(CG_PM_TR("Cerrar"));
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	set_wrap_controls(false);
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
 	set_min_size(Size2(760, 460) * EDSCALE);
@@ -1099,14 +1103,8 @@ ClockGearsResourceManagerDialog::ClockGearsResourceManagerDialog() {
 	col3->add_child(memnew(Label(CG_PM_TR("Vista Previa Pixel Art (NEAREST):"))));
 
 	PanelContainer *prev_frame = memnew(PanelContainer);
+	prev_frame->set_theme_type_variation("ClockGearsPreviewFrame");
 	prev_frame->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	Ref<StyleBoxFlat> pstyle = memnew(StyleBoxFlat);
-	pstyle->set_anti_aliased(false);
-	pstyle->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
-	pstyle->set_border_width_all(1);
-	pstyle->set_border_color(Color(0.28f, 0.31f, 0.37f, 1.0f));
-	pstyle->set_content_margin_all(8);
-	prev_frame->add_theme_style_override("panel", pstyle);
 	col3->add_child(prev_frame);
 
 	preview_rect = memnew(TextureRect);

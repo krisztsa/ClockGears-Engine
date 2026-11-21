@@ -1,9 +1,9 @@
 #include "clockgears_map_properties_dialog.h"
 #include "core/clockgears_data_manager.h"
+#include "editor/clockgears_theme.h"
 #include "scene/gui/button.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/margin_container.h"
-#include "scene/resources/style_box_flat.h"
 
 void ClockGearsMapPropertiesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_arpg_map_options", "combat_mode", "respawn_mode", "respawn_minutes"), &ClockGearsMapPropertiesDialog::set_arpg_map_options);
@@ -171,6 +171,9 @@ void ClockGearsMapPropertiesDialog::popup_for_edit_map(int p_id, const String &p
 	width_spin->set_value(MAX(10, p_width));
 	height_spin->set_value(MAX(10, p_height));
 
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 	popup_centered(Size2(540, 440));
 	display_name_edit->grab_focus();
 }
@@ -179,16 +182,8 @@ ClockGearsMapPropertiesDialog::ClockGearsMapPropertiesDialog() {
 	set_title(String::utf8("Propiedades del Mapa"));
 	set_min_size(Size2(540, 440));
 
-	Ref<StyleBoxFlat> rounded_btn;
-	rounded_btn.instantiate();
-	rounded_btn->set_bg_color(Color(0.22, 0.24, 0.29, 1.0));
-	rounded_btn->set_border_color(Color(0.38, 0.42, 0.50, 0.85));
-	rounded_btn->set_border_width_all(1);
-	rounded_btn->set_corner_radius_all(8);
-	rounded_btn->set_content_margin_individual(12, 6, 12, 6);
-
 	if (Button *ok_btn = get_ok_button()) {
-		ok_btn->add_theme_style_override("normal", rounded_btn);
+		ok_btn->set_theme_type_variation("ClockGearsPrimaryButton");
 	}
 
 	MarginContainer *margin = memnew(MarginContainer);

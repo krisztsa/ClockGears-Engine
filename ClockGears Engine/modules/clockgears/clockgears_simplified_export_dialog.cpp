@@ -1,4 +1,5 @@
 #include "clockgears_simplified_export_dialog.h"
+#include "editor/clockgears_theme.h"
 #include "scene/gui/panel_container.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -12,6 +13,9 @@ void ClockGearsSimplifiedExportDialog::_bind_methods() {
 }
 
 void ClockGearsSimplifiedExportDialog::popup_simplified_export() {
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 	progress_bar->set_value(0);
 	status_label->set_text("Listo para compilar y exportar.");
 	popup_centered();
@@ -105,6 +109,7 @@ ClockGearsSimplifiedExportDialog::ClockGearsSimplifiedExportDialog() {
 
 	// PC Card
 	PanelContainer *pc_card = memnew(PanelContainer);
+	pc_card->set_theme_type_variation("ClockGearsContainer");
 	VBoxContainer *pc_vb = memnew(VBoxContainer);
 	pc_vb->add_child(memnew(Label("PC (Windows / Linux)")));
 	Button *pc_btn = memnew(Button("Compilar Juego para PC (1 Clic)"));
@@ -115,6 +120,7 @@ ClockGearsSimplifiedExportDialog::ClockGearsSimplifiedExportDialog() {
 
 	// Android Card
 	PanelContainer *and_card = memnew(PanelContainer);
+	and_card->set_theme_type_variation("ClockGearsContainer");
 	VBoxContainer *and_vb = memnew(VBoxContainer);
 	and_vb->add_child(memnew(Label(String::utf8("Android (Gestión automática de Keystore y SDKs)"))));
 	Button *and_btn = memnew(Button("Generar APK Android (1 Clic)"));
@@ -125,6 +131,7 @@ ClockGearsSimplifiedExportDialog::ClockGearsSimplifiedExportDialog() {
 
 	// Consoles Card
 	PanelContainer *con_card = memnew(PanelContainer);
+	con_card->set_theme_type_variation("ClockGearsContainer");
 	VBoxContainer *con_vb = memnew(VBoxContainer);
 	con_vb->add_child(memnew(Label("Consolas (Nintendo Switch / PlayStation / Xbox)")));
 	Button *con_btn = memnew(Button("Preparar Paquete Base para Consolas (1 Clic)"));
@@ -138,4 +145,10 @@ ClockGearsSimplifiedExportDialog::ClockGearsSimplifiedExportDialog() {
 
 	status_label = memnew(Label("Listo para compilar."));
 	main_vb->add_child(status_label);
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(this);
+	}
 }

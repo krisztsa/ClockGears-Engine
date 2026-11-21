@@ -6985,6 +6985,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	action_pattern_dialog = memnew(AcceptDialog);
 	action_pattern_dialog->set_title(CG_DB_TR("Añadir Patrón de Acción (IA)"));
+	if (action_pattern_dialog->get_ok_button()) {
+		action_pattern_dialog->get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	GridContainer *ap_grid = memnew(GridContainer);
 	ap_grid->set_columns(2);
 	ap_grid->add_theme_constant_override("h_separation", 10);
@@ -7565,6 +7568,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	// Ventana "Cambiar fondo" (Fondo + Suelo por tropa)
 	troop_bg_dialog = memnew(AcceptDialog);
 	troop_bg_dialog->set_title(CG_DB_TR("Cambiar fondo de batalla"));
+	if (troop_bg_dialog->get_ok_button()) {
+		troop_bg_dialog->get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	VBoxContainer *tbg_vb = memnew(VBoxContainer);
 	tbg_vb->add_theme_constant_override("separation", 8);
 	troop_bg_dialog->add_child(tbg_vb);
@@ -8045,6 +8051,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	trait_dialog = memnew(AcceptDialog);
 	trait_dialog->set_title(CG_DB_TR("Añadir Rasgo"));
+	if (trait_dialog->get_ok_button()) {
+		trait_dialog->get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	GridContainer *tr_grid = memnew(GridContainer);
 	tr_grid->set_columns(2);
 	tr_grid->add_theme_constant_override("h_separation", 10);
@@ -8119,6 +8128,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	effect_dialog = memnew(AcceptDialog);
 	effect_dialog->set_title(CG_DB_TR("Añadir Efecto"));
+	if (effect_dialog->get_ok_button()) {
+		effect_dialog->get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	GridContainer *ef_grid = memnew(GridContainer);
 	ef_grid->set_columns(2);
 	ef_grid->add_theme_constant_override("h_separation", 10);
@@ -8295,6 +8307,9 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	// Change Max Modal Dialog
 	change_max_dialog = memnew(AcceptDialog);
 	change_max_dialog->set_title(CG_DB_TR("Cambiar Máximo de Registros"));
+	if (change_max_dialog->get_ok_button()) {
+		change_max_dialog->get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	VBoxContainer *cm_vb = memnew(VBoxContainer);
 	cm_vb->add_child(memnew(Label(CG_DB_TR("Nueva cantidad máxima de elementos:"))));
 	change_max_spin = memnew(SpinBox);

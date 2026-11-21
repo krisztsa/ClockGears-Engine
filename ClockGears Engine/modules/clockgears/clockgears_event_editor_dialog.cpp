@@ -43,9 +43,7 @@ static void s_parse_hud_visibility_cmd(const Dictionary &p_cmd, String &r_scope,
 	}
 }
 
-static Ref<StyleBoxFlat> _event_card_style() {
-	return ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 8, 2);
-}
+// Los contenedores y recuadros del editor de eventos heredan variaciones ClockGearsContainer / ClockGearsPreviewFrame del tema.
 
 void ClockGearsEventEditorDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("edit_event", "event"), &ClockGearsEventEditorDialog::edit_event);
@@ -4126,7 +4124,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 		r_dlg->set_ok_button_text(CG_TR("Aceptar"));
 		r_dlg->set_cancel_button_text(CG_TR("Cancelar"));
 		PanelContainer *card = memnew(PanelContainer);
-		card->add_theme_style_override("panel", _event_card_style());
+		card->set_theme_type_variation("ClockGearsContainer");
 		r_dlg->add_child(card);
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->add_theme_constant_override("separation", 8);
@@ -4156,7 +4154,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_open_menu->set_cancel_button_text(CG_TR("Cancelar"));
 	{
 		PanelContainer *card = memnew(PanelContainer);
-		card->add_theme_style_override("panel", _event_card_style());
+		card->set_theme_type_variation("ClockGearsContainer");
 		dlg_open_menu->add_child(card);
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->add_theme_constant_override("separation", 8);
@@ -4190,7 +4188,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_change_menu_access->set_cancel_button_text(CG_TR("Cancelar"));
 	{
 		PanelContainer *card = memnew(PanelContainer);
-		card->add_theme_style_override("panel", _event_card_style());
+		card->set_theme_type_variation("ClockGearsContainer");
 		dlg_change_menu_access->add_child(card);
 		HBoxContainer *hb = memnew(HBoxContainer);
 		hb->add_theme_constant_override("separation", 10);
@@ -4212,7 +4210,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_return_to_title->set_cancel_button_text(CG_TR("Cancelar"));
 	{
 		PanelContainer *card = memnew(PanelContainer);
-		card->add_theme_style_override("panel", _event_card_style());
+		card->set_theme_type_variation("ClockGearsContainer");
 		dlg_return_to_title->add_child(card);
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->add_theme_constant_override("separation", 8);
@@ -4234,7 +4232,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_change_window_style->set_cancel_button_text(CG_TR("Cancelar"));
 	{
 		PanelContainer *card = memnew(PanelContainer);
-		card->add_theme_style_override("panel", _event_card_style());
+		card->set_theme_type_variation("ClockGearsContainer");
 		dlg_change_window_style->add_child(card);
 		GridContainer *gr = memnew(GridContainer);
 		gr->set_columns(2);
@@ -4262,7 +4260,7 @@ void ClockGearsEventEditorDialog::_setup_command_subdialogs() {
 	dlg_change_hud_visibility->set_cancel_button_text(CG_TR("Cancelar"));
 	{
 		PanelContainer *card = memnew(PanelContainer);
-		card->add_theme_style_override("panel", _event_card_style());
+		card->set_theme_type_variation("ClockGearsContainer");
 		dlg_change_hud_visibility->add_child(card);
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->add_theme_constant_override("separation", 8);
@@ -4544,6 +4542,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	connect("custom_action", callable_mp(this, &ClockGearsEventEditorDialog::_on_custom_action));
 
 	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
 		get_ok_button()->set_custom_minimum_size(Size2(90, 28) * EDSCALE);
 	}
 
@@ -4622,7 +4621,9 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	page_tabs->connect("tab_changed", callable_mp(this, &ClockGearsEventEditorDialog::_on_page_tab_changed));
 	main_vb->add_child(page_tabs);
 
-	main_vb->add_child(memnew(HSeparator));
+	HSeparator *ev_hdr_sep = memnew(HSeparator);
+	ev_hdr_sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	main_vb->add_child(ev_hdr_sep);
 
 	// -------------------------------------------------------------
 	// Three-Column Body (HBoxContainer de 3 columnas con scroll vertical interno)
@@ -4652,7 +4653,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 
 	// Group: Condiciones de Aparición
 	PanelContainer *cond_card = memnew(PanelContainer);
-	cond_card->add_theme_style_override("panel", _event_card_style());
+	cond_card->set_theme_type_variation("ClockGearsContainer");
 	col1->add_child(cond_card);
 
 	VBoxContainer *cond_box = memnew(VBoxContainer);
@@ -4743,7 +4744,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 
 	// Group: Disparador
 	PanelContainer *trig_card = memnew(PanelContainer);
-	trig_card->add_theme_style_override("panel", _event_card_style());
+	trig_card->set_theme_type_variation("ClockGearsContainer");
 	col1->add_child(trig_card);
 
 	VBoxContainer *trig_box = memnew(VBoxContainer);
@@ -4764,7 +4765,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 
 	// Group: Opciones
 	PanelContainer *opt_card = memnew(PanelContainer);
-	opt_card->add_theme_style_override("panel", _event_card_style());
+	opt_card->set_theme_type_variation("ClockGearsContainer");
 	col1->add_child(opt_card);
 
 	VBoxContainer *opt_box = memnew(VBoxContainer);
@@ -4803,7 +4804,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 
 	// Group: Gráfico del Evento
 	gfx_card = memnew(PanelContainer);
-	gfx_card->add_theme_style_override("panel", _event_card_style());
+	gfx_card->set_theme_type_variation("ClockGearsContainer");
 	col2->add_child(gfx_card);
 
 	VBoxContainer *gfx_box = memnew(VBoxContainer);
@@ -4819,13 +4820,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 	gfx_box->add_child(preview_center);
 
 	PanelContainer *preview_frame = memnew(PanelContainer);
-	Ref<StyleBoxFlat> preview_sb;
-	preview_sb.instantiate();
-	preview_sb->set_bg_color(Color(0.08, 0.08, 0.1));
-	preview_sb->set_border_width_all(1);
-	preview_sb->set_border_color(Color(0.9, 0.75, 0.3, 0.5));
-	preview_sb->set_corner_radius_all(4);
-	preview_frame->add_theme_style_override("panel", preview_sb);
+	preview_frame->set_theme_type_variation("ClockGearsPreviewFrame");
 	preview_center->add_child(preview_frame);
 
 	graphic_preview = memnew(TextureRect);
@@ -4890,7 +4885,7 @@ ClockGearsEventEditorDialog::ClockGearsEventEditorDialog() {
 
 	// Group: Movimiento Autónomo
 	move_card = memnew(PanelContainer);
-	move_card->add_theme_style_override("panel", _event_card_style());
+	move_card->set_theme_type_variation("ClockGearsContainer");
 	col2->add_child(move_card);
 
 	VBoxContainer *move_box = memnew(VBoxContainer);
@@ -5755,12 +5750,19 @@ void ClockGearsEventEditorDialog::_on_parent_window_resized() {
 }
 
 void ClockGearsEventEditorDialog::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE) {
+	if (p_what == NOTIFICATION_READY) {
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(this);
+		}
+	} else if (p_what == NOTIFICATION_ENTER_TREE) {
 		if (Window *pw = get_parent_visible_window()) {
 			Callable cb = callable_mp(this, &ClockGearsEventEditorDialog::_on_parent_window_resized);
 			if (!pw->is_connected("size_changed", cb)) {
 				pw->connect("size_changed", cb);
 			}
+		}
+		if (ClockGearsTheme::get_singleton()) {
+			ClockGearsTheme::get_singleton()->apply_to_window(this);
 		}
 	} else if (p_what == NOTIFICATION_WM_SIZE_CHANGED) {
 		if (is_visible() && columns_scroll) {

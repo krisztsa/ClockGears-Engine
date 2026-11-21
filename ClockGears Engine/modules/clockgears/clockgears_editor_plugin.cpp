@@ -467,7 +467,9 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	list_header_label = memnew(Label(CG_TR("NPC (0)")));
 	list_header_label->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	left_col->add_child(list_header_label);
-	left_col->add_child(memnew(HSeparator));
+	HSeparator *sep_list = memnew(HSeparator);
+	sep_list->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	left_col->add_child(sep_list);
 
 	entity_list = memnew(ItemList);
 	entity_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -496,9 +498,12 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	Label *lbl_prev = memnew(Label(CG_TR("Vista previa del sprite")));
 	lbl_prev->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
 	right_col->add_child(lbl_prev);
-	right_col->add_child(memnew(HSeparator));
+	HSeparator *sep_prev = memnew(HSeparator);
+	sep_prev->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	right_col->add_child(sep_prev);
 
 	preview_frame_panel = memnew(PanelContainer);
+	preview_frame_panel->set_theme_type_variation("ClockGearsPreviewFrame");
 	preview_frame_panel->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 	preview_frame_panel->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 	preview_frame_panel->set_custom_minimum_size(Size2(int(140 * EDSCALE), int(116 * EDSCALE)));
@@ -530,6 +535,9 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 	preview_detail_label->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.78f));
 	right_col->add_child(preview_detail_label);
 
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	connect("confirmed", callable_mp(this, &ClockGearsGenerateEntityDialog::_on_confirmed_generate));
 }
 
@@ -537,17 +545,7 @@ ClockGearsGenerateEntityDialog::ClockGearsGenerateEntityDialog() {
 // ClockGearsLayersDialog (Etapa 1 - 9B-Ext: Capas con Nombre y Orden Entero)
 // ============================================================================
 
-static Ref<StyleBoxFlat> _cg_layer_card_style(const Color &p_bg, const Color &p_border, int p_radius = 8, int p_margin_h = 10, int p_margin_v = 8) {
-	Ref<StyleBoxFlat> sb;
-	sb.instantiate();
-	sb->set_anti_aliased(true);
-	sb->set_bg_color(p_bg);
-	sb->set_border_width_all(1);
-	sb->set_border_color(p_border);
-	sb->set_corner_radius_all(p_radius);
-	sb->set_content_margin_individual(p_margin_h, p_margin_v, p_margin_h, p_margin_v);
-	return sb;
-}
+// Tarjetas y botones de Capas heredan estilos ClockGearsContainer / ClockGearsPrimaryButton del tema.
 
 String ClockGearsLayersDialog::_describe_order_band(int p_order) {
 	if (p_order < 0) {
@@ -944,9 +942,25 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		PanelContainer *row_card = memnew(PanelContainer);
 		row_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		row_card->set_meta("custom_layer_id", lid);
-		Color bg = is_active ? Color(0.18f, 0.16f, 0.12f, 0.98f) : Color(0.11f, 0.12f, 0.15f, 0.96f);
-		Color border = is_active ? Color(0.92f, 0.68f, 0.28f, 0.95f) : Color(1.0f, 1.0f, 1.0f, 0.10f);
-		row_card->add_theme_style_override("panel", _cg_layer_card_style(bg, border, 8, 10, 8));
+		if (is_active) {
+			const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+			const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+			const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, EDSCALE);
+			Ref<ClockGearsBrassStyleBox> act_sb;
+			act_sb.instantiate();
+			act_sb->set_anti_aliased(true);
+			act_sb->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, 0.16f));
+			act_sb->set_border_width_all(2);
+			act_sb->set_border_color(tk.accent_neon);
+			act_sb->set_corner_radius_all(int(6 * EDSCALE));
+			act_sb->set_content_margin_individual(int(10 * EDSCALE), int(8 * EDSCALE), int(10 * EDSCALE), int(8 * EDSCALE));
+			act_sb->set_led_dot(true, MAX(3, int(4 * EDSCALE)), tk.accent_neon);
+			act_sb->set_shadow_color(tk.halo_color);
+			act_sb->set_shadow_size(tk.halo_radius_px);
+			row_card->add_theme_style_override("panel", act_sb);
+		} else {
+			row_card->set_theme_type_variation("ClockGearsContainer");
+		}
 		rows_vbox->add_child(row_card);
 
 		VBoxContainer *row_vb = memnew(VBoxContainer);
@@ -962,11 +976,11 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 
 		Button *sel_btn = memnew(Button);
 		sel_btn->set_name("SelectLayerBtn");
-		sel_btn->set_text(is_active ? String::utf8("★ Activa") : CG_TR("Usar"));
+		sel_btn->set_text(is_active ? String::utf8("Activa") : CG_TR("Usar"));
 		sel_btn->set_tooltip_text(CG_TR("Usar esta capa como capa actual para dibujar en el mapa"));
 		sel_btn->set_custom_minimum_size(Size2(86, 28) * EDSCALE);
 		sel_btn->set_focus_mode(Control::FOCUS_NONE);
-		sel_btn->add_theme_style_override("normal", _cg_layer_card_style(is_active ? Color(0.82f, 0.58f, 0.20f, 0.35f) : Color(1, 1, 1, 0.06f), is_active ? Color(0.95f, 0.72f, 0.30f, 0.95f) : Color(1, 1, 1, 0.18f), 6, 8, 4));
+		sel_btn->set_theme_type_variation(is_active ? StringName("ClockGearsPrimaryButton") : StringName("Button"));
 		sel_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_select_pressed).bind(lid));
 		line1->add_child(sel_btn);
 
@@ -1015,7 +1029,6 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		vis_btn->set_text(lvis ? CG_TR("Visible") : CG_TR("Oculta"));
 		vis_btn->set_tooltip_text(lvis ? CG_TR("Ocultar esta capa en el editor y juego") : CG_TR("Mostrar esta capa en el editor y juego"));
 		vis_btn->set_focus_mode(Control::FOCUS_NONE);
-		vis_btn->add_theme_style_override("normal", _cg_layer_card_style(lvis ? Color(0.16f, 0.34f, 0.22f, 0.55f) : Color(0.28f, 0.16f, 0.16f, 0.65f), Color(1, 1, 1, 0.18f), 6, 8, 4));
 		vis_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_visible_pressed).bind(lid, !lvis));
 		line2->add_child(vis_btn);
 
@@ -1024,7 +1037,6 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		lck_btn->set_text(llck ? CG_TR("Bloqueada") : CG_TR("Libre"));
 		lck_btn->set_tooltip_text(llck ? CG_TR("Desbloquear capa para permitir edición") : CG_TR("Bloquear capa para evitar cambios accidentales"));
 		lck_btn->set_focus_mode(Control::FOCUS_NONE);
-		lck_btn->add_theme_style_override("normal", _cg_layer_card_style(llck ? Color(0.45f, 0.25f, 0.14f, 0.70f) : Color(1, 1, 1, 0.06f), Color(1, 1, 1, 0.18f), 6, 8, 4));
 		lck_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_locked_pressed).bind(lid, !llck));
 		line2->add_child(lck_btn);
 
@@ -1034,7 +1046,6 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		dup_btn->set_tooltip_text(CG_TR("Duplicar esta capa con sus tiles"));
 		dup_btn->set_disabled(!can_duplicate);
 		dup_btn->set_focus_mode(Control::FOCUS_NONE);
-		dup_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(1, 1, 1, 0.06f), Color(1, 1, 1, 0.18f), 6, 8, 4));
 		dup_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_duplicate_pressed).bind(lid));
 		line2->add_child(dup_btn);
 
@@ -1043,7 +1054,6 @@ void ClockGearsLayersDialog::refresh_layers_list() {
 		del_btn->set_text(CG_TR("Eliminar"));
 		del_btn->set_tooltip_text(CG_TR("Eliminar esta capa"));
 		del_btn->set_focus_mode(Control::FOCUS_NONE);
-		del_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(0.42f, 0.14f, 0.14f, 0.55f), Color(0.9f, 0.35f, 0.35f, 0.55f), 6, 8, 4));
 		del_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_row_delete_pressed).bind(lid));
 		line2->add_child(del_btn);
 	}
@@ -1066,6 +1076,9 @@ void ClockGearsLayersDialog::open_layers_dialog() {
 ClockGearsLayersDialog::ClockGearsLayersDialog() {
 	set_title(CG_TR("Capas Personalizadas del Mapa - ClockGears Engine"));
 	set_ok_button_text(CG_TR("Cerrar"));
+	if (get_ok_button()) {
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 	set_wrap_controls(false);
 	set_min_size(Size2(520, 380) * EDSCALE);
 
@@ -1075,7 +1088,7 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 
 	// Cabecera con contador de capas personalizadas (el indicador de capa actual está únicamente arriba en la barra superior)
 	PanelContainer *hdr_card = memnew(PanelContainer);
-	hdr_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.11f, 0.12f, 0.16f), Color(0.88f, 0.63f, 0.25f, 0.45f), 8, 10, 8));
+	hdr_card->set_theme_type_variation("ClockGearsContainer");
 	main_vb->add_child(hdr_card);
 
 	HBoxContainer *hdr_hb = memnew(HBoxContainer);
@@ -1083,12 +1096,11 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 	hdr_card->add_child(hdr_hb);
 
 	count_label = memnew(Label(CG_TR("Capas personalizadas: 0 / 16")));
-	count_label->add_theme_color_override("font_color", Color(0.75f, 0.80f, 0.88f));
 	hdr_hb->add_child(count_label);
 
 	// Tarjeta de escala de referencia (capas 1 a 4 + jugador y eventos)
 	PanelContainer *scale_card = memnew(PanelContainer);
-	scale_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.095f, 0.105f, 0.135f), Color(1, 1, 1, 0.10f), 8, 10, 8));
+	scale_card->set_theme_type_variation("ClockGearsContainer");
 	main_vb->add_child(scale_card);
 
 	VBoxContainer *scale_vb = memnew(VBoxContainer);
@@ -1098,7 +1110,6 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 	Label *scale_title = memnew(Label(CG_TR("Escala Z de dibujo (menor = más abajo, mayor = más arriba • clic en 1–4 para usar esa capa):")));
 	scale_title->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	scale_title->set_custom_minimum_size(Size2(380, 0) * EDSCALE);
-	scale_title->add_theme_color_override("font_color", Color(0.88f, 0.88f, 0.92f));
 	scale_vb->add_child(scale_title);
 
 	scale_buttons_box = memnew(HFlowContainer);
@@ -1123,11 +1134,10 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 		Button *chip = memnew(Button);
 		chip->set_text(String::utf8(chips[i].label));
 		chip->set_focus_mode(Control::FOCUS_NONE);
-		chip->add_theme_style_override("normal", _cg_layer_card_style(Color(1, 1, 1, 0.05f), Color(1, 1, 1, 0.16f), 6, 8, 4));
+		chip->set_theme_type_variation("ClockGearsTabButton");
 		if (chips[i].base_idx > 0) {
 			chip->set_toggle_mode(true);
 			chip->set_meta("fixed_base_layer", chips[i].base_idx);
-			chip->add_theme_style_override("pressed", _cg_layer_card_style(Color(0.85f, 0.60f, 0.20f, 0.30f), Color(0.95f, 0.72f, 0.30f, 0.95f), 6, 8, 4));
 			chip->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_fixed_layer_pressed).bind(chips[i].base_idx));
 			fixed_layer_buttons.push_back(chip);
 		} else {
@@ -1139,7 +1149,7 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 
 	// Tarjeta para crear nueva capa personalizada
 	PanelContainer *create_card = memnew(PanelContainer);
-	create_card->add_theme_style_override("panel", _cg_layer_card_style(Color(0.11f, 0.12f, 0.15f), Color(1, 1, 1, 0.12f), 8, 10, 8));
+	create_card->set_theme_type_variation("ClockGearsContainer");
 	main_vb->add_child(create_card);
 
 	HBoxContainer *create_hb = memnew(HBoxContainer);
@@ -1166,7 +1176,7 @@ ClockGearsLayersDialog::ClockGearsLayersDialog() {
 	create_btn = memnew(Button(CG_TR("+ Crear Capa")));
 	create_btn->set_focus_mode(Control::FOCUS_NONE);
 	create_btn->set_custom_minimum_size(Size2(110, 30) * EDSCALE);
-	create_btn->add_theme_style_override("normal", _cg_layer_card_style(Color(0.75f, 0.52f, 0.18f, 0.35f), Color(0.95f, 0.72f, 0.30f, 0.90f), 6, 10, 4));
+	create_btn->set_theme_type_variation("ClockGearsPrimaryButton");
 	create_btn->connect(SceneStringName(pressed), callable_mp(this, &ClockGearsLayersDialog::_on_create_pressed));
 	create_hb->add_child(create_btn);
 
@@ -2777,12 +2787,16 @@ ClockGearsEditorPlugin::ClockGearsEditorPlugin() {
 	dlg_quick_door->set_title(CG_TR("Creación Rápida: Puerta"));
 	dlg_quick_door->set_ok_button_text(CG_TR("Aceptar"));
 	dlg_quick_door->set_cancel_button_text(CG_TR("Cancelar"));
+	if (dlg_quick_door->get_ok_button()) {
+		dlg_quick_door->get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
+	}
 
 	VBoxContainer *qd_main_vb = memnew(VBoxContainer);
 	qd_main_vb->add_theme_constant_override("separation", 8);
 	dlg_quick_door->add_child(qd_main_vb);
 
 	PanelContainer *qd_sprite_card = memnew(PanelContainer);
+	qd_sprite_card->set_theme_type_variation("ClockGearsContainer");
 	qd_main_vb->add_child(qd_sprite_card);
 
 	HBoxContainer *qd_sprite_hb = memnew(HBoxContainer);
