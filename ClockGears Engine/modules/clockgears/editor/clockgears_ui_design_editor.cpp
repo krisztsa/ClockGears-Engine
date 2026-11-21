@@ -57,23 +57,6 @@ static void s_make_rounded_action_btn(Button *p_btn) {
 	}
 	p_btn->set_clip_text(true);
 	p_btn->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-	p_btn->set_theme_type_variation("ClockGearsTabButton");
-	Ref<StyleBoxFlat> sb = ClockGearsTheme::make_card_stylebox(EDSCALE);
-	sb->set_corner_radius_all(int(6 * EDSCALE));
-	sb->set_content_margin_all(int(6 * EDSCALE));
-	sb->set_bg_color(Color(0.18f, 0.20f, 0.25f, 1.0f));
-	sb->set_border_color(Color(0.32f, 0.36f, 0.44f, 0.9f));
-	p_btn->add_theme_style_override("normal", sb);
-
-	Ref<StyleBoxFlat> hov = sb->duplicate();
-	hov->set_bg_color(Color(0.24f, 0.27f, 0.34f, 1.0f));
-	hov->set_border_color(ClockGearsTheme::color_accent_amber());
-	p_btn->add_theme_style_override("hover", hov);
-
-	Ref<StyleBoxFlat> prs = sb->duplicate();
-	prs->set_bg_color(Color(0.32f, 0.24f, 0.13f, 1.0f));
-	prs->set_border_color(ClockGearsTheme::color_accent_amber());
-	p_btn->add_theme_style_override("pressed", prs);
 }
 
 static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
@@ -1353,6 +1336,15 @@ void ClockGearsDesignCardRow::begin_inline_rename() {
 }
 
 void ClockGearsDesignCardRow::_notification(int p_what) {
+	if (p_what == NOTIFICATION_THEME_CHANGED) {
+		sb_normal.unref();
+		sb_hover.unref();
+		sb_selected.unref();
+		sb_drop_child.unref();
+		update_visual_state(elem_selected);
+		queue_redraw();
+		return;
+	}
 	if (p_what == NOTIFICATION_DRAW && drop_section_preview != -999) {
 		Size2 sz = get_size();
 		Color line_col = ClockGearsTheme::color_accent_amber();
@@ -1372,32 +1364,48 @@ void ClockGearsDesignCardRow::update_visual_state(bool p_selected) {
 	elem_selected = p_selected;
 	bool light = (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->is_light_mode());
 	bool brass = (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(brass, light, EDSCALE);
+	const int r6 = int(6 * EDSCALE);
+	const int led_sz = MAX(4, int(Math::round(4.0f * EDSCALE)));
 	if (sb_normal.is_null()) {
 		sb_normal.instantiate();
-		sb_normal->set_corner_radius_all(int(6 * EDSCALE));
-		sb_normal->set_content_margin(SIDE_LEFT, int(6 * EDSCALE));
-		sb_normal->set_content_margin(SIDE_RIGHT, int(5 * EDSCALE));
+		sb_normal->set_corner_radius_all(r6);
+		sb_normal->set_content_margin(SIDE_LEFT, int(12 * EDSCALE));
+		sb_normal->set_content_margin(SIDE_RIGHT, int(6 * EDSCALE));
 		sb_normal->set_content_margin(SIDE_TOP, int(4 * EDSCALE));
 		sb_normal->set_content_margin(SIDE_BOTTOM, int(4 * EDSCALE));
-		Color bg_norm = light ? Color(0.84f, 0.80f, 0.72f, 0.96f) : (brass ? Color(0.16f, 0.14f, 0.11f, 0.96f) : Color(0.14f, 0.18f, 0.26f, 0.96f));
-		Color bd_norm = light ? Color(0.60f, 0.44f, 0.20f, 0.72f) : Color(0.68f, 0.48f, 0.22f, 0.68f);
-		sb_normal->set_bg_color(bg_norm);
-		sb_normal->set_border_width_all(int(MAX(1.0f, EDSCALE)));
-		sb_normal->set_border_color(bd_norm);
+		sb_normal->set_bg_color(tk.surface_panel);
+		sb_normal->set_border_width_all(1);
+		sb_normal->set_border_color(tk.border_subtle);
 
 		sb_hover = sb_normal->duplicate();
-		sb_hover->set_bg_color(light ? Color(0.89f, 0.84f, 0.75f, 1.0f) : (brass ? Color(0.22f, 0.19f, 0.14f, 0.98f) : Color(0.19f, 0.24f, 0.34f, 0.98f)));
-		sb_hover->set_border_color(ClockGearsTheme::color_accent_amber());
+		sb_hover->set_bg_color(tk.surface_elevated);
+		sb_hover->set_border_color(tk.border_copper_bright);
+		sb_hover->set_shadow_color(tk.halo_color);
+		sb_hover->set_shadow_size(tk.halo_radius_px);
+		sb_hover->set_shadow_offset(Vector2(0, 0));
 
-		sb_selected = sb_normal->duplicate();
-		sb_selected->set_bg_color(light ? Color(0.93f, 0.85f, 0.68f, 1.0f) : Color(0.25f, 0.22f, 0.15f, 1.0f));
-		sb_selected->set_border_width_all(int(MAX(2.0f, 2.0f * EDSCALE)));
-		sb_selected->set_border_color(ClockGearsTheme::color_accent_amber());
+		Ref<ClockGearsBrassStyleBox> bsel;
+		bsel.instantiate();
+		bsel->set_anti_aliased(true);
+		bsel->set_corner_radius_all(r6);
+		bsel->set_content_margin(SIDE_LEFT, int(14 * EDSCALE));
+		bsel->set_content_margin(SIDE_RIGHT, int(6 * EDSCALE));
+		bsel->set_content_margin(SIDE_TOP, int(4 * EDSCALE));
+		bsel->set_content_margin(SIDE_BOTTOM, int(4 * EDSCALE));
+		bsel->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, light ? 0.22f : 0.20f));
+		bsel->set_border_width_all(1);
+		bsel->set_border_color(tk.accent_neon);
+		bsel->set_led_dot(true, led_sz, tk.accent_neon);
+		bsel->set_shadow_color(tk.halo_color);
+		bsel->set_shadow_size(tk.halo_radius_px);
+		bsel->set_shadow_offset(Vector2(0, 0));
+		sb_selected = bsel;
 
 		sb_drop_child = sb_normal->duplicate();
-		sb_drop_child->set_bg_color(light ? Color(0.96f, 0.84f, 0.56f, 1.0f) : Color(0.32f, 0.26f, 0.14f, 1.0f));
-		sb_drop_child->set_border_width_all(int(MAX(2.0f, 2.0f * EDSCALE)));
-		sb_drop_child->set_border_color(Color(1.0f, 0.82f, 0.35f, 1.0f));
+		sb_drop_child->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, 0.30f));
+		sb_drop_child->set_border_width_all(2);
+		sb_drop_child->set_border_color(tk.accent_neon);
 	}
 	Ref<StyleBoxFlat> sb = sb_normal;
 	if (drop_section_preview == 0) {
@@ -1407,13 +1415,14 @@ void ClockGearsDesignCardRow::update_visual_state(bool p_selected) {
 	} else if (hovered) {
 		sb = sb_hover;
 	}
+	set_meta("_cg_theme_managed_container", true);
 	add_theme_style_override("panel", sb);
 	if (name_lbl) {
 		Color txt_col = light ? Color(0.14f, 0.11f, 0.08f, 1.0f) : Color(0.93f, 0.94f, 0.96f, 1.0f);
 		if (!elem_visible) {
 			txt_col.a = 0.55f;
 		} else if (elem_selected) {
-			txt_col = light ? Color(0.20f, 0.12f, 0.03f, 1.0f) : Color(1.0f, 0.93f, 0.76f, 1.0f);
+			txt_col = light ? Color(0.20f, 0.12f, 0.03f, 1.0f) : tk.accent_neon.lightened(0.28f);
 		}
 		name_lbl->add_theme_color_override("font_color", txt_col);
 	}
@@ -1745,25 +1754,6 @@ void ClockGearsUiDesignEditor::_apply_rounded_btn_style(Button *p_btn) {
 	}
 	p_btn->set_clip_text(true);
 	p_btn->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-	p_btn->set_theme_type_variation("ClockGearsTabButton");
-	if (cached_action_sb_normal.is_null()) {
-		cached_action_sb_normal = ClockGearsTheme::make_card_stylebox(EDSCALE);
-		cached_action_sb_normal->set_corner_radius_all(int(6 * EDSCALE));
-		cached_action_sb_normal->set_content_margin_all(int(6 * EDSCALE));
-		cached_action_sb_normal->set_bg_color(Color(0.18f, 0.20f, 0.25f, 1.0f));
-		cached_action_sb_normal->set_border_color(Color(0.32f, 0.36f, 0.44f, 0.9f));
-
-		cached_action_sb_hover = cached_action_sb_normal->duplicate();
-		cached_action_sb_hover->set_bg_color(Color(0.24f, 0.27f, 0.34f, 1.0f));
-		cached_action_sb_hover->set_border_color(ClockGearsTheme::color_accent_amber());
-
-		cached_action_sb_pressed = cached_action_sb_normal->duplicate();
-		cached_action_sb_pressed->set_bg_color(Color(0.32f, 0.24f, 0.13f, 1.0f));
-		cached_action_sb_pressed->set_border_color(ClockGearsTheme::color_accent_amber());
-	}
-	p_btn->add_theme_style_override("normal", cached_action_sb_normal);
-	p_btn->add_theme_style_override("hover", cached_action_sb_hover);
-	p_btn->add_theme_style_override("pressed", cached_action_sb_pressed);
 }
 
 void ClockGearsUiDesignEditor::_bind_methods() {
@@ -2303,12 +2293,10 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	// --- Barra superior ÚNICA y FIJA agrupada por separadores ---
 	PanelContainer *top_card = memnew(PanelContainer);
 	top_card->set_name("UiDesignerTopBarCard");
+	top_card->set_theme_type_variation("ClockGearsContainer");
 	top_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	top_card->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
 	top_card->set_clip_contents(false);
-	Ref<StyleBoxFlat> top_sb = ClockGearsTheme::make_card_stylebox(EDSCALE);
-	top_sb->set_content_margin_individual(int(10 * EDSCALE), int(8 * EDSCALE), int(10 * EDSCALE), int(8 * EDSCALE));
-	top_card->add_theme_style_override("panel", top_sb);
 	add_child(top_card);
 
 	HFlowContainer *top_flow = memnew(HFlowContainer);
@@ -2621,10 +2609,10 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// --- Tarjeta 0 (Corrección 9B): Lista de elementos como tarjetas en "Diseños" ---
 	menus_card = memnew(PanelContainer);
+	menus_card->set_theme_type_variation("ClockGearsContainer");
 	menus_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	menus_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	menus_card->set_clip_contents(true);
-	menus_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	wide_left_col->add_child(menus_card);
 
 	VBoxContainer *menus_vb = memnew(VBoxContainer);
@@ -2807,8 +2795,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// --- Tarjeta 1: Paleta lateral (plegable) ---
 	palette_card = memnew(PanelContainer);
+	palette_card->set_theme_type_variation("ClockGearsContainer");
 	palette_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	palette_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	wide_left_col->add_child(palette_card);
 
 	VBoxContainer *pal_vb = memnew(VBoxContainer);
@@ -2855,9 +2843,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// --- Tarjeta 2: Lienzo 16:9 dominante usando ClockGearsUiDesignLayer ---
 	canvas_card = memnew(PanelContainer);
+	canvas_card->set_theme_type_variation("ClockGearsPreviewFrame");
 	canvas_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	canvas_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	wide_center_col->add_child(canvas_card);
 
 	VBoxContainer *can_vb = memnew(VBoxContainer);
@@ -2962,9 +2950,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// --- Tarjeta 4: Panel de propiedades (4C: Simple/Avanzado, Buscador, Secciones) ---
 	props_card = memnew(PanelContainer);
+	props_card->set_theme_type_variation("ClockGearsContainer");
 	props_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	props_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	wide_right_col->add_child(props_card);
 
 	VBoxContainer *props_outer = memnew(VBoxContainer);
@@ -7663,7 +7651,7 @@ void ClockGearsUiDesignEditor::_open_menu_wizard() {
 			Dictionary t = tpls[i];
 			String tid = String(t.get("id", ""));
 			PanelContainer *card = memnew(PanelContainer);
-			card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+			card->set_theme_type_variation("ClockGearsContainer");
 			card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			VBoxContainer *vb = memnew(VBoxContainer);
 			vb->add_theme_constant_override("separation", int(4 * EDSCALE));
@@ -7774,7 +7762,7 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			Dictionary t = p_list[i];
 			String tid = String(t.get("id", ""));
 			PanelContainer *card = memnew(PanelContainer);
-			card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+			card->set_theme_type_variation("ClockGearsContainer");
 			card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			VBoxContainer *vb = memnew(VBoxContainer);
 			vb->add_theme_constant_override("separation", int(4 * EDSCALE));
@@ -10556,7 +10544,7 @@ void ClockGearsUiElementFloatingWindow::refresh_theme() {
 		}
 	}
 	if (bg_root) {
-		bg_root->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
+		bg_root->set_theme_type_variation("ClockGearsContainer");
 	}
 }
 

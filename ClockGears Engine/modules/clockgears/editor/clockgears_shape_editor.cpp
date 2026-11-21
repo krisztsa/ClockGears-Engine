@@ -1,5 +1,6 @@
 #include "clockgears_shape_editor.h"
 
+#include "clockgears_theme.h"
 #include "core/input/input_event.h"
 #include "core/math/geometry_2d.h"
 #include "core/math/math_defs.h"
@@ -973,16 +974,54 @@ void ClockGearsShapeEditor::_apply_rounded_button_styles(Button *p_btn, bool p_a
 	if (!p_btn) {
 		return;
 	}
-	Color bg_norm = p_active ? Color(p_accent.r, p_accent.g, p_accent.b, 0.34f) : Color(0.18f, 0.21f, 0.28f, 0.92f);
-	Color bd_norm = p_active ? p_accent : Color(0.32f, 0.37f, 0.48f, 0.85f);
-	Color bg_hov = p_active ? Color(p_accent.r, p_accent.g, p_accent.b, 0.48f) : Color(0.24f, 0.28f, 0.36f, 0.95f);
-	Color bg_prs = Color(p_accent.r, p_accent.g, p_accent.b, 0.58f);
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, CG_SE_EDSCALE);
+	const int r6 = ClockGearsTheme::get_container_corner_radius(CG_SE_EDSCALE);
+	const bool is_default_blue = (p_accent.a <= 0.01f);
+	const Color accent = is_default_blue ? tk.accent_neon : p_accent;
 
-	p_btn->add_theme_style_override("normal", _make_rounded_btn_style(bg_norm, bd_norm, 8));
-	p_btn->add_theme_style_override("hover", _make_rounded_btn_style(bg_hov, p_accent, 8));
-	p_btn->add_theme_style_override("pressed", _make_rounded_btn_style(bg_prs, p_accent, 8));
-	p_btn->add_theme_style_override("focus", _make_rounded_btn_style(bg_norm, p_accent, 8));
-	p_btn->add_theme_color_override("font_color", p_active ? Color(1.0f, 1.0f, 1.0f) : Color(0.88f, 0.90f, 0.95f));
+	if (!p_active && is_default_blue) {
+		const char *sbs[4] = { "normal", "hover", "pressed", "focus" };
+		for (int i = 0; i < 4; i++) {
+			if (p_btn->has_theme_stylebox_override(sbs[i])) {
+				p_btn->remove_theme_style_override(sbs[i]);
+			}
+		}
+		if (p_btn->has_theme_color_override("font_color")) {
+			p_btn->remove_theme_color_override("font_color");
+		}
+		return;
+	}
+
+	Color bg_norm = p_active ? tk.surface_panel.lerp(accent, 0.24f) : tk.surface_panel;
+	Color bd_norm = p_active ? accent : tk.border_copper;
+	Color bg_hov = p_active ? tk.surface_panel.lerp(accent, 0.34f) : tk.surface_elevated;
+	Color bg_prs = tk.surface_sunken.lerp(accent, 0.20f);
+
+	Ref<StyleBoxFlat> s_n = _make_rounded_btn_style(bg_norm, bd_norm, r6);
+	if (p_active) {
+		s_n->set_border_width_all(2);
+		s_n->set_shadow_color(Color(accent.r, accent.g, accent.b, tk.halo_color.a));
+		s_n->set_shadow_size(tk.halo_radius_px);
+		s_n->set_shadow_offset(Vector2(0, 0));
+	}
+	Ref<StyleBoxFlat> s_h = _make_rounded_btn_style(bg_hov, p_active ? accent : tk.border_copper_bright, r6);
+	s_h->set_shadow_color(tk.halo_color);
+	s_h->set_shadow_size(tk.halo_radius_px);
+	s_h->set_shadow_offset(Vector2(0, 0));
+	Ref<StyleBoxFlat> s_p = _make_rounded_btn_style(bg_prs, accent, r6);
+
+	p_btn->set_meta("_cg_theme_managed_container", true);
+	p_btn->add_theme_style_override("normal", s_n);
+	p_btn->add_theme_style_override("hover", s_h);
+	p_btn->add_theme_style_override("pressed", s_p);
+	p_btn->add_theme_style_override("focus", s_h);
+	if (p_active) {
+		p_btn->add_theme_color_override("font_color", tk.accent_neon.lightened(0.25f));
+	} else if (p_btn->has_theme_color_override("font_color")) {
+		p_btn->remove_theme_color_override("font_color");
+	}
 }
 
 void ClockGearsShapeEditor::_apply_spinbox_round_style(SpinBox *p_sb) {
@@ -1057,7 +1096,7 @@ void ClockGearsShapeEditor::_bind_methods() {
 }
 
 void ClockGearsShapeEditor::_notification(int p_what) {
-	if (p_what == NOTIFICATION_READY) {
+	if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_THEME_CHANGED) {
 		_update_toolbar_states();
 		_sync_inspector_from_data();
 	}
@@ -1171,12 +1210,10 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 	add_child(workspace_hb);
 
 	canvas_frame = memnew(PanelContainer);
+	canvas_frame->set_theme_type_variation("ClockGearsPreviewFrame");
 	canvas_frame->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_frame->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_frame->set_custom_minimum_size(Size2(320.0f * CG_SE_EDSCALE, 280.0f * CG_SE_EDSCALE));
-	Ref<StyleBoxFlat> cf_sb = _make_rounded_btn_style(Color(0.09f, 0.10f, 0.14f, 1.0f), Color(0.30f, 0.35f, 0.45f, 0.9f), 8);
-	cf_sb->set_content_margin_all(2.0f * CG_SE_EDSCALE);
-	canvas_frame->add_theme_style_override("panel", cf_sb);
 	workspace_hb->add_child(canvas_frame);
 
 	canvas = memnew(ClockGearsShapeCanvas(this));
@@ -1186,12 +1223,10 @@ ClockGearsShapeEditor::ClockGearsShapeEditor() {
 
 	// Panel Inspector derecho (ancho compacto pero cómodo, sin scroll horizontal)
 	inspector_panel = memnew(PanelContainer);
+	inspector_panel->set_theme_type_variation("ClockGearsContainer");
 	inspector_panel->set_custom_minimum_size(Size2(304.0f * CG_SE_EDSCALE, 0));
 	inspector_panel->set_h_size_flags(Control::SIZE_FILL);
 	inspector_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	Ref<StyleBoxFlat> ins_sb = _make_rounded_btn_style(Color(0.13f, 0.15f, 0.20f, 0.95f), Color(0.28f, 0.33f, 0.44f, 0.85f), 8);
-	ins_sb->set_content_margin_all(10.0f * CG_SE_EDSCALE);
-	inspector_panel->add_theme_style_override("panel", ins_sb);
 	workspace_hb->add_child(inspector_panel);
 
 	inspector_scroll = memnew(ScrollContainer);
@@ -1775,19 +1810,19 @@ void ClockGearsShapeEditor::_sync_inspector_from_data() {
 
 void ClockGearsShapeEditor::_update_toolbar_states() {
 	for (int i = 0; i < 8; i++) {
-		_apply_rounded_button_styles(zoom_btns[i], zoom == (i + 1), Color(0.28f, 0.56f, 0.92f));
+		_apply_rounded_button_styles(zoom_btns[i], zoom == (i + 1), Color(0, 0, 0, 0));
 	}
 	if (btn_grid) {
 		btn_grid->set_pressed_no_signal(grid_enabled);
-		_apply_rounded_button_styles(btn_grid, grid_enabled, Color(0.28f, 0.62f, 0.85f));
+		_apply_rounded_button_styles(btn_grid, grid_enabled, Color(0, 0, 0, 0));
 	}
 	if (btn_snap) {
 		btn_snap->set_pressed_no_signal(snap_enabled);
-		_apply_rounded_button_styles(btn_snap, snap_enabled, Color(0.90f, 0.68f, 0.25f));
+		_apply_rounded_button_styles(btn_snap, snap_enabled, Color(0, 0, 0, 0));
 	}
 	if (btn_center_view) {
 		btn_center_view->set_visible(editor_mode != MODE_ANIMATION || view_pan.length_squared() > 0.5f);
-		_apply_rounded_button_styles(btn_center_view, false, Color(0.32f, 0.58f, 0.92f));
+		_apply_rounded_button_styles(btn_center_view, false, Color(0, 0, 0, 0));
 	}
 
 	bool is_anim = (editor_mode == MODE_ANIMATION);
@@ -1813,18 +1848,18 @@ void ClockGearsShapeEditor::_update_toolbar_states() {
 		_apply_rounded_button_styles(btn_target_hurtbox, current_target == TARGET_HURTBOX, Color(0.25f, 0.62f, 0.96f));
 	}
 
-	Color tool_accent = Color(0.28f, 0.62f, 0.96f);
+	Color tool_accent = Color(0, 0, 0, 0);
 	if (is_anim) {
 		tool_accent = (current_target == TARGET_HITBOX && allow_hitboxes)
 				? Color(0.92f, 0.34f, 0.34f)
 				: Color(0.28f, 0.62f, 0.96f);
 	} else if (is_bz) {
-		tool_accent = (selected_bz_idx >= 0) ? get_zone_color(selected_bz_idx) : Color(0.32f, 0.84f, 1.0f);
+		tool_accent = (selected_bz_idx >= 0) ? get_zone_color(selected_bz_idx) : Color(0, 0, 0, 0);
 	}
 
 	if (btn_tool_select) {
 		btn_tool_select->set_visible(!is_mov);
-		_apply_rounded_button_styles(btn_tool_select, current_tool == TOOL_SELECT, Color(0.32f, 0.58f, 0.92f));
+		_apply_rounded_button_styles(btn_tool_select, current_tool == TOOL_SELECT, Color(0, 0, 0, 0));
 	}
 	if (btn_tool_circle) {
 		btn_tool_circle->set_visible(!is_mov);

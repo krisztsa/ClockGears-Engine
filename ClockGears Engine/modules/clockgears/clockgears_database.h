@@ -1551,6 +1551,7 @@ public:
 	ClockGearsShapeEditor *get_body_zones_editor() const { return body_zones_editor; }
 	ClockGearsShapeEditor *get_movement_shape_editor() const { return movement_shape_editor; }
 	TabContainer *get_main_editor_tabs() const { return main_editor_tabs; }
+	Button *get_apply_button() const { return btn_apply_changes; }
 	bool select_main_tab_by_name(const String &p_name);
 	Dictionary check_all_tabs_layout(const Vector2i &p_window_size);
 	PanelContainer *_make_collapsible_menu_card(Control *p_parent, const String &p_title, VBoxContainer *&r_body, bool p_expanded = true);

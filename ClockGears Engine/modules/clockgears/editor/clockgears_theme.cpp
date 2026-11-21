@@ -1222,6 +1222,23 @@ static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_b
 	Ref<ClockGearsBrassStyleBox> item_hov_sel = item_sel->duplicate();
 	item_hov_sel->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, p_light ? 0.28f : 0.30f));
 
+	Ref<StyleBoxFlat> tbl_hdr_n;
+	tbl_hdr_n.instantiate();
+	tbl_hdr_n->set_anti_aliased(true);
+	tbl_hdr_n->set_bg_color(tk.surface_panel);
+	tbl_hdr_n->set_border_width_all(0);
+	tbl_hdr_n->set_border_width(SIDE_BOTTOM, 1);
+	tbl_hdr_n->set_border_color(tk.border_copper);
+	tbl_hdr_n->set_content_margin_individual(m8, m4, m8, m4);
+
+	Ref<StyleBoxFlat> tbl_hdr_h = tbl_hdr_n->duplicate();
+	tbl_hdr_h->set_bg_color(tk.surface_elevated);
+	tbl_hdr_h->set_border_color(tk.border_copper_bright);
+
+	Ref<StyleBoxFlat> tbl_hdr_p = tbl_hdr_n->duplicate();
+	tbl_hdr_p->set_bg_color(tk.surface_sunken);
+	tbl_hdr_p->set_border_color(tk.accent_neon);
+
 	const char *ltypes[] = { "ItemList", "Tree", "ClockGearsSunkenList", nullptr };
 	for (int i = 0; ltypes[i] != nullptr; i++) {
 		const String lt = ltypes[i];
@@ -1231,7 +1248,34 @@ static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_b
 		th->set_stylebox("selected", lt, item_sel);
 		th->set_stylebox("selected_focus", lt, item_sel);
 		th->set_stylebox("focus", lt, btn_f);
+		if (lt != "ItemList") {
+			th->set_stylebox("title_button_normal", lt, tbl_hdr_n);
+			th->set_stylebox("title_button_hover", lt, tbl_hdr_h);
+			th->set_stylebox("title_button_pressed", lt, tbl_hdr_p);
+			th->set_color("title_button_color", lt, tk.accent_neon);
+		}
 	}
+
+	Ref<StyleBoxFlat> card_list_row;
+	card_list_row.instantiate();
+	card_list_row->set_anti_aliased(true);
+	card_list_row->set_bg_color(tk.surface_panel);
+	card_list_row->set_corner_radius_all(r6);
+	card_list_row->set_border_width_all(1);
+	card_list_row->set_border_color(tk.border_subtle);
+	card_list_row->set_content_margin_individual(m12, m4, m8, m4);
+
+	th->set_type_variation("ClockGearsCardItemList", "ItemList");
+	th->set_stylebox("normal", "ClockGearsCardItemList", card_list_row);
+	th->set_stylebox("hovered", "ClockGearsCardItemList", item_hov);
+	th->set_stylebox("hovered_selected", "ClockGearsCardItemList", item_hov_sel);
+	th->set_stylebox("hovered_selected_focus", "ClockGearsCardItemList", item_hov_sel);
+	th->set_stylebox("selected", "ClockGearsCardItemList", item_sel);
+	th->set_stylebox("selected_focus", "ClockGearsCardItemList", item_sel);
+	th->set_stylebox("focus", "ClockGearsCardItemList", btn_f);
+	th->set_constant("v_separation", "ClockGearsCardItemList", m6);
+	th->set_constant("h_separation", "ClockGearsCardItemList", int(20 * p_scale));
+	th->set_constant("icon_margin", "ClockGearsCardItemList", m8);
 
 	Ref<ClockGearsBrassStyleBox> pm_card_sel = item_sel->duplicate();
 	pm_card_sel->set_content_margin_individual(m12, m4, m8, m4);
@@ -1335,6 +1379,36 @@ static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_b
 	th->set_color("font_focus_color", "ClockGearsTabButton", txt_bright);
 	th->set_color("font_disabled_color", "ClockGearsTabButton", txt_dis);
 	th->set_constant("hover_transition_ms", "ClockGearsTabButton", tk.transition_ms);
+
+	Ref<ClockGearsBrassStyleBox> ctab_sel = tab_sel->duplicate();
+	ctab_sel->set_corner_radius_all(r6);
+	ctab_sel->set_content_margin_individual(m4, m4, m4, m4);
+	ctab_sel->set_led_dot(false);
+	Ref<ClockGearsBrassStyleBox> ctab_unsel = tab_unsel->duplicate();
+	ctab_unsel->set_corner_radius_all(r6);
+	ctab_unsel->set_content_margin_individual(m4, m4, m4, m4);
+	Ref<ClockGearsBrassStyleBox> ctab_hov = tab_hov->duplicate();
+	ctab_hov->set_corner_radius_all(r6);
+	ctab_hov->set_content_margin_individual(m4, m4, m4, m4);
+	Ref<ClockGearsBrassStyleBox> ctab_hsel = tab_hov_sel->duplicate();
+	ctab_hsel->set_corner_radius_all(r6);
+	ctab_hsel->set_content_margin_individual(m4, m4, m4, m4);
+	ctab_hsel->set_led_dot(false);
+	Ref<ClockGearsBrassStyleBox> ctab_foc = tab_foc->duplicate();
+	ctab_foc->set_corner_radius_all(r6);
+	ctab_foc->set_content_margin_individual(m4, m4, m4, m4);
+	Ref<ClockGearsBrassStyleBox> ctab_dis = tab_dis->duplicate();
+	ctab_dis->set_corner_radius_all(r6);
+	ctab_dis->set_content_margin_individual(m4, m4, m4, m4);
+
+	th->set_type_variation("ClockGearsCompactTabButton", "ClockGearsTabButton");
+	th->set_stylebox("normal", "ClockGearsCompactTabButton", ctab_unsel);
+	th->set_stylebox("hover", "ClockGearsCompactTabButton", ctab_hov);
+	th->set_stylebox("pressed", "ClockGearsCompactTabButton", ctab_sel);
+	th->set_stylebox("hover_pressed", "ClockGearsCompactTabButton", ctab_hsel);
+	th->set_stylebox("focus", "ClockGearsCompactTabButton", ctab_foc);
+	th->set_stylebox("disabled", "ClockGearsCompactTabButton", ctab_dis);
+	th->set_constant("hover_transition_ms", "ClockGearsCompactTabButton", tk.transition_ms);
 
 	// 7. Barras de desplazamiento (VScrollBar, HScrollBar): finas (8 px), redondeadas, con tirador cobrizo al pasar el ratón
 	const int scroll_px = MAX(6, int(Math::round(8.0f * p_scale)));
@@ -3096,6 +3170,7 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 	}
 
 	const bool had_brass_before = p_root->has_meta("_cg_brass_tree_applied");
+	const bool force_offtree_notify = !p_root->is_inside_tree();
 	if (is_brass) {
 		p_root->set_meta("_cg_brass_tree_applied", true);
 	} else if (had_brass_before) {
@@ -3159,6 +3234,9 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 		Control *c = Object::cast_to<Control>(n);
 		if (!c) {
 			continue;
+		}
+		if (force_offtree_notify) {
+			c->notification(Control::NOTIFICATION_THEME_CHANGED);
 		}
 
 		if ((Object::cast_to<LineEdit>(c) || Object::cast_to<TextEdit>(c)) && !c->has_meta("_cg_in_hov_conn")) {

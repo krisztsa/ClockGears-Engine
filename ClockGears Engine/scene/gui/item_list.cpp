@@ -1549,6 +1549,11 @@ void ItemList::_notification(int p_what) {
 			}
 
 			Rect2 cursor_rcache; // Place to save the position of the cursor and draw it after everything else.
+			static const StringName sn_item_card_normal("normal");
+			Ref<StyleBox> item_card_sb;
+			if (has_theme_stylebox(sn_item_card_normal)) {
+				item_card_sb = get_theme_stylebox(sn_item_card_normal);
+			}
 
 			// Draw visible items.
 			for (int i = first_item_visible; i < items.size(); i++) {
@@ -1600,6 +1605,8 @@ void ItemList::_notification(int p_what) {
 						style = theme_cache.hovered_style;
 					} else if (is_selected) {
 						style = sbsel;
+					} else if (item_card_sb.is_valid()) {
+						style = item_card_sb;
 					}
 				}
 

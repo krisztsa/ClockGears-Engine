@@ -472,6 +472,7 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_body_zones_editor"), &ClockGearsDatabaseDialog::get_body_zones_editor);
 	ClassDB::bind_method(D_METHOD("get_movement_shape_editor"), &ClockGearsDatabaseDialog::get_movement_shape_editor);
 	ClassDB::bind_method(D_METHOD("get_main_editor_tabs"), &ClockGearsDatabaseDialog::get_main_editor_tabs);
+	ClassDB::bind_method(D_METHOD("get_apply_button"), &ClockGearsDatabaseDialog::get_apply_button);
 	ClassDB::bind_method(D_METHOD("select_main_tab_by_name", "name"), &ClockGearsDatabaseDialog::select_main_tab_by_name);
 	ClassDB::bind_method(D_METHOD("check_all_tabs_layout", "window_size"), &ClockGearsDatabaseDialog::check_all_tabs_layout);
 	ClassDB::bind_method(D_METHOD("adapt_to_window_size", "window_size"), &ClockGearsDatabaseDialog::adapt_to_window_size);
@@ -603,18 +604,50 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 	}
 }
 
+static void s_apply_tree_alternating_rows(Tree *p_tree) {
+	if (!p_tree) {
+		return;
+	}
+	TreeItem *root = p_tree->get_root();
+	if (!root) {
+		return;
+	}
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, EDSCALE);
+	const Color odd_bg(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.045f);
+	const int cols = p_tree->get_columns();
+	int idx = 0;
+	for (TreeItem *it = root->get_first_child(); it; it = it->get_next()) {
+		const bool odd = (idx % 2 == 1);
+		for (int c = 0; c < cols; c++) {
+			if (odd) {
+				it->set_custom_bg_color(c, odd_bg);
+			} else {
+				it->clear_custom_bg_color(c);
+			}
+		}
+		idx++;
+	}
+}
+
 void ClockGearsDatabaseDialog::_apply_db_container_styles() {
 	if (applying_db_container_styles) {
 		return;
 	}
 	const String tid = ClockGearsTheme::get_singleton() ? ClockGearsTheme::get_singleton()->get_active_theme_id() : String("dark");
+	const int glow_lvl = ClockGearsTheme::get_glow_effects_level();
+	const String style_key = vformat("%s_g%d", tid, glow_lvl);
 	const float sc = EDSCALE;
-	if (tid == last_container_theme_id && Math::is_equal_approx(sc, last_container_theme_scale)) {
+	if (style_key == last_container_theme_id && Math::is_equal_approx(sc, last_container_theme_scale)) {
 		return;
 	}
 	applying_db_container_styles = true;
-	last_container_theme_id = tid;
+	last_container_theme_id = style_key;
 	last_container_theme_scale = sc;
+	const bool is_brass = (tid == "brass");
+	const bool is_light = (tid == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, sc);
 	if (chapters_panel) {
 		chapters_panel->set_meta("_cg_theme_managed_container", true);
 		chapters_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(sc, 8, 6, 1));
@@ -631,6 +664,43 @@ void ClockGearsDatabaseDialog::_apply_db_container_styles() {
 		sys_arpg_realtime_panel->set_meta("_cg_theme_managed_container", true);
 		sys_arpg_realtime_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(sc, 14, 14, 2));
 	}
+	if (col1_title) {
+		col1_title->add_theme_color_override("font_color", tk.accent_neon);
+	}
+	if (col2_title) {
+		col2_title->add_theme_color_override("font_color", tk.accent_neon);
+	}
+	if (active_slot_info_label) {
+		active_slot_info_label->add_theme_color_override("font_color", tk.accent_neon);
+	}
+
+	Vector<Node *> stack;
+	stack.push_back(this);
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		if (Object::cast_to<SubViewport>(n)) {
+			continue;
+		}
+		for (int i = 0; i < n->get_child_count(); i++) {
+			stack.push_back(n->get_child(i));
+		}
+		if (HSeparator *sep = Object::cast_to<HSeparator>(n)) {
+			if (sep->get_theme_type_variation() != StringName("ClockGearsSectionHeaderLine")) {
+				sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+			}
+		} else if (Label *lb = Object::cast_to<Label>(n)) {
+			if (lb->has_meta("_cg_db_section_hdr") || (lb->has_theme_color_override("font_color") && lb->get_theme_color("font_color").g > 0.55f && lb->get_theme_color("font_color").r > 0.80f && lb->get_theme_color("font_color").b < 0.45f)) {
+				lb->set_meta("_cg_db_section_hdr", true);
+				lb->add_theme_color_override("font_color", tk.accent_neon);
+			}
+		}
+	}
+
+	s_apply_tree_alternating_rows(traits_tree);
+	s_apply_tree_alternating_rows(effects_tree);
+	s_apply_tree_alternating_rows(enemy_actions_tree);
+	s_apply_tree_alternating_rows(event_tab_pages_tree);
 	applying_db_container_styles = false;
 }
 
@@ -3527,6 +3597,7 @@ void ClockGearsDatabaseDialog::_refresh_action_patterns_tree(const Array &p_acti
 		item->set_text(3, String::num_int64(rating));
 		item->set_metadata(0, i);
 	}
+	s_apply_tree_alternating_rows(enemy_actions_tree);
 }
 
 void ClockGearsDatabaseDialog::_on_add_action_pattern_pressed() {
@@ -3708,6 +3779,7 @@ void ClockGearsDatabaseDialog::_refresh_traits_tree(const Array &p_traits) {
 		item->set_text(2, String::num(val, 1));
 		item->set_metadata(0, i);
 	}
+	s_apply_tree_alternating_rows(traits_tree);
 }
 
 void ClockGearsDatabaseDialog::_on_add_trait_pressed() {
@@ -3865,6 +3937,7 @@ void ClockGearsDatabaseDialog::_refresh_effects_tree(const Array &p_effects) {
 		item->set_text(2, vformat("%s / %s", String::num(val1, 0), String::num(val2, 0)));
 		item->set_metadata(0, i);
 	}
+	s_apply_tree_alternating_rows(effects_tree);
 }
 
 void ClockGearsDatabaseDialog::_on_add_effect_pressed() {
@@ -5787,6 +5860,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	col1_box->add_child(col1_title);
 
 	record_list = memnew(ItemList);
+	record_list->set_theme_type_variation("ClockGearsCardItemList");
 	record_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	record_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	record_list->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
@@ -5858,16 +5932,16 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	tab0_margin_container = tab0_margin;
 	tab0_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tab0_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	tab0_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
-	tab0_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
-	tab0_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	tab0_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_left", int(14 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_top", int(14 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_right", int(14 * EDSCALE));
+	tab0_margin->add_theme_constant_override("margin_bottom", int(14 * EDSCALE));
 	col2_scroll->add_child(tab0_margin);
 
 	col2_box = memnew(VBoxContainer);
 	col2_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	col2_box->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	col2_box->add_theme_constant_override("separation", int(16 * EDSCALE));
+	col2_box->add_theme_constant_override("separation", int(18 * EDSCALE));
 	tab0_margin->add_child(col2_box);
 
 	// Pestaña 1: "Combate" (Enemigos: Debilidades, Patrones IA y Rasgos)
@@ -5882,16 +5956,16 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	MarginContainer *tab1_margin = memnew(MarginContainer);
 	tab1_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tab1_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	tab1_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
-	tab1_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
-	tab1_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	tab1_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_left", int(14 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_top", int(14 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_right", int(14 * EDSCALE));
+	tab1_margin->add_theme_constant_override("margin_bottom", int(14 * EDSCALE));
 	combat_tab_scroll->add_child(tab1_margin);
 
 	combat_tab_vbox = memnew(VBoxContainer);
 	combat_tab_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	combat_tab_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	combat_tab_vbox->add_theme_constant_override("separation", int(16 * EDSCALE));
+	combat_tab_vbox->add_theme_constant_override("separation", int(18 * EDSCALE));
 	tab1_margin->add_child(combat_tab_vbox);
 
 	// Pestaña 2: "Animaciones" (Actores y Enemigos)
@@ -5906,10 +5980,10 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	MarginContainer *tab2_margin = memnew(MarginContainer);
 	tab2_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tab2_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	tab2_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
-	tab2_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
-	tab2_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	tab2_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_left", int(14 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_top", int(14 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_right", int(14 * EDSCALE));
+	tab2_margin->add_theme_constant_override("margin_bottom", int(14 * EDSCALE));
 	anim_editor_scroll->add_child(tab2_margin);
 
 	anim_empty_state_label = memnew(Label(CG_DB_TR("Crea una entrada con +")));
@@ -5923,7 +5997,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	sprite_anim_editor_box = memnew(VBoxContainer);
 	sprite_anim_editor_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	sprite_anim_editor_box->add_theme_constant_override("separation", int(16 * EDSCALE));
+	sprite_anim_editor_box->add_theme_constant_override("separation", int(18 * EDSCALE));
 	tab2_margin->add_child(sprite_anim_editor_box);
 
 	// Pestaña 3: "Evento" (NPC, NPC ARPG, Enemigos ARPG)
@@ -6018,15 +6092,8 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	standard_graphic_box->add_child(graphic_center);
 
 	graphic_frame = memnew(PanelContainer);
+	graphic_frame->set_theme_type_variation("ClockGearsPreviewFrame");
 	graphic_frame->set_custom_minimum_size(Size2(96 * EDSCALE, 96 * EDSCALE));
-	Ref<StyleBoxFlat> dark_frame = memnew(StyleBoxFlat);
-	dark_frame->set_anti_aliased(true);
-	dark_frame->set_bg_color(Color(0.08f, 0.09f, 0.11f, 1.0f));
-	dark_frame->set_corner_radius_all(int(6 * EDSCALE));
-	dark_frame->set_border_width_all(1);
-	dark_frame->set_border_color(Color(0.28f, 0.31f, 0.37f, 1.0f));
-	dark_frame->set_content_margin_all(4);
-	graphic_frame->add_theme_style_override("panel", dark_frame);
 	graphic_center->add_child(graphic_frame);
 
 	graphic_preview = memnew(TextureRect);
@@ -7412,6 +7479,8 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	system_panel->add_child(memnew(HSeparator));
 
 	sys_party_list = memnew(ItemList);
+	sys_party_list->set_theme_type_variation("ClockGearsCardItemList");
+	sys_party_list->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	sys_party_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	sys_party_list->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
 	system_panel->add_child(sys_party_list);
@@ -7450,6 +7519,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_placement_col3_box->add_child(lbl_tp_hdr);
 	troop_placement_col3_box->add_child(memnew(HSeparator));
 
+	PanelContainer *troop_prev_frame = memnew(PanelContainer);
+	troop_prev_frame->set_name("ClockGearsTroopPreviewFrame");
+	troop_prev_frame->set_theme_type_variation("ClockGearsPreviewFrame");
+	troop_prev_frame->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	troop_placement_col3_box->add_child(troop_prev_frame);
+
 	troop_placement_canvas = memnew(Control);
 	troop_placement_canvas->set_custom_minimum_size(Size2(540 * EDSCALE, 304 * EDSCALE));
 	troop_placement_canvas->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -7458,7 +7533,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	troop_placement_canvas->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	troop_placement_canvas->connect("draw", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_draw));
 	troop_placement_canvas->connect("gui_input", callable_mp(this, &ClockGearsDatabaseDialog::_on_troop_placement_canvas_gui_input));
-	troop_placement_col3_box->add_child(troop_placement_canvas);
+	troop_prev_frame->add_child(troop_placement_canvas);
 
 	troop_bg_layer_ctrl = memnew(Control);
 	troop_bg_layer_ctrl->set_anchors_preset(Control::PRESET_FULL_RECT);
@@ -7714,7 +7789,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	lbl_b3->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	frames_bar->add_child(lbl_b3);
 
-	btn_open_sheet_importer = memnew(Button(CG_DB_TR("🎞 Añadir frames desde spritesheet...")));
+	btn_open_sheet_importer = memnew(Button(CG_DB_TR("Añadir frames desde spritesheet...")));
 	btn_open_sheet_importer->set_custom_minimum_size(Size2(240 * EDSCALE, row_h));
 	btn_open_sheet_importer->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_open_sheet_importer_pressed));
 	frames_bar->add_child(btn_open_sheet_importer);
@@ -7747,16 +7822,8 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	prev_col->add_child(lbl_prev);
 
 	PanelContainer *prev_panel = memnew(PanelContainer);
+	prev_panel->set_theme_type_variation("ClockGearsPreviewFrame");
 	prev_panel->set_custom_minimum_size(Size2(136 * EDSCALE, 136 * EDSCALE));
-	Ref<StyleBoxFlat> prev_sb;
-	prev_sb.instantiate();
-	prev_sb->set_anti_aliased(true);
-	prev_sb->set_bg_color(Color(0.12f, 0.14f, 0.18f, 0.95f));
-	prev_sb->set_border_width_all(1);
-	prev_sb->set_border_color(Color(0.3f, 0.35f, 0.45f, 0.8f));
-	prev_sb->set_corner_radius_all(6);
-	prev_sb->set_content_margin_all(int(4 * EDSCALE));
-	prev_panel->add_theme_style_override("panel", prev_sb);
 	prev_col->add_child(prev_panel);
 
 	anim_preview_rect = memnew(TextureRect);
@@ -7936,8 +8003,13 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	traits_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	col2_box->add_child(traits_box);
 
-	traits_box->add_child(memnew(HSeparator));
-	traits_box->add_child(memnew(Label(CG_DB_TR("Rasgos"))));
+	Label *lbl_traits_hdr = memnew(Label(CG_DB_TR("Rasgos")));
+	lbl_traits_hdr->set_meta("_cg_db_section_hdr", true);
+	lbl_traits_hdr->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	traits_box->add_child(lbl_traits_hdr);
+	HSeparator *traits_sep = memnew(HSeparator);
+	traits_sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	traits_box->add_child(traits_sep);
 
 	traits_tree = memnew(Tree);
 	traits_tree->set_columns(3);
@@ -8005,8 +8077,13 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	effects_box->hide();
 	col2_box->add_child(effects_box);
 
-	effects_box->add_child(memnew(HSeparator));
-	effects_box->add_child(memnew(Label(CG_DB_TR("Efectos de uso"))));
+	Label *lbl_effects_hdr = memnew(Label(CG_DB_TR("Efectos de uso")));
+	lbl_effects_hdr->set_meta("_cg_db_section_hdr", true);
+	lbl_effects_hdr->add_theme_color_override("font_color", Color(0.88f, 0.65f, 0.25f));
+	effects_box->add_child(lbl_effects_hdr);
+	HSeparator *effects_sep = memnew(HSeparator);
+	effects_sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	effects_box->add_child(effects_sep);
 
 	effects_tree = memnew(Tree);
 	effects_tree->set_columns(3);
@@ -8107,41 +8184,8 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	db_tile_picker->set_on_request_load(callable_mp(this, &ClockGearsDatabaseDialog::_on_load_tileset_sheet_pressed));
 	tileset_collision_box->add_child(db_tile_picker);
 
-	// Estilo compacto redondeado (esquinas 6px, borde 1px) para botones del pie de Tilesets
-	const Color ts_accent = ClockGearsTheme::color_accent_amber();
-	const int ts_r6 = int(6 * EDSCALE);
-	Ref<StyleBoxFlat> ts_tab_norm = memnew(StyleBoxFlat);
-	ts_tab_norm->set_anti_aliased(true);
-	ts_tab_norm->set_bg_color(Color::html("#2a2e38"));
-	ts_tab_norm->set_corner_radius_all(ts_r6);
-	ts_tab_norm->set_border_width_all(1);
-	ts_tab_norm->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.14f));
-	ts_tab_norm->set_content_margin_all(int(2 * EDSCALE));
-
-	Ref<StyleBoxFlat> ts_tab_hov = ts_tab_norm->duplicate();
-	ts_tab_hov->set_bg_color(Color::html("#353b48"));
-	ts_tab_hov->set_border_color(Color(ts_accent.r, ts_accent.g, ts_accent.b, 0.65f));
-
-	Ref<StyleBoxFlat> ts_tab_prs = ts_tab_norm->duplicate();
-	ts_tab_prs->set_bg_color(Color(0.24f, 0.20f, 0.14f, 1.0f));
-	ts_tab_prs->set_border_color(ts_accent);
-
-	Ref<StyleBoxFlat> ts_tab_hprs = ts_tab_prs->duplicate();
-	ts_tab_hprs->set_bg_color(Color(0.29f, 0.24f, 0.16f, 1.0f));
-
-	auto apply_ts_btn_style = [&](Button *p_btn, int p_pad_lr) {
-		Ref<StyleBoxFlat> bn = ts_tab_norm->duplicate();
-		Ref<StyleBoxFlat> bh = ts_tab_hov->duplicate();
-		Ref<StyleBoxFlat> bp = ts_tab_prs->duplicate();
-		Ref<StyleBoxFlat> bhp = ts_tab_hprs->duplicate();
-		bn->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
-		bh->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
-		bp->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
-		bhp->set_content_margin_individual(p_pad_lr, int(2 * EDSCALE), p_pad_lr, int(2 * EDSCALE));
-		p_btn->add_theme_style_override("normal", bn);
-		p_btn->add_theme_style_override("hover", bh);
-		p_btn->add_theme_style_override("pressed", bp);
-		p_btn->add_theme_style_override("hover_pressed", bhp);
+	auto apply_ts_btn_style = [&](Button *p_btn, bool p_is_compact_tab) {
+		p_btn->set_theme_type_variation(p_is_compact_tab ? "ClockGearsCompactTabButton" : "Button");
 	};
 
 	// e) Pestañas A B C D E + subpestañas A1 A2 A3 A4 A5 en una sola fila alineada a la izquierda (28x28 px)
@@ -8173,7 +8217,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn_ts_group_tab[g]->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
 		btn_ts_group_tab[g]->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 		btn_ts_group_tab[g]->set_tooltip_text(CG_DB_TR(group_tips[g]));
-		apply_ts_btn_style(btn_ts_group_tab[g], int(2 * EDSCALE));
+		apply_ts_btn_style(btn_ts_group_tab[g], true);
 		btn_ts_group_tab[g]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_group_tab_pressed).bind(g));
 		tileset_group_tabs_box->add_child(btn_ts_group_tab[g]);
 	}
@@ -8201,7 +8245,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		btn_ts_a_subtab[a]->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
 		btn_ts_a_subtab[a]->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 		btn_ts_a_subtab[a]->set_tooltip_text(CG_DB_TR(sub_tips[a]));
-		apply_ts_btn_style(btn_ts_a_subtab[a], int(2 * EDSCALE));
+		apply_ts_btn_style(btn_ts_a_subtab[a], true);
 		btn_ts_a_subtab[a]->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_tileset_a_subtab_pressed).bind(a));
 		tileset_a_subtabs_box->add_child(btn_ts_a_subtab[a]);
 	}
@@ -8216,7 +8260,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	active_slot_info_label = memnew(Label(CG_DB_TR("Ranura activa: A5")));
 	active_slot_info_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	active_slot_info_label->set_clip_text(true);
-	active_slot_info_label->add_theme_color_override("font_color", ts_accent);
+	active_slot_info_label->set_meta("_cg_db_section_hdr", true);
 	slot_status_row->add_child(active_slot_info_label);
 
 	btn_load_tileset_sheet = memnew(Button(CG_DB_TR("Cargar Hoja...")));
@@ -8224,7 +8268,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	btn_load_tileset_sheet->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 	btn_load_tileset_sheet->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 	btn_load_tileset_sheet->set_custom_minimum_size(Size2(0, int(28 * EDSCALE)));
-	apply_ts_btn_style(btn_load_tileset_sheet, int(8 * EDSCALE));
+	apply_ts_btn_style(btn_load_tileset_sheet, false);
 	btn_load_tileset_sheet->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_load_tileset_sheet_pressed));
 	slot_status_row->add_child(btn_load_tileset_sheet);
 
@@ -8233,7 +8277,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	btn_picker_help->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 	btn_picker_help->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
 	btn_picker_help->set_text_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	apply_ts_btn_style(btn_picker_help, int(2 * EDSCALE));
+	apply_ts_btn_style(btn_picker_help, true);
 	btn_picker_help->set_tooltip_text(CG_DB_TR("Clic en cada tile para alternar pasabilidad:\n○ (Círculo) = Pasable (Suelo)\n× (Cruz) = Bloqueado (Colisión)\n★ (Estrella) = Sobre personaje (Techo/Pasa detrás)\n4-Dir = Pasabilidad por flechas (↓ ← → ↑)\nTerr = Etiqueta de Terreno (0 a 7)\nArb = Arbusto (~)\nMost = Mostrador (♦)\nEsc = Escalera (H)\nDaño = Daño de suelo (▲)"));
 	slot_status_row->add_child(btn_picker_help);
 
@@ -8280,6 +8324,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_db_ok_pressed));
 	if (get_ok_button()) {
 		get_ok_button()->set_text(CG_DB_TR("OK"));
+		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
 		get_ok_button()->set_custom_minimum_size(Size2(112 * EDSCALE, footer_btn_h));
 	}
 	btn_apply_changes = add_button(CG_DB_TR("Aplicar"), true);
@@ -11607,16 +11652,8 @@ void ClockGearsDatabaseDialog::_refresh_frames_timeline() {
 			frame.sheet_path = spath;
 		}
 		PanelContainer *pnl = memnew(PanelContainer);
+		pnl->set_theme_type_variation("ClockGearsPreviewFrame");
 		pnl->set_custom_minimum_size(Size2(76 * EDSCALE, 168 * EDSCALE));
-
-		Ref<StyleBoxFlat> sb;
-		sb.instantiate();
-		sb->set_anti_aliased(true);
-		sb->set_bg_color(Color(0.14f, 0.16f, 0.22f, 0.95f));
-		sb->set_border_width_all(1);
-		sb->set_border_color(Color(0.35f, 0.4f, 0.55f, 0.8f));
-		sb->set_corner_radius_all(6);
-		pnl->add_theme_style_override("panel", sb);
 
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->add_theme_constant_override("separation", 4);
@@ -12390,10 +12427,13 @@ void ClockGearsDatabaseDialog::_setup_combat_anims_ui() {
 	combat_anims_box->add_theme_constant_override("separation", int(8 * EDSCALE));
 	sprite_anim_editor_box->add_child(combat_anims_box);
 
-	combat_anims_box->add_child(memnew(HSeparator));
 	Label *lbl_title = memnew(Label(CG_DB_TR("Animaciones de combate")));
+	lbl_title->set_meta("_cg_db_section_hdr", true);
 	lbl_title->add_theme_color_override("font_color", Color(0.9f, 0.75f, 0.3f));
 	combat_anims_box->add_child(lbl_title);
+	HSeparator *ca_sep = memnew(HSeparator);
+	ca_sep->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	combat_anims_box->add_child(ca_sep);
 
 	GridContainer *ca_grid = memnew(GridContainer);
 	ca_grid->set_columns(4);
@@ -12650,6 +12690,7 @@ void ClockGearsDatabaseDialog::_refresh_event_tab_summary() {
 		item->set_text(1, CG_DB_TR(trigger_names[trig]));
 		item->set_text(2, vformat(CG_DB_TR("%d comandos"), cmds_count));
 	}
+	s_apply_tree_alternating_rows(event_tab_pages_tree);
 }
 
 void ClockGearsDatabaseDialog::_on_open_record_event_editor_pressed() {
@@ -13067,15 +13108,8 @@ void ClockGearsDatabaseDialog::_setup_arpg_equip_anim_ui() {
 	ap_ctrl_row->add_child(btn_arpg_prev_play);
 
 	PanelContainer *ap_panel = memnew(PanelContainer);
+	ap_panel->set_theme_type_variation("ClockGearsPreviewFrame");
 	ap_panel->set_custom_minimum_size(Size2(220 * EDSCALE, 190 * EDSCALE));
-	Ref<StyleBoxFlat> ap_sb;
-	ap_sb.instantiate();
-	ap_sb->set_anti_aliased(true);
-	ap_sb->set_bg_color(Color(0.11f, 0.13f, 0.17f, 1.0f));
-	ap_sb->set_border_width_all(1);
-	ap_sb->set_border_color(Color(0.32f, 0.37f, 0.48f, 0.85f));
-	ap_sb->set_corner_radius_all(6);
-	ap_panel->add_theme_style_override("panel", ap_sb);
 	arpg_preview_box->add_child(ap_panel);
 
 	arpg_prev_canvas = memnew(Control);
@@ -14141,6 +14175,14 @@ static void s_style_db_action_button(Button *p_btn, const Color &p_accent = Colo
 	if (!p_btn) {
 		return;
 	}
+	const bool is_default_blue = (Math::abs(p_accent.b - 0.92f) < 0.08f && p_accent.r < 0.40f);
+	if (is_default_blue) {
+		return;
+	}
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, EDSCALE);
+	const int r6 = ClockGearsTheme::get_container_corner_radius(EDSCALE);
 	auto make_sb = [&](const Color &p_bg, const Color &p_bd) {
 		Ref<StyleBoxFlat> sb;
 		sb.instantiate();
@@ -14148,17 +14190,22 @@ static void s_style_db_action_button(Button *p_btn, const Color &p_accent = Colo
 		sb->set_bg_color(p_bg);
 		sb->set_border_width_all(1);
 		sb->set_border_color(p_bd);
-		sb->set_corner_radius_all(8);
+		sb->set_corner_radius_all(r6);
 		sb->set_content_margin(SIDE_LEFT, 8.0f * EDSCALE);
 		sb->set_content_margin(SIDE_RIGHT, 8.0f * EDSCALE);
 		sb->set_content_margin(SIDE_TOP, 4.0f * EDSCALE);
 		sb->set_content_margin(SIDE_BOTTOM, 4.0f * EDSCALE);
 		return sb;
 	};
-	p_btn->add_theme_style_override("normal", make_sb(Color(0.18f, 0.21f, 0.28f, 0.94f), Color(0.32f, 0.37f, 0.48f, 0.85f)));
-	p_btn->add_theme_style_override("hover", make_sb(Color(0.24f, 0.28f, 0.36f, 0.96f), p_accent));
-	p_btn->add_theme_style_override("pressed", make_sb(Color(p_accent.r, p_accent.g, p_accent.b, 0.45f), p_accent));
-	p_btn->add_theme_style_override("focus", make_sb(Color(0.18f, 0.21f, 0.28f, 0.94f), p_accent));
+	p_btn->set_meta("_cg_theme_managed_container", true);
+	p_btn->add_theme_style_override("normal", make_sb(tk.surface_panel.lerp(p_accent, 0.14f), Color(p_accent.r, p_accent.g, p_accent.b, 0.72f)));
+	Ref<StyleBoxFlat> h = make_sb(tk.surface_elevated.lerp(p_accent, 0.22f), p_accent);
+	h->set_shadow_color(Color(p_accent.r, p_accent.g, p_accent.b, tk.halo_color.a));
+	h->set_shadow_size(tk.halo_radius_px);
+	h->set_shadow_offset(Vector2(0, 0));
+	p_btn->add_theme_style_override("hover", h);
+	p_btn->add_theme_style_override("pressed", make_sb(tk.surface_sunken.lerp(p_accent, 0.30f), p_accent));
+	p_btn->add_theme_style_override("focus", h);
 }
 
 static String s_format_zone_action_summary(const Dictionary &p_act) {
@@ -15705,8 +15752,8 @@ void ClockGearsDatabaseDialog::_on_menu_section_toggled(bool p_expanded, Node *p
 
 PanelContainer *ClockGearsDatabaseDialog::_make_collapsible_menu_card(Control *p_parent, const String &p_title, VBoxContainer *&r_body, bool p_expanded) {
 	PanelContainer *card = memnew(PanelContainer);
+	card->set_theme_type_variation("ClockGearsContainer");
 	card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	if (p_parent) {
 		p_parent->add_child(card);
 	}
@@ -15723,20 +15770,10 @@ PanelContainer *ClockGearsDatabaseDialog::_make_collapsible_menu_card(Control *p
 	hdr->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 	hdr->set_clip_text(true);
 	hdr->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
+	hdr->set_meta("_cg_db_section_hdr", true);
 	hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
 	hdr->add_theme_color_override("font_pressed_color", ClockGearsTheme::color_accent_amber());
 	hdr->add_theme_color_override("font_hover_color", Color(1.0f, 0.85f, 0.45f));
-	{
-		Ref<StyleBoxFlat> sb = memnew(StyleBoxFlat);
-		sb->set_bg_color(Color(0.16f, 0.18f, 0.24f, 0.85f));
-		sb->set_corner_radius_all(int(6 * EDSCALE));
-		sb->set_content_margin_individual(int(8 * EDSCALE), int(4 * EDSCALE), int(8 * EDSCALE), int(4 * EDSCALE));
-		hdr->add_theme_style_override("normal", sb);
-		hdr->add_theme_style_override("pressed", sb);
-		Ref<StyleBoxFlat> hov = sb->duplicate();
-		hov->set_bg_color(Color(0.22f, 0.25f, 0.32f, 0.95f));
-		hdr->add_theme_style_override("hover", hov);
-	}
 	outer->add_child(hdr);
 
 	r_body = memnew(VBoxContainer);
@@ -15871,12 +15908,18 @@ Control *ClockGearsDatabaseDialog::_build_16_9_viewport_preview(Control *p_paren
 	holder->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	p_parent->add_child(holder);
 
+	PanelContainer *vp_frame = memnew(PanelContainer);
+	vp_frame->set_theme_type_variation("ClockGearsPreviewFrame");
+	vp_frame->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	vp_frame->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	holder->add_child(vp_frame);
+
 	AspectRatioContainer *aspect = memnew(AspectRatioContainer);
 	aspect->set_ratio(16.0f / 9.0f);
 	aspect->set_stretch_mode(AspectRatioContainer::STRETCH_FIT);
 	aspect->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 	aspect->set_custom_minimum_size(Size2(320 * EDSCALE, 180 * EDSCALE));
-	holder->add_child(aspect);
+	vp_frame->add_child(aspect);
 
 	holder->connect("resized", callable_mp(this, &ClockGearsDatabaseDialog::_on_16_9_holder_resized).bind(holder, aspect));
 	callable_mp(this, &ClockGearsDatabaseDialog::_on_16_9_holder_resized).call_deferred(holder, aspect);
@@ -16259,8 +16302,8 @@ void ClockGearsDatabaseDialog::_setup_main_menu_editor_ui() {
 	menu_main_split->add_child(menu_right_col);
 
 	PanelContainer *prev_card = memnew(PanelContainer);
+	prev_card->set_theme_type_variation("ClockGearsContainer");
 	prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	menu_right_col->add_child(prev_card);
 
 	VBoxContainer *prev_vb = memnew(VBoxContainer);
@@ -17015,24 +17058,6 @@ void ClockGearsDatabaseDialog::_setup_window_styles_editor_ui() {
 	ws_btn_state_tabs->add_tab(CG_DB_TR("Resaltado"));
 	ws_btn_state_tabs->add_tab(CG_DB_TR("Pulsado"));
 	ws_btn_state_tabs->add_tab(CG_DB_TR("Desactivado"));
-	{
-		Ref<StyleBoxFlat> tb_sel = memnew(StyleBoxFlat);
-		tb_sel->set_bg_color(Color(0.18f, 0.21f, 0.27f, 1.0f));
-		tb_sel->set_border_color(Color(0.88f, 0.63f, 0.25f, 0.90f));
-		tb_sel->set_border_width(SIDE_BOTTOM, 2);
-		tb_sel->set_corner_radius_all(int(7 * EDSCALE));
-		tb_sel->set_content_margin_individual(int(10 * EDSCALE), int(5 * EDSCALE), int(10 * EDSCALE), int(5 * EDSCALE));
-
-		Ref<StyleBoxFlat> tb_unsel = memnew(StyleBoxFlat);
-		tb_unsel->set_bg_color(Color(0.12f, 0.13f, 0.17f, 0.92f));
-		tb_unsel->set_corner_radius_all(int(7 * EDSCALE));
-		tb_unsel->set_content_margin_individual(int(10 * EDSCALE), int(5 * EDSCALE), int(10 * EDSCALE), int(5 * EDSCALE));
-
-		ws_btn_state_tabs->add_theme_style_override("tab_selected", tb_sel);
-		ws_btn_state_tabs->add_theme_style_override("tab_hovered", tb_sel);
-		ws_btn_state_tabs->add_theme_style_override("tab_unselected", tb_unsel);
-		ws_btn_state_tabs->add_theme_style_override("tab_focus", tb_sel);
-	}
 	ws_btn_state_tabs->connect("tab_changed", callable_mp(this, &ClockGearsDatabaseDialog::_on_ws_btn_tab_changed));
 	btn_card->add_child(ws_btn_state_tabs);
 
@@ -17067,18 +17092,10 @@ void ClockGearsDatabaseDialog::_setup_window_styles_editor_ui() {
 	prev_bar->add_child(ws_preview_size_opt);
 
 	ws_preview_backdrop = memnew(PanelContainer);
+	ws_preview_backdrop->set_theme_type_variation("ClockGearsPreviewFrame");
 	ws_preview_backdrop->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	ws_preview_backdrop->set_custom_minimum_size(Size2(220 * EDSCALE, 230 * EDSCALE));
 	ws_preview_backdrop->set_clip_contents(true);
-	{
-		Ref<StyleBoxFlat> bg_sb = memnew(StyleBoxFlat);
-		bg_sb->set_bg_color(Color(0.06f, 0.07f, 0.10f, 1.0f));
-		bg_sb->set_border_width_all(1);
-		bg_sb->set_border_color(Color(1.0f, 1.0f, 1.0f, 0.10f));
-		bg_sb->set_corner_radius_all(int(8 * EDSCALE));
-		bg_sb->set_content_margin_all(int(14 * EDSCALE));
-		ws_preview_backdrop->add_theme_style_override("panel", bg_sb);
-	}
 	prev_card->add_child(ws_preview_backdrop);
 
 	VBoxContainer *prev_inner = memnew(VBoxContainer);
@@ -18379,10 +18396,10 @@ void ClockGearsDatabaseDialog::_setup_game_menu_editor_ui() {
 
 	// Columna derecha: Vista previa en vivo + Probar
 	gm_prev_card = memnew(PanelContainer);
+	gm_prev_card->set_theme_type_variation("ClockGearsContainer");
 	gm_prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	gm_prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	gm_prev_card->set_stretch_ratio(1.0f);
-	gm_prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	gm_main_split->add_child(gm_prev_card);
 
 	VBoxContainer *prev_vb = memnew(VBoxContainer);
@@ -19406,10 +19423,10 @@ void ClockGearsDatabaseDialog::_setup_credits_editor_ui() {
 
 	// Columna derecha: Vista previa en vivo + Probar
 	cred_prev_card = memnew(PanelContainer);
+	cred_prev_card->set_theme_type_variation("ClockGearsContainer");
 	cred_prev_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	cred_prev_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	cred_prev_card->set_stretch_ratio(1.0f);
-	cred_prev_card->add_theme_style_override("panel", ClockGearsTheme::make_card_stylebox(EDSCALE));
 	cred_main_split->add_child(cred_prev_card);
 
 	VBoxContainer *prev_vb = memnew(VBoxContainer);
