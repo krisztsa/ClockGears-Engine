@@ -195,6 +195,7 @@ static XRServer *xr_server = nullptr;
 static bool _start_success = false;
 
 static bool cg_splash_active = false;
+static bool cg_splash_waiting_first_frame = false;
 static DisplayServerEnums::WindowMode cg_saved_window_mode = DisplayServerEnums::WINDOW_MODE_WINDOWED;
 static Size2i cg_saved_window_size;
 static uint32_t cg_saved_window_flags = 0;
@@ -214,40 +215,30 @@ static void _cg_finish_splash() {
 	if (!cg_splash_active) {
 		return;
 	}
-	cg_splash_active = false;
-	ClockGearsBootSplash::present_stage(ClockGearsBootSplash::TOTAL_STAGES, ClockGearsBootSplash::TOTAL_STAGES, String::utf8("Listo"), true);
+	// Marcar la ventana propia de carga en estado "Listo" (100 %).
+	// El cierre con desvanecimiento ocurre SIEMPRE cuando el editor/administrador dibuja su primer fotograma real
+	// (o mediante el seguro anti-bloqueo de 15 s si algo impide presentar).
+	ClockGearsBootSplash::mark_ready();
+	cg_splash_waiting_first_frame = true;
 
-	DisplayServer *ds = DisplayServer::get_singleton();
-	if (!ds) {
-		return;
-	}
 	const Color clear_col = ClockGearsBootSplash::get_active_clear_color();
 	if (RenderingServer::get_singleton()) {
 		RenderingServer::get_singleton()->set_default_clear_color(clear_col);
 	}
-	ds->window_set_mouse_passthrough(Vector<Vector2>(), DisplayServerEnums::MAIN_WINDOW_ID);
-	ds->window_set_flag(DisplayServerEnums::WINDOW_FLAG_RESIZE_DISABLED, (cg_saved_window_flags & DisplayServerEnums::WINDOW_FLAG_RESIZE_DISABLED_BIT) != 0, DisplayServerEnums::MAIN_WINDOW_ID);
-	ds->window_set_flag(DisplayServerEnums::WINDOW_FLAG_BORDERLESS, (cg_saved_window_flags & DisplayServerEnums::WINDOW_FLAG_BORDERLESS_BIT) != 0, DisplayServerEnums::MAIN_WINDOW_ID);
-
-	const Size2i target_sz = (cg_saved_window_size.x > 0 && cg_saved_window_size.y > 0) ? cg_saved_window_size : Size2i(1280, 720);
-	ds->window_set_size(target_sz, DisplayServerEnums::MAIN_WINDOW_ID);
-	if (ds->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !ds->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
-		const Rect2i scr_rect = ds->screen_get_usable_rect(cg_saved_init_screen);
-		if (scr_rect.size != Vector2i()) {
-			ds->window_set_position(scr_rect.position + (scr_rect.size - target_sz) / 2, DisplayServerEnums::MAIN_WINDOW_ID);
-		}
-	}
-	if (cg_saved_init_fullscreen || cg_saved_window_mode == DisplayServerEnums::WINDOW_MODE_FULLSCREEN) {
-		ds->window_set_mode(DisplayServerEnums::WINDOW_MODE_FULLSCREEN, DisplayServerEnums::MAIN_WINDOW_ID);
-	} else if (cg_saved_init_maximized || cg_saved_window_mode == DisplayServerEnums::WINDOW_MODE_MAXIMIZED) {
-		ds->window_set_mode(DisplayServerEnums::WINDOW_MODE_MAXIMIZED, DisplayServerEnums::MAIN_WINDOW_ID);
-	} else if (cg_saved_window_mode != DisplayServerEnums::WINDOW_MODE_WINDOWED) {
-		ds->window_set_mode(cg_saved_window_mode, DisplayServerEnums::MAIN_WINDOW_ID);
-	}
-	if (cg_saved_init_always_on_top) {
-		ds->window_set_flag(DisplayServerEnums::WINDOW_FLAG_ALWAYS_ON_TOP, true, DisplayServerEnums::MAIN_WINDOW_ID);
-	}
 	DisplayServer::set_early_window_clear_color_override(false);
+}
+
+static void _cg_on_first_frame_drawn(bool p_is_editor, bool p_is_project_manager) {
+	if (!cg_splash_active && !cg_splash_waiting_first_frame && !ClockGearsBootSplash::is_window_open()) {
+		return;
+	}
+	cg_splash_active = false;
+	cg_splash_waiting_first_frame = false;
+	const String ctx = p_is_editor ? "editor" : (p_is_project_manager ? "project_manager" : "engine");
+	ClockGearsBootSplash::notify_first_frame_drawn(ctx);
+	if (DisplayServer::get_singleton()) {
+		DisplayServer::get_singleton()->window_move_to_foreground(DisplayServerEnums::MAIN_WINDOW_ID);
+	}
 }
 
 // Drivers
@@ -3481,9 +3472,15 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		Error err;
 		String rendering_driver = OS::get_singleton()->get_current_rendering_driver_name();
-		const DisplayServerEnums::WindowMode create_mode = cg_splash_active ? DisplayServerEnums::WINDOW_MODE_WINDOWED : window_mode;
-		const uint32_t create_flags = cg_splash_active ? (DisplayServerEnums::WINDOW_FLAG_BORDERLESS_BIT | DisplayServerEnums::WINDOW_FLAG_RESIZE_DISABLED_BIT) : window_flags;
-		const Size2i create_size = cg_splash_active ? Size2i(ClockGearsBootSplash::SPLASH_WIDTH, ClockGearsBootSplash::SPLASH_HEIGHT) : window_size;
+		// La ventana principal (MAIN_WINDOW_ID) se crea directamente con sus banderas, tamaño y modo reales,
+		// mientras que la pantalla de carga se muestra en su propia ventana independiente sin bordes (WS_POPUP).
+		if (cg_splash_active) {
+			ClockGearsBootSplash::open_window(init_screen);
+			ClockGearsBootSplash::present_stage(0, ClockGearsBootSplash::TOTAL_STAGES, String::utf8("Iniciando motor..."), false);
+		}
+		const DisplayServerEnums::WindowMode create_mode = window_mode;
+		const uint32_t create_flags = window_flags;
+		const Size2i create_size = window_size;
 		display_server = DisplayServer::create(display_driver_idx, rendering_driver, create_mode, window_vsync_mode, create_flags, window_position, create_size, init_screen, context, init_embed_parent_window_id, err);
 		if (err != OK || display_server == nullptr) {
 			String last_name = DisplayServer::get_create_function_name(display_driver_idx);
@@ -3507,6 +3504,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		}
 
 		if (err != OK || display_server == nullptr) {
+			ClockGearsBootSplash::close_on_error("display_server_create_failed");
 			ERR_PRINT("Unable to create DisplayServer, all display drivers failed.\nUse \"--headless\" command line argument to run the engine in headless mode if this is desired (e.g. for continuous integration).");
 
 			memdelete(display_server);
@@ -3559,13 +3557,9 @@ Error Main::setup2(bool p_show_boot_logo) {
 					break;
 			}
 			if (!(force_res || use_custom_res)) {
-				if (cg_splash_active) {
-					cg_saved_window_size = Size2i(Size2(cg_saved_window_size) * ui_scale);
-				} else {
-					display_server->window_set_size(Size2(window_size) * ui_scale, DisplayServerEnums::MAIN_WINDOW_ID);
-				}
+				display_server->window_set_size(Size2(window_size) * ui_scale, DisplayServerEnums::MAIN_WINDOW_ID);
 			}
-			if (!cg_splash_active && display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
+			if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
 				Size2 real_size = DisplayServer::get_singleton()->window_get_size();
 				Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
 				display_server->window_set_position(scr_rect.position + (scr_rect.size - real_size) / 2, DisplayServerEnums::MAIN_WINDOW_ID);
@@ -3575,16 +3569,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		if (cg_splash_active) {
 			if (display_server->get_name() == "headless") {
 				cg_splash_active = false;
-			} else {
-				const Size2i sp_sz(ClockGearsBootSplash::SPLASH_WIDTH, ClockGearsBootSplash::SPLASH_HEIGHT);
-				display_server->window_set_size(sp_sz, DisplayServerEnums::MAIN_WINDOW_ID);
-				if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
-					const Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
-					if (scr_rect.size != Vector2i()) {
-						display_server->window_set_position(scr_rect.position + (scr_rect.size - sp_sz) / 2, DisplayServerEnums::MAIN_WINDOW_ID);
-					}
-				}
-				display_server->window_set_mouse_passthrough(ClockGearsBootSplash::get_rounded_window_polygon(), DisplayServerEnums::MAIN_WINDOW_ID);
+				ClockGearsBootSplash::close_with_fade("headless");
 			}
 		}
 		if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS)) {
@@ -3758,7 +3743,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		MAIN_PRINT("Main: Setup Logo");
 
-		if (!init_embed_parent_window_id && !cg_splash_active) {
+		if (!init_embed_parent_window_id) {
 			if (init_windowed) {
 				//do none..
 			} else if (init_maximized) {
@@ -4065,6 +4050,14 @@ void Main::setup_boot_logo() {
 	MAIN_PRINT("Main: Load Boot Image");
 
 	if (cg_splash_active) {
+		// No pintar la tarjeta de carga sobre el swapchain de MAIN_WINDOW_ID para que el editor nunca quede con el splash pegado.
+		Ref<Image> empty_boot;
+		empty_boot.instantiate();
+		empty_boot->initialize_data(1, 1, false, Image::FORMAT_RGBA8);
+		empty_boot->set_pixel(0, 0, Color(0, 0, 0, 0));
+		const Color clear_bg = ClockGearsBootSplash::get_active_clear_color();
+		RenderingServer::get_singleton()->set_default_clear_color(clear_bg);
+		RenderingServer::get_singleton()->set_boot_image_with_stretch(empty_boot, clear_bg, RSE::SPLASH_STRETCH_MODE_DISABLED, false);
 		ClockGearsBootSplash::present_stage(1, ClockGearsBootSplash::TOTAL_STAGES, String::utf8("Inicializando entorno gráfico y audio..."), false);
 		return;
 	}
@@ -5014,6 +5007,7 @@ int Main::start() {
 	GDExtensionManager::get_singleton()->startup();
 
 	_cg_finish_splash();
+	force_redraw_requested = true;
 
 #ifdef MACOS_ENABLED
 	// TODO: Used to fix full-screen splash drawing on macOS, processing events before main loop is fully initialized cause issues on Wayland, and has no effect on other platforms.
@@ -5258,6 +5252,100 @@ bool Main::iteration() {
 		}
 	}
 
+	if ((cg_splash_active || cg_splash_waiting_first_frame || ClockGearsBootSplash::is_window_open()) &&
+			Engine::get_singleton()->get_frames_drawn() >= 1) {
+		_cg_on_first_frame_drawn(editor, project_manager);
+	}
+	ClockGearsBootSplash::poll_watchdog();
+
+#ifdef TOOLS_ENABLED
+	if (editor && OS::get_singleton()->has_environment("CG_BOOT_TEST_REPORT")) {
+		static uint64_t cg_test_boot_start_ms = 0;
+		if (cg_test_boot_start_ms == 0) {
+			cg_test_boot_start_ms = OS::get_singleton()->get_ticks_msec();
+		}
+		const uint64_t elapsed_ms = OS::get_singleton()->get_ticks_msec() - cg_test_boot_start_ms;
+		const uint64_t proc_frames = Engine::get_singleton()->get_process_frames();
+		const uint64_t drawn_frames = Engine::get_singleton()->get_frames_drawn();
+		force_redraw_requested = true;
+
+		if (drawn_frames >= 12 || proc_frames >= 580 || elapsed_ms >= 50000) {
+			const String report_path = OS::get_singleton()->get_environment("CG_BOOT_TEST_REPORT");
+			int non_black_pixels = 0;
+			int total_sampled = 0;
+			int distinct_buckets = 0;
+			Vector2i win_img_size;
+
+			SceneTree *st = SceneTree::get_singleton();
+			if (st && st->get_root() && st->get_root()->get_texture().is_valid()) {
+				Ref<Image> img = st->get_root()->get_texture()->get_image();
+				if (img.is_valid() && !img->is_empty()) {
+					win_img_size = img->get_size();
+					bool seen_luma[16] = { false };
+					const int step_x = MAX(1, win_img_size.x / 32);
+					const int step_y = MAX(1, win_img_size.y / 24);
+					for (int y = step_y / 2; y < win_img_size.y; y += step_y) {
+						for (int x = step_x / 2; x < win_img_size.x; x += step_x) {
+							const Color c = img->get_pixel(x, y);
+							total_sampled++;
+							if (c.r > 0.04f || c.g > 0.04f || c.b > 0.04f) {
+								non_black_pixels++;
+							}
+							const int bucket = CLAMP((int)(c.get_luminance() * 15.0f), 0, 15);
+							if (!seen_luma[bucket]) {
+								seen_luma[bucket] = true;
+								distinct_buckets++;
+							}
+						}
+					}
+				}
+			}
+
+			Dictionary state = ClockGearsBootSplash::get_last_lifecycle_state();
+			Ref<ConfigFile> cf;
+			cf.instantiate();
+			cf->set_value("boot_test", "splash_window_open", bool(state.get("window_open", true)));
+			cf->set_value("boot_test", "splash_was_opened", bool(state.get("was_opened", false)));
+			cf->set_value("boot_test", "is_independent_window", bool(state.get("is_independent_window", false)));
+			cf->set_value("boot_test", "has_parent", bool(state.get("has_parent", true)));
+			cf->set_value("boot_test", "is_borderless", bool(state.get("is_borderless", false)));
+			cf->set_value("boot_test", "has_titlebar", bool(state.get("has_titlebar", true)));
+			cf->set_value("boot_test", "has_taskbar_button", bool(state.get("has_taskbar_button", true)));
+			cf->set_value("boot_test", "ready_logged", bool(state.get("ready_logged", false)));
+			cf->set_value("boot_test", "first_frame_logged", bool(state.get("first_frame_logged", false)));
+			cf->set_value("boot_test", "close_fade_logged", bool(state.get("close_fade_logged", false)));
+			cf->set_value("boot_test", "closed_reason", String(state.get("closed_reason", "")));
+			cf->set_value("boot_test", "version_badge_unclipped", bool(state.get("version_badge_unclipped", false)));
+			cf->set_value("boot_test", "trace_log_path", String(state.get("trace_log_path", "")));
+			cf->set_value("boot_test", "frames_drawn", (int)drawn_frames);
+			cf->set_value("boot_test", "process_frames", (int)proc_frames);
+			cf->set_value("boot_test", "elapsed_ms", (int)elapsed_ms);
+			cf->set_value("boot_test", "editor_img_width", win_img_size.x);
+			cf->set_value("boot_test", "editor_img_height", win_img_size.y);
+			cf->set_value("boot_test", "non_black_pixels", non_black_pixels);
+			cf->set_value("boot_test", "total_sampled", total_sampled);
+			cf->set_value("boot_test", "distinct_luma_buckets", distinct_buckets);
+			cf->save(report_path);
+
+			const bool all_ok = (!bool(state.get("window_open", true))) &&
+					bool(state.get("is_independent_window", false)) &&
+					(!bool(state.get("has_parent", true))) &&
+					bool(state.get("is_borderless", false)) &&
+					(!bool(state.get("has_titlebar", true))) &&
+					(!bool(state.get("has_taskbar_button", true))) &&
+					bool(state.get("first_frame_logged", false)) &&
+					bool(state.get("close_fade_logged", false)) &&
+					bool(state.get("version_badge_unclipped", false)) &&
+					non_black_pixels > (total_sampled / 2) &&
+					distinct_buckets >= 2;
+			if (st) {
+				st->quit(all_ok ? EXIT_SUCCESS : EXIT_FAILURE);
+			}
+			exit = true;
+		}
+	}
+#endif
+
 	process_ticks = OS::get_singleton()->get_ticks_usec() - process_begin;
 	process_max = MAX(process_ticks, process_max);
 	uint64_t frame_time = OS::get_singleton()->get_ticks_usec() - ticks;
@@ -5377,6 +5465,10 @@ void Main::force_redraw() {
  */
 void Main::cleanup(bool p_force) {
 	Thread::make_main_thread();
+
+	if (ClockGearsBootSplash::is_window_open()) {
+		ClockGearsBootSplash::close_on_error(_start_success ? "shutdown_cleanup" : "startup_failed");
+	}
 
 	GodotProfileZone("cleanup");
 	OS::get_singleton()->benchmark_begin_measure("Shutdown", "Main::Cleanup");

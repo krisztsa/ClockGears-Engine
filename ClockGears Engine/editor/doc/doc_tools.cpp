@@ -560,13 +560,16 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 				if (inherited) {
 					String parent = ClassDB::get_parent_class(c.name);
 					if (from_helper) {
-						while (!helpers_has_property(parent, prop.name)) {
+						while (!parent.is_empty() && !helpers_has_property(parent, prop.name)) {
 							parent = ClassDB::get_parent_class(parent);
 						}
 					} else {
-						while (!ClassDB::has_property(parent, prop.name, true)) {
+						while (!parent.is_empty() && !ClassDB::has_property(parent, prop.name, true)) {
 							parent = ClassDB::get_parent_class(parent);
 						}
+					}
+					if (parent.is_empty()) {
+						continue;
 					}
 					prop.overrides = parent;
 				}

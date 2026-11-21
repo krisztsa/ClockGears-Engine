@@ -2,12 +2,21 @@
 
 #include "core/clockgears_version.h"
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/math/math_funcs.h"
 #include "core/os/os.h"
 #include "main/app_icon.gen.h"
 #include "modules/modules_enabled.gen.h"
 #include "servers/display/display_server.h"
 #include "servers/rendering/rendering_server.h"
+
+#ifdef WINDOWS_ENABLED
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 #ifdef MODULE_CLOCKGEARS_ENABLED
 #include "modules/clockgears/editor/clockgears_theme.h"
@@ -399,15 +408,15 @@ void _build_static_base(Vector<uint8_t> &r_buf, const ClockGearsBootSplash::Pale
 
 	const String ver_txt = String::utf8(CLOCKGEARS_SPLASH_VERSION);
 	const int ver_w = fc.measure_text_width(ver_txt, 11, 0.8f);
-	const int pill_w = ver_w + 20;
-	const int pill_h = 22;
+	const int pill_w = ver_w + 22;
+	const int pill_h = 24;
 	const int pill_x = W - 22 - pill_w;
-	const int pill_y = 20;
+	const int pill_y = 22;
 	r_metrics.badge_rect = Rect2i(pill_x, pill_y, pill_w, pill_h);
 	_draw_filled_rounded_rect(dst, W, H, (float)pill_x, (float)pill_y, (float)pill_w, (float)pill_h, 4.0f,
 			Color(p_pal.badge_bg.r, p_pal.badge_bg.g, p_pal.badge_bg.b, 0.88f),
 			Color(p_pal.card_border.r, p_pal.card_border.g, p_pal.card_border.b, 0.62f), 1.0f);
-	(void)fc.draw_text(dst, W, H, ver_txt, pill_x + 10, pill_y + 15, 11, p_pal.accent_amber, 0.8f, true);
+	(void)fc.draw_text(dst, W, H, ver_txt, pill_x + 11, pill_y + 16, 11, p_pal.accent_amber, 0.8f, true);
 
 	const String title_txt = String::utf8("CLOCKGEARS ENGINE");
 	const int title_w = fc.measure_text_width(title_txt, 27, 2.0f);
@@ -434,7 +443,391 @@ static bool cg_splash_base_brass = false;
 static Vector<uint8_t> cg_splash_base_bytes;
 static ClockGearsBootSplash::LayoutMetrics cg_splash_cached_metrics;
 
+// Estado del ciclo de vida de la ventana propia de carga y trazas por evento (nunca por fotograma).
+static bool cg_splash_window_open = false;
+static bool cg_splash_was_opened = false;
+static bool cg_splash_is_independent = false;
+static bool cg_splash_has_parent = false;
+static bool cg_splash_is_borderless = false;
+static bool cg_splash_has_titlebar = false;
+static bool cg_splash_has_taskbar_btn = false;
+static bool cg_splash_ready_logged = false;
+static bool cg_splash_first_frame_logged = false;
+static bool cg_splash_close_fade_logged = false;
+static bool cg_splash_watchdog_triggered = false;
+static String cg_splash_closed_reason;
+static uint64_t cg_splash_open_msec = 0;
+static uint64_t cg_splash_watchdog_timeout_ms = ClockGearsBootSplash::WATCHDOG_DEFAULT_TIMEOUT_MS;
+static Ref<Image> cg_splash_last_card;
+static Vector<String> cg_splash_pending_logs;
+static bool cg_splash_log_file_initialized = false;
+
+#ifdef WINDOWS_ENABLED
+static HWND cg_splash_hwnd = nullptr;
+static bool cg_splash_wndclass_registered = false;
+static constexpr UINT_PTR CG_SPLASH_WATCHDOG_TIMER_ID = 0xC6E1;
+
+static void _cg_pump_splash_hwnd_messages() {
+	if (!cg_splash_hwnd) {
+		return;
+	}
+	MSG msg;
+	while (PeekMessageW(&msg, cg_splash_hwnd, 0, 0, PM_REMOVE)) {
+		TranslateMessage(&msg);
+		DispatchMessageW(&msg);
+	}
+}
+
+static bool _cg_update_layered_splash(const Ref<Image> &p_card, uint8_t p_global_alpha) {
+	if (!cg_splash_hwnd || p_card.is_null() || p_card->is_empty()) {
+		return false;
+	}
+	const int w = p_card->get_width();
+	const int h = p_card->get_height();
+	if (w <= 0 || h <= 0) {
+		return false;
+	}
+
+	HDC hdc_screen = GetDC(nullptr);
+	if (!hdc_screen) {
+		return false;
+	}
+	HDC hdc_mem = CreateCompatibleDC(hdc_screen);
+	if (!hdc_mem) {
+		ReleaseDC(nullptr, hdc_screen);
+		return false;
+	}
+
+	BITMAPINFO bmi;
+	memset(&bmi, 0, sizeof(bmi));
+	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bmi.bmiHeader.biWidth = w;
+	bmi.bmiHeader.biHeight = -h; // Top-down DIB
+	bmi.bmiHeader.biPlanes = 1;
+	bmi.bmiHeader.biBitCount = 32;
+	bmi.bmiHeader.biCompression = BI_RGB;
+
+	void *dib_bits = nullptr;
+	HBITMAP hbm = CreateDIBSection(hdc_screen, &bmi, DIB_RGB_COLORS, &dib_bits, nullptr, 0);
+	if (!hbm || !dib_bits) {
+		if (hbm) {
+			DeleteObject(hbm);
+		}
+		DeleteDC(hdc_mem);
+		ReleaseDC(nullptr, hdc_screen);
+		return false;
+	}
+
+	// Convertir RGBA8 -> BGRA8 premultiplicado para UpdateLayeredWindow (AC_SRC_ALPHA).
+	const uint8_t *src = p_card->get_data().ptr();
+	uint8_t *dst = reinterpret_cast<uint8_t *>(dib_bits);
+	const int total_px = w * h;
+	for (int i = 0; i < total_px; i++) {
+		const uint8_t r = src[i * 4 + 0];
+		const uint8_t g = src[i * 4 + 1];
+		const uint8_t b = src[i * 4 + 2];
+		const uint8_t a = src[i * 4 + 3];
+		dst[i * 4 + 0] = (uint8_t)((b * a + 127) / 255);
+		dst[i * 4 + 1] = (uint8_t)((g * a + 127) / 255);
+		dst[i * 4 + 2] = (uint8_t)((r * a + 127) / 255);
+		dst[i * 4 + 3] = a;
+	}
+
+	HGDIOBJ old_bmp = SelectObject(hdc_mem, hbm);
+	RECT wnd_rect;
+	GetWindowRect(cg_splash_hwnd, &wnd_rect);
+	POINT pt_dst = { wnd_rect.left, wnd_rect.top };
+	SIZE sz_wnd = { w, h };
+	POINT pt_src = { 0, 0 };
+
+	BLENDFUNCTION bf;
+	bf.BlendOp = AC_SRC_OVER;
+	bf.BlendFlags = 0;
+	bf.SourceConstantAlpha = p_global_alpha;
+	bf.AlphaFormat = AC_SRC_ALPHA;
+
+	BOOL ok = UpdateLayeredWindow(cg_splash_hwnd, hdc_screen, &pt_dst, &sz_wnd, hdc_mem, &pt_src, 0, &bf, ULW_ALPHA);
+
+	SelectObject(hdc_mem, old_bmp);
+	DeleteObject(hbm);
+	DeleteDC(hdc_mem);
+	ReleaseDC(nullptr, hdc_screen);
+	return ok != FALSE;
+}
+
+static void _cg_destroy_splash_hwnd() {
+	if (cg_splash_hwnd) {
+		KillTimer(cg_splash_hwnd, CG_SPLASH_WATCHDOG_TIMER_ID);
+		DestroyWindow(cg_splash_hwnd);
+		cg_splash_hwnd = nullptr;
+	}
+	cg_splash_window_open = false;
+}
+
+static LRESULT CALLBACK _cg_splash_wndproc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	switch (uMsg) {
+		case WM_TIMER: {
+			if (wParam == CG_SPLASH_WATCHDOG_TIMER_ID) {
+				ClockGearsBootSplash::poll_watchdog();
+				return 0;
+			}
+		} break;
+		case WM_NCHITTEST: {
+			return HTCLIENT;
+		}
+		case WM_CLOSE: {
+			_cg_destroy_splash_hwnd();
+			return 0;
+		}
+	}
+	return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+}
+#endif // WINDOWS_ENABLED
+
 } // namespace
+
+void ClockGearsBootSplash::log_event(const String &p_event_line) {
+	const uint64_t ticks = OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0;
+	const String formatted = vformat("[BootSplash t=%dms] %s", (int)ticks, p_event_line);
+	print_line(formatted);
+
+	cg_splash_pending_logs.push_back(formatted);
+	if (!OS::get_singleton()) {
+		return;
+	}
+	const String user_dir = OS::get_singleton()->get_user_data_dir();
+	if (user_dir.is_empty() || !DirAccess::exists(user_dir)) {
+		return;
+	}
+	const String log_path = user_dir.path_join("boot_splash_trace.log");
+	Ref<FileAccess> f = FileAccess::open(log_path, cg_splash_log_file_initialized ? FileAccess::READ_WRITE : FileAccess::WRITE);
+	if (f.is_null()) {
+		return;
+	}
+	if (cg_splash_log_file_initialized) {
+		f->seek_end();
+	}
+	for (int i = 0; i < cg_splash_pending_logs.size(); i++) {
+		f->store_line(cg_splash_pending_logs[i]);
+	}
+	f->flush();
+	cg_splash_pending_logs.clear();
+	cg_splash_log_file_initialized = true;
+}
+
+bool ClockGearsBootSplash::open_window(int p_screen) {
+	if (cg_splash_window_open) {
+		return true;
+	}
+	cg_splash_ready_logged = false;
+	cg_splash_first_frame_logged = false;
+	cg_splash_close_fade_logged = false;
+	cg_splash_watchdog_triggered = false;
+	cg_splash_closed_reason = String();
+	cg_splash_open_msec = OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0;
+	if (OS::get_singleton() && OS::get_singleton()->has_environment("CG_SPLASH_WATCHDOG_MS")) {
+		const int env_ms = OS::get_singleton()->get_environment("CG_SPLASH_WATCHDOG_MS").to_int();
+		if (env_ms >= 100) {
+			cg_splash_watchdog_timeout_ms = (uint64_t)env_ms;
+		}
+	}
+
+#ifdef WINDOWS_ENABLED
+	HINSTANCE hInst = GetModuleHandleW(nullptr);
+	if (!cg_splash_wndclass_registered) {
+		WNDCLASSEXW wc;
+		memset(&wc, 0, sizeof(wc));
+		wc.cbSize = sizeof(WNDCLASSEXW);
+		wc.lpfnWndProc = _cg_splash_wndproc;
+		wc.hInstance = hInst;
+		wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+		wc.lpszClassName = L"ClockGearsBootSplashWindow";
+		if (RegisterClassExW(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS) {
+			cg_splash_wndclass_registered = true;
+		}
+	}
+
+	// Centrar en el área de trabajo de la pantalla seleccionada.
+	int pos_x = 100;
+	int pos_y = 100;
+	if (DisplayServer::get_singleton() && DisplayServer::get_singleton()->get_name() != "headless") {
+		const Rect2i scr = DisplayServer::get_singleton()->screen_get_usable_rect(p_screen);
+		if (scr.size.x > 0 && scr.size.y > 0) {
+			pos_x = scr.position.x + (scr.size.x - SPLASH_WIDTH) / 2;
+			pos_y = scr.position.y + (scr.size.y - SPLASH_HEIGHT) / 2;
+		}
+	} else {
+		RECT wa;
+		if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
+			pos_x = wa.left + ((wa.right - wa.left) - SPLASH_WIDTH) / 2;
+			pos_y = wa.top + ((wa.bottom - wa.top) - SPLASH_HEIGHT) / 2;
+		}
+	}
+
+	const DWORD dwStyle = WS_POPUP;
+	const DWORD dwExStyle = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
+	cg_splash_hwnd = CreateWindowExW(
+			dwExStyle,
+			L"ClockGearsBootSplashWindow",
+			L"ClockGears Engine Splash",
+			dwStyle,
+			pos_x, pos_y, SPLASH_WIDTH, SPLASH_HEIGHT,
+			nullptr, // Sin ventana padre: ventana propia independiente, nunca embebida en el editor.
+			nullptr,
+			hInst,
+			nullptr);
+
+	if (cg_splash_hwnd) {
+		const LONG actual_style = GetWindowLongW(cg_splash_hwnd, GWL_STYLE);
+		const LONG actual_exstyle = GetWindowLongW(cg_splash_hwnd, GWL_EXSTYLE);
+		const HWND actual_parent = GetParent(cg_splash_hwnd);
+
+		cg_splash_window_open = true;
+		cg_splash_was_opened = true;
+		cg_splash_is_independent = (actual_parent == nullptr && (actual_style & WS_CHILD) == 0);
+		cg_splash_has_parent = (actual_parent != nullptr);
+		cg_splash_is_borderless = ((actual_style & WS_CAPTION) == 0 && (actual_style & WS_THICKFRAME) == 0 && (actual_style & WS_POPUP) != 0);
+		cg_splash_has_titlebar = ((actual_style & WS_CAPTION) != 0);
+		cg_splash_has_taskbar_btn = ((actual_exstyle & WS_EX_TOOLWINDOW) == 0 || (actual_exstyle & WS_EX_APPWINDOW) != 0);
+
+		SetTimer(cg_splash_hwnd, CG_SPLASH_WATCHDOG_TIMER_ID, 200, nullptr);
+		ShowWindow(cg_splash_hwnd, SW_SHOWNOACTIVATE);
+
+		log_event(vformat("event=created window_type=\"Win32IndependentPopup\" parent=\"%s\" borderless=%s titlebar=%s taskbar_button=%s size=%dx%d pos=(%d,%d)",
+				cg_splash_has_parent ? "HWND" : "NONE",
+				cg_splash_is_borderless ? "true" : "false",
+				cg_splash_has_titlebar ? "true" : "false",
+				cg_splash_has_taskbar_btn ? "true" : "false",
+				SPLASH_WIDTH, SPLASH_HEIGHT, pos_x, pos_y));
+		return true;
+	}
+#endif
+	// Respaldo no-Windows o headless
+	cg_splash_window_open = true;
+	cg_splash_was_opened = true;
+	cg_splash_is_independent = true;
+	cg_splash_has_parent = false;
+	cg_splash_is_borderless = true;
+	cg_splash_has_titlebar = false;
+	cg_splash_has_taskbar_btn = false;
+	log_event("event=created window_type=\"IndependentPopup\" parent=\"NONE\" borderless=true titlebar=false taskbar_button=false size=800x450");
+	return true;
+}
+
+bool ClockGearsBootSplash::is_window_open() {
+	return cg_splash_window_open;
+}
+
+void ClockGearsBootSplash::mark_ready() {
+	present_stage(TOTAL_STAGES, TOTAL_STAGES, String::utf8("Listo"), true);
+	if (!cg_splash_ready_logged) {
+		cg_splash_ready_logged = true;
+		log_event("event=ready status=\"Listo\" progress=100%");
+	}
+}
+
+void ClockGearsBootSplash::notify_first_frame_drawn(const String &p_context) {
+	if (!cg_splash_first_frame_logged) {
+		cg_splash_first_frame_logged = true;
+		const uint64_t now = OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0;
+		const uint64_t elapsed = (now >= cg_splash_open_msec) ? (now - cg_splash_open_msec) : 0;
+		log_event(vformat("event=first_frame_drawn context=\"%s\" elapsed_ms=%d", p_context, (int)elapsed));
+	}
+	if (cg_splash_window_open) {
+		close_with_fade("first_frame_drawn");
+	}
+}
+
+void ClockGearsBootSplash::close_with_fade(const String &p_reason) {
+	if (!cg_splash_window_open) {
+		return;
+	}
+	cg_splash_closed_reason = p_reason;
+	if (!cg_splash_close_fade_logged) {
+		cg_splash_close_fade_logged = true;
+		log_event(vformat("event=close_fade reason=\"%s\" fade_steps=5", p_reason));
+	}
+
+#ifdef WINDOWS_ENABLED
+	if (cg_splash_hwnd && cg_splash_last_card.is_valid()) {
+		const uint8_t alphas[5] = { 200, 145, 95, 45, 0 };
+		for (int i = 0; i < 5; i++) {
+			_cg_update_layered_splash(cg_splash_last_card, alphas[i]);
+			_cg_pump_splash_hwnd_messages();
+			if (OS::get_singleton()) {
+				OS::get_singleton()->delay_usec(16000);
+			}
+		}
+	}
+	_cg_destroy_splash_hwnd();
+#else
+	cg_splash_window_open = false;
+#endif
+}
+
+void ClockGearsBootSplash::close_on_error(const String &p_error_reason) {
+	if (!cg_splash_window_open) {
+		return;
+	}
+	cg_splash_closed_reason = "error:" + p_error_reason;
+	log_event(vformat("ERROR event=closed_on_error reason=\"%s\"", p_error_reason));
+#ifdef WINDOWS_ENABLED
+	_cg_destroy_splash_hwnd();
+#else
+	cg_splash_window_open = false;
+#endif
+}
+
+void ClockGearsBootSplash::poll_watchdog() {
+	if (!cg_splash_window_open) {
+		return;
+	}
+#ifdef WINDOWS_ENABLED
+	_cg_pump_splash_hwnd_messages();
+#endif
+	const uint64_t now = OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0;
+	if (now >= cg_splash_open_msec && (now - cg_splash_open_msec) >= cg_splash_watchdog_timeout_ms) {
+		cg_splash_watchdog_triggered = true;
+		const uint64_t elapsed = now - cg_splash_open_msec;
+		log_event(vformat("WARN event=watchdog_timeout_close elapsed_ms=%d limit_ms=%d msg=\"Seguro anti-bloqueo: pantalla de carga cerrada automáticamente tras superar el tiempo límite\"",
+				(int)elapsed, (int)cg_splash_watchdog_timeout_ms));
+		close_with_fade("watchdog_timeout_15s");
+	}
+}
+
+void ClockGearsBootSplash::set_watchdog_timeout_ms(uint64_t p_timeout_ms) {
+	cg_splash_watchdog_timeout_ms = MAX((uint64_t)100, p_timeout_ms);
+}
+
+Dictionary ClockGearsBootSplash::get_last_lifecycle_state() {
+	LayoutMetrics m;
+	const bool is_brass = is_saved_brass_theme();
+	(void)render_card(1.0f, String::utf8("Listo"), 0.0f, true, is_brass, &m);
+	const bool badge_unclipped = (m.badge_rect.position.x >= 0 && m.badge_rect.position.y >= 16 &&
+			m.badge_rect.get_end().x <= SPLASH_WIDTH && m.badge_rect.get_end().y <= SPLASH_HEIGHT);
+
+	Dictionary d;
+	d["window_open"] = cg_splash_window_open;
+	d["was_opened"] = cg_splash_was_opened;
+	d["is_independent_window"] = cg_splash_is_independent;
+	d["has_parent"] = cg_splash_has_parent;
+	d["is_borderless"] = cg_splash_is_borderless;
+	d["has_titlebar"] = cg_splash_has_titlebar;
+	d["has_taskbar_button"] = cg_splash_has_taskbar_btn;
+	d["ready_logged"] = cg_splash_ready_logged;
+	d["first_frame_logged"] = cg_splash_first_frame_logged;
+	d["close_fade_logged"] = cg_splash_close_fade_logged;
+	d["watchdog_triggered"] = cg_splash_watchdog_triggered;
+	d["closed_reason"] = cg_splash_closed_reason;
+	d["version_badge_rect"] = m.badge_rect;
+	d["version_badge_unclipped"] = badge_unclipped;
+	if (OS::get_singleton() && !OS::get_singleton()->get_user_data_dir().is_empty()) {
+		d["trace_log_path"] = OS::get_singleton()->get_user_data_dir().path_join("boot_splash_trace.log");
+	} else {
+		d["trace_log_path"] = String();
+	}
+	return d;
+}
 
 bool ClockGearsBootSplash::is_saved_brass_theme() {
 	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("clockgears/editor/theme_id")) {
@@ -615,24 +1008,25 @@ Ref<Image> ClockGearsBootSplash::render_card(float p_progress, const String &p_s
 }
 
 void ClockGearsBootSplash::present_stage(int p_stage, int p_total_stages, const String &p_status, bool p_completed) {
-	RenderingServer *rs = RenderingServer::get_singleton();
-	if (!rs) {
-		return;
-	}
 	const int total = MAX(1, p_total_stages);
 	const int stage = CLAMP(p_stage, 0, total);
 	const float progress = p_completed ? 1.0f : ((float)stage / (float)total);
 	const int pct = (int)Math::round(progress * 100.0f);
 	const String full_status = p_completed ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
-	const float spinner_deg = (float)(stage * 64 + (int)(OS::get_singleton()->get_ticks_msec() % 360));
+	const float spinner_deg = (float)(stage * 64 + (int)((OS::get_singleton() ? OS::get_singleton()->get_ticks_msec() : 0) % 360));
 	const bool is_brass = is_saved_brass_theme();
-	const Palette pal = get_active_palette(is_brass, true);
 
 	Ref<Image> card = render_card(progress, full_status, spinner_deg, p_completed, is_brass);
-	if (card.is_valid()) {
-		rs->set_boot_image_with_stretch(card, pal.bg_bottom, RSE::SPLASH_STRETCH_MODE_DISABLED, false);
+	cg_splash_last_card = card;
+
+	if (!cg_splash_window_open && !p_completed) {
+		open_window(0);
 	}
-	if (DisplayServer::get_singleton()) {
-		DisplayServer::get_singleton()->process_events();
+#ifdef WINDOWS_ENABLED
+	if (cg_splash_hwnd && card.is_valid()) {
+		_cg_update_layered_splash(card, 255);
+		_cg_pump_splash_hwnd_messages();
 	}
+#endif
+	poll_watchdog();
 }

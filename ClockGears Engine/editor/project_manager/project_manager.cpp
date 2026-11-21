@@ -42,6 +42,7 @@
 #include "core/version.h"
 #include "editor/asset_library/asset_library_editor_plugin.h"
 #include "editor/doc/editor_help.h"
+#include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_about.h"
@@ -1673,6 +1674,9 @@ void ProjectManager::_open_donate_page() {
 // Object methods.
 
 ProjectManager::ProjectManager() {
+	if (EditorNode::get_singleton()) {
+		return;
+	}
 	singleton = this;
 
 	// Turn off some servers we aren't going to be using in the Project Manager.
@@ -1746,7 +1750,9 @@ ProjectManager::ProjectManager() {
 	}
 
 #if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
-	EditorHelpHighlighter::create_singleton();
+	if (!EditorNode::get_singleton()) {
+		EditorHelpHighlighter::create_singleton();
+	}
 #endif
 
 	SceneTree::get_singleton()->get_root()->connect("files_dropped", callable_mp(this, &ProjectManager::_files_dropped));
@@ -2470,20 +2476,24 @@ ProjectManager::ProjectManager() {
 }
 
 ProjectManager::~ProjectManager() {
-	singleton = nullptr;
-	EditorInspector::cleanup_plugins();
+	if (singleton == this) {
+		singleton = nullptr;
+	}
+	if (!EditorNode::get_singleton()) {
+		EditorInspector::cleanup_plugins();
 
-	EditorHelp::cleanup_doc();
+		EditorHelp::cleanup_doc();
 
 #if defined(MODULE_GDSCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
-	EditorHelpHighlighter::free_singleton();
+		EditorHelpHighlighter::free_singleton();
 #endif
 
-	if (EditorSettings::get_singleton()) {
-		EditorSettings::destroy();
-	}
+		if (EditorSettings::get_singleton()) {
+			EditorSettings::destroy();
+		}
 
-	EditorThemeManager::finalize();
+		EditorThemeManager::finalize();
+	}
 }
 
 void ProjectManager::reload_projects_from_config_for_test(const String &p_cfg_path) {

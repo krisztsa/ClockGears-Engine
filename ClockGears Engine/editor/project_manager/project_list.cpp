@@ -38,6 +38,7 @@
 #include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/version.h"
+#include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/project_manager/project_manager.h"
@@ -601,6 +602,9 @@ void ProjectListItemControl::_bind_methods() {
 }
 
 ProjectListItemControl::ProjectListItemControl() {
+	if (EditorNode::get_singleton()) {
+		return;
+	}
 	set_focus_mode(FocusMode::FOCUS_ALL);
 	set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	set_clip_contents(true);
@@ -2152,6 +2156,9 @@ void ProjectList::set_config_path_for_test(const String &p_cfg_path) {
 }
 
 ProjectList::ProjectList() {
+	if (EditorNode::get_singleton()) {
+		return;
+	}
 	set_follow_focus(false);
 	if (!EditorPaths::get_singleton()) {
 		EditorPaths::create();
