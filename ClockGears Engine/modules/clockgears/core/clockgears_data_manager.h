@@ -50,7 +50,7 @@ class ClockGearsDataManager : public Object {
 
 public:
 	static constexpr int CURRENT_SCHEMA_VERSION = 3;
-	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 2;
+	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 3;
 	static constexpr int MAX_CUSTOM_MAP_LAYERS = 16;
 
 	static void normalize_record_defaults(int p_category, Dictionary &r_record);
@@ -304,6 +304,7 @@ public:
 	String add_ui_element(const String &p_screen_id, const Dictionary &p_elem, bool p_record_undo = true);
 	bool update_ui_element(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem, bool p_record_undo = true);
 	bool delete_ui_element(const String &p_screen_id, const String &p_elem_id, bool p_record_undo = true);
+	bool delete_ui_element_with_mode(const String &p_screen_id, const String &p_elem_id, bool p_delete_children, bool p_record_undo = true);
 	bool move_ui_element_layer(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo = true);
 	String group_ui_elements_into_folder(const String &p_screen_id, const PackedStringArray &p_elem_ids, const String &p_folder_name = "", bool p_record_undo = true);
 	bool ungroup_ui_folder(const String &p_screen_id, const String &p_folder_id, bool p_record_undo = true);

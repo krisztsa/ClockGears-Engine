@@ -329,6 +329,10 @@ private:
 	SpinBox *prop_layer_spin = nullptr;
 	CheckBox *prop_visible_chk = nullptr;
 	CheckBox *prop_locked_chk = nullptr;
+	CheckBox *prop_clip_children_chk = nullptr;
+	OptionButton *prop_parent_layout_opt = nullptr;
+	SpinBox *prop_parent_cols_spin = nullptr;
+	SpinBox *prop_parent_space_spin = nullptr;
 	CheckBox *prop_show_bg_chk = nullptr;
 	OptionButton *prop_style_opt = nullptr;
 	Button *prop_edit_style_btn = nullptr;
@@ -506,6 +510,8 @@ private:
 	FileDialog *import_pkg_dialog = nullptr;
 	ConfirmationDialog *reset_confirm_dialog = nullptr;
 	ConfirmationDialog *delete_menu_confirm_dialog = nullptr;
+	ConfirmationDialog *delete_parent_dialog = nullptr;
+	PackedStringArray pending_delete_parent_ids;
 	ConfirmationDialog *template_apply_confirm_dialog = nullptr;
 	ConfirmationDialog *save_tpl_name_dialog = nullptr;
 	LineEdit *save_tpl_name_edit = nullptr;
@@ -676,6 +682,8 @@ private:
 	void _on_redo_pressed();
 	void _on_reset_pressed();
 	void _on_reset_confirmed();
+	void _on_delete_parent_keep_confirmed();
+	void _on_delete_parent_custom_action(const String &p_action);
 	void _on_test_pressed();
 	void _on_test_window_close_requested();
 	void _on_test_window_input(const Ref<InputEvent> &p_event);
@@ -772,6 +780,7 @@ public:
 	bool select_element(const String &p_elem_id);
 	String get_selected_element_id() const { return selected_elem_id; }
 	bool delete_selected_element();
+	bool delete_selected_element_with_mode(int p_mode);
 	bool toggle_element_visibility(const String &p_elem_id);
 	bool toggle_element_locked(const String &p_elem_id);
 	bool rename_element_inline(const String &p_elem_id, const String &p_new_name);

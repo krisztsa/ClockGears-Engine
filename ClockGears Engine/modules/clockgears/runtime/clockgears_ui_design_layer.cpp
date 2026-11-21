@@ -918,8 +918,9 @@ Rect2 ClockGearsUiDesignLayer::compute_stage_rect(const Vector2 &p_viewport_size
 
 Rect2 ClockGearsUiDesignLayer::compute_element_rect(const Dictionary &p_elem, const Rect2 &p_stage_rect, float p_scale) {
 	String anchor = String(p_elem.get("anchor", "top_left")).strip_edges().to_lower();
-	float ew = float(CLAMP(int(p_elem.get("width", 120)), 16, 960));
-	float eh = float(CLAMP(int(p_elem.get("height", 36)), 16, 540));
+	String etype = String(p_elem.get("type", "text")).strip_edges().to_lower();
+	float ew = (etype == "folder") ? float(CLAMP(int(p_elem.get("width", 0)), 0, 960)) : float(CLAMP(int(p_elem.get("width", 120)), 16, 960));
+	float eh = (etype == "folder") ? float(CLAMP(int(p_elem.get("height", 0)), 0, 540)) : float(CLAMP(int(p_elem.get("height", 36)), 16, 540));
 	float ox = float(int(p_elem.get("offset_x", 0)));
 	float oy = float(int(p_elem.get("offset_y", 0)));
 
@@ -927,8 +928,153 @@ Rect2 ClockGearsUiDesignLayer::compute_element_rect(const Dictionary &p_elem, co
 	float base_x = af.x * (LOGICAL_WIDTH - ew) + ox;
 	float base_y = af.y * (LOGICAL_HEIGHT - eh) + oy;
 	Vector2 pos(Math::round(p_stage_rect.position.x + base_x * p_scale), Math::round(p_stage_rect.position.y + base_y * p_scale));
-	Vector2 sz(MAX(4.0f, Math::round(ew * p_scale)), MAX(4.0f, Math::round(eh * p_scale)));
+	Vector2 sz(etype == "folder" ? Math::round(ew * p_scale) : MAX(4.0f, Math::round(ew * p_scale)), etype == "folder" ? Math::round(eh * p_scale) : MAX(4.0f, Math::round(eh * p_scale)));
 	return Rect2(pos, sz);
+}
+
+HashMap<String, Rect2> ClockGearsUiDesignLayer::compute_all_element_rects(const Array &p_elems, const Rect2 &p_stage_rect, float p_scale) {
+	HashMap<String, Dictionary> by_id;
+	HashMap<String, String> canon;
+	HashMap<String, Vector<String>> ordered_children;
+	for (int i = 0; i < p_elems.size(); i++) {
+		if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = p_elems[i];
+		String id = String(e.get("id", ""));
+		if (id.is_empty()) continue;
+		by_id[id] = e;
+		canon[id.to_lower()] = id;
+	}
+	for (int i = 0; i < p_elems.size(); i++) {
+		if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = p_elems[i];
+		String id = String(e.get("id", ""));
+		if (id.is_empty() || String(e.get("type", "")).to_lower() == "folder" || !bool(e.get("visible", true))) continue;
+		String raw_pid = String(e.get("parent_id", "")).strip_edges().to_lower();
+		if (!raw_pid.is_empty() && canon.has(raw_pid)) {
+			ordered_children[canon[raw_pid]].push_back(id);
+		}
+	}
+	HashMap<String, Rect2> log_cache;
+	struct LogResolver {
+		static Rect2 run(const String &p_id, const HashMap<String, Dictionary> &p_by_id, const HashMap<String, String> &p_canon, const HashMap<String, Vector<String>> &p_children, HashMap<String, Rect2> &r_cache, int depth) {
+			if (p_id.is_empty() || !p_by_id.has(p_id) || depth > 32) {
+				return Rect2(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+			}
+			if (r_cache.has(p_id)) {
+				return r_cache[p_id];
+			}
+			const Dictionary &e = p_by_id[p_id];
+			String raw_pid = String(e.get("parent_id", "")).strip_edges().to_lower();
+			Rect2 pr(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+			String cpid;
+			if (!raw_pid.is_empty() && p_canon.has(raw_pid)) {
+				cpid = p_canon[raw_pid];
+				if (cpid != p_id) {
+					pr = run(cpid, p_by_id, p_canon, p_children, r_cache, depth + 1);
+				} else {
+					cpid = "";
+				}
+			}
+			String etype = String(e.get("type", "text")).strip_edges().to_lower();
+			if (!cpid.is_empty() && p_by_id.has(cpid) && etype != "folder") {
+				const Dictionary &pe = p_by_id[cpid];
+				String plm = String(pe.get("layout_mode", "free")).strip_edges().to_lower();
+				if (plm == "vertical_list" || plm == "horizontal_list" || plm == "grid") {
+					const Vector<String> &sibs = p_children.has(cpid) ? p_children[cpid] : Vector<String>();
+					int sidx = sibs.find(p_id);
+					int cnt = MAX(1, sibs.size());
+					if (sidx >= 0 && pr.size.x > 0.5f && pr.size.y > 0.5f) {
+						float sp = float(CLAMP(int(pe.get("layout_spacing", 8)), 0, 64));
+						float pad = 8.0f;
+						float avail_w = MAX(16.0f, pr.size.x - pad * 2.0f);
+						float avail_h = MAX(16.0f, pr.size.y - pad * 2.0f);
+						int cols = (plm == "vertical_list") ? 1 : ((plm == "horizontal_list") ? cnt : MAX(1, CLAMP(int(pe.get("layout_columns", 2)), 1, 12)));
+						int rows = MAX(1, int(Math::ceil(float(cnt) / float(cols))));
+						float cw = MAX(16.0f, (avail_w - sp * float(cols - 1)) / float(cols));
+						float ch = MAX(16.0f, (avail_h - sp * float(rows - 1)) / float(rows));
+						int c = sidx % cols;
+						int r = sidx / cols;
+						Rect2 out(pr.position.x + pad + float(c) * (cw + sp), pr.position.y + pad + float(r) * (ch + sp), cw, ch);
+						r_cache[p_id] = out;
+						return out;
+					}
+				}
+			}
+			float ref_w = (pr.size.x > 0.5f) ? pr.size.x : LOGICAL_WIDTH;
+			float ref_h = (pr.size.y > 0.5f) ? pr.size.y : LOGICAL_HEIGHT;
+			float ew = (etype == "folder") ? float(CLAMP(int(e.get("width", 0)), 0, 960)) : float(CLAMP(int(e.get("width", 120)), 16, 960));
+			float eh = (etype == "folder") ? float(CLAMP(int(e.get("height", 0)), 0, 540)) : float(CLAMP(int(e.get("height", 36)), 16, 540));
+			Vector2 af = compute_anchor_factors(String(e.get("anchor", "top_left")));
+			float ox = float(int(e.get("offset_x", 0)));
+			float oy = float(int(e.get("offset_y", 0)));
+			Rect2 out(pr.position.x + af.x * (ref_w - ew) + ox, pr.position.y + af.y * (ref_h - eh) + oy, ew, eh);
+			r_cache[p_id] = out;
+			return out;
+		}
+	};
+	HashMap<String, Rect2> scaled_out;
+	for (const KeyValue<String, Dictionary> &kv : by_id) {
+		Rect2 lr = LogResolver::run(kv.key, by_id, canon, ordered_children, log_cache, 0);
+		String etype = String(kv.value.get("type", "text")).strip_edges().to_lower();
+		Vector2 pos(Math::round(p_stage_rect.position.x + lr.position.x * p_scale), Math::round(p_stage_rect.position.y + lr.position.y * p_scale));
+		Vector2 sz(etype == "folder" ? Math::round(lr.size.x * p_scale) : MAX(4.0f, Math::round(lr.size.x * p_scale)), etype == "folder" ? Math::round(lr.size.y * p_scale) : MAX(4.0f, Math::round(lr.size.y * p_scale)));
+		scaled_out[kv.key] = Rect2(pos, sz);
+	}
+	return scaled_out;
+}
+
+Rect2 ClockGearsUiDesignLayer::compute_element_global_rect(const String &p_elem_id, const Array &p_elems, const Rect2 &p_stage_rect, float p_scale) {
+	HashMap<String, Rect2> all = compute_all_element_rects(p_elems, p_stage_rect, p_scale);
+	if (all.has(p_elem_id)) {
+		return all[p_elem_id];
+	}
+	String low = p_elem_id.strip_edges().to_lower();
+	for (const KeyValue<String, Rect2> &kv : all) {
+		if (kv.key.to_lower() == low) {
+			return kv.value;
+		}
+	}
+	return Rect2();
+}
+
+bool ClockGearsUiDesignLayer::is_element_effectively_visible(const String &p_elem_id, const Array &p_elems) {
+	HashMap<String, Dictionary> by_id;
+	for (int i = 0; i < p_elems.size(); i++) {
+		if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = p_elems[i];
+		String id = String(e.get("id", "")).to_lower();
+		if (!id.is_empty()) by_id[id] = e;
+	}
+	String cur = p_elem_id.strip_edges().to_lower();
+	HashSet<String> vis;
+	while (!cur.is_empty() && by_id.has(cur) && !vis.has(cur)) {
+		if (!bool(by_id[cur].get("visible", true))) {
+			return false;
+		}
+		vis.insert(cur);
+		cur = String(by_id[cur].get("parent_id", "")).strip_edges().to_lower();
+	}
+	return true;
+}
+
+bool ClockGearsUiDesignLayer::is_element_effectively_locked(const String &p_elem_id, const Array &p_elems) {
+	HashMap<String, Dictionary> by_id;
+	for (int i = 0; i < p_elems.size(); i++) {
+		if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = p_elems[i];
+		String id = String(e.get("id", "")).to_lower();
+		if (!id.is_empty()) by_id[id] = e;
+	}
+	String cur = p_elem_id.strip_edges().to_lower();
+	HashSet<String> vis;
+	while (!cur.is_empty() && by_id.has(cur) && !vis.has(cur)) {
+		if (bool(by_id[cur].get("locked", false))) {
+			return true;
+		}
+		vis.insert(cur);
+		cur = String(by_id[cur].get("parent_id", "")).strip_edges().to_lower();
+	}
+	return false;
 }
 
 String ClockGearsUiDesignLayer::resolve_element_text(const Dictionary &p_elem, const ClockGearsDataManager *p_dm) {
@@ -1097,11 +1243,17 @@ void ClockGearsUiDesignLayer::_clear_aux_layout_controls() {
 
 void ClockGearsUiDesignLayer::clear_elements() {
 	_clear_aux_layout_controls();
+	// Desacoplar primero para evitar double-free cuando clip_children emparenta hijos bajo otro ElementEntry.
+	for (int i = 0; i < elements.size(); i++) {
+		Control *r = elements[i].root;
+		if (r) {
+			if (Node *rp = r->get_parent()) {
+				rp->remove_child(r);
+			}
+		}
+	}
 	for (int i = 0; i < elements.size(); i++) {
 		if (elements[i].root) {
-			if (elements[i].root->get_parent() == this) {
-				remove_child(elements[i].root);
-			}
 			memdelete(elements[i].root);
 			elements.write[i].root = nullptr;
 		}
@@ -1407,8 +1559,16 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 	String lmode = String(lay.get("mode", "free")).strip_edges().to_lower();
 
 	// Reutilización en sitio de nodos simples existentes (text / frame sin recorte) para cambios instantáneos (5C)
+	// Aplanar primero cualquier jerarquía visual previa ("clip_children") antes de reutilizar o borrar nodos.
 	Vector<ElementEntry> reusable = elements;
 	elements.clear();
+	for (int r = 0; r < reusable.size(); r++) {
+		Control *rr = reusable[r].root;
+		if (rr && rr->get_parent() && rr->get_parent() != this) {
+			rr->get_parent()->remove_child(rr);
+			add_child(rr);
+		}
+	}
 	Vector<bool> used;
 	used.resize(reusable.size());
 	for (int i = 0; i < used.size(); i++) {
@@ -1447,7 +1607,9 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.width = CLAMP(int(cfg.get("width", 120)), 16, 960);
 		entry.height = CLAMP(int(cfg.get("height", 36)), 16, 540);
 		entry.layer_order = int(cfg.get("layer_order", 0));
-		entry.visible = bool(cfg.get("visible", true));
+		entry.visible = is_element_effectively_visible(entry.id, raw);
+		entry.parent_id = String(cfg.get("parent_id", "")).strip_edges();
+		entry.clip_children = bool(cfg.get("clip_children", false));
 		entry.window_style_id = String(cfg.get("window_style_id", "")).strip_edges().to_lower();
 		entry.data_binding = String(cfg.get("data_binding", "none")).strip_edges().to_lower();
 		entry.widget_kind = String(cfg.get("widget_kind", "")).strip_edges().to_lower();
@@ -1459,17 +1621,23 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.config = cfg;
 
 		bool has_shape = cfg.has("shape") && cfg["shape"].get_type() == Variant::DICTIONARY;
-	bool can_reuse_frame = (etype == "frame" && String(cfg.get("image_path", "")).strip_edges().is_empty());
-	bool can_reuse_txt = (etype == "text" && !bool(cfg.get("show_background", false)) && String(cfg.get("window_style_id", "")).strip_edges().is_empty());
-	bool reused_ok = false;
-	if (!has_shape && (can_reuse_txt || can_reuse_frame)) {
+		bool can_reuse_frame = (etype == "frame" && !entry.clip_children && String(cfg.get("image_path", "")).strip_edges().is_empty());
+		bool can_reuse_txt = (etype == "text" && !entry.clip_children && !bool(cfg.get("show_background", false)) && String(cfg.get("window_style_id", "")).strip_edges().is_empty());
+		bool reused_ok = false;
+		if (!has_shape && (can_reuse_txt || can_reuse_frame)) {
 			for (int r = 0; r < reusable.size(); r++) {
-				if (!used[r] && reusable[r].root && reusable[r].type == etype && !reusable[r].clip_host && (etype != "frame" || String(reusable[r].config.get("image_path", "")).strip_edges().is_empty())) {
+				if (!used[r] && reusable[r].root && reusable[r].type == etype && !reusable[r].clip_host && !reusable[r].clip_children && (etype != "frame" || String(reusable[r].config.get("image_path", "")).strip_edges().is_empty())) {
 					used.write[r] = true;
 					entry.root = reusable[r].root;
 					entry.bg_panel = reusable[r].bg_panel;
 					entry.content_root = reusable[r].content_root;
 					entry.label = reusable[r].label;
+					if (entry.root->get_parent() != this) {
+						if (Node *old_p = entry.root->get_parent()) {
+							old_p->remove_child(entry.root);
+						}
+						add_child(entry.root);
+					}
 					String target_name = vformat("UiElem_%s", entry.id);
 					if (entry.root->get_name() != target_name) {
 						entry.root->set_name(target_name);
@@ -1510,11 +1678,54 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 
 	for (int r = 0; r < reusable.size(); r++) {
 		if (!used[r] && reusable[r].root) {
-			if (reusable[r].root->get_parent() == this) {
-				remove_child(reusable[r].root);
+			if (Node *rp = reusable[r].root->get_parent()) {
+				rp->remove_child(reusable[r].root);
 			}
 			memdelete(reusable[r].root);
 		}
+	}
+
+	// Resolver recorte opcional al padre ("clip_children"): emparentar visualmente bajo el ancestro recortador manteniendo z absoluto
+	HashMap<String, Dictionary> raw_by_id;
+	HashMap<String, Control *> entry_root_by_id;
+	for (int i = 0; i < raw.size(); i++) {
+		if (raw[i].get_type() == Variant::DICTIONARY) {
+			Dictionary d = raw[i];
+			raw_by_id[String(d.get("id", ""))] = d;
+		}
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (e.root) {
+			e.root->set_clip_contents(e.clip_children);
+			entry_root_by_id[e.id] = e.root;
+		}
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (!e.root) continue;
+		String clip_anc;
+		String cur = e.parent_id;
+		HashSet<String> vis;
+		while (!cur.is_empty() && raw_by_id.has(cur) && !vis.has(cur)) {
+			vis.insert(cur);
+			const Dictionary &ad = raw_by_id[cur];
+			if (bool(ad.get("clip_children", false)) && String(ad.get("type", "")) != "folder" && entry_root_by_id.has(cur)) {
+				clip_anc = cur;
+				break;
+			}
+			cur = String(ad.get("parent_id", "")).strip_edges();
+		}
+		e.clip_ancestor_id = clip_anc;
+		Control *want_parent = (!clip_anc.is_empty() && entry_root_by_id.has(clip_anc)) ? entry_root_by_id[clip_anc] : this;
+		if (e.root->get_parent() != want_parent) {
+			if (Node *op = e.root->get_parent()) {
+				op->remove_child(e.root);
+			}
+			want_parent->add_child(e.root);
+		}
+		e.root->set_z_as_relative(want_parent == this);
+		e.root->set_z_index(e.layer_order);
 	}
 
 	if (!cursor_overlay) {
@@ -2197,17 +2408,28 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 	current_ui_scale = MAX(0.25f, MIN(vp_sz.x / LOGICAL_WIDTH, vp_sz.y / LOGICAL_HEIGHT));
 	_apply_screen_background(active_design, vp_sz);
 
+	Array raw = active_design.get("elements", Array());
+	HashMap<String, Rect2> all_rects = compute_all_element_rects(raw, current_stage_rect, current_ui_scale);
 	for (int i = 0; i < elements.size(); i++) {
 		ElementEntry &e = elements.write[i];
 		if (!e.root) {
 			continue;
 		}
-		Rect2 er = compute_element_rect(e.config, current_stage_rect, current_ui_scale);
-		if (e.root->get_position() != er.position) {
-			e.root->set_position(er.position);
+		Rect2 er = all_rects.has(e.id) ? all_rects[e.id] : compute_element_rect(e.config, current_stage_rect, current_ui_scale);
+		Vector2 local_pos = er.position;
+		if (!e.clip_ancestor_id.is_empty() && all_rects.has(e.clip_ancestor_id)) {
+			local_pos = er.position - all_rects[e.clip_ancestor_id].position;
+		}
+		if (e.root->get_position() != local_pos) {
+			e.root->set_position(local_pos);
 		}
 		if (e.root->get_size() != er.size) {
 			e.root->set_size(er.size);
+		}
+		bool eff_vis = is_element_effectively_visible(e.id, raw);
+		e.visible = eff_vis;
+		if (e.root->is_visible() != eff_vis) {
+			e.root->set_visible(eff_vis);
 		}
 		if (e.root->get_z_index() != e.layer_order) {
 			e.root->set_z_index(e.layer_order);
@@ -2282,9 +2504,29 @@ bool ClockGearsUiDesignLayer::update_element_geometry_fast(const String &p_elem_
 	if (target.is_empty() || p_elem.is_empty()) {
 		return false;
 	}
+	Array raw = active_design.has("elements") ? Array(active_design["elements"]) : Array();
+	bool found_raw = false;
+	for (int i = 0; i < raw.size(); i++) {
+		if (raw[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary re = raw[i];
+		if (String(re.get("id", "")).to_lower() == target) {
+			if (bool(re.get("clip_children", false)) != bool(p_elem.get("clip_children", false))) {
+				return false;
+			}
+			raw[i] = p_elem.duplicate(true);
+			found_raw = true;
+			break;
+		}
+	}
+	if (!found_raw) {
+		return false;
+	}
+	active_design["elements"] = raw;
+	HashMap<String, Rect2> all_rects = compute_all_element_rects(raw, current_stage_rect, current_ui_scale);
 	for (int i = 0; i < elements.size(); i++) {
-		if (elements[i].id.to_lower() == target) {
-			ElementEntry &e = elements.write[i];
+		ElementEntry &e = elements.write[i];
+		bool is_target = (e.id.to_lower() == target);
+		if (is_target) {
 			if ((e.config.has("shape") && e.config["shape"].get_type() == Variant::DICTIONARY) != (p_elem.has("shape") && p_elem["shape"].get_type() == Variant::DICTIONARY)) {
 				return false;
 			}
@@ -2301,21 +2543,26 @@ bool ClockGearsUiDesignLayer::update_element_geometry_fast(const String &p_elem_
 			e.width = CLAMP(int(p_elem.get("width", e.width)), 16, 960);
 			e.height = CLAMP(int(p_elem.get("height", e.height)), 16, 540);
 			e.layer_order = int(p_elem.get("layer_order", e.layer_order));
-			e.visible = bool(p_elem.get("visible", e.visible));
-			if (e.root) {
-				Rect2 er = compute_element_rect(e.config, current_stage_rect, current_ui_scale);
-				e.root->set_position(er.position);
-				e.root->set_size(er.size);
-				e.root->set_z_index(e.layer_order);
-				e.root->set_visible(e.visible);
-				if (need_style) {
-					_apply_element_style(e, current_ui_scale);
-				}
+			e.clip_children = bool(p_elem.get("clip_children", false));
+			if (e.root && need_style) {
+				_apply_element_style(e, current_ui_scale);
 			}
-			return true;
+		}
+		if (e.root && all_rects.has(e.id)) {
+			Rect2 er = all_rects[e.id];
+			Vector2 lpos = er.position;
+			if (!e.clip_ancestor_id.is_empty() && all_rects.has(e.clip_ancestor_id)) {
+				lpos = er.position - all_rects[e.clip_ancestor_id].position;
+			}
+			e.root->set_position(lpos);
+			e.root->set_size(er.size);
+			e.root->set_z_index(e.layer_order);
+			bool eff_vis = is_element_effectively_visible(e.id, raw);
+			e.visible = eff_vis;
+			e.root->set_visible(eff_vis);
 		}
 	}
-	return false;
+	return true;
 }
 
 void ClockGearsUiDesignLayer::refresh_live_values() {
@@ -2934,6 +3181,9 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsUiDesignLayer", D_METHOD("compute_anchor_factors", "anchor"), &ClockGearsUiDesignLayer::compute_anchor_factors);
 	ClassDB::bind_static_method("ClockGearsUiDesignLayer", D_METHOD("compute_stage_rect", "viewport_size"), &ClockGearsUiDesignLayer::compute_stage_rect);
 	ClassDB::bind_static_method("ClockGearsUiDesignLayer", D_METHOD("compute_element_rect", "elem", "stage_rect", "scale"), &ClockGearsUiDesignLayer::compute_element_rect);
+	ClassDB::bind_static_method("ClockGearsUiDesignLayer", D_METHOD("compute_element_global_rect", "elem_id", "elems", "stage_rect", "scale"), &ClockGearsUiDesignLayer::compute_element_global_rect);
+	ClassDB::bind_static_method("ClockGearsUiDesignLayer", D_METHOD("is_element_effectively_visible", "elem_id", "elems"), &ClockGearsUiDesignLayer::is_element_effectively_visible);
+	ClassDB::bind_static_method("ClockGearsUiDesignLayer", D_METHOD("is_element_effectively_locked", "elem_id", "elems"), &ClockGearsUiDesignLayer::is_element_effectively_locked);
 	ClassDB::bind_method(D_METHOD("set_screen_id", "screen_id"), &ClockGearsUiDesignLayer::set_screen_id);
 	ClassDB::bind_method(D_METHOD("get_screen_id"), &ClockGearsUiDesignLayer::get_screen_id);
 	ClassDB::bind_method(D_METHOD("set_window_type_fallback", "win_type"), &ClockGearsUiDesignLayer::set_window_type_fallback);

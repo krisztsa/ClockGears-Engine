@@ -190,6 +190,9 @@ private:
 		int focus_order = 0;
 		int array_order = 0;
 		int tab_index = 0;
+		String parent_id;
+		bool clip_children = false;
+		String clip_ancestor_id;
 		Dictionary config;
 
 		Control *root = nullptr;
@@ -283,6 +286,10 @@ public:
 	static Vector2 compute_anchor_factors(const String &p_anchor);
 	static Rect2 compute_stage_rect(const Vector2 &p_viewport_size);
 	static Rect2 compute_element_rect(const Dictionary &p_elem, const Rect2 &p_stage_rect, float p_scale);
+	static HashMap<String, Rect2> compute_all_element_rects(const Array &p_elems, const Rect2 &p_stage_rect, float p_scale);
+	static Rect2 compute_element_global_rect(const String &p_elem_id, const Array &p_elems, const Rect2 &p_stage_rect, float p_scale);
+	static bool is_element_effectively_visible(const String &p_elem_id, const Array &p_elems);
+	static bool is_element_effectively_locked(const String &p_elem_id, const Array &p_elems);
 	static String resolve_element_text(const Dictionary &p_elem, const ClockGearsDataManager *p_dm);
 	static Ref<Texture2D> make_builtin_heart_texture(int p_mode);
 	static Ref<Texture2D> make_builtin_coin_texture();

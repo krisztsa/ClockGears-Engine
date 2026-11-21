@@ -2005,7 +2005,7 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 	}
 	system_config.erase("hud");
 
-	// Diseños visuales de interfaz y menús ilimitados (ui_designs.json; proyectos antiguos migran conservando .pre_menu_v2.bak y aspecto idéntico)
+	// Diseños visuales de interfaz y menús ilimitados (ui_designs.json; proyectos antiguos migran conservando .bak y aspecto idéntico)
 	String ui_designs_path = p_dir_path.path_join("ui_designs.json");
 	Variant uid_var;
 	if (_read_json_with_backup(ui_designs_path, uid_var) && uid_var.get_type() == Variant::DICTIONARY) {
@@ -2013,7 +2013,7 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		int raw_ui_schema = int(raw_uid.get("schema_version", 1));
 		ui_designs_config = normalize_ui_designs_config(raw_uid);
 		if (raw_ui_schema < CURRENT_UI_DESIGNS_SCHEMA_VERSION && FileAccess::exists(ui_designs_path)) {
-			String orig_bak = ui_designs_path + ".pre_menu_v2.bak";
+			String orig_bak = ui_designs_path + (raw_ui_schema < 2 ? String(".pre_menu_v2.bak") : String(".pre_hierarchy_v3.bak"));
 			if (!FileAccess::exists(orig_bak)) {
 				PackedByteArray raw_bytes = FileAccess::get_file_as_bytes(ui_designs_path);
 				Ref<FileAccess> fb = FileAccess::open(orig_bak, FileAccess::WRITE);
@@ -6112,6 +6112,20 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	out["visible"] = p_elem.has("visible") ? bool(p_elem["visible"]) : true;
 	out["locked"] = p_elem.has("locked") ? bool(p_elem["locked"]) : false;
 	out["collapsed"] = p_elem.has("collapsed") ? bool(p_elem["collapsed"]) : false;
+	out["clip_children"] = p_elem.has("clip_children") ? bool(p_elem["clip_children"]) : false;
+	String lm = String(p_elem.get("layout_mode", "free")).strip_edges().to_lower();
+	if (lm != "vertical_list" && lm != "horizontal_list" && lm != "grid") {
+		lm = "free";
+	}
+	if (lm != "free" || p_elem.has("layout_mode")) {
+		out["layout_mode"] = lm;
+	}
+	if (lm != "free" || p_elem.has("layout_columns")) {
+		out["layout_columns"] = CLAMP(int(p_elem.get("layout_columns", 2)), 1, 12);
+	}
+	if (lm != "free" || p_elem.has("layout_spacing")) {
+		out["layout_spacing"] = CLAMP(int(p_elem.get("layout_spacing", 8)), 0, 64);
+	}
 
 	String ws = String(p_elem.get("window_style_id", def.get("window_style_id", ""))).strip_edges().to_lower();
 	out["window_style_id"] = ws;
@@ -6622,7 +6636,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		};
 
 		add_box("menu_frame", "Panel Comandos", 24, 20, 220, 384, 0);
-		add_txt("menu_heading", String::utf8("Título Menú"), String::utf8("Menú"), 36, 30, 196, 28, 18, "left", "none", 1);
+		add_txt("menu_heading", String::utf8("Título Menú"), String::utf8("Menú"), 12, 10, 196, 28, 18, "left", "none", 1);
 		if (!elems.is_empty()) {
 			Dictionary mh = elems[elems.size() - 1];
 			mh["parent_id"] = "menu_frame";
@@ -6630,7 +6644,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		}
 
 		Array entries = get_visible_game_menu_entries();
-		int y_cursor = 66;
+		int y_cursor = 46;
 		for (int i = 0; i < entries.size(); i++) {
 			Dictionary e = entries[i];
 			Dictionary b = make_default_ui_element("button", sid);
@@ -6641,7 +6655,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			b["text"] = String(e.get("text", act));
 			b["action"] = act;
 			b["anchor"] = "top_left";
-			b["offset_x"] = 36;
+			b["offset_x"] = 12;
 			b["offset_y"] = y_cursor;
 			b["width"] = 196;
 			b["height"] = 34;
@@ -6657,8 +6671,8 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		close_b["text"] = "Cerrar (Esc)";
 		close_b["action"] = "close";
 		close_b["anchor"] = "top_left";
-		close_b["offset_x"] = 36;
-		close_b["offset_y"] = 358;
+		close_b["offset_x"] = 12;
+		close_b["offset_y"] = 338;
 		close_b["width"] = 196;
 		close_b["height"] = 34;
 		close_b["layer_order"] = 2;
@@ -6672,13 +6686,13 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		gold_el["name"] = "Monedas";
 		gold_el["data_binding"] = "gold";
 		gold_el["anchor"] = "top_left";
-		gold_el["offset_x"] = 36;
-		gold_el["offset_y"] = 428;
+		gold_el["offset_x"] = 12;
+		gold_el["offset_y"] = 14;
 		gold_el["width"] = 196;
 		gold_el["height"] = 28;
 		gold_el["layer_order"] = 1;
 		elems.push_back(gold_el);
-		add_txt("menu_playtime", "Tiempo jugado", "Tiempo: 00:00:00", 36, 468, 196, 26, 13, "right", "playtime", 1);
+		add_txt("menu_playtime", "Tiempo jugado", "Tiempo: 00:00:00", 12, 54, 196, 26, 13, "right", "playtime", 1);
 		{
 			Dictionary mp = elems[elems.size() - 1];
 			mp["parent_id"] = "currency_time_frame";
@@ -6686,13 +6700,13 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		}
 
 		add_box("party_frame", "Panel Grupo", 260, 20, 676, 500, 0);
-		add_txt("party_heading", String::utf8("Título Grupo"), "Grupo", 276, 30, 240, 28, 18, "left", "none", 1);
+		add_txt("party_heading", String::utf8("Título Grupo"), "Grupo", 16, 10, 240, 28, 18, "left", "none", 1);
 		{
 			Dictionary ph = elems[elems.size() - 1];
 			ph["parent_id"] = "party_frame";
 			elems[elems.size() - 1] = ph;
 		}
-		add_wid("party_list", "Lista del grupo", "party_list", 274, 68, 648, 438, 1);
+		add_wid("party_list", "Lista del grupo", "party_list", 14, 48, 648, 438, 1);
 		{
 			Dictionary pl = elems[elems.size() - 1];
 			pl["parent_id"] = "party_frame";
@@ -6711,11 +6725,13 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			f["layer_order"] = p_layer;
 			elems.push_back(f);
 		};
-		auto add_folder = [&](const String &p_id, const String &p_name, const String &p_parent_id, int p_layer) {
+		auto add_folder = [&](const String &p_id, const String &p_name, const String &p_parent_id, int p_x, int p_y, int p_layer) {
 			Dictionary fl = make_default_ui_element("folder", sid);
 			fl["id"] = p_id;
 			fl["name"] = p_name;
 			fl["parent_id"] = p_parent_id;
+			fl["offset_x"] = p_x;
+			fl["offset_y"] = p_y;
 			fl["layer_order"] = p_layer;
 			elems.push_back(fl);
 		};
@@ -6767,48 +6783,48 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 
 		if (sid == "game_menu_items") {
 			add_panel("items_panel_frame", "Panel Objetos", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Objetos", 40, 32, 150, 34, 22, 1, "items_panel_frame");
-			add_widget("items_target_selector", "Selector de objetivo", "items_target", 200, 32, 320, 34, 1, "items_panel_frame");
-			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 2, "items_panel_frame");
-			add_widget("items_list", "Lista de objetos", "items_list", 40, 78, 568, 426, 1, "items_panel_frame");
-			add_folder("col_items_details", "Columna detalles", "items_panel_frame", 1);
-			add_widget("item_preview", "Vista previa del objeto", "item_preview", 620, 78, 300, 140, 1, "col_items_details");
-			add_widget("item_details", String::utf8("Descripción del objeto"), "item_details", 620, 226, 300, 228, 1, "col_items_details");
-			add_act_btn("btn_item_use", "Usar", "item_use", 632, 462, 132, 36, 0, "col_items_details");
-			add_act_btn("btn_item_discard", "Tirar", "item_discard", 776, 462, 132, 36, 1, "col_items_details");
+			add_hdr("sub_heading", "Encabezado", "Objetos", 16, 12, 150, 34, 22, 1, "items_panel_frame");
+			add_widget("items_target_selector", "Selector de objetivo", "items_target", 176, 12, 320, 34, 1, "items_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 786, 12, 110, 34, 2, "items_panel_frame");
+			add_widget("items_list", "Lista de objetos", "items_list", 16, 58, 568, 426, 1, "items_panel_frame");
+			add_folder("col_items_details", "Columna detalles", "items_panel_frame", 596, 58, 1);
+			add_widget("item_preview", "Vista previa del objeto", "item_preview", 0, 0, 300, 140, 1, "col_items_details");
+			add_widget("item_details", String::utf8("Descripción del objeto"), "item_details", 0, 148, 300, 228, 1, "col_items_details");
+			add_act_btn("btn_item_use", "Usar", "item_use", 12, 384, 132, 36, 0, "col_items_details");
+			add_act_btn("btn_item_discard", "Tirar", "item_discard", 156, 384, 132, 36, 1, "col_items_details");
 		} else if (sid == "game_menu_equip") {
 			add_panel("equip_panel_frame", "Panel Equipo", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Equipo", 36, 30, 140, 34, 20, 1, "equip_panel_frame");
-			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 184, 30, 260, 34, 1, "equip_panel_frame");
-			add_act_btn("btn_back", "Volver", "back", 814, 30, 110, 34, 2, "equip_panel_frame");
-			add_folder("col_equip_slots", "Columna ranuras", "equip_panel_frame", 1);
-			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 36, 73, 304, 390, 1, "col_equip_slots");
-			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 36, 470, 304, 38, 0, "col_equip_slots");
-			add_folder("col_equip_inventory", "Columna inventario", "equip_panel_frame", 1);
-			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 350, 73, 304, 390, 1, "col_equip_inventory");
-			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 350, 470, 304, 38, 1, "col_equip_inventory");
-			add_folder("col_equip_details", "Columna detalles", "equip_panel_frame", 1);
-			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 664, 73, 260, 100, 1, "col_equip_details");
-			add_widget("equip_desc", "Detalles pieza", "equip_desc", 664, 179, 260, 107, 1, "col_equip_details");
-			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 664, 292, 260, 218, 1, "col_equip_details");
+			add_hdr("sub_heading", "Encabezado", "Equipo", 12, 10, 140, 34, 20, 1, "equip_panel_frame");
+			add_widget("equip_target_selector", "Selector de personaje", "equip_target", 160, 10, 260, 34, 1, "equip_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 790, 10, 110, 34, 2, "equip_panel_frame");
+			add_folder("col_equip_slots", "Columna ranuras", "equip_panel_frame", 12, 53, 1);
+			add_widget("equip_slots", "Huecos de equipo", "equip_slots", 0, 0, 304, 390, 1, "col_equip_slots");
+			add_act_btn("btn_equip_clear", "Desequipar", "equip_clear", 0, 397, 304, 38, 0, "col_equip_slots");
+			add_folder("col_equip_inventory", "Columna inventario", "equip_panel_frame", 326, 53, 1);
+			add_widget("equip_candidates", "Inventario compatible", "equip_candidates", 0, 0, 304, 390, 1, "col_equip_inventory");
+			add_act_btn("btn_equip_apply", "Equipar", "equip_apply", 0, 397, 304, 38, 1, "col_equip_inventory");
+			add_folder("col_equip_details", "Columna detalles", "equip_panel_frame", 640, 53, 1);
+			add_widget("equip_item_preview", "Vista previa pieza", "equip_preview", 0, 0, 260, 100, 1, "col_equip_details");
+			add_widget("equip_desc", "Detalles pieza", "equip_desc", 0, 106, 260, 107, 1, "col_equip_details");
+			add_widget("equip_params", String::utf8("Parámetros"), "equip_params", 0, 219, 260, 218, 1, "col_equip_details");
 		} else if (sid == "game_menu_status") {
 			add_panel("status_panel_frame", "Panel Estado", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Estado", 40, 32, 140, 34, 22, 1, "status_panel_frame");
-			add_widget("status_target_selector", "Selector de personaje", "status_target", 190, 32, 320, 34, 1, "status_panel_frame");
-			add_act_btn("btn_back", "Volver", "back", 810, 32, 110, 34, 0, "status_panel_frame");
-			add_widget("status_basic", String::utf8("Retrato y datos básicos"), "status_basic", 40, 78, 430, 176, 1, "status_panel_frame");
-			add_widget("status_equips", "Equipo equipado", "status_equips", 40, 264, 430, 240, 1, "status_panel_frame");
-			add_widget("status_params", "Atributos y afinidades", "status_params", 486, 78, 434, 426, 1, "status_panel_frame");
+			add_hdr("sub_heading", "Encabezado", "Estado", 16, 12, 140, 34, 22, 1, "status_panel_frame");
+			add_widget("status_target_selector", "Selector de personaje", "status_target", 166, 12, 320, 34, 1, "status_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 786, 12, 110, 34, 0, "status_panel_frame");
+			add_widget("status_basic", String::utf8("Retrato y datos básicos"), "status_basic", 16, 58, 430, 176, 1, "status_panel_frame");
+			add_widget("status_equips", "Equipo equipado", "status_equips", 16, 244, 430, 240, 1, "status_panel_frame");
+			add_widget("status_params", "Atributos y afinidades", "status_params", 462, 58, 434, 426, 1, "status_panel_frame");
 		} else if (sid == "game_menu_save") {
 			add_panel("save_panel_frame", "Panel Partidas", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Guardar partida", 40, 32, 480, 36, 22, 1, "save_panel_frame");
-			add_widget("save_slots", "Ranuras de guardado", "save_slots", 40, 78, 880, 382, 1, "save_panel_frame");
-			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0, "save_panel_frame");
+			add_hdr("sub_heading", "Encabezado", "Guardar partida", 16, 12, 480, 36, 22, 1, "save_panel_frame");
+			add_widget("save_slots", "Ranuras de guardado", "save_slots", 16, 58, 880, 382, 1, "save_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 16, 448, 160, 36, 0, "save_panel_frame");
 		} else {
 			add_panel("options_panel_frame", "Panel Opciones", 24, 20, 912, 500, 0);
-			add_hdr("sub_heading", "Encabezado", "Opciones", 40, 32, 480, 36, 22, 1, "options_panel_frame");
-			add_widget("options_controls", "Controles de opciones", "options_controls", 40, 78, 880, 382, 1, "options_panel_frame");
-			add_act_btn("btn_back", "Volver", "back", 40, 468, 160, 36, 0, "options_panel_frame");
+			add_hdr("sub_heading", "Encabezado", "Opciones", 16, 12, 480, 36, 22, 1, "options_panel_frame");
+			add_widget("options_controls", "Controles de opciones", "options_controls", 16, 58, 880, 382, 1, "options_panel_frame");
+			add_act_btn("btn_back", "Volver", "back", 16, 448, 160, 36, 0, "options_panel_frame");
 		}
 	} else if (sid == "credits") {
 		Dictionary chdr = make_default_ui_element("text", sid);
@@ -6868,8 +6884,8 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		hp_bar["label_text"] = "PV";
 		hp_bar["data_binding"] = "player_hp";
 		hp_bar["anchor"] = "top_left";
-		hp_bar["offset_x"] = 28;
-		hp_bar["offset_y"] = 28;
+		hp_bar["offset_x"] = 12;
+		hp_bar["offset_y"] = 12;
 		hp_bar["width"] = 216;
 		hp_bar["height"] = 24;
 		hp_bar["layer_order"] = 1;
@@ -6882,8 +6898,8 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		mp_bar["label_text"] = "PM";
 		mp_bar["data_binding"] = "player_mp";
 		mp_bar["anchor"] = "top_left";
-		mp_bar["offset_x"] = 28;
-		mp_bar["offset_y"] = 60;
+		mp_bar["offset_x"] = 12;
+		mp_bar["offset_y"] = 44;
 		mp_bar["width"] = 216;
 		mp_bar["height"] = 22;
 		mp_bar["layer_order"] = 1;
@@ -6895,8 +6911,8 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		gold_el["name"] = "Monedas";
 		gold_el["data_binding"] = "gold";
 		gold_el["anchor"] = "top_left";
-		gold_el["offset_x"] = 28;
-		gold_el["offset_y"] = 90;
+		gold_el["offset_x"] = 12;
+		gold_el["offset_y"] = 74;
 		gold_el["width"] = 216;
 		gold_el["height"] = 28;
 		gold_el["layer_order"] = 1;
@@ -6959,9 +6975,9 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		por["id"] = "msg_portrait";
 		por["parent_id"] = "msg_box_frame";
 		por["name"] = "Retrato hablante";
-		por["anchor"] = "bottom_left";
-		por["offset_x"] = 56;
-		por["offset_y"] = -44;
+		por["anchor"] = "top_left";
+		por["offset_x"] = 16;
+		por["offset_y"] = 32;
 		por["width"] = 96;
 		por["height"] = 96;
 		por["layer_order"] = 2;
@@ -6972,9 +6988,9 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		spk["parent_id"] = "msg_box_frame";
 		spk["name"] = "Nombre hablante";
 		spk["text"] = "Personaje";
-		spk["anchor"] = "bottom_left";
-		spk["offset_x"] = 168;
-		spk["offset_y"] = -128;
+		spk["anchor"] = "top_left";
+		spk["offset_x"] = 128;
+		spk["offset_y"] = 16;
 		spk["width"] = 300;
 		spk["height"] = 28;
 		spk["font_size"] = 20;
@@ -6986,9 +7002,9 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		bdy["parent_id"] = "msg_box_frame";
 		bdy["name"] = "Texto mensaje";
 		bdy["text"] = String::utf8("Texto de diálogo o aviso de batalla...");
-		bdy["anchor"] = "bottom_left";
-		bdy["offset_x"] = 168;
-		bdy["offset_y"] = -34;
+		bdy["anchor"] = "top_left";
+		bdy["offset_x"] = 128;
+		bdy["offset_y"] = 52;
 		bdy["width"] = 700;
 		bdy["height"] = 86;
 		bdy["font_size"] = 18;
@@ -7019,9 +7035,9 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 			if (i == 2) {
 				bb["target_screen"] = "game_menu_items";
 			}
-			bb["anchor"] = "top_right";
-			bb["offset_x"] = -40;
-			bb["offset_y"] = 40 + i * 46;
+			bb["anchor"] = "top_left";
+			bb["offset_x"] = 16;
+			bb["offset_y"] = 16 + i * 46;
 			bb["width"] = 188;
 			bb["height"] = 38;
 			bb["focus_order"] = i;
@@ -7733,7 +7749,60 @@ bool ClockGearsDataManager::update_ui_element(const String &p_screen_id, const S
 	return false;
 }
 
-bool ClockGearsDataManager::delete_ui_element(const String &p_screen_id, const String &p_elem_id, bool p_record_undo) {
+static Vector2 _cg_ui_anchor_factors(const String &p_anchor) {
+	String a = p_anchor.strip_edges().to_lower();
+	float fx = (a == "top_center" || a == "center" || a == "bottom_center") ? 0.5f : ((a == "top_right" || a == "middle_right" || a == "bottom_right") ? 1.0f : 0.0f);
+	float fy = (a == "middle_left" || a == "center" || a == "middle_right") ? 0.5f : ((a == "bottom_left" || a == "bottom_center" || a == "bottom_right") ? 1.0f : 0.0f);
+	return Vector2(fx, fy);
+}
+
+static HashMap<String, Rect2> _cg_resolve_all_logical_rects(const HashMap<String, Dictionary> &p_by_id) {
+	HashMap<String, Rect2> cache;
+	struct Resolver {
+		static Rect2 run(const String &p_id, const HashMap<String, Dictionary> &p_by_id, HashMap<String, Rect2> &r_cache, int depth) {
+			if (p_id.is_empty() || !p_by_id.has(p_id) || depth > 32) {
+				return Rect2(0, 0, 960, 540);
+			}
+			if (r_cache.has(p_id)) {
+				return r_cache[p_id];
+			}
+			const Dictionary &e = p_by_id[p_id];
+			String pid = String(e.get("parent_id", "")).strip_edges();
+			Rect2 pr(0, 0, 960, 540);
+			if (!pid.is_empty() && p_by_id.has(pid) && pid != p_id) {
+				pr = run(pid, p_by_id, r_cache, depth + 1);
+			}
+			float ref_w = (pr.size.x > 0.5f) ? pr.size.x : 960.0f;
+			float ref_h = (pr.size.y > 0.5f) ? pr.size.y : 540.0f;
+			String etype = String(e.get("type", "text")).strip_edges().to_lower();
+			float ew = (etype == "folder") ? float(CLAMP(int(e.get("width", 0)), 0, 960)) : float(CLAMP(int(e.get("width", 120)), 16, 960));
+			float eh = (etype == "folder") ? float(CLAMP(int(e.get("height", 0)), 0, 540)) : float(CLAMP(int(e.get("height", 36)), 16, 540));
+			Vector2 af = _cg_ui_anchor_factors(String(e.get("anchor", "top_left")));
+			float ox = float(int(e.get("offset_x", 0)));
+			float oy = float(int(e.get("offset_y", 0)));
+			Rect2 out(pr.position.x + af.x * (ref_w - ew) + ox, pr.position.y + af.y * (ref_h - eh) + oy, ew, eh);
+			r_cache[p_id] = out;
+			return out;
+		}
+	};
+	for (const KeyValue<String, Dictionary> &kv : p_by_id) {
+		Resolver::run(kv.key, p_by_id, cache, 0);
+	}
+	return cache;
+}
+
+static void _cg_preserve_global_pos_for_new_parent(Dictionary &r_elem, const Vector2 &p_global_pos, const Rect2 &p_new_parent_rect) {
+	float ref_w = (p_new_parent_rect.size.x > 0.5f) ? p_new_parent_rect.size.x : 960.0f;
+	float ref_h = (p_new_parent_rect.size.y > 0.5f) ? p_new_parent_rect.size.y : 540.0f;
+	String etype = String(r_elem.get("type", "text")).strip_edges().to_lower();
+	float ew = (etype == "folder") ? float(CLAMP(int(r_elem.get("width", 0)), 0, 960)) : float(CLAMP(int(r_elem.get("width", 120)), 16, 960));
+	float eh = (etype == "folder") ? float(CLAMP(int(r_elem.get("height", 0)), 0, 540)) : float(CLAMP(int(r_elem.get("height", 36)), 16, 540));
+	Vector2 af = _cg_ui_anchor_factors(String(r_elem.get("anchor", "top_left")));
+	r_elem["offset_x"] = CLAMP(int(Math::round(p_global_pos.x - p_new_parent_rect.position.x - af.x * (ref_w - ew))), -960, 960);
+	r_elem["offset_y"] = CLAMP(int(Math::round(p_global_pos.y - p_new_parent_rect.position.y - af.y * (ref_h - eh))), -540, 540);
+}
+
+bool ClockGearsDataManager::delete_ui_element_with_mode(const String &p_screen_id, const String &p_elem_id, bool p_delete_children, bool p_record_undo) {
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
 	String target = p_elem_id.strip_edges().to_lower();
 	Dictionary d = get_ui_screen_design(sid);
@@ -7741,24 +7810,63 @@ bool ClockGearsDataManager::delete_ui_element(const String &p_screen_id, const S
 	int del_idx = -1;
 	String del_id;
 	String del_parent;
+	HashMap<String, Dictionary> by_id;
 	for (int i = 0; i < elems.size(); i++) {
 		Dictionary cur = elems[i];
-		if (String(cur.get("id", "")).to_lower() == target) {
+		String cid = String(cur.get("id", ""));
+		if (!cid.is_empty()) {
+			by_id[cid] = cur;
+		}
+		if (cid.to_lower() == target) {
 			del_idx = i;
-			del_id = String(cur.get("id", ""));
+			del_id = cid;
 			del_parent = String(cur.get("parent_id", ""));
-			break;
 		}
 	}
 	if (del_idx < 0) {
 		return false;
 	}
-	elems.remove_at(del_idx);
-	for (int i = 0; i < elems.size(); i++) {
-		Dictionary ch = elems[i];
-		if (String(ch.get("parent_id", "")).to_lower() == target) {
-			ch["parent_id"] = del_parent;
-			elems[i] = ch;
+	if (p_delete_children) {
+		HashSet<String> to_remove;
+		to_remove.insert(del_id.to_lower());
+		bool changed = true;
+		while (changed) {
+			changed = false;
+			for (int i = 0; i < elems.size(); i++) {
+				Dictionary ch = elems[i];
+				String ch_id = String(ch.get("id", "")).to_lower();
+				String ch_pid = String(ch.get("parent_id", "")).to_lower();
+				if (!ch_id.is_empty() && !to_remove.has(ch_id) && to_remove.has(ch_pid)) {
+					to_remove.insert(ch_id);
+					changed = true;
+				}
+			}
+		}
+		Array kept;
+		for (int i = 0; i < elems.size(); i++) {
+			Dictionary cur = elems[i];
+			if (!to_remove.has(String(cur.get("id", "")).to_lower())) {
+				kept.push_back(cur);
+			}
+		}
+		elems = kept;
+	} else {
+		HashMap<String, Rect2> old_rects = _cg_resolve_all_logical_rects(by_id);
+		Rect2 new_pr(0, 0, 960, 540);
+		if (!del_parent.is_empty() && old_rects.has(del_parent)) {
+			new_pr = old_rects[del_parent];
+		}
+		elems.remove_at(del_idx);
+		for (int i = 0; i < elems.size(); i++) {
+			Dictionary ch = elems[i];
+			String ch_id = String(ch.get("id", ""));
+			if (String(ch.get("parent_id", "")).to_lower() == target) {
+				if (old_rects.has(ch_id)) {
+					_cg_preserve_global_pos_for_new_parent(ch, old_rects[ch_id].position, new_pr);
+				}
+				ch["parent_id"] = del_parent;
+				elems[i] = ch;
+			}
 		}
 	}
 	d["elements"] = elems;
@@ -7767,6 +7875,10 @@ bool ClockGearsDataManager::delete_ui_element(const String &p_screen_id, const S
 	}
 	set_ui_screen_design(sid, d, p_record_undo);
 	return true;
+}
+
+bool ClockGearsDataManager::delete_ui_element(const String &p_screen_id, const String &p_elem_id, bool p_record_undo) {
+	return delete_ui_element_with_mode(p_screen_id, p_elem_id, false, p_record_undo);
 }
 
 static void _cg_collect_ui_tree_sorted(const Array &p_elems, HashMap<String, Dictionary> &r_by_id, HashMap<String, Vector<String>> &r_children, HashMap<String, int> &r_orig_idx) {
@@ -7943,11 +8055,19 @@ bool ClockGearsDataManager::reorder_ui_element_tree(const String &p_screen_id, c
 	if (!target_id.is_empty() && moving.has(target_id) && (p_drop_section == 0 || p_drop_section == -1 || p_drop_section == 1)) {
 		return false;
 	}
+	HashMap<String, Rect2> old_rects = _cg_resolve_all_logical_rects(by_id);
+	Rect2 new_pr(0, 0, 960, 540);
+	if (!new_parent.is_empty() && old_rects.has(new_parent)) {
+		new_pr = old_rects[new_parent];
+	}
 	for (int i = 0; i < moving.size(); i++) {
 		String mid = moving[i];
 		String old_p = String(by_id[mid].get("parent_id", ""));
 		if (children.has(old_p)) {
 			children[old_p].erase(mid);
+		}
+		if (old_p != new_parent && old_rects.has(mid)) {
+			_cg_preserve_global_pos_for_new_parent(by_id[mid], old_rects[mid].position, new_pr);
 		}
 		by_id[mid]["parent_id"] = new_parent;
 	}
@@ -8052,6 +8172,27 @@ String ClockGearsDataManager::group_ui_elements_into_folder(const String &p_scre
 	String fname = p_folder_name.strip_edges();
 	folder["name"] = fname.is_empty() ? String("Carpeta") : fname;
 	folder["parent_id"] = common_parent;
+	HashMap<String, Rect2> cur_rects = _cg_resolve_all_logical_rects(by_id);
+	bool has_bb = false;
+	Vector2 bb_min(99999.0f, 99999.0f);
+	for (int i = 0; i < p_elem_ids.size(); i++) {
+		String kl = p_elem_ids[i].strip_edges().to_lower();
+		for (const KeyValue<String, Rect2> &kv : cur_rects) {
+			if (kv.key.to_lower() == kl) {
+				has_bb = true;
+				bb_min.x = MIN(bb_min.x, kv.value.position.x);
+				bb_min.y = MIN(bb_min.y, kv.value.position.y);
+				break;
+			}
+		}
+	}
+	if (has_bb) {
+		Rect2 pr(0, 0, 960, 540);
+		if (!common_parent.is_empty() && cur_rects.has(common_parent)) {
+			pr = cur_rects[common_parent];
+		}
+		_cg_preserve_global_pos_for_new_parent(folder, bb_min, pr);
+	}
 	String folder_id = add_ui_element(sid, folder, false);
 	if (folder_id.is_empty()) {
 		return String();
@@ -8064,36 +8205,7 @@ String ClockGearsDataManager::group_ui_elements_into_folder(const String &p_scre
 }
 
 bool ClockGearsDataManager::ungroup_ui_folder(const String &p_screen_id, const String &p_folder_id, bool p_record_undo) {
-	String sid = _cg_norm_ui_screen_id(p_screen_id);
-	Dictionary d = get_ui_screen_design(sid);
-	Array elems = Array(d.get("elements", Array())).duplicate(true);
-	int fidx = -1;
-	String fparent;
-	String fid_canon;
-	for (int i = 0; i < elems.size(); i++) {
-		Dictionary cur = elems[i];
-		if (String(cur.get("id", "")).to_lower() == p_folder_id.strip_edges().to_lower()) {
-			fidx = i;
-			fid_canon = String(cur.get("id", ""));
-			fparent = String(cur.get("parent_id", ""));
-			break;
-		}
-	}
-	if (fidx < 0) {
-		return false;
-	}
-	for (int i = 0; i < elems.size(); i++) {
-		Dictionary ch = elems[i];
-		if (String(ch.get("parent_id", "")).to_lower() == fid_canon.to_lower()) {
-			ch["parent_id"] = fparent;
-			elems[i] = ch;
-		}
-	}
-	elems.remove_at(fidx);
-	d["elements"] = elems;
-	d["custom_enabled"] = true;
-	set_ui_screen_design(sid, d, p_record_undo);
-	return true;
+	return delete_ui_element_with_mode(p_screen_id, p_folder_id, false, p_record_undo);
 }
 
 bool ClockGearsDataManager::move_ui_element_layer(const String &p_screen_id, const String &p_elem_id, int p_delta, bool p_record_undo) {
@@ -11046,6 +11158,7 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_ui_element", "screen_id", "elem", "record_undo"), &ClockGearsDataManager::add_ui_element, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("update_ui_element", "screen_id", "elem_id", "elem", "record_undo"), &ClockGearsDataManager::update_ui_element, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("delete_ui_element", "screen_id", "elem_id", "record_undo"), &ClockGearsDataManager::delete_ui_element, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("delete_ui_element_with_mode", "screen_id", "elem_id", "delete_children", "record_undo"), &ClockGearsDataManager::delete_ui_element_with_mode, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("move_ui_element_layer", "screen_id", "elem_id", "delta", "record_undo"), &ClockGearsDataManager::move_ui_element_layer, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("group_ui_elements_into_folder", "screen_id", "elem_ids", "folder_name", "record_undo"), &ClockGearsDataManager::group_ui_elements_into_folder, DEFVAL(""), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("ungroup_ui_folder", "screen_id", "folder_id", "record_undo"), &ClockGearsDataManager::ungroup_ui_folder, DEFVAL(true));
