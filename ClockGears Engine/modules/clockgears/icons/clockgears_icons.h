@@ -37,6 +37,9 @@ public:
 	static int get_editor_icon_scale(Node *p_for_node = nullptr);
 
 	Ref<Texture2D> get_icon(const String &p_name, float p_scale = 1.0f) const;
+	Ref<Texture2D> get_icon_with_fallback(const String &p_name, const String &p_fallback, float p_scale = 1.0f) const;
+	bool has_png_icon(const String &p_name) const;
+	Vector2i get_png_icon_size(const String &p_name) const;
 	Ref<Texture2D> get_db_category_icon(int p_category, float p_scale = 1.0f) const;
 	Ref<Texture2D> get_command_category_icon(const String &p_category, float p_scale = 1.0f) const;
 	Color get_command_category_color(const String &p_category) const;

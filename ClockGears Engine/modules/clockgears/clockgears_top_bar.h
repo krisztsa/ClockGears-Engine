@@ -59,7 +59,7 @@ class ClockGearsTopBar : public PanelContainer {
 	ClockGearsSimplifiedExportDialog *export_dialog = nullptr;
 
 	Ref<Texture2D> _make_svg_icon(const String &p_svg, int p_int_scale) const;
-	Ref<Texture2D> _get_png_icon(const String &p_name, int p_int_scale) const;
+	Ref<Texture2D> _get_png_icon(const String &p_name, int p_int_scale, const String &p_fallback = String()) const;
 	void _apply_toolbar_button_style(Button *p_button, const Ref<Theme> &p_editor_theme, int p_int_scale) const;
 	Button *_make_icon_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Callable &p_action, const Ref<Theme> &p_editor_theme, int p_int_scale);
 	Button *_make_icon_toggle_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Ref<ButtonGroup> &p_group, const Ref<Theme> &p_editor_theme, int p_int_scale);
@@ -97,6 +97,7 @@ public:
 	void sync_active_layer_display();
 	void select_layer_button(int p_layer);
 	Button *get_layer_button(int p_idx) const { return (p_idx >= 0 && p_idx < 6) ? layer_buttons[p_idx] : nullptr; }
+	Array get_toolbar_icons_audit() const;
 	void set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEventEditorDialog *p_ev, ClockGearsSimplifiedExportDialog *p_exp);
 
 	ClockGearsTopBar();

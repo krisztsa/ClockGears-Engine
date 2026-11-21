@@ -380,8 +380,8 @@ Ref<Texture2D> ClockGearsIcons::_rasterize_png(const PngIconRef &p_png, int p_in
 	if (img->load_png_from_buffer(buf) != OK || img->is_empty()) {
 		return Ref<Texture2D>();
 	}
-	// Renderizado 32 px o multiplo entero exacto con nearest (nunca escala fraccionaria)
-	if (p_int_scale > 1) {
+	// 32x32: multiplo entero exacto con nearest; si no es 32x32, se conserva tal cual sin filtro para centrar en el recuadro.
+	if (p_int_scale > 1 && img->get_width() == 32 && img->get_height() == 32) {
 		img->resize(img->get_width() * p_int_scale, img->get_height() * p_int_scale, Image::INTERPOLATE_NEAREST);
 	}
 	return ImageTexture::create_from_image(img);
@@ -481,35 +481,72 @@ Ref<Texture2D> ClockGearsIcons::get_icon(const String &p_name, float p_scale) co
 	return tex;
 }
 
+bool ClockGearsIcons::has_png_icon(const String &p_name) const {
+	return png_sources.has(p_name);
+}
+
+Vector2i ClockGearsIcons::get_png_icon_size(const String &p_name) const {
+	const PngIconRef *png_ptr = png_sources.getptr(p_name);
+	if (!png_ptr || !png_ptr->data || png_ptr->size == 0) {
+		return Vector2i();
+	}
+	Vector<uint8_t> buf;
+	buf.resize(png_ptr->size);
+	memcpy(buf.ptrw(), png_ptr->data, png_ptr->size);
+	Ref<Image> img;
+	img.instantiate();
+	if (img->load_png_from_buffer(buf) != OK || img->is_empty()) {
+		return Vector2i();
+	}
+	return Vector2i(img->get_width(), img->get_height());
+}
+
+Ref<Texture2D> ClockGearsIcons::get_icon_with_fallback(const String &p_name, const String &p_fallback, float p_scale) const {
+	const int int_scale = MAX(1, (int)Math::round(p_scale));
+	if (const PngIconRef *png_ptr = png_sources.getptr(p_name)) {
+		String png_key = vformat("png_%s_%d", p_name, int_scale);
+		if (icon_cache.has(png_key) && icon_cache[png_key].is_valid()) {
+			return icon_cache[png_key];
+		}
+		Ref<Texture2D> tex = _rasterize_png(*png_ptr, int_scale);
+		if (tex.is_valid()) {
+			icon_cache[png_key] = tex;
+			return tex;
+		}
+		WARN_PRINT(vformat("ClockGearsIcons: Fallo al decodificar PNG '%s'; usando respaldo '%s'.", p_name, p_fallback));
+	}
+	if (!p_fallback.is_empty()) {
+		return get_icon(p_fallback, p_scale);
+	}
+	return get_icon(p_name, p_scale);
+}
+
 Ref<Texture2D> ClockGearsIcons::get_db_category_icon(int p_category, float p_scale) const {
 	auto icon_or_fallback = [&](const String &p_custom_png, const String &p_fallback) -> Ref<Texture2D> {
-		if (!p_custom_png.is_empty() && png_sources.has(p_custom_png)) {
-			return get_icon(p_custom_png, p_scale);
-		}
-		return get_icon(p_fallback, p_scale);
+		return get_icon_with_fallback(p_custom_png, p_fallback, p_scale);
 	};
 	switch (p_category) {
-		case CAT_ACTORS: return get_icon("db_actors", p_scale);
-		case CAT_NPCS: return icon_or_fallback("db_npc_icono", "db_actors");
-		case CAT_CLASSES: return get_icon("db_classes", p_scale);
+		case CAT_ACTORS:
+		case CAT_NPCS:
+		case CAT_ARPG_NPCS: return icon_or_fallback("actores_npc_npc_arpg", "db_actors");
+		case CAT_CLASSES: return icon_or_fallback("clases", "db_classes");
 		case CAT_SKILLS: return get_icon("habilidades_icono", p_scale);
 		case CAT_ITEMS: return get_icon("objetos_icono", p_scale);
 		case CAT_WEAPONS: return get_icon("armas_icono", p_scale);
 		case CAT_ARMORS:
-		case CAT_ACCESSORIES: return get_icon("db_armors", p_scale);
+		case CAT_ARPG_ARMORS: return icon_or_fallback("armaduras_armadurasarpg", "db_armors");
+		case CAT_ACCESSORIES: return icon_or_fallback("accesorios", "db_armors");
+		case CAT_ARPG_ACCESSORIES: return icon_or_fallback("accesorios", "habilidades_icono");
 		case CAT_ENEMIES:
-		case CAT_TROOPS: return get_icon("db_enemies", p_scale);
-		case CAT_ARPG_ENEMIES: return icon_or_fallback("db_arpg_enemigos_icono", "db_enemies");
-		case CAT_ARPG_NPCS: return icon_or_fallback("db_arpg_npc_icono", "db_actors");
+		case CAT_ARPG_ENEMIES: return icon_or_fallback("enemigos_enemigosarpg", "db_enemies");
+		case CAT_TROOPS: return icon_or_fallback("tropas", "db_enemies");
 		case CAT_ARPG_WEAPONS: return icon_or_fallback("db_arpg_armas_icono", "armas_icono");
-		case CAT_ARPG_ARMORS: return icon_or_fallback("db_arpg_armaduras_icono", "db_armors");
-		case CAT_ARPG_SHIELDS: return icon_or_fallback("db_arpg_escudos_icono", "db_armors");
-		case CAT_ARPG_ACCESSORIES: return icon_or_fallback("db_arpg_accesorios_icono", "habilidades_icono");
-		case CAT_FLORA: return get_icon("db_flora", p_scale);
-		case CAT_FAUNA: return get_icon("db_fauna", p_scale);
-		case CAT_TILESETS: return get_icon("db_tilesets", p_scale);
+		case CAT_ARPG_SHIELDS: return icon_or_fallback("escudosarpg", "db_armors");
+		case CAT_FLORA: return icon_or_fallback("flora", "db_flora");
+		case CAT_FAUNA: return icon_or_fallback("fauna", "db_fauna");
+		case CAT_TILESETS: return icon_or_fallback("tiles_icon", "db_tilesets");
 		case CAT_COMMON_EVENTS:
-		case CAT_SWITCHES_VARS: return get_icon("db_events", p_scale);
+		case CAT_SWITCHES_VARS: return icon_or_fallback("eventoscomunes_interruptores", "db_events");
 		default: return get_icon("db_system", p_scale);
 	}
 }
@@ -561,6 +598,9 @@ void ClockGearsIcons::clear_cache() {
 void ClockGearsIcons::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsIcons", D_METHOD("get_editor_icon_scale", "for_node"), &ClockGearsIcons::get_editor_icon_scale, DEFVAL((Node *)nullptr));
 	ClassDB::bind_method(D_METHOD("get_icon", "name", "scale"), &ClockGearsIcons::get_icon, DEFVAL(1.0f));
+	ClassDB::bind_method(D_METHOD("get_icon_with_fallback", "name", "fallback", "scale"), &ClockGearsIcons::get_icon_with_fallback, DEFVAL(1.0f));
+	ClassDB::bind_method(D_METHOD("has_png_icon", "name"), &ClockGearsIcons::has_png_icon);
+	ClassDB::bind_method(D_METHOD("get_png_icon_size", "name"), &ClockGearsIcons::get_png_icon_size);
 	ClassDB::bind_method(D_METHOD("get_db_category_icon", "category", "scale"), &ClockGearsIcons::get_db_category_icon, DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("get_command_category_icon", "category", "scale"), &ClockGearsIcons::get_command_category_icon, DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("get_command_category_color", "category"), &ClockGearsIcons::get_command_category_color);
