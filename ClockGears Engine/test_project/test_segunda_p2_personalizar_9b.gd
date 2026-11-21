@@ -136,8 +136,9 @@ func _run() -> void:
 	var overlay: Control = h.get("canvas_overlay", null) as Control
 	var pres: Vector2i = ed.get_preview_resolution()
 	var sc: float = (float(pres.x) / 960.0) * float(ed.get_canvas_zoom())
-	# Centro de btn_back (814, 30, 110, 34)
-	var back_c := Vector2((back_before.x + 55.0) * sc, (back_before.y + 17.0) * sc)
+	# Centro real de btn_back (considerando padre equip_panel_frame)
+	var back_r: Rect2 = ed.get_overlay_element_rect("btn_back")
+	var back_c := back_r.get_center() if back_r.has_area() else Vector2((back_before.x + 55.0) * sc, (back_before.y + 17.0) * sc)
 	_drag(db, overlay, back_c, back_c + Vector2(0.0, 28.0) * sc)
 	await _step_frames(3)
 

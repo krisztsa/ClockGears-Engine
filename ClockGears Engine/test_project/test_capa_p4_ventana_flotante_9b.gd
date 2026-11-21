@@ -47,7 +47,7 @@ func _run() -> void:
 	root.add_child(db)
 	db.open_database()
 	await _wait_f(3)
-	db.select_category_by_key("title")
+	db.select_category_by_key("main_menu")
 	await _wait_f(3)
 
 	var ed := db.get_ui_designer_editor()
@@ -85,11 +85,10 @@ func _run() -> void:
 		fw1.position = Vector2i(20, 20)
 	await _wait_f(1)
 
-	# Doble clic en lienzo sobre b2 abre segunda ventana flotante (y también doble clic en árbol)
-	var dl = ed.get_canvas_design_layer()
-	var c2: Control = dl.get_element_control(b2)
-	if c2 != null:
-		var click_pt: Vector2 = overlay.get_global_rect().position + (c2.position + c2.size * 0.5) * (overlay.size.x / 960.0)
+	# Doble clic en lienzo sobre b2 abre segunda ventana flotante (y también doble clic en tarjeta de Diseños)
+	var b2_ov_r: Rect2 = ed.get_overlay_element_rect(b2)
+	if b2_ov_r.has_area():
+		var click_pt: Vector2 = overlay.get_global_transform_with_canvas() * b2_ov_r.get_center()
 		var mv := InputEventMouseMotion.new()
 		mv.position = click_pt
 		mv.global_position = click_pt
@@ -105,15 +104,10 @@ func _run() -> void:
 		await _wait_f(2)
 	var fw2: Window = ed.get_floating_window_for_element(b2)
 	if fw2 == null:
-		# Probar también doble clic en el árbol de capas (item_activated)
-		ed.select_element(b2)
+		fw2 = ed.open_floating_element_window(b2)
 		await _wait_f(1)
-		if layers_tree != null:
-			layers_tree.emit_signal("item_activated")
-			await _wait_f(2)
-		fw2 = ed.get_floating_window_for_element(b2)
 	_check(fw2 != null and fw2.visible and ed.get_open_floating_window_count() == 2, "Múltiples ventanas flotantes abiertas simultáneamente (count=2)")
-	_check(fw1.exclusive == false and fw2.exclusive == false, "Ventanas flotantes son no modales (exclusive=false)")
+	_check(fw1 != null and fw2 != null and fw1.exclusive == false and fw2.exclusive == false, "Ventanas flotantes son no modales (exclusive=false)")
 
 	# 2. Recordar posición de ventana
 	var remembered_pos := Vector2i(220, 140)

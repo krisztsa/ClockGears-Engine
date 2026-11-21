@@ -91,9 +91,7 @@ static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
 		cb->set_clip_text(true);
 		cb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		Size2 ms = cb->get_custom_minimum_size();
-		if (ms.x > 64.0f * p_scale) {
-			cb->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
-		}
+		cb->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 54.0f * p_scale, 56.0f * p_scale), ms.y));
 	} else if (Label *lb = Object::cast_to<Label>(p_ctrl)) {
 		if (lb->get_autowrap_mode() == TextServer::AUTOWRAP_OFF) {
 			lb->set_clip_text(true);
@@ -110,10 +108,11 @@ static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
 			le->set_custom_minimum_size(Size2(40.0f * p_scale, ms.y));
 		}
 	} else if (SpinBox *sp = Object::cast_to<SpinBox>(p_ctrl)) {
-		Size2 ms = sp->get_custom_minimum_size();
-		if (ms.x > 48.0f * p_scale || ms.x <= 0.0f) {
-			sp->set_custom_minimum_size(Size2(44.0f * p_scale, ms.y));
+		if (LineEdit *sle = sp->get_line_edit()) {
+			sle->add_theme_constant_override("minimum_character_width", 2);
 		}
+		Size2 ms = sp->get_custom_minimum_size();
+		sp->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 44.0f * p_scale, 46.0f * p_scale), ms.y));
 	} else if (HSlider *sl = Object::cast_to<HSlider>(p_ctrl)) {
 		Size2 ms = sl->get_custom_minimum_size();
 		sl->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 36.0f * p_scale, 36.0f * p_scale), ms.y));
@@ -2567,6 +2566,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_hbox = memnew(HSplitContainer);
 	wide_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	wide_hbox->add_theme_constant_override("separation", int(6 * EDSCALE));
 	layout_root->add_child(wide_hbox);
 
 	left_col_scroll = memnew(ScrollContainer);
@@ -2587,6 +2587,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_right_split = memnew(HSplitContainer);
 	wide_right_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_right_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	wide_right_split->add_theme_constant_override("separation", int(6 * EDSCALE));
 	wide_hbox->add_child(wide_right_split);
 
 	wide_center_col = memnew(VBoxContainer);
@@ -3038,7 +3039,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 		Label *l = memnew(Label(p_lbl));
-		l->set_custom_minimum_size(Size2(70 * EDSCALE, 0));
+		l->set_custom_minimum_size(Size2(58 * EDSCALE, 0));
 		l->set_clip_text(true);
 		l->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		l->set_tooltip_text(p_tip);
@@ -3076,7 +3077,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	HBoxContainer *anc_row = memnew(HBoxContainer);
 	anc_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	Label *anc_lbl = memnew(Label("Anclaje:"));
-	anc_lbl->set_custom_minimum_size(Size2(68 * EDSCALE, 0));
+	anc_lbl->set_custom_minimum_size(Size2(56 * EDSCALE, 0));
 	anc_lbl->set_clip_text(true);
 	anc_row->add_child(anc_lbl);
 	GridContainer *anc_grid = memnew(GridContainer);
@@ -3096,7 +3097,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	for (int i = 0; i < 9; i++) {
 		Button *ab = memnew(Button(k_anc_glyphs[i]));
 		ab->set_toggle_mode(true);
-		ab->set_custom_minimum_size(Size2(26 * EDSCALE, 24 * EDSCALE));
+		ab->set_custom_minimum_size(Size2(24 * EDSCALE, 24 * EDSCALE));
 		ab->set_tooltip_text(String::utf8(k_anc_tips[i]));
 		s_make_rounded_action_btn(ab);
 		ab->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_anchor_btn_pressed).bind(i));
@@ -3415,7 +3416,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		HBoxContainer *shb = memnew(HBoxContainer);
 		shb->add_theme_constant_override("separation", int(3 * EDSCALE));
 		Label *sl = memnew(Label(String::utf8(k_btn_state_lbls[si])));
-		sl->set_custom_minimum_size(Size2(72 * EDSCALE, 0));
+		sl->set_custom_minimum_size(Size2(54 * EDSCALE, 0));
+		sl->set_clip_text(true);
 		shb->add_child(sl);
 		prop_btn_state_img_edits[si] = memnew(LineEdit);
 		prop_btn_state_img_edits[si]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -4219,7 +4221,9 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		wide_hbox->show();
 		float eff_w = float(p_avail_w > 0 ? p_avail_w : 1280);
 		float left_w = MAX(280.0f * EDSCALE, MIN(360.0f * EDSCALE, eff_w * 0.22f));
-		float right_w = CLAMP(eff_w * 0.19f, 196.0f * EDSCALE, 290.0f * EDSCALE);
+		float right_w = (eff_w < 1400.0f * EDSCALE)
+				? CLAMP(eff_w * 0.145f, 178.0f * EDSCALE, 184.0f * EDSCALE)
+				: CLAMP(eff_w * 0.16f, 224.0f * EDSCALE, 286.0f * EDSCALE);
 		if (left_col_scroll) {
 			left_col_scroll->set_custom_minimum_size(Size2(left_w, 0));
 			left_col_scroll->set_h_size_flags(Control::SIZE_FILL);
@@ -9423,7 +9427,7 @@ static HBoxContainer *s_ss_add_row(VBoxContainer *p_parent, const String &p_labe
 	hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	hb->add_theme_constant_override("separation", int(6 * p_scale));
 	Label *lbl = memnew(Label(p_label));
-	lbl->set_custom_minimum_size(Size2(84 * p_scale, 0));
+	lbl->set_custom_minimum_size(Size2(58 * p_scale, 0));
 	lbl->set_clip_text(true);
 	lbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	lbl->set_tooltip_text(p_tip);
