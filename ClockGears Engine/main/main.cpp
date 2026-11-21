@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+#include "clockgears_boot_splash.h"
 #include "main.h"
 
 #include "core/config/engine.h"
@@ -192,6 +193,62 @@ static XRServer *xr_server = nullptr;
 #endif // XR_DISABLED
 // We error out if setup2() doesn't turn this true
 static bool _start_success = false;
+
+static bool cg_splash_active = false;
+static DisplayServerEnums::WindowMode cg_saved_window_mode = DisplayServerEnums::WINDOW_MODE_WINDOWED;
+static Size2i cg_saved_window_size;
+static uint32_t cg_saved_window_flags = 0;
+static bool cg_saved_init_maximized = false;
+static bool cg_saved_init_fullscreen = false;
+static bool cg_saved_init_always_on_top = false;
+static int cg_saved_init_screen = 0;
+
+static void _cg_advance_splash(int p_stage, const String &p_status) {
+	if (!cg_splash_active) {
+		return;
+	}
+	ClockGearsBootSplash::present_stage(p_stage, ClockGearsBootSplash::TOTAL_STAGES, p_status, false);
+}
+
+static void _cg_finish_splash() {
+	if (!cg_splash_active) {
+		return;
+	}
+	cg_splash_active = false;
+	ClockGearsBootSplash::present_stage(ClockGearsBootSplash::TOTAL_STAGES, ClockGearsBootSplash::TOTAL_STAGES, String::utf8("Listo"), true);
+
+	DisplayServer *ds = DisplayServer::get_singleton();
+	if (!ds) {
+		return;
+	}
+	const Color clear_col = ClockGearsBootSplash::get_active_clear_color();
+	if (RenderingServer::get_singleton()) {
+		RenderingServer::get_singleton()->set_default_clear_color(clear_col);
+	}
+	ds->window_set_mouse_passthrough(Vector<Vector2>(), DisplayServerEnums::MAIN_WINDOW_ID);
+	ds->window_set_flag(DisplayServerEnums::WINDOW_FLAG_RESIZE_DISABLED, (cg_saved_window_flags & DisplayServerEnums::WINDOW_FLAG_RESIZE_DISABLED_BIT) != 0, DisplayServerEnums::MAIN_WINDOW_ID);
+	ds->window_set_flag(DisplayServerEnums::WINDOW_FLAG_BORDERLESS, (cg_saved_window_flags & DisplayServerEnums::WINDOW_FLAG_BORDERLESS_BIT) != 0, DisplayServerEnums::MAIN_WINDOW_ID);
+
+	const Size2i target_sz = (cg_saved_window_size.x > 0 && cg_saved_window_size.y > 0) ? cg_saved_window_size : Size2i(1280, 720);
+	ds->window_set_size(target_sz, DisplayServerEnums::MAIN_WINDOW_ID);
+	if (ds->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !ds->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
+		const Rect2i scr_rect = ds->screen_get_usable_rect(cg_saved_init_screen);
+		if (scr_rect.size != Vector2i()) {
+			ds->window_set_position(scr_rect.position + (scr_rect.size - target_sz) / 2, DisplayServerEnums::MAIN_WINDOW_ID);
+		}
+	}
+	if (cg_saved_init_fullscreen || cg_saved_window_mode == DisplayServerEnums::WINDOW_MODE_FULLSCREEN) {
+		ds->window_set_mode(DisplayServerEnums::WINDOW_MODE_FULLSCREEN, DisplayServerEnums::MAIN_WINDOW_ID);
+	} else if (cg_saved_init_maximized || cg_saved_window_mode == DisplayServerEnums::WINDOW_MODE_MAXIMIZED) {
+		ds->window_set_mode(DisplayServerEnums::WINDOW_MODE_MAXIMIZED, DisplayServerEnums::MAIN_WINDOW_ID);
+	} else if (cg_saved_window_mode != DisplayServerEnums::WINDOW_MODE_WINDOWED) {
+		ds->window_set_mode(cg_saved_window_mode, DisplayServerEnums::MAIN_WINDOW_ID);
+	}
+	if (cg_saved_init_always_on_top) {
+		ds->window_set_flag(DisplayServerEnums::WINDOW_FLAG_ALWAYS_ON_TOP, true, DisplayServerEnums::MAIN_WINDOW_ID);
+	}
+	DisplayServer::set_early_window_clear_color_override(false);
+}
 
 // Drivers
 
@@ -3366,6 +3423,22 @@ Error Main::setup2(bool p_show_boot_logo) {
 		}
 
 		Color boot_bg_color = GLOBAL_DEF_BASIC("application/boot_splash/bg_color", boot_splash_bg_color);
+#ifdef TOOLS_ENABLED
+		const String cur_rdriver = OS::get_singleton()->get_current_rendering_driver_name();
+		const bool cg_want_splash = (editor || project_manager) && p_show_boot_logo && !init_embed_parent_window_id &&
+				display_driver != "headless" && cur_rdriver != "dummy";
+		if (cg_want_splash) {
+			cg_splash_active = true;
+			cg_saved_window_mode = window_mode;
+			cg_saved_window_size = window_size;
+			cg_saved_window_flags = window_flags;
+			cg_saved_init_maximized = init_maximized;
+			cg_saved_init_fullscreen = init_fullscreen;
+			cg_saved_init_always_on_top = init_always_on_top;
+			cg_saved_init_screen = init_screen;
+			boot_bg_color = ClockGearsBootSplash::get_active_clear_color();
+		}
+#endif
 		DisplayServer::set_early_window_clear_color_override(true, boot_bg_color);
 
 		DisplayServerEnums::Context context;
@@ -3408,7 +3481,10 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		Error err;
 		String rendering_driver = OS::get_singleton()->get_current_rendering_driver_name();
-		display_server = DisplayServer::create(display_driver_idx, rendering_driver, window_mode, window_vsync_mode, window_flags, window_position, window_size, init_screen, context, init_embed_parent_window_id, err);
+		const DisplayServerEnums::WindowMode create_mode = cg_splash_active ? DisplayServerEnums::WINDOW_MODE_WINDOWED : window_mode;
+		const uint32_t create_flags = cg_splash_active ? (DisplayServerEnums::WINDOW_FLAG_BORDERLESS_BIT | DisplayServerEnums::WINDOW_FLAG_RESIZE_DISABLED_BIT) : window_flags;
+		const Size2i create_size = cg_splash_active ? Size2i(ClockGearsBootSplash::SPLASH_WIDTH, ClockGearsBootSplash::SPLASH_HEIGHT) : window_size;
+		display_server = DisplayServer::create(display_driver_idx, rendering_driver, create_mode, window_vsync_mode, create_flags, window_position, create_size, init_screen, context, init_embed_parent_window_id, err);
 		if (err != OK || display_server == nullptr) {
 			String last_name = DisplayServer::get_create_function_name(display_driver_idx);
 
@@ -3423,7 +3499,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 				WARN_PRINT(vformat("Display driver %s failed, falling back to %s.", last_name, name));
 
 				memdelete(display_server);
-				display_server = DisplayServer::create(i, rendering_driver, window_mode, window_vsync_mode, window_flags, window_position, window_size, init_screen, context, init_embed_parent_window_id, err);
+				display_server = DisplayServer::create(i, rendering_driver, create_mode, window_vsync_mode, create_flags, window_position, create_size, init_screen, context, init_embed_parent_window_id, err);
 				if (err == OK && display_server != nullptr) {
 					break;
 				}
@@ -3483,15 +3559,34 @@ Error Main::setup2(bool p_show_boot_logo) {
 					break;
 			}
 			if (!(force_res || use_custom_res)) {
-				display_server->window_set_size(Size2(window_size) * ui_scale, DisplayServerEnums::MAIN_WINDOW_ID);
+				if (cg_splash_active) {
+					cg_saved_window_size = Size2i(Size2(cg_saved_window_size) * ui_scale);
+				} else {
+					display_server->window_set_size(Size2(window_size) * ui_scale, DisplayServerEnums::MAIN_WINDOW_ID);
+				}
 			}
-			if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
+			if (!cg_splash_active && display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
 				Size2 real_size = DisplayServer::get_singleton()->window_get_size();
 				Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
 				display_server->window_set_position(scr_rect.position + (scr_rect.size - real_size) / 2, DisplayServerEnums::MAIN_WINDOW_ID);
 			}
 		}
 #endif
+		if (cg_splash_active) {
+			if (display_server->get_name() == "headless") {
+				cg_splash_active = false;
+			} else {
+				const Size2i sp_sz(ClockGearsBootSplash::SPLASH_WIDTH, ClockGearsBootSplash::SPLASH_HEIGHT);
+				display_server->window_set_size(sp_sz, DisplayServerEnums::MAIN_WINDOW_ID);
+				if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
+					const Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
+					if (scr_rect.size != Vector2i()) {
+						display_server->window_set_position(scr_rect.position + (scr_rect.size - sp_sz) / 2, DisplayServerEnums::MAIN_WINDOW_ID);
+					}
+				}
+				display_server->window_set_mouse_passthrough(ClockGearsBootSplash::get_rounded_window_polygon(), DisplayServerEnums::MAIN_WINDOW_ID);
+			}
+		}
 		if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS)) {
 			display_server->show_window(DisplayServerEnums::MAIN_WINDOW_ID);
 		}
@@ -3663,7 +3758,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		MAIN_PRINT("Main: Setup Logo");
 
-		if (!init_embed_parent_window_id) {
+		if (!init_embed_parent_window_id && !cg_splash_active) {
 			if (init_windowed) {
 				//do none..
 			} else if (init_maximized) {
@@ -3677,7 +3772,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		}
 
 		Color clear = GLOBAL_DEF_BASIC("rendering/environment/defaults/default_clear_color", Color(0.3, 0.3, 0.3));
-		RenderingServer::get_singleton()->set_default_clear_color(clear);
+		RenderingServer::get_singleton()->set_default_clear_color(cg_splash_active ? ClockGearsBootSplash::get_active_clear_color() : clear);
 
 		if (p_show_boot_logo) {
 			setup_boot_logo();
@@ -3685,7 +3780,9 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		MAIN_PRINT("Main: Clear Color");
 
-		DisplayServer::set_early_window_clear_color_override(false);
+		if (!cg_splash_active) {
+			DisplayServer::set_early_window_clear_color_override(false);
+		}
 
 		GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "application/config/icon", PROPERTY_HINT_FILE, "*.png,*.bmp,*.hdr,*.jpg,*.jpeg,*.svg,*.tga,*.exr,*.webp"), String());
 		GLOBAL_DEF(PropertyInfo(Variant::STRING, "application/config/macos_native_icon", PROPERTY_HINT_FILE, "*.icns"), String());
@@ -3809,6 +3906,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 	// Default theme will be initialized later, after modules and ScriptServer are ready.
 	initialize_theme_db();
 
+	_cg_advance_splash(2, String::utf8("Cargando tipografías y localización..."));
+
 #if !defined(NAVIGATION_2D_DISABLED) || !defined(NAVIGATION_3D_DISABLED)
 	MAIN_PRINT("Main: Load Navigation");
 #endif // !defined(NAVIGATION_2D_DISABLED) || !defined(NAVIGATION_3D_DISABLED)
@@ -3845,6 +3944,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 	}
 	OS::get_singleton()->benchmark_end_measure("Startup", "Scene");
 
+	_cg_advance_splash(3, String::utf8("Inicializando módulos del sistema..."));
+
 #ifdef TOOLS_ENABLED
 	ClassDB::set_current_api(ClassDB::API_EDITOR);
 	register_editor_types();
@@ -3859,6 +3960,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 	}
 
 	ClassDB::set_current_api(ClassDB::API_CORE);
+
+	_cg_advance_splash(4, String::utf8("Cargando núcleo y herramientas..."));
 
 #endif
 
@@ -3915,6 +4018,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 	theme_db->initialize_theme();
 	audio_server->load_default_bus_layout();
 
+	_cg_advance_splash(5, String::utf8("Inicializando scripts y tema visual..."));
+
 #if defined(MODULE_MONO_ENABLED) && defined(TOOLS_ENABLED)
 	// Hacky to have it here, but we don't have good facility yet to let modules
 	// register command line options to call at the right time. This needs to happen
@@ -3958,6 +4063,11 @@ Error Main::setup2(bool p_show_boot_logo) {
 void Main::setup_boot_logo() {
 	GodotProfileZone("setup_boot_logo");
 	MAIN_PRINT("Main: Load Boot Image");
+
+	if (cg_splash_active) {
+		ClockGearsBootSplash::present_stage(1, ClockGearsBootSplash::TOTAL_STAGES, String::utf8("Inicializando entorno gráfico y audio..."), false);
+		return;
+	}
 
 #if !defined(TOOLS_ENABLED) && defined(WEB_ENABLED)
 	bool show_logo = false;
@@ -4534,6 +4644,8 @@ int Main::start() {
 		ResourceLoader::add_custom_loaders();
 		ResourceSaver::add_custom_savers();
 
+		_cg_advance_splash(6, editor ? String::utf8("Cargando proyecto y escena principal...") : String::utf8("Preparando gestor de proyectos..."));
+
 		if (!project_manager && !editor) { // game
 			if (!game_path.is_empty() || !script.is_empty()) {
 				//autoload
@@ -4900,6 +5012,8 @@ int Main::start() {
 	}
 
 	GDExtensionManager::get_singleton()->startup();
+
+	_cg_finish_splash();
 
 #ifdef MACOS_ENABLED
 	// TODO: Used to fix full-screen splash drawing on macOS, processing events before main loop is fully initialized cause issues on Wayland, and has no effect on other platforms.

@@ -1,5 +1,7 @@
 #include "clockgears_theme.h"
+#include "core/clockgears_version.h"
 #include "core/config/project_settings.h"
+#include "main/clockgears_boot_splash.h"
 #include "core/io/image.h"
 #include "core/object/callable_mp.h"
 #include "scene/animation/tween.h"
@@ -143,6 +145,100 @@ Color ClockGearsTheme::color_sunken_list_border(bool p_brass, bool p_light) {
 	}
 	// Borde sutil no cobrizo: un tono más oscuro que color_panel (#23262e)
 	return color_panel().darkened(0.32f);
+}
+
+ClockGearsTheme::SplashPalette ClockGearsTheme::get_splash_palette(bool p_brass) {
+	SplashPalette sp;
+	sp.corner_radius = get_container_corner_radius(1.0f);
+	sp.border_width = get_container_border_width();
+	if (p_brass) {
+		sp.bg_top = color_brass_header();
+		sp.bg_bottom = color_brass_bg();
+		sp.card_border = color_menu_pill_border(true, false);
+		sp.accent_amber = color_brass_accent();
+		sp.halo_amber = Color(sp.accent_amber.r, sp.accent_amber.g, sp.accent_amber.b, 0.30f);
+		sp.ornament_copper = Color(color_brass_border().r, color_brass_border().g, color_brass_border().b, 0.16f);
+		sp.text_primary = color_brass_text_primary();
+		sp.text_secondary = color_brass_text_secondary();
+		sp.badge_bg = color_brass_panel();
+		sp.progress_track = color_sunken_list_bg(true, false);
+		sp.progress_fill = color_brass_accent();
+	} else {
+		sp.bg_top = color_panel().darkened(0.14f);
+		sp.bg_bottom = color_bg_dark().darkened(0.28f);
+		sp.card_border = color_menu_pill_border(false, false);
+		sp.accent_amber = color_accent_amber();
+		sp.halo_amber = Color(sp.accent_amber.r, sp.accent_amber.g, sp.accent_amber.b, 0.28f);
+		sp.ornament_copper = Color(sp.card_border.r, sp.card_border.g, sp.card_border.b, 0.14f);
+		sp.text_primary = color_text_primary();
+		sp.text_secondary = color_text_secondary();
+		sp.badge_bg = color_panel();
+		sp.progress_track = color_sunken_list_bg(false, false);
+		sp.progress_fill = color_brass_accent().lerp(color_accent_amber(), 0.35f);
+	}
+	return sp;
+}
+
+Dictionary ClockGearsTheme::inspect_boot_splash(int p_stage, int p_total_stages, const String &p_status, const String &p_save_png_path, bool p_brass, const Vector2i &p_screen_size) {
+	Dictionary out;
+	const int total = MAX(1, p_total_stages);
+	const int stage = CLAMP(p_stage, 0, total);
+	const bool completed = (stage >= total);
+	const float progress = completed ? 1.0f : ((float)stage / (float)total);
+	const int pct = (int)Math::round(progress * 100.0f);
+	const String full_status = completed ? p_status : vformat(String::utf8("%s (%d %%)"), p_status, pct);
+
+	ClockGearsBootSplash::LayoutMetrics metrics;
+	Ref<Image> img = ClockGearsBootSplash::render_card(progress, full_status, (float)(stage * 64), completed, p_brass, &metrics);
+	ERR_FAIL_COND_V(img.is_null(), out);
+
+	if (!p_save_png_path.is_empty()) {
+		img->save_png(p_save_png_path);
+	}
+
+	const Vector2i win_size(ClockGearsBootSplash::SPLASH_WIDTH, ClockGearsBootSplash::SPLASH_HEIGHT);
+	const Vector2i centered_pos = (p_screen_size - win_size) / 2;
+	const Rect2i centered_rect(centered_pos, win_size);
+	const bool fits_screen = (centered_pos.x >= 0 && centered_pos.y >= 0 && centered_rect.get_end().x <= p_screen_size.x && centered_rect.get_end().y <= p_screen_size.y);
+
+	const Color corner_outer = img->get_pixel(0, 0);
+	const Color top_border_px = img->get_pixel(ClockGearsBootSplash::SPLASH_WIDTH / 2, 0);
+	const Color center_bg_px = img->get_pixel(ClockGearsBootSplash::SPLASH_WIDTH / 2, 340);
+
+	// Medir ancho real ocupado por la parte rellena de la barra de progreso ambar.
+	int filled_bar_px = 0;
+	const int bar_sample_y = metrics.progress_bar_rect.position.y + metrics.progress_bar_rect.size.y / 2;
+	const SplashPalette pal = get_splash_palette(p_brass);
+	for (int x = metrics.progress_bar_rect.position.x; x < metrics.progress_bar_rect.get_end().x; x++) {
+		const Color px = img->get_pixel(x, bar_sample_y);
+		if (px.r > pal.progress_fill.r * 0.70f && px.g > pal.progress_fill.g * 0.55f) {
+			filled_bar_px++;
+		}
+	}
+
+	out["width"] = img->get_width();
+	out["height"] = img->get_height();
+	out["aspect_ratio_16_9"] = Math::is_equal_approx((double)img->get_width() / (double)img->get_height(), 16.0 / 9.0, 0.005);
+	out["centered_rect"] = centered_rect;
+	out["fits_screen"] = fits_screen;
+	out["corner_outer_alpha"] = corner_outer.a;
+	out["top_border_color"] = top_border_px;
+	out["center_bg_color"] = center_bg_px;
+	out["expected_border_color"] = pal.card_border;
+	out["icon_rect"] = metrics.icon_rect;
+	out["badge_rect"] = metrics.badge_rect;
+	out["title_rect"] = metrics.title_rect;
+	out["subtitle_rect"] = metrics.subtitle_rect;
+	out["credits_rect"] = metrics.credits_rect;
+	out["status_rect"] = metrics.status_rect;
+	out["right_brand_rect"] = metrics.right_brand_rect;
+	out["progress_bar_rect"] = metrics.progress_bar_rect;
+	out["filled_bar_px"] = filled_bar_px;
+	out["status_text"] = full_status;
+	out["version_text"] = String::utf8(CLOCKGEARS_SPLASH_VERSION);
+	out["corner_radius"] = metrics.corner_radius;
+	out["polygon_points"] = ClockGearsBootSplash::get_rounded_window_polygon().size();
+	return out;
 }
 
 Ref<StyleBoxFlat> ClockGearsTheme::make_sunken_list_stylebox(float p_scale) {
@@ -2523,6 +2619,7 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("inspect_theme_metrics", "theme_id"), &ClockGearsTheme::inspect_theme_metrics, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("check_tree_legibility_and_layout", "root", "viewport_size"), &ClockGearsTheme::check_tree_legibility_and_layout, DEFVAL(Vector2i(1366, 768)));
 	ClassDB::bind_method(D_METHOD("audit_inputs_and_popups_in_tree", "root"), &ClockGearsTheme::audit_inputs_and_popups_in_tree);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("inspect_boot_splash", "stage", "total_stages", "status", "save_png_path", "brass", "screen_size"), &ClockGearsTheme::inspect_boot_splash, DEFVAL(""), DEFVAL(false), DEFVAL(Vector2i(1920, 1080)));
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_active_container_border_color"), &ClockGearsTheme::get_active_container_border_color);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_border_width"), &ClockGearsTheme::get_container_border_width);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));

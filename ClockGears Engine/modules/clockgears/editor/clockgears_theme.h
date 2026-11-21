@@ -66,6 +66,23 @@ public:
 	static int get_container_border_width() { return 1; }
 	static int get_container_corner_radius(float p_scale = 1.0f) { return int(6 * p_scale); }
 
+	struct SplashPalette {
+		Color bg_top;
+		Color bg_bottom;
+		Color card_border;
+		Color accent_amber;
+		Color halo_amber;
+		Color ornament_copper;
+		Color text_primary;
+		Color text_secondary;
+		Color badge_bg;
+		Color progress_track;
+		Color progress_fill;
+		int corner_radius = 6;
+		int border_width = 1;
+	};
+	static SplashPalette get_splash_palette(bool p_brass = false);
+
 	// Paleta oficial ClockGears Latón (Etapa 2 - 9B-Ext)
 	static Color color_brass_bg() { return Color::html("#171512"); }
 	static Color color_brass_panel() { return Color::html("#201c17"); }
@@ -145,6 +162,7 @@ public:
 	Dictionary inspect_theme_metrics(const String &p_theme_id = "");
 	Dictionary check_tree_legibility_and_layout(Node *p_root, const Vector2i &p_viewport_size = Vector2i(1366, 768));
 	Dictionary audit_inputs_and_popups_in_tree(Node *p_root);
+	static Dictionary inspect_boot_splash(int p_stage, int p_total_stages, const String &p_status, const String &p_save_png_path = "", bool p_brass = false, const Vector2i &p_screen_size = Vector2i(1920, 1080));
 
 	static Ref<StyleBoxFlat> make_container_stylebox(float p_scale = 1.0f, int p_margin_h = 12, int p_margin_v = 12, int p_variant = 0);
 	static Ref<StyleBoxFlat> make_sunken_list_stylebox(float p_scale = 1.0f);
