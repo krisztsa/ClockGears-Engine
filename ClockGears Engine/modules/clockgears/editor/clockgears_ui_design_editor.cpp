@@ -293,7 +293,12 @@ bool ClockGearsUiCanvasOverlay::_get_radial_overlay_geometry(Vector2 &r_center, 
 	if (!sel.is_empty() && String(sel.get("type", "")) == "radial") {
 		Dictionary lay = sel.get("layout", Dictionary());
 		Rect2 stage(0, 0, float(ClockGearsUiDesignEditor::BASE_W) * p_scale, float(ClockGearsUiDesignEditor::BASE_H) * p_scale);
-		Rect2 er = ClockGearsUiDesignLayer::compute_element_rect(sel, stage, p_scale);
+		Array elems = owner_editor->get_effective_screen_elements();
+		String sel_id = owner_editor->get_selected_element_id();
+		Rect2 er = ClockGearsUiDesignLayer::compute_element_global_rect(sel_id, elems, stage, p_scale);
+		if (!er.has_area()) {
+			er = ClockGearsUiDesignLayer::compute_element_rect(sel, stage, p_scale);
+		}
 		r_center = er.get_center();
 		float r = float(CLAMP(int(lay.get("radial_radius", 128)), 48, 250)) * p_scale;
 		float max_r = MIN(er.size.x, er.size.y) * 0.38f;
@@ -378,12 +383,14 @@ Vector2 ClockGearsUiCanvasOverlay::_apply_snap_and_guides(const Rect2 &p_base_re
 		if (owner_editor) {
 			Array elems = owner_editor->get_effective_screen_elements();
 			Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_H));
+			HashMap<String, Rect2> all_rects = ClockGearsUiDesignLayer::compute_all_element_rects(elems, stage, 1.0f);
 			Vector2 cur_pos = p_base_rect.position + r_delta;
 			for (int i = 0; i < elems.size(); i++) {
 				if (elems[i].get_type() != Variant::DICTIONARY) continue;
 				Dictionary e = elems[i];
-				if (String(e.get("id", "")) == p_ignore_id || !bool(e.get("visible", true))) continue;
-				Rect2 er = ClockGearsUiDesignLayer::compute_element_rect(e, stage, 1.0f);
+				String eid = String(e.get("id", ""));
+				if (eid == p_ignore_id || !ClockGearsUiDesignLayer::is_element_effectively_visible(eid, elems)) continue;
+				Rect2 er = all_rects.has(eid) ? all_rects[eid] : ClockGearsUiDesignLayer::compute_element_rect(e, stage, 1.0f);
 				if (guide_lines_x.is_empty()) {
 					if (Math::abs(cur_pos.x - er.position.x) <= tol) {
 						r_delta.x += (er.position.x - cur_pos.x);
@@ -410,6 +417,46 @@ Vector2 ClockGearsUiCanvasOverlay::_apply_snap_and_guides(const Rect2 &p_base_re
 	return r_delta;
 }
 
+HashMap<String, Rect2> ClockGearsUiCanvasOverlay::_compute_all_overlay_rects(const Array &p_elems) const {
+	HashMap<String, Rect2> rects;
+	if (!owner_editor || p_elems.is_empty()) {
+		return rects;
+	}
+	float scale = owner_editor->get_canvas_stage_scale();
+	Rect2 stage = (get_size().x >= 16.0f && get_size().y >= 9.0f)
+			? Rect2(Vector2(), get_size())
+			: Rect2(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W * scale, ClockGearsUiDesignEditor::BASE_H * scale));
+	float eff_scale = stage.size.x / float(ClockGearsUiDesignEditor::BASE_W);
+	rects = ClockGearsUiDesignLayer::compute_all_element_rects(p_elems, stage, eff_scale);
+
+	ClockGearsUiDesignLayer *dl = owner_editor->get_canvas_design_layer();
+	if (dl && dl->is_visible() && dl->is_inside_tree()) {
+		for (int i = 0; i < p_elems.size(); i++) {
+			if (p_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary e = p_elems[i];
+			String eid = String(e.get("id", ""));
+			String etype = String(e.get("type", "")).strip_edges().to_lower();
+			if (eid.is_empty() || etype == "folder") continue;
+			Control *ctl = dl->get_element_control(eid);
+			if (!ctl || !ctl->is_inside_tree()) continue;
+			Size2 csz = ctl->get_size();
+			if (csz.x < 1.0f || csz.y < 1.0f) continue;
+			Vector2 pos;
+			Control *cur = ctl;
+			int guard = 0;
+			while (cur && cur != dl && guard < 32) {
+				pos += cur->get_position();
+				cur = cur->get_parent_control();
+				guard++;
+			}
+			if (cur == dl) {
+				rects[eid] = Rect2(pos, csz);
+			}
+		}
+	}
+	return rects;
+}
+
 String ClockGearsUiCanvasOverlay::_hit_test_element(const Vector2 &p_pt) const {
 	if (!owner_editor) {
 		return String();
@@ -418,9 +465,7 @@ String ClockGearsUiCanvasOverlay::_hit_test_element(const Vector2 &p_pt) const {
 	if (elems.is_empty()) {
 		return String();
 	}
-	float scale = owner_editor->get_canvas_stage_scale();
-	Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W * scale, ClockGearsUiDesignEditor::BASE_H * scale));
-	HashMap<String, Rect2> rects = ClockGearsUiDesignLayer::compute_all_element_rects(elems, stage, scale);
+	HashMap<String, Rect2> rects = _compute_all_overlay_rects(elems);
 
 	int best_score_layer = -999999;
 	int best_idx = -1;
@@ -434,7 +479,10 @@ String ClockGearsUiCanvasOverlay::_hit_test_element(const Vector2 &p_pt) const {
 		if (String(e.get("type", "")) == "folder" || !ClockGearsUiDesignLayer::is_element_effectively_visible(eid, elems)) {
 			continue;
 		}
-		Rect2 r = rects.has(eid) ? rects[eid] : ClockGearsUiDesignLayer::compute_element_rect(e, stage, scale);
+		if (!rects.has(eid)) {
+			continue;
+		}
+		Rect2 r = rects[eid];
 		if (r.has_point(p_pt)) {
 			int lo = int(e.get("layer_order", 0));
 			if (lo > best_score_layer || (lo == best_score_layer && i > best_idx)) {
@@ -447,26 +495,21 @@ String ClockGearsUiCanvasOverlay::_hit_test_element(const Vector2 &p_pt) const {
 	return best_id;
 }
 
-Rect2 ClockGearsUiCanvasOverlay::get_selected_widget_rect() const {
-	if (!owner_editor) {
-		return Rect2();
-	}
-	String sel_id = owner_editor->get_selected_element_id();
-	if (sel_id.is_empty()) {
+Rect2 ClockGearsUiCanvasOverlay::get_element_widget_rect(const String &p_elem_id) const {
+	if (!owner_editor || p_elem_id.is_empty()) {
 		return Rect2();
 	}
 	Array elems = owner_editor->get_effective_screen_elements();
-	Dictionary elem = owner_editor->get_effective_element(sel_id);
+	Dictionary elem = owner_editor->get_effective_element(p_elem_id);
 	if (elem.is_empty()) {
 		return Rect2();
 	}
-	float scale = owner_editor->get_canvas_stage_scale();
-	Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W * scale, ClockGearsUiDesignEditor::BASE_H * scale));
-	HashMap<String, Rect2> rects = ClockGearsUiDesignLayer::compute_all_element_rects(elems, stage, scale);
+	String canon_id = String(elem.get("id", p_elem_id));
+	HashMap<String, Rect2> rects = _compute_all_overlay_rects(elems);
 	String etype = String(elem.get("type", "")).strip_edges().to_lower();
 	if (etype == "folder") {
 		HashSet<String> desc;
-		desc.insert(sel_id.to_lower());
+		desc.insert(canon_id.to_lower());
 		bool added = true;
 		while (added) {
 			added = false;
@@ -490,7 +533,8 @@ Rect2 ClockGearsUiCanvasOverlay::get_selected_widget_rect() const {
 			String cet = String(e.get("type", "")).to_lower();
 			if (cet == "folder" || !desc.has(eid.to_lower())) continue;
 			if (!ClockGearsUiDesignLayer::is_element_effectively_visible(eid, elems)) continue;
-			Rect2 cr = rects.has(eid) ? rects[eid] : ClockGearsUiDesignLayer::compute_element_rect(e, stage, scale);
+			if (!rects.has(eid)) continue;
+			Rect2 cr = rects[eid];
 			if (!any) {
 				uni = cr;
 				any = true;
@@ -501,10 +545,18 @@ Rect2 ClockGearsUiCanvasOverlay::get_selected_widget_rect() const {
 		if (any) {
 			return uni;
 		}
-		Rect2 fr = rects.has(sel_id) ? rects[sel_id] : ClockGearsUiDesignLayer::compute_element_rect(elem, stage, scale);
+		float scale = owner_editor->get_canvas_stage_scale();
+		Rect2 fr = rects.has(canon_id) ? rects[canon_id] : Rect2();
 		return Rect2(fr.position, Size2(MAX(fr.size.x, 48.0f * scale), MAX(fr.size.y, 32.0f * scale)));
 	}
-	return rects.has(sel_id) ? rects[sel_id] : ClockGearsUiDesignLayer::compute_element_rect(elem, stage, scale);
+	return rects.has(canon_id) ? rects[canon_id] : Rect2();
+}
+
+Rect2 ClockGearsUiCanvasOverlay::get_selected_widget_rect() const {
+	if (!owner_editor) {
+		return Rect2();
+	}
+	return get_element_widget_rect(owner_editor->get_selected_element_id());
 }
 
 Rect2 ClockGearsUiCanvasOverlay::get_handle_widget_rect(int p_handle) const {
@@ -687,13 +739,14 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 						picked = owner_editor->get_selected_element_ids();
 					}
 					Array elems = owner_editor->get_effective_screen_elements();
-					HashMap<String, Rect2> rects = ClockGearsUiDesignLayer::compute_all_element_rects(elems, stage, scale);
+					HashMap<String, Rect2> rects = _compute_all_overlay_rects(elems);
 					for (int i = 0; i < elems.size(); i++) {
 						if (elems[i].get_type() != Variant::DICTIONARY) continue;
 						Dictionary e = elems[i];
 						String eid = String(e.get("id", ""));
 						if (String(e.get("type", "")) == "folder" || !ClockGearsUiDesignLayer::is_element_effectively_visible(eid, elems)) continue;
-						Rect2 er = rects.has(eid) ? rects[eid] : ClockGearsUiDesignLayer::compute_element_rect(e, stage, scale);
+						if (!rects.has(eid)) continue;
+						Rect2 er = rects[eid];
 						if (mrect.intersects(er)) {
 							if (!eid.is_empty() && !picked.has(eid)) {
 								picked.push_back(eid);
@@ -936,6 +989,7 @@ void ClockGearsUiCanvasOverlay::_notification(int p_what) {
 		}
 
 		Array elems = owner_editor->get_effective_screen_elements();
+		HashMap<String, Rect2> rects = _compute_all_overlay_rects(elems);
 		String sel_id = owner_editor->get_selected_element_id();
 		Ref<Font> badge_font = get_theme_font("font", "Button");
 		for (int i = 0; i < elems.size(); i++) {
@@ -944,9 +998,19 @@ void ClockGearsUiCanvasOverlay::_notification(int p_what) {
 			}
 			Dictionary e = elems[i];
 			String eid = String(e.get("id", ""));
+			if (!ClockGearsUiDesignLayer::is_element_effectively_visible(eid, elems)) {
+				continue;
+			}
+			String etype = String(e.get("type", "")).strip_edges().to_lower();
 			bool is_locked = bool(e.get("locked", false));
 			bool is_sel = owner_editor->is_element_selected(eid);
-			Rect2 r = ClockGearsUiDesignLayer::compute_element_rect(e, stage, scale);
+			if (etype == "folder" && !is_sel && eid != hover_elem_id) {
+				continue;
+			}
+			Rect2 r = (etype == "folder") ? get_element_widget_rect(eid) : (rects.has(eid) ? rects[eid] : Rect2());
+			if (!r.has_area()) {
+				continue;
+			}
 			if (eid != sel_id) {
 				Color c = is_sel ? ClockGearsTheme::color_accent_amber() : ((eid == hover_elem_id) ? Color(0.45f, 0.78f, 1.0f, 0.85f) : Color(0.55f, 0.62f, 0.74f, 0.25f));
 				draw_rect(r, c, false, (is_sel || eid == hover_elem_id) ? 1.8f : 1.0f);
@@ -1745,6 +1809,10 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_canvas_design_layer"), &ClockGearsUiDesignEditor::get_canvas_design_layer);
 	ClassDB::bind_method(D_METHOD("get_canvas_stage"), &ClockGearsUiDesignEditor::get_canvas_stage);
 	ClassDB::bind_method(D_METHOD("get_canvas_overlay"), &ClockGearsUiDesignEditor::get_canvas_overlay);
+	ClassDB::bind_method(D_METHOD("get_overlay_element_rect", "elem_id"), &ClockGearsUiDesignEditor::get_overlay_element_rect);
+	ClassDB::bind_method(D_METHOD("get_overlay_selected_rect"), &ClockGearsUiDesignEditor::get_overlay_selected_rect);
+	ClassDB::bind_method(D_METHOD("get_overlay_handle_rect", "handle"), &ClockGearsUiDesignEditor::get_overlay_handle_rect);
+	ClassDB::bind_method(D_METHOD("get_rendered_element_stage_rect", "elem_id"), &ClockGearsUiDesignEditor::get_rendered_element_stage_rect);
 	ClassDB::bind_method(D_METHOD("set_grid_step", "step"), &ClockGearsUiDesignEditor::set_grid_step);
 	ClassDB::bind_method(D_METHOD("get_grid_step"), &ClockGearsUiDesignEditor::get_grid_step);
 	ClassDB::bind_method(D_METHOD("select_elements", "ids", "primary_id"), &ClockGearsUiDesignEditor::select_elements, DEFVAL(""));
@@ -9060,6 +9128,40 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 
 	test_window->popup_centered(Size2i(MIN(test_sz.x, 1280), MIN(test_sz.y, 720)));
 	return test_window;
+}
+
+Rect2 ClockGearsUiDesignEditor::get_overlay_element_rect(const String &p_elem_id) const {
+	return canvas_overlay ? canvas_overlay->get_element_widget_rect(p_elem_id) : Rect2();
+}
+
+Rect2 ClockGearsUiDesignEditor::get_overlay_selected_rect() const {
+	return canvas_overlay ? canvas_overlay->get_selected_widget_rect() : Rect2();
+}
+
+Rect2 ClockGearsUiDesignEditor::get_overlay_handle_rect(int p_handle) const {
+	return canvas_overlay ? canvas_overlay->get_handle_widget_rect(p_handle) : Rect2();
+}
+
+Rect2 ClockGearsUiDesignEditor::get_rendered_element_stage_rect(const String &p_elem_id) const {
+	if (!design_layer || p_elem_id.is_empty()) {
+		return Rect2();
+	}
+	Control *ctl = design_layer->get_element_control(p_elem_id);
+	if (!ctl) {
+		return Rect2();
+	}
+	Vector2 pos;
+	Control *cur = ctl;
+	int guard = 0;
+	while (cur && cur != design_layer && guard < 32) {
+		pos += cur->get_position();
+		cur = cur->get_parent_control();
+		guard++;
+	}
+	if (cur != design_layer) {
+		return Rect2();
+	}
+	return Rect2(pos, ctl->get_size());
 }
 
 Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {

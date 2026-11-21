@@ -108,6 +108,7 @@ private:
 	bool _get_radial_overlay_geometry(Vector2 &r_center, float &r_radius, float &r_start_rad, float p_scale) const;
 	HandleType _hit_test_radial_handle(const Vector2 &p_pt) const;
 	String _hit_test_element(const Vector2 &p_pt) const;
+	HashMap<String, Rect2> _compute_all_overlay_rects(const Array &p_elems) const;
 	Vector2 _apply_snap_and_guides(const Rect2 &p_base_rect, const String &p_ignore_id, Vector2 &r_delta);
 
 protected:
@@ -118,6 +119,7 @@ public:
 	void set_owner_editor(ClockGearsUiDesignEditor *p_owner) { owner_editor = p_owner; }
 	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
 	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
+	Rect2 get_element_widget_rect(const String &p_elem_id) const;
 	Rect2 get_selected_widget_rect() const;
 	Rect2 get_handle_widget_rect(int p_handle) const;
 	bool is_dragging_canvas() const { return dragging; }
@@ -941,6 +943,10 @@ public:
 	ClockGearsUiDesignLayer *get_canvas_design_layer() const { return design_layer; }
 	Control *get_canvas_stage() const { return canvas_stage; }
 	ClockGearsUiCanvasOverlay *get_canvas_overlay() const { return canvas_overlay; }
+	Rect2 get_overlay_element_rect(const String &p_elem_id) const;
+	Rect2 get_overlay_selected_rect() const;
+	Rect2 get_overlay_handle_rect(int p_handle) const;
+	Rect2 get_rendered_element_stage_rect(const String &p_elem_id) const;
 	Dictionary get_ui_handles() const;
 	Dictionary get_test_popup_info() const;
 
