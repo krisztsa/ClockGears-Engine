@@ -3,6 +3,7 @@
 #include "../icons/clockgears_icons.h"
 #include "../runtime/clockgears_title_screen.h"
 #include "clockgears_theme.h"
+#include "core/clockgears_version.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -432,7 +433,18 @@ bool ClockGearsProjectStructure::validate_folder_asset(const String &p_image_pat
 // ============================================================================
 // ClockGearsNewProjectDialog ("Archivo > Nuevo Proyecto...")
 // ============================================================================
-void ClockGearsNewProjectDialog::_bind_methods() {}
+void ClockGearsNewProjectDialog::_bind_methods() {
+	ClassDB::bind_static_method("ClockGearsNewProjectDialog", D_METHOD("get_engine_version"), &ClockGearsNewProjectDialog::get_engine_version);
+	ClassDB::bind_static_method("ClockGearsNewProjectDialog", D_METHOD("get_splash_version"), &ClockGearsNewProjectDialog::get_splash_version);
+}
+
+String ClockGearsNewProjectDialog::get_engine_version() {
+	return String::utf8(CLOCKGEARS_VERSION);
+}
+
+String ClockGearsNewProjectDialog::get_splash_version() {
+	return String::utf8(CLOCKGEARS_SPLASH_VERSION);
+}
 
 String ClockGearsNewProjectDialog::_get_target_project_dir() const {
 	String parent = parent_dir_edit ? parent_dir_edit->get_text().strip_edges() : "";

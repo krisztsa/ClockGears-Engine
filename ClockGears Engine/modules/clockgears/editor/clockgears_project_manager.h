@@ -84,6 +84,8 @@ protected:
 
 public:
 	void open_dialog();
+	static String get_engine_version();
+	static String get_splash_version();
 
 	ClockGearsNewProjectDialog();
 };

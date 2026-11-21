@@ -30,9 +30,8 @@
 
 #pragma once
 
+#include "core/clockgears_version.h"
 #include "scene/gui/link_button.h"
-
-#define CLOCKGEARS_VERSION "Alpha-0.0.3"
 
 class EditorVersionButton : public LinkButton {
 	GDCLASS(EditorVersionButton, LinkButton);

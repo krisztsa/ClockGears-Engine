@@ -77,10 +77,10 @@ int main(int argc, char **argv) {
 					HIWORD(ffi->dwProductVersionMS), LOWORD(ffi->dwProductVersionMS),
 					HIWORD(ffi->dwProductVersionLS), LOWORD(ffi->dwProductVersionLS));
 			}
-			const char *keys[5] = { "ProductName", "CompanyName", "FileDescription", "LegalCopyright", "FileVersion" };
+			const char *keys[6] = { "ProductName", "CompanyName", "FileDescription", "LegalCopyright", "FileVersion", "ProductVersion" };
 			for (const char *k : keys) {
 				wchar_t q[128];
-				std::swprintf(q, 128, L"\\StringFileInfo\\040904b0\\%S", k);
+				std::swprintf(q, 128, L"\\StringFileInfo\\040904b0\\%hs", k);
 				LPWSTR val = nullptr;
 				UINT vlen = 0;
 				if (VerQueryValueW(vbuf.data(), q, (LPVOID *)&val, &vlen) && val) {
@@ -88,6 +88,9 @@ int main(int argc, char **argv) {
 					std::string uval(ulen > 0 ? ulen - 1 : 0, 0);
 					if (ulen > 1) WideCharToMultiByte(CP_UTF8, 0, val, -1, &uval[0], ulen, nullptr, nullptr);
 					std::printf("%s=%s\n", k, uval.c_str());
+					if (std::string(k) == "LegalCopyright") {
+						std::printf("LegalCopyright_U0=U+%04X\n", (unsigned)(uint16_t)val[0]);
+					}
 				}
 			}
 		}

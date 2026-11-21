@@ -1,4 +1,6 @@
+#pragma code_page(65001)
 #include "core/version.h"
+#include "core/clockgears_version.h"
 
 #ifndef RT_MANIFEST
 #define RT_MANIFEST 24
@@ -8,8 +10,8 @@ GODOT_ICON ICON platform/windows/godot_console.ico
 1 RT_MANIFEST "platform/windows/godot.manifest"
 
 1 VERSIONINFO
-FILEVERSION     GODOT_VERSION_MAJOR,GODOT_VERSION_MINOR,GODOT_VERSION_PATCH,0
-PRODUCTVERSION  GODOT_VERSION_MAJOR,GODOT_VERSION_MINOR,GODOT_VERSION_PATCH,0
+FILEVERSION     CLOCKGEARS_VERSION_MAJOR,CLOCKGEARS_VERSION_MINOR,CLOCKGEARS_VERSION_PATCH,CLOCKGEARS_VERSION_BUILD
+PRODUCTVERSION  CLOCKGEARS_VERSION_MAJOR,CLOCKGEARS_VERSION_MINOR,CLOCKGEARS_VERSION_PATCH,CLOCKGEARS_VERSION_BUILD
 FILEOS          4
 FILETYPE        1
 BEGIN
@@ -17,8 +19,12 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileDescription",        GODOT_VERSION_NAME " (Console)"
-            VALUE "FileVersion",            GODOT_VERSION_NUMBER
+            VALUE "CompanyName",            CLOCKGEARS_COMPANY_NAME
+            VALUE "FileDescription",        CLOCKGEARS_PRODUCT_NAME " (Console)"
+            VALUE "FileVersion",            CLOCKGEARS_FILE_VERSION_STR
+            VALUE "ProductName",            CLOCKGEARS_PRODUCT_NAME
+            VALUE "LegalCopyright",         CLOCKGEARS_LEGAL_COPYRIGHT
+            VALUE "ProductVersion",         CLOCKGEARS_FILE_VERSION_STR
         END
     END
     BLOCK "VarFileInfo"
