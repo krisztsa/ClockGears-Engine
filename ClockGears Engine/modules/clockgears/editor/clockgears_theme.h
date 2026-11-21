@@ -66,6 +66,34 @@ public:
 	static int get_container_border_width() { return 1; }
 	static int get_container_corner_radius(float p_scale = 1.0f) { return int(6 * p_scale); }
 
+	enum GlowLevel {
+		GLOW_DISABLED = 0, // Desactivado: sin halos ni transiciones, conserva los bordes
+		GLOW_SOFT = 1,     // Suave (por defecto): halos 25..40 % y radio 6..8 px, transiciones 120..150 ms
+		GLOW_INTENSE = 2,  // Intenso: halos 36..40 % y radio 8..10 px, transiciones 120..150 ms
+	};
+
+	struct NeonCopperTokens {
+		// Superficies
+		Color surface_base;     // Fondo base (el más oscuro)
+		Color surface_panel;    // Panel
+		Color surface_elevated; // Panel elevado
+		Color surface_sunken;   // Campo hundido
+		// Bordes
+		Color border_copper;        // Borde cobrizo (el actual de los botones)
+		Color border_copper_bright; // Borde cobrizo brillante (hover, ~15 % más claro)
+		Color border_subtle;        // Borde sutil (cobre con baja opacidad, para separadores y rejillas)
+		// Acento neón dorado-cobre y halo
+		Color accent_neon;          // Entre el ámbar y el cobre, algo más claro y saturado que el borde
+		Color halo_color;           // Color del acento con opacidad de 25 a 40 % (0 % si Desactivado)
+		int halo_radius_px = 7;     // Radio de 6 a 10 px (0 si Desactivado)
+		int transition_ms = 120;    // 120 a 150 ms (0 si Desactivado)
+	};
+
+	static NeonCopperTokens get_neon_copper_tokens(bool p_brass = false, bool p_light = false, float p_scale = 1.0f, int p_glow_level = -1);
+	static int get_glow_effects_level();
+	static void set_glow_effects_level(int p_level);
+	Dictionary get_theme_tokens_dict(const String &p_theme_id = "") const;
+
 	struct SplashPalette {
 		Color bg_top;
 		Color bg_bottom;

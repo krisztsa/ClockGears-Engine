@@ -147,6 +147,171 @@ Color ClockGearsTheme::color_sunken_list_border(bool p_brass, bool p_light) {
 	return color_panel().darkened(0.32f);
 }
 
+int ClockGearsTheme::get_glow_effects_level() {
+	if (ProjectSettings::get_singleton()) {
+		ProjectSettings *ps = ProjectSettings::get_singleton();
+		if (ps->has_setting("clockgears/editor/glow_effects_level")) {
+			return CLAMP((int)ps->get_setting("clockgears/editor/glow_effects_level"), (int)GLOW_DISABLED, (int)GLOW_INTENSE);
+		}
+		if (ps->has_setting("clockgears/editor/glow_effects")) {
+			const Variant v = ps->get_setting("clockgears/editor/glow_effects");
+			if (v.get_type() == Variant::BOOL) {
+				return ((bool)v) ? (int)GLOW_SOFT : (int)GLOW_DISABLED;
+			}
+			if (v.get_type() == Variant::INT) {
+				return CLAMP((int)v, (int)GLOW_DISABLED, (int)GLOW_INTENSE);
+			}
+			if (v.get_type() == Variant::STRING) {
+				const String s = String(v).strip_edges().to_lower();
+				if (s == "0" || s == "off" || s == "disabled" || s == "desactivado" || s == "false") {
+					return (int)GLOW_DISABLED;
+				}
+				if (s == "2" || s == "intense" || s == "intenso") {
+					return (int)GLOW_INTENSE;
+				}
+				return (int)GLOW_SOFT;
+			}
+		}
+	}
+	return (int)GLOW_SOFT;
+}
+
+void ClockGearsTheme::set_glow_effects_level(int p_level) {
+	const int lvl = CLAMP(p_level, (int)GLOW_DISABLED, (int)GLOW_INTENSE);
+	if (ProjectSettings::get_singleton()) {
+		ProjectSettings::get_singleton()->set_setting("clockgears/editor/glow_effects_level", lvl);
+		ProjectSettings::get_singleton()->set_setting("clockgears/editor/glow_effects", lvl != (int)GLOW_DISABLED);
+	}
+	if (singleton) {
+		singleton->dark_theme.unref();
+		singleton->light_theme.unref();
+		singleton->brass_theme.unref();
+		singleton->dark_has_editor_base = false;
+		singleton->light_has_editor_base = false;
+		singleton->brass_has_editor_base = false;
+		singleton->refresh_all_themed_roots();
+	}
+}
+
+ClockGearsTheme::NeonCopperTokens ClockGearsTheme::get_neon_copper_tokens(bool p_brass, bool p_light, float p_scale, int p_glow_level) {
+	const int glow_lvl = (p_glow_level >= 0) ? CLAMP(p_glow_level, (int)GLOW_DISABLED, (int)GLOW_INTENSE) : get_glow_effects_level();
+	NeonCopperTokens tk;
+
+	if (p_brass) {
+		// Derivado 100 % de la paleta existente de ClockGears Latón
+		tk.surface_base = color_brass_bg();
+		tk.surface_panel = color_brass_panel();
+		tk.surface_elevated = color_brass_header();
+		tk.surface_sunken = color_sunken_list_bg(true, false);
+
+		const Color base_copper = color_menu_pill_border(true, false);
+		tk.border_copper = base_copper;
+		Color bright_c = color_brass_border().lightened(0.15f);
+		tk.border_copper_bright = Color(bright_c.r, bright_c.g, bright_c.b, 0.88f);
+		tk.border_subtle = Color(color_brass_border().r, color_brass_border().g, color_brass_border().b, 0.24f);
+
+		// Acento neón dorado-cobre: entre el ámbar y el cobre, algo más claro y saturado que el borde
+		Color neon = color_brass_border().lerp(color_brass_accent(), 0.72f).lightened(0.08f);
+		neon.set_s(CLAMP(neon.get_s() * 1.08f, 0.0f, 1.0f));
+		neon.a = 1.0f;
+		tk.accent_neon = neon;
+	} else if (p_light) {
+		tk.surface_base = Color::html("#eef0f4");
+		tk.surface_panel = Color::html("#ffffff");
+		tk.surface_elevated = Color::html("#f4f6fa");
+		tk.surface_sunken = color_sunken_list_bg(false, true);
+
+		const Color base_copper = color_menu_pill_border(false, true);
+		tk.border_copper = base_copper;
+		Color bright_c = base_copper.lightened(0.15f);
+		tk.border_copper_bright = Color(bright_c.r, bright_c.g, bright_c.b, 0.88f);
+		tk.border_subtle = Color(base_copper.r, base_copper.g, base_copper.b, 0.22f);
+
+		Color neon = color_brass_border().lerp(color_accent_amber(), 0.65f);
+		neon.a = 1.0f;
+		tk.accent_neon = neon;
+	} else {
+		// Tema Oscuro por defecto: derivado de los colores actuales (color_bg_dark, color_panel, color_accent_amber, color_menu_pill_border)
+		tk.surface_base = color_bg_dark();
+		tk.surface_panel = color_panel();
+		tk.surface_elevated = color_panel().lightened(0.08f);
+		tk.surface_sunken = color_sunken_list_bg(false, false);
+
+		const Color base_copper = color_menu_pill_border(false, false);
+		tk.border_copper = base_copper;
+		Color bright_c = color_accent_amber().lightened(0.15f);
+		tk.border_copper_bright = Color(bright_c.r, bright_c.g, bright_c.b, 0.86f);
+		tk.border_subtle = Color(base_copper.r, base_copper.g, base_copper.b, 0.22f);
+
+		// Entre el ámbar (#e0a040) y el cobre/dorado (#f5bc54), más claro y saturado que el borde
+		Color neon = color_accent_amber().lerp(color_brass_accent(), 0.55f).lightened(0.06f);
+		neon.set_s(CLAMP(neon.get_s() * 1.08f, 0.0f, 1.0f));
+		neon.a = 1.0f;
+		tk.accent_neon = neon;
+	}
+
+	// Halo (color del acento con opacidad de 25 a 40 %) y su radio (6 a 10 px), con StyleBoxFlat shadow offset 0
+	if (glow_lvl == (int)GLOW_DISABLED) {
+		tk.halo_color = Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.0f);
+		tk.halo_radius_px = 0;
+		tk.transition_ms = 0;
+	} else if (glow_lvl == (int)GLOW_INTENSE) {
+		tk.halo_color = Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.38f);
+		tk.halo_radius_px = CLAMP((int)Math::round(9.0f * p_scale), (int)Math::round(6.0f * p_scale), (int)Math::round(10.0f * p_scale));
+		tk.transition_ms = 135;
+	} else {
+		// GLOW_SOFT (por defecto): opacidad 30 % (en [25 %, 40 %]) y radio 7 px (en [6, 10 px])
+		tk.halo_color = Color(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.30f);
+		tk.halo_radius_px = CLAMP((int)Math::round(7.0f * p_scale), (int)Math::round(6.0f * p_scale), (int)Math::round(10.0f * p_scale));
+		tk.transition_ms = 125;
+	}
+
+	return tk;
+}
+
+static void _cg_register_neon_copper_tokens_in_theme(const Ref<Theme> &p_th, const ClockGearsTheme::NeonCopperTokens &p_tk, int p_corner_r) {
+	if (p_th.is_null()) {
+		return;
+	}
+	p_th->set_color("surface_base", "ClockGears", p_tk.surface_base);
+	p_th->set_color("surface_panel", "ClockGears", p_tk.surface_panel);
+	p_th->set_color("surface_elevated", "ClockGears", p_tk.surface_elevated);
+	p_th->set_color("surface_sunken", "ClockGears", p_tk.surface_sunken);
+	p_th->set_color("border_copper", "ClockGears", p_tk.border_copper);
+	p_th->set_color("border_copper_bright", "ClockGears", p_tk.border_copper_bright);
+	p_th->set_color("border_subtle", "ClockGears", p_tk.border_subtle);
+	p_th->set_color("accent_neon", "ClockGears", p_tk.accent_neon);
+	p_th->set_color("halo_color", "ClockGears", p_tk.halo_color);
+	p_th->set_constant("halo_radius", "ClockGears", p_tk.halo_radius_px);
+	p_th->set_constant("transition_ms", "ClockGears", p_tk.transition_ms);
+	p_th->set_constant("corner_radius", "ClockGears", p_corner_r);
+}
+
+Dictionary ClockGearsTheme::get_theme_tokens_dict(const String &p_theme_id) const {
+	const String id = p_theme_id.is_empty() ? active_theme_id : p_theme_id.strip_edges().to_lower();
+	const bool is_brass = (id == "brass" || id == "laton" || id == String::utf8("latón"));
+	const bool is_light = (id == "light" || id == "claro");
+	const NeonCopperTokens tk = get_neon_copper_tokens(is_brass, is_light, 1.0f);
+
+	Dictionary d;
+	d["theme_id"] = is_brass ? "brass" : (is_light ? "light" : "dark");
+	d["glow_level"] = get_glow_effects_level();
+	d["surface_base"] = tk.surface_base;
+	d["surface_panel"] = tk.surface_panel;
+	d["surface_elevated"] = tk.surface_elevated;
+	d["surface_sunken"] = tk.surface_sunken;
+	d["border_copper"] = tk.border_copper;
+	d["border_copper_bright"] = tk.border_copper_bright;
+	d["border_subtle"] = tk.border_subtle;
+	d["accent_neon"] = tk.accent_neon;
+	d["halo_color"] = tk.halo_color;
+	d["halo_opacity"] = tk.halo_color.a;
+	d["halo_radius"] = tk.halo_radius_px;
+	d["transition_ms"] = tk.transition_ms;
+	d["corner_radius"] = get_container_corner_radius(1.0f);
+	return d;
+}
+
 ClockGearsTheme::SplashPalette ClockGearsTheme::get_splash_palette(bool p_brass) {
 	SplashPalette sp;
 	sp.corner_radius = get_container_corner_radius(1.0f);
@@ -699,9 +864,11 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	const int m6 = int(6 * p_scale);
 	const int m8 = int(8 * p_scale);
 	const int m12 = int(12 * p_scale);
-	const Color container_border = color_menu_pill_border(false, p_light);
+	const NeonCopperTokens tk = get_neon_copper_tokens(false, p_light, p_scale);
+	const Color container_border = tk.border_copper;
 
-	// 1. Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al botón píldora del menú, esquinas 6px)
+	// 1. Tokens Neón Cobre + Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al botón píldora del menú, esquinas 6px)
+	_cg_register_neon_copper_tokens_in_theme(th, tk, r6);
 	th->set_color("container_border", "ClockGears", container_border);
 	th->set_constant("container_border_width", "ClockGears", get_container_border_width());
 	th->set_constant("container_corner_radius", "ClockGears", r6);
@@ -1223,9 +1390,11 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	const int m8 = int(8 * p_scale);
 	const int m12 = int(12 * p_scale);
 
-	const Color container_border = color_menu_pill_border(true, false);
+	const NeonCopperTokens tk = get_neon_copper_tokens(true, false, p_scale);
+	const Color container_border = tk.border_copper;
 
-	// 1. Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al menú Latón, 6px)
+	// 1. Tokens Neón Cobre + Panel, PanelContainer & Variaciones de Contenedor (borde cobrizo de contenedor idéntico al menú Latón, 6px)
+	_cg_register_neon_copper_tokens_in_theme(th, tk, r6);
 	th->set_color("container_border", "ClockGears", container_border);
 	th->set_constant("container_border_width", "ClockGears", get_container_border_width());
 	th->set_constant("container_corner_radius", "ClockGears", r6);
@@ -2936,6 +3105,9 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_active_container_border_color"), &ClockGearsTheme::get_active_container_border_color);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_border_width"), &ClockGearsTheme::get_container_border_width);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_glow_effects_level"), &ClockGearsTheme::get_glow_effects_level);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("set_glow_effects_level", "level"), &ClockGearsTheme::set_glow_effects_level);
+	ClassDB::bind_method(D_METHOD("get_theme_tokens_dict", "theme_id"), &ClockGearsTheme::get_theme_tokens_dict, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("get_container_stylebox", "scale", "margin_h", "margin_v", "variant"), &ClockGearsTheme::get_container_stylebox, DEFVAL(1.0f), DEFVAL(12), DEFVAL(12), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("get_sunken_list_stylebox", "scale"), &ClockGearsTheme::get_sunken_list_stylebox, DEFVAL(1.0f));
 
