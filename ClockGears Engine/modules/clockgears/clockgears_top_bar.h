@@ -99,6 +99,8 @@ public:
 	void sync_active_layer_display();
 	void select_layer_button(int p_layer);
 	Button *get_layer_button(int p_idx) const { return (p_idx >= 0 && p_idx < 6) ? layer_buttons[p_idx] : nullptr; }
+	Button *get_tool_button(int p_idx) const { return (p_idx >= 0 && p_idx < 8) ? tool_buttons[p_idx] : nullptr; }
+	Button *get_playtest_button() const { return playtest_btn; }
 	Array get_toolbar_icons_audit() const;
 	void set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEventEditorDialog *p_ev, ClockGearsSimplifiedExportDialog *p_exp);
 

@@ -609,8 +609,12 @@ Ref<StyleBoxFlat> ClockGearsTheme::make_container_stylebox(float p_scale, int p_
 
 	sb->set_anti_aliased(true);
 	if (p_variant == 3) {
+		const NeonCopperTokens tk = get_neon_copper_tokens(is_brass, is_light, p_scale);
 		sb->set_draw_center(false);
 		sb->set_bg_color(Color(0, 0, 0, 0));
+		sb->set_shadow_color(Color(tk.halo_color.r, tk.halo_color.g, tk.halo_color.b, tk.halo_color.a * 0.55f));
+		sb->set_shadow_size(tk.halo_radius_px);
+		sb->set_shadow_offset(Vector2(0, 0));
 	} else if (is_brass) {
 		sb->set_bg_color((p_variant == 1) ? color_brass_header() : color_brass_panel());
 	} else if (is_light) {
@@ -887,7 +891,6 @@ static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_b
 		return;
 	}
 	const int r6 = int(6 * p_scale);
-	const int r4 = int(4 * p_scale);
 	const int m4 = int(4 * p_scale);
 	const int m6 = int(6 * p_scale);
 	const int m8 = int(8 * p_scale);
@@ -3252,7 +3255,8 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 						}
 					}
 				}
-			} else if (Object::cast_to<Button>(c) && !Object::cast_to<CheckBox>(c) && !Object::cast_to<CheckButton>(c)) {
+			} else if (Object::cast_to<Button>(c) && !Object::cast_to<CheckBox>(c) && !Object::cast_to<CheckButton>(c) && !c->has_meta("_cg_theme_managed_container")) {
+				const NeonCopperTokens tk = get_neon_copper_tokens(true, false, CG_SCALE);
 				const bool in_topbar = (c->get_parent() && c->get_parent()->get_parent() && c->get_parent()->get_parent()->get_class() == "ClockGearsTopBar");
 				const char *btn_sbs[4] = { "normal", "hover", "pressed", "hover_pressed" };
 				for (int bi = 0; bi < 4; bi++) {
@@ -3272,7 +3276,7 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 										c->set_meta(mkey, cur_sb);
 									}
 									Color new_bg = bgc;
-									Color new_bd = color_brass_border();
+									Color new_bd = tk.border_copper;
 									int gmode = ClockGearsBrassStyleBox::GRADIENT_NONE;
 									float hi = 0.0f;
 									bool sunken = (bi == 2 || bi == 3);
@@ -3280,24 +3284,26 @@ void ClockGearsTheme::apply_theme_to_node_tree(Node *p_root) {
 									Color sh_col(0, 0, 0, 0);
 									if (bi == 0) {
 										new_bg = (bgc.a < 0.05f) ? Color(0, 0, 0, 0) : Color::html("#262018");
-										new_bd = (bgc.a < 0.05f && sbf->get_border_color().a < 0.05f) ? Color(0, 0, 0, 0) : Color(color_brass_border().r, color_brass_border().g, color_brass_border().b, 0.55f);
+										new_bd = (bgc.a < 0.05f && sbf->get_border_color().a < 0.05f) ? Color(0, 0, 0, 0) : tk.border_copper;
 										gmode = (bgc.a >= 0.05f) ? ClockGearsBrassStyleBox::GRADIENT_BUTTON : ClockGearsBrassStyleBox::GRADIENT_NONE;
 										hi = (bgc.a >= 0.05f) ? 0.24f : 0.0f;
 									} else if (bi == 1) {
-										new_bg = in_topbar ? Color(color_brass_accent().r, color_brass_accent().g, color_brass_accent().b, 0.18f) : Color::html("#332a1e");
-										new_bd = color_brass_accent();
+										new_bg = in_topbar ? tk.surface_panel.lerp(tk.accent_neon, 0.14f) : Color::html("#332a1e");
+										new_bd = tk.border_copper_bright;
 										gmode = ClockGearsBrassStyleBox::GRADIENT_BUTTON_HOVER;
 										hi = 0.34f;
-										sh_sz = 3;
-										sh_col = Color(color_brass_accent().r, color_brass_accent().g, color_brass_accent().b, 0.28f);
+										sh_sz = tk.halo_radius_px;
+										sh_col = tk.halo_color;
 									} else if (bi == 2) {
-										new_bg = in_topbar ? Color(color_brass_accent().r, color_brass_accent().g, color_brass_accent().b, 0.30f) : Color::html("#1d1610");
-										new_bd = color_brass_accent();
+										new_bg = in_topbar ? tk.surface_panel.lerp(tk.accent_neon, 0.24f) : Color::html("#1d1610");
+										new_bd = tk.accent_neon;
+										sh_sz = tk.halo_radius_px;
+										sh_col = tk.halo_color;
 									} else {
-										new_bg = in_topbar ? Color(color_brass_accent().r, color_brass_accent().g, color_brass_accent().b, 0.40f) : Color::html("#261d14");
-										new_bd = color_brass_accent();
-										sh_sz = 3;
-										sh_col = Color(color_brass_accent().r, color_brass_accent().g, color_brass_accent().b, 0.26f);
+										new_bg = in_topbar ? tk.surface_panel.lerp(tk.accent_neon, 0.32f) : Color::html("#261d14");
+										new_bd = tk.accent_neon;
+										sh_sz = tk.halo_radius_px;
+										sh_col = tk.halo_color;
 									}
 									Ref<ClockGearsBrassStyleBox> bsb = _cg_clone_flat_to_brass(sbf, new_bg, new_bd, gmode, hi, sunken, sh_sz, sh_col);
 									if (sunken) {
@@ -3411,7 +3417,7 @@ void ClockGearsTheme::refresh_all_themed_roots() {
 			Node *cur = scan[scan.size() - 1];
 			scan.remove_at(scan.size() - 1);
 			String cn = cur->get_class();
-			if (cn == "ClockGearsTopBar" || cn == "ClockGearsMapPanel" || cn == "ClockGearsDatabaseDialog" ||
+			if (cn == "ClockGearsTopBar" || cn == "ClockGearsMapPanel" || cn == "ClockGearsStatusBar" || cn == "ClockGearsDatabaseDialog" ||
 					cn == "ClockGearsEventEditorDialog" || cn == "ClockGearsPreferencesDialog" || cn == "ClockGearsLayersDialog" ||
 					cn == "ClockGearsCameraDialog" || cn == "ClockGearsSimplifiedExportDialog" || cn == "ClockGearsNewProjectDialog" ||
 					cn == "ClockGearsResourceManagerDialog" || cn == "ClockGearsGenerateEntityDialog" || cn == "ClockGearsCommandSelector" ||

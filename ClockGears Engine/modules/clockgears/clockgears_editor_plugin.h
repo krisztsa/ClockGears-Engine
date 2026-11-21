@@ -159,6 +159,7 @@ private:
 	ClockGearsAutomationPanel *automation_panel = nullptr;
 	ClockGearsUIEditorPanel *ui_editor_panel = nullptr;
 	ClockGearsMapPanel *map_panel = nullptr;
+	ClockGearsStatusBar *status_bar = nullptr;
 	PopupMenu *event_context_menu = nullptr;
 	PopupMenu *quick_events_menu = nullptr;
 	Dictionary clipboard_event_data;
@@ -218,6 +219,7 @@ public:
 
 	ClockGearsEvent *get_event_at_cell(int p_x, int p_y) const;
 	ClockGearsMapPanel *get_map_panel() const { return map_panel; }
+	ClockGearsStatusBar *get_status_bar() const { return status_bar; }
 	Node *ensure_active_map();
 	void open_event_editor(ClockGearsEvent *p_ev);
 	void open_event_editor_at_cell(int p_x, int p_y);

@@ -2621,6 +2621,18 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 		root->move_child(top_bar, 1);
 	}
 
+	if (root && status_bar) {
+		status_bar->set_v_size_flags(Control::SIZE_SHRINK_END);
+		if (status_bar->get_parent() != root) {
+			if (status_bar->get_parent()) {
+				status_bar->reparent(root);
+			} else {
+				root->add_child(status_bar);
+			}
+		}
+		root->move_child(status_bar, root->get_child_count() - 1);
+	}
+
 	if (workspace_built) {
 		return;
 	}
@@ -2688,6 +2700,9 @@ void ClockGearsEditorPlugin::apply_clockgears_workspace() {
 		th->apply_to_window(quick_events_menu);
 		th->apply_to_control(top_bar);
 		th->apply_to_control(map_panel);
+		if (status_bar) {
+			th->apply_to_control(status_bar);
+		}
 		th->refresh_all_themed_roots();
 	}
 
@@ -2813,6 +2828,7 @@ ClockGearsEditorPlugin::ClockGearsEditorPlugin() {
 	top_bar->set_dialogs(database_dialog, event_editor_dialog, export_dialog);
 
 	map_panel = memnew(ClockGearsMapPanel);
+	status_bar = memnew(ClockGearsStatusBar);
 
 	// Mount the ClockGears chrome immediately (before the first frame) to avoid any flicker.
 	{
@@ -2823,6 +2839,8 @@ ClockGearsEditorPlugin::ClockGearsEditorPlugin() {
 			top_bar->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
 			root->add_child(top_bar);
 			root->move_child(top_bar, MIN(1, root->get_child_count() - 1));
+			status_bar->set_v_size_flags(Control::SIZE_SHRINK_END);
+			root->add_child(status_bar);
 		}
 		if (body) {
 			map_panel->set_custom_minimum_size(Size2(300 * EDSCALE, 0));

@@ -5,7 +5,11 @@
 #include "scene/gui/control.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
+#include "scene/gui/label.h"
+#include "scene/gui/panel_container.h"
+#include "scene/gui/separator.h"
 #include "scene/gui/tab_container.h"
+#include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/resources/texture.h"
@@ -102,6 +106,10 @@ class ClockGearsMapPanel : public VBoxContainer {
 		bool is_new_map_btn = false;
 	};
 	Vector<HeaderIconEntry> header_icon_buttons;
+	TextureRect *palette_header_icon = nullptr;
+	TextureRect *maps_header_icon = nullptr;
+	Label *palette_header_label = nullptr;
+	Label *maps_header_label = nullptr;
 	PopupMenu *map_context_menu = nullptr;
 	ClockGearsMapPropertiesDialog *map_properties_dialog = nullptr;
 	ConfirmationDialog *tileset_change_dialog = nullptr;
@@ -163,7 +171,47 @@ protected:
 public:
 	static ClockGearsMapPanel *get_singleton() { return singleton; }
 	ClockGearsMapPropertiesDialog *get_map_properties_dialog() const { return map_properties_dialog; }
+	TextureRect *get_palette_header_icon() const { return palette_header_icon; }
+	TextureRect *get_maps_header_icon() const { return maps_header_icon; }
+	Tree *get_map_tree() const { return map_tree; }
+	TabContainer *get_tileset_tabs() const { return tileset_tabs; }
 
 	ClockGearsMapPanel();
 	~ClockGearsMapPanel();
+};
+
+// Barra de estado inferior del editor principal (muestra SOLO datos que el editor ya conoce).
+class ClockGearsStatusBar : public PanelContainer {
+	GDCLASS(ClockGearsStatusBar, PanelContainer);
+
+	static ClockGearsStatusBar *singleton;
+
+	Label *tool_label = nullptr;
+	Label *layer_label = nullptr;
+	Label *zoom_label = nullptr;
+	VSeparator *coords_sep = nullptr;
+	Label *coords_label = nullptr;
+	Label *tile_size_label = nullptr;
+	Label *version_label = nullptr;
+	bool applying_style = false;
+
+	String last_tool_txt;
+	String last_layer_txt;
+	String last_zoom_txt;
+	String last_coords_txt;
+	String last_tile_sz_txt;
+
+	void _apply_bar_style();
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+
+public:
+	static ClockGearsStatusBar *get_singleton() { return singleton; }
+	void refresh_status();
+	Dictionary get_status_snapshot() const;
+
+	ClockGearsStatusBar();
+	~ClockGearsStatusBar();
 };

@@ -3861,6 +3861,7 @@ void CanvasItemEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_clockgears_custom_layer"), &CanvasItemEditor::get_clockgears_current_custom_layer);
 	ClassDB::bind_method(D_METHOD("set_clockgears_draw_tool", "tool"), &CanvasItemEditor::set_clockgears_draw_tool);
 	ClassDB::bind_method(D_METHOD("get_clockgears_draw_tool"), &CanvasItemEditor::get_clockgears_draw_tool);
+	ClassDB::bind_method(D_METHOD("get_clockgears_hovered_cell"), &CanvasItemEditor::get_clockgears_hovered_cell);
 	ClassDB::bind_method(D_METHOD("set_clockgears_selected_tile", "tile_id", "atlas_coords", "texture", "source_id"), &CanvasItemEditor::set_clockgears_selected_tile, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("has_clockgears_map_selection"), &CanvasItemEditor::has_clockgears_map_selection);
 	ClassDB::bind_method(D_METHOD("clockgears_copy_map_selection"), &CanvasItemEditor::clockgears_copy_map_selection);

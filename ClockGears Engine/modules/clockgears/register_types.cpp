@@ -111,6 +111,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsTilePalette);
 		GDREGISTER_CLASS(ClockGearsMapPropertiesDialog);
 		GDREGISTER_CLASS(ClockGearsMapPanel);
+		GDREGISTER_CLASS(ClockGearsStatusBar);
 		GDREGISTER_CLASS(ClockGearsCommandSelector);
 		GDREGISTER_CLASS(ClockGearsEventEditorDialog);
 		GDREGISTER_CLASS(ClockGearsPicturePreviewCanvas);

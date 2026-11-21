@@ -8730,48 +8730,72 @@ void EditorNode::style_clockgears_main_menu_bar(MenuBar *p_mbar) {
 		return;
 	}
 	p_mbar->set_flat(false);
-	Ref<Theme> th = p_mbar->get_theme();
-	bool is_brass = th.is_valid() && th->has_meta("_cg_is_brass");
 	const float sc = MAX(1.0f, EDSCALE);
 
-	if (is_brass) {
-		const char *sb_keys[6] = { "normal", "hover", "pressed", "hover_pressed", "disabled", nullptr };
-		for (int i = 0; sb_keys[i]; i++) {
-			if (p_mbar->has_theme_stylebox_override(StringName(sb_keys[i]))) {
-				p_mbar->remove_theme_style_override(StringName(sb_keys[i]));
+	if (Engine::get_singleton()) {
+		if (Object *cg_theme = Engine::get_singleton()->get_singleton_object("ClockGearsTheme")) {
+			Ref<Theme> active_th = cg_theme->call("get_active_theme");
+			if (active_th.is_valid() && active_th->has_stylebox("normal", "MainMenuBar")) {
+				p_mbar->add_theme_style_override("normal", active_th->get_stylebox("normal", "MainMenuBar"));
+				p_mbar->add_theme_style_override("hover", active_th->get_stylebox("hover", "MainMenuBar"));
+				p_mbar->add_theme_style_override("pressed", active_th->get_stylebox("pressed", "MainMenuBar"));
+				p_mbar->add_theme_style_override("hover_pressed", active_th->get_stylebox("hover_pressed", "MainMenuBar"));
+				p_mbar->add_theme_style_override("disabled", active_th->get_stylebox("disabled", "MainMenuBar"));
+				p_mbar->add_theme_color_override("font_color", active_th->get_color("font_color", "MainMenuBar"));
+				p_mbar->add_theme_color_override("font_hover_color", active_th->get_color("font_hover_color", "MainMenuBar"));
+				p_mbar->add_theme_color_override("font_pressed_color", active_th->get_color("font_pressed_color", "MainMenuBar"));
+				p_mbar->add_theme_color_override("font_hover_pressed_color", active_th->get_color("font_hover_pressed_color", "MainMenuBar"));
+				p_mbar->add_theme_constant_override("h_separation", active_th->get_constant("h_separation", "MainMenuBar"));
+				p_mbar->queue_redraw();
+				return;
 			}
 		}
-		const char *col_keys[5] = { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", nullptr };
-		for (int i = 0; col_keys[i]; i++) {
-			if (p_mbar->has_theme_color_override(StringName(col_keys[i]))) {
-				p_mbar->remove_theme_color_override(StringName(col_keys[i]));
+	}
+
+	Color surf_panel(0.14f, 0.16f, 0.21f, 0.92f);
+	Color surf_elev(0.21f, 0.24f, 0.31f, 0.96f);
+	Color bd_copper(0.88f, 0.63f, 0.25f, 0.62f);
+	Color bd_bright(0.96f, 0.74f, 0.32f, 0.94f);
+	Color acc_neon(1.0f, 0.78f, 0.34f, 1.0f);
+	Color halo_col(0.95f, 0.72f, 0.30f, 0.30f);
+	int halo_rad = int(Math::round(7.0f * sc));
+	if (Engine::get_singleton()) {
+		if (Object *cg_theme = Engine::get_singleton()->get_singleton_object("ClockGearsTheme")) {
+			Dictionary tk = cg_theme->call("get_theme_tokens_dict", "");
+			if (!tk.is_empty()) {
+				surf_panel = Color(tk.get("surface_panel", surf_panel));
+				surf_elev = Color(tk.get("surface_elevated", surf_elev));
+				bd_copper = Color(tk.get("border_copper", bd_copper));
+				bd_bright = Color(tk.get("border_copper_bright", bd_bright));
+				acc_neon = Color(tk.get("accent_neon", acc_neon));
+				halo_col = Color(tk.get("halo_color", halo_col));
+				halo_rad = int(Math::round(float(int(tk.get("halo_radius", 7))) * sc));
 			}
 		}
-		p_mbar->add_theme_constant_override("h_separation", int(Math::round(6.0 * sc)));
-		p_mbar->queue_redraw();
-		return;
 	}
 
 	Ref<StyleBoxFlat> pill_n;
 	pill_n.instantiate();
 	pill_n->set_anti_aliased(true);
-	pill_n->set_bg_color(Color(0.14f, 0.16f, 0.21f, 0.92f));
+	pill_n->set_bg_color(surf_panel);
 	pill_n->set_border_width_all(1);
-	pill_n->set_border_color(Color(0.88f, 0.63f, 0.25f, 0.62f));
+	pill_n->set_border_color(bd_copper);
 	pill_n->set_corner_radius_all(int(Math::round(6.0f * sc)));
 	pill_n->set_content_margin_individual(10.0f * sc, 2.5f * sc, 10.0f * sc, 2.5f * sc);
 
 	Ref<StyleBoxFlat> pill_h = pill_n->duplicate();
-	pill_h->set_bg_color(Color(0.21f, 0.24f, 0.31f, 0.96f));
-	pill_h->set_border_color(Color(0.96f, 0.74f, 0.32f, 0.94f));
-	pill_h->set_shadow_color(Color(0.95f, 0.72f, 0.30f, 0.22f));
-	pill_h->set_shadow_size(int(Math::round(3.0f * sc)));
+	pill_h->set_bg_color(surf_elev);
+	pill_h->set_border_color(bd_bright);
+	pill_h->set_shadow_color(halo_col);
+	pill_h->set_shadow_size(halo_rad);
+	pill_h->set_shadow_offset(Vector2(0, 0));
 
 	Ref<StyleBoxFlat> pill_p = pill_n->duplicate();
-	pill_p->set_bg_color(Color(0.29f, 0.22f, 0.13f, 0.98f));
-	pill_p->set_border_color(Color(1.0f, 0.78f, 0.34f, 1.0f));
-	pill_p->set_shadow_color(Color(0.98f, 0.75f, 0.30f, 0.28f));
-	pill_p->set_shadow_size(int(Math::round(3.0f * sc)));
+	pill_p->set_bg_color(surf_panel.lerp(acc_neon, 0.22f));
+	pill_p->set_border_color(acc_neon);
+	pill_p->set_shadow_color(halo_col);
+	pill_p->set_shadow_size(halo_rad);
+	pill_p->set_shadow_offset(Vector2(0, 0));
 
 	p_mbar->add_theme_style_override("normal", pill_n);
 	p_mbar->add_theme_style_override("hover", pill_h);
@@ -8781,7 +8805,7 @@ void EditorNode::style_clockgears_main_menu_bar(MenuBar *p_mbar) {
 
 	p_mbar->add_theme_color_override("font_color", Color(0.95f, 0.87f, 0.68f));
 	p_mbar->add_theme_color_override("font_hover_color", Color(1.0f, 0.94f, 0.78f));
-	p_mbar->add_theme_color_override("font_pressed_color", Color(1.0f, 0.92f, 0.68f));
+	p_mbar->add_theme_color_override("font_pressed_color", acc_neon);
 	p_mbar->add_theme_color_override("font_hover_pressed_color", Color(1.0f, 0.96f, 0.78f));
 	p_mbar->add_theme_constant_override("h_separation", int(Math::round(6.0 * sc)));
 	p_mbar->queue_redraw();

@@ -532,6 +532,7 @@ public:
 	bool is_clockgears_event_mode() const { return clockgears_event_mode; }
 	void set_clockgears_grid_size(int p_size);
 	int get_clockgears_grid_size() const { return clockgears_grid_size; }
+	Point2i get_clockgears_hovered_cell() const { return clockgears_hovered_cell; }
 	void set_clockgears_event_double_clicked_callback(const Callable &p_cb) { clockgears_event_double_clicked_cb = p_cb; }
 	void set_clockgears_event_cell_rmb_callback(const Callable &p_cb) { clockgears_event_cell_rmb_cb = p_cb; }
 

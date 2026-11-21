@@ -6,6 +6,7 @@
 #include "icons/clockgears_icons.h"
 #include "core/clockgears_data_manager.h"
 #include "core/clockgears_pixel_art.h"
+#include "core/clockgears_version.h"
 #include "modules/tilemap/tile_set.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -259,9 +260,12 @@ void ClockGearsTilePalette::_draw_palette() {
 		return;
 	}
 
-	// Checker background
-	const Color c1 = Color(0.12, 0.13, 0.15);
-	const Color c2 = Color(0.08, 0.09, 0.11);
+	// Checker background en superficie de campo hundido del tema Neón Cobre
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, 1.0f);
+	const Color c1 = tk.surface_sunken;
+	const Color c2 = is_light ? tk.surface_sunken.darkened(0.06f) : tk.surface_sunken.darkened(0.22f);
 	draw_rect(Rect2(Point2(), size), c1);
 
 	const int checker_size = 16;
@@ -341,8 +345,8 @@ void ClockGearsTilePalette::_draw_palette() {
 		}
 	}
 
-	// Grid lines
-	const Color grid_color(1, 1, 1, 0.15);
+	// Grid lines (borde sutil cobrizo del tema)
+	const Color grid_color = tk.border_subtle;
 	for (int c = 0; c <= columns; c++) {
 		const real_t x = Math::round(texture_origin.x + c * tile_size * draw_scale);
 		draw_line(Point2(x, texture_origin.y), Point2(x, texture_origin.y + rows * tile_size * draw_scale), grid_color);
@@ -352,26 +356,28 @@ void ClockGearsTilePalette::_draw_palette() {
 		draw_line(Point2(texture_origin.x, y), Point2(texture_origin.x + columns * tile_size * draw_scale, y), grid_color);
 	}
 
-	// Multi-tile or single-tile selection highlight
+	// Multi-tile or single-tile selection highlight (con acento neón y tinte ámbar suave)
+	const Color sel_fill(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.28f);
+	const Color sel_border(tk.accent_neon.r, tk.accent_neon.g, tk.accent_neon.b, 0.96f);
 	if (!selected_coords_list.is_empty()) {
 		for (int i = 0; i < selected_coords_list.size(); i++) {
 			Vector2i c = selected_coords_list[i];
 			int tidx = c.y * columns + c.x;
 			const Rect2 rect = _tile_rect(tidx);
-			draw_rect(rect, Color(1.0, 0.75, 0.2, 0.28), true);
-			draw_rect(rect, Color(1.0, 0.85, 0.3, 0.95), false, 2.0);
+			draw_rect(rect, sel_fill, true);
+			draw_rect(rect, sel_border, false, 2.0);
 		}
 	} else if (selected_tile >= 0) {
 		const Rect2 rect = _tile_rect(selected_tile);
-		draw_rect(rect, Color(1.0, 0.75, 0.2, 0.3), true);
-		draw_rect(rect, Color(1.0, 0.85, 0.3, 0.95), false, 2.0);
+		draw_rect(rect, sel_fill, true);
+		draw_rect(rect, sel_border, false, 2.0);
 	}
 
 	// Hover highlight
 	if (hovered_tile >= 0 && hovered_tile != selected_tile) {
 		const Rect2 rect = _tile_rect(hovered_tile);
-		draw_rect(rect, Color(1, 1, 1, 0.15), true);
-		draw_rect(rect, Color(1, 1, 1, 0.6), false, 1.0);
+		draw_rect(rect, Color(tk.border_copper_bright.r, tk.border_copper_bright.g, tk.border_copper_bright.b, 0.16f), true);
+		draw_rect(rect, tk.border_copper_bright, false, 1.0);
 	}
 }
 
@@ -444,6 +450,10 @@ void ClockGearsMapPanel::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("import_tileset_file", "path", "tab"), &ClockGearsMapPanel::import_tileset_file, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("load_persisted_tilesets"), &ClockGearsMapPanel::load_persisted_tilesets);
 	ClassDB::bind_method(D_METHOD("get_palette_tileset_path", "tab"), &ClockGearsMapPanel::get_palette_tileset_path);
+	ClassDB::bind_method(D_METHOD("get_palette_header_icon"), &ClockGearsMapPanel::get_palette_header_icon);
+	ClassDB::bind_method(D_METHOD("get_maps_header_icon"), &ClockGearsMapPanel::get_maps_header_icon);
+	ClassDB::bind_method(D_METHOD("get_map_tree"), &ClockGearsMapPanel::get_map_tree);
+	ClassDB::bind_method(D_METHOD("get_tileset_tabs"), &ClockGearsMapPanel::get_tileset_tabs);
 }
 
 String ClockGearsMapPanel::get_palette_tileset_path(int p_tab) const {
@@ -454,14 +464,45 @@ String ClockGearsMapPanel::get_palette_tileset_path(int p_tab) const {
 }
 
 Control *ClockGearsMapPanel::_make_section_header(const String &p_title, bool p_with_tileset_action) {
+	VBoxContainer *header_vbox = memnew(VBoxContainer);
+	header_vbox->add_theme_constant_override("separation", 3);
+
 	HBoxContainer *header = memnew(HBoxContainer);
 	header->add_theme_constant_override("separation", 6);
+	header_vbox->add_child(header);
 
-	Label *title = memnew(Label(p_title));
-	title->add_theme_color_override("font_color", Color(0.95, 0.72, 0.26));
+	TextureRect *hdr_icon = memnew(TextureRect);
+	hdr_icon->set_name(p_with_tileset_action ? "PaletteHeaderIcon" : "MapsHeaderIcon");
+	hdr_icon->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
+	hdr_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+	hdr_icon->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	if (ClockGearsIcons::get_singleton()) {
+		const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
+		const String ic_name = p_with_tileset_action ? "tiles_icon" : "modo_mapa_icono";
+		hdr_icon->set_texture(ClockGearsIcons::get_singleton()->get_icon(ic_name, float(int_scale)));
+	}
+	header->add_child(hdr_icon);
+	if (p_with_tileset_action) {
+		palette_header_icon = hdr_icon;
+	} else {
+		maps_header_icon = hdr_icon;
+	}
+
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, 1.0f);
+
+	Label *title = memnew(Label(p_title.to_upper()));
+	title->set_uppercase(true);
+	title->add_theme_color_override("font_color", tk.accent_neon);
 	title->add_theme_font_size_override("font_size", 11);
 	title->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	header->add_child(title);
+	if (p_with_tileset_action) {
+		palette_header_label = title;
+	} else {
+		maps_header_label = title;
+	}
 
 	auto track_header_btn = [this](Button *p_btn, const StringName &p_ed, const String &p_cg, const String &p_fb, bool p_new_map = false) {
 		HeaderIconEntry e;
@@ -522,7 +563,12 @@ Control *ClockGearsMapPanel::_make_section_header(const String &p_title, bool p_
 		header->add_child(delete_button);
 	}
 
-	return header;
+	HSeparator *grad_line = memnew(HSeparator);
+	grad_line->set_name(p_with_tileset_action ? "PaletteHeaderGradLine" : "MapsHeaderGradLine");
+	grad_line->set_theme_type_variation("ClockGearsSectionHeaderLine");
+	header_vbox->add_child(grad_line);
+
+	return header_vbox;
 }
 
 void ClockGearsMapPanel::_on_load_tileset_pressed() {
@@ -1500,6 +1546,14 @@ ClockGearsMapPanel::ClockGearsMapPanel() {
 void ClockGearsMapPanel::_refresh_icon_scale() {
 	const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
 	last_icon_scale = int_scale;
+	if (ClockGearsIcons::get_singleton()) {
+		if (palette_header_icon) {
+			palette_header_icon->set_texture(ClockGearsIcons::get_singleton()->get_icon("tiles_icon", float(int_scale)));
+		}
+		if (maps_header_icon) {
+			maps_header_icon->set_texture(ClockGearsIcons::get_singleton()->get_icon("modo_mapa_icono", float(int_scale)));
+		}
+	}
 	Ref<Theme> editor_theme = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_theme() : Ref<Theme>();
 	for (int i = 0; i < header_icon_buttons.size(); i++) {
 		const HeaderIconEntry &e = header_icon_buttons[i];
@@ -1551,6 +1605,15 @@ void ClockGearsMapPanel::_apply_panel_styles() {
 		maps_panel->set_meta("_cg_theme_managed_container", true);
 		maps_panel->add_theme_style_override("panel", sb);
 	}
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, 1.0f);
+	if (palette_header_label) {
+		palette_header_label->add_theme_color_override("font_color", tk.accent_neon);
+	}
+	if (maps_header_label) {
+		maps_header_label->add_theme_color_override("font_color", tk.accent_neon);
+	}
 	if (map_tree) {
 		map_tree->set_meta("_cg_theme_managed_list", true);
 		map_tree->add_theme_style_override("panel", ClockGearsTheme::make_sunken_list_stylebox(EDSCALE));
@@ -1597,6 +1660,200 @@ void ClockGearsMapPanel::_notification(int p_what) {
 }
 
 ClockGearsMapPanel::~ClockGearsMapPanel() {
+	if (singleton == this) {
+		singleton = nullptr;
+	}
+}
+
+////////////////////////////////////////////////////////////
+// ClockGearsStatusBar
+////////////////////////////////////////////////////////////
+
+ClockGearsStatusBar *ClockGearsStatusBar::singleton = nullptr;
+
+void ClockGearsStatusBar::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("refresh_status"), &ClockGearsStatusBar::refresh_status);
+	ClassDB::bind_method(D_METHOD("get_status_snapshot"), &ClockGearsStatusBar::get_status_snapshot);
+}
+
+void ClockGearsStatusBar::_apply_bar_style() {
+	if (applying_style) {
+		return;
+	}
+	applying_style = true;
+	set_meta("_cg_theme_managed_container", true);
+	add_theme_style_override(SceneStringName(panel), ClockGearsTheme::make_container_stylebox(EDSCALE, 10, 4, 1));
+	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, 1.0f);
+	const Color txt_sec = is_brass ? ClockGearsTheme::color_brass_text_secondary() : (is_light ? Color::html("#5c6270") : ClockGearsTheme::color_text_secondary());
+	if (tool_label) {
+		tool_label->add_theme_color_override("font_color", tk.accent_neon);
+	}
+	if (layer_label) {
+		layer_label->add_theme_color_override("font_color", is_brass ? ClockGearsTheme::color_brass_text_primary() : (is_light ? Color::html("#1e2026") : ClockGearsTheme::color_text_primary()));
+	}
+	if (zoom_label) {
+		zoom_label->add_theme_color_override("font_color", txt_sec);
+	}
+	if (coords_label) {
+		coords_label->add_theme_color_override("font_color", txt_sec);
+	}
+	if (tile_size_label) {
+		tile_size_label->add_theme_color_override("font_color", txt_sec);
+	}
+	if (version_label) {
+		version_label->add_theme_color_override("font_color", tk.accent_neon);
+	}
+	applying_style = false;
+}
+
+void ClockGearsStatusBar::refresh_status() {
+	CanvasItemEditor *cie = CanvasItemEditor::get_singleton();
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+
+	// 1. Herramienta actual
+	String tool_name;
+	if (cie && cie->is_clockgears_event_mode()) {
+		tool_name = CG_TR("Modo Eventos");
+	} else {
+		const int t = cie ? cie->get_clockgears_draw_tool() : 0;
+		static const char *tool_names[8] = {
+			"Lápiz", "Rectángulo", "Elipse", "Cubo de pintura",
+			"Pincel de sombra", "Selección rectangular", "Posición inicial PJ", "Goma de borrar"
+		};
+		tool_name = CG_TR(tool_names[CLAMP(t, 0, 7)]);
+	}
+	const String full_tool = vformat(CG_TR("Herramienta: %s"), tool_name);
+	if (tool_label && full_tool != last_tool_txt) {
+		last_tool_txt = full_tool;
+		tool_label->set_text(full_tool);
+	}
+
+	// 2. Capa activa
+	String layer_txt;
+	if (cie && cie->is_clockgears_region_mode()) {
+		layer_txt = vformat(CG_TR("Capa R: Regiones (#%d)"), cie->get_clockgears_selected_region());
+	} else if (dm && !dm->get_editor_custom_layer().is_empty()) {
+		Dictionary cl = dm->get_custom_map_layer(dm->get_editor_custom_layer());
+		String cname = String(cl.get("name", dm->get_editor_custom_layer()));
+		layer_txt = vformat(CG_TR("Capa: %s"), cname);
+	} else {
+		const int lidx = dm ? dm->get_editor_layer() : (cie ? cie->get_clockgears_current_layer() : 1);
+		static const char *layer_names[6] = {
+			"Capa 1: Suelo", "Capa 2: Decoración", "Capa 3: Objetos",
+			"Capa 4: Techo (★)", "Capa Automática", "Capa R: Regiones"
+		};
+		layer_txt = CG_TR(layer_names[CLAMP(lidx - 1, 0, 5)]);
+	}
+	if (layer_label && layer_txt != last_layer_txt) {
+		last_layer_txt = layer_txt;
+		layer_label->set_text(layer_txt);
+	}
+
+	// 3. Zoom
+	const double z = cie ? cie->get_zoom() : 1.0;
+	const int z_pct = MAX(1, int(Math::round(z * 100.0)));
+	const String zoom_txt = vformat("Zoom: %d %%", z_pct);
+	if (zoom_label && zoom_txt != last_zoom_txt) {
+		last_zoom_txt = zoom_txt;
+		zoom_label->set_text(zoom_txt);
+	}
+
+	// 4. Coordenadas de casilla del cursor (si están disponibles; si no, se omite sin calcular nada nuevo)
+	const Point2i hcell = cie ? cie->get_clockgears_hovered_cell() : Point2i(-1, -1);
+	const bool has_cell = (hcell.x >= 0 && hcell.y >= 0 && hcell.x < 100000 && hcell.y < 100000);
+	if (coords_label && coords_sep) {
+		coords_sep->set_visible(has_cell);
+		coords_label->set_visible(has_cell);
+		if (has_cell) {
+			const String c_txt = vformat(CG_TR("Casilla: (%d, %d)"), hcell.x, hcell.y);
+			if (c_txt != last_coords_txt) {
+				last_coords_txt = c_txt;
+				coords_label->set_text(c_txt);
+			}
+		} else {
+			last_coords_txt = String();
+		}
+	}
+
+	// 5. Tamaño del tile
+	const int gsz = cie ? cie->get_clockgears_grid_size() : 32;
+	const String tsz_txt = vformat("Tile: %dx%d px", gsz, gsz);
+	if (tile_size_label && tsz_txt != last_tile_sz_txt) {
+		last_tile_sz_txt = tsz_txt;
+		tile_size_label->set_text(tsz_txt);
+	}
+}
+
+Dictionary ClockGearsStatusBar::get_status_snapshot() const {
+	Dictionary d;
+	d["tool_text"] = tool_label ? tool_label->get_text() : String();
+	d["layer_text"] = layer_label ? layer_label->get_text() : String();
+	d["zoom_text"] = zoom_label ? zoom_label->get_text() : String();
+	d["coords_visible"] = coords_label ? coords_label->is_visible() : false;
+	d["coords_text"] = coords_label ? coords_label->get_text() : String();
+	d["tile_size_text"] = tile_size_label ? tile_size_label->get_text() : String();
+	d["version_text"] = version_label ? version_label->get_text() : String();
+	return d;
+}
+
+void ClockGearsStatusBar::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE) {
+		set_process(true);
+		_apply_bar_style();
+		refresh_status();
+	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		_apply_bar_style();
+		refresh_status();
+	} else if (p_what == NOTIFICATION_PROCESS) {
+		refresh_status();
+	}
+}
+
+ClockGearsStatusBar::ClockGearsStatusBar() {
+	singleton = this;
+	set_name("ClockGearsStatusBar");
+	set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	set_v_size_flags(Control::SIZE_SHRINK_END);
+
+	HBoxContainer *hb = memnew(HBoxContainer);
+	hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hb->add_theme_constant_override("separation", int(10 * EDSCALE));
+	add_child(hb);
+
+	auto make_lbl = [hb](const String &p_txt) -> Label * {
+		Label *l = memnew(Label(p_txt));
+		l->add_theme_font_size_override("font_size", int(11 * EDSCALE));
+		hb->add_child(l);
+		return l;
+	};
+
+	tool_label = make_lbl(CG_TR("Herramienta: Lápiz"));
+	hb->add_child(memnew(VSeparator));
+	layer_label = make_lbl(CG_TR("Capa 1: Suelo"));
+	hb->add_child(memnew(VSeparator));
+	zoom_label = make_lbl("Zoom: 100 %");
+
+	coords_sep = memnew(VSeparator);
+	hb->add_child(coords_sep);
+	coords_label = make_lbl(CG_TR("Casilla: (0, 0)"));
+	coords_sep->hide();
+	coords_label->hide();
+
+	hb->add_child(memnew(VSeparator));
+	tile_size_label = make_lbl("Tile: 32x32 px");
+
+	Control *spacer = memnew(Control);
+	spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	hb->add_child(spacer);
+
+	version_label = make_lbl(String::utf8(CLOCKGEARS_VERSION));
+	_apply_bar_style();
+	refresh_status();
+}
+
+ClockGearsStatusBar::~ClockGearsStatusBar() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
