@@ -19,8 +19,10 @@
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/tab_container.h"
+#include "scene/gui/text_edit.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
+#include "scene/main/window.h"
 #include "scene/resources/style_box_flat.h"
 
 class AspectRatioContainer;
@@ -31,6 +33,7 @@ class ClockGearsHudOverlay;
 class ClockGearsTitleScreen;
 class ClockGearsUiDesignEditor;
 class ClockGearsUiDesignLayer;
+class ClockGearsUiElementFloatingWindow;
 class SubViewport;
 
 // ============================================================================
@@ -567,6 +570,16 @@ private:
 	bool test_injected_sample_state = false;
 	Dictionary test_saved_runtime_state;
 
+	// Ventanas flotantes no modales por elemento (9B Capas P4)
+	HashMap<String, ClockGearsUiElementFloatingWindow *> open_floating_windows;
+	Vector2i last_floating_window_pos = Vector2i(-1, -1);
+	Size2i last_floating_window_size = Size2i(0, 0);
+
+	void _sync_open_floating_windows();
+	void _on_floating_window_closed(const String &p_key, ClockGearsUiElementFloatingWindow *p_win);
+	void _on_layers_tree_item_activated();
+	void _on_float_window_elem_edited(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_next_elem);
+
 	void _build_ui();
 	void _trace_log(const String &p_event, const String &p_detail = "") const;
 	void _rebalance_responsive_layout(int p_avail_w);
@@ -811,6 +824,12 @@ public:
 	Window *open_test_popup();
 	void close_test_popup();
 
+	Window *open_floating_element_window(const String &p_elem_id = "");
+	Window *get_floating_window_for_element(const String &p_elem_id) const;
+	void close_all_floating_element_windows();
+	int get_open_floating_window_count() const;
+	void apply_floating_window_element_update(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_next_elem);
+
 	ClockGearsUiDesignLayer *get_canvas_design_layer() const { return design_layer; }
 	Control *get_canvas_stage() const { return canvas_stage; }
 	ClockGearsUiCanvasOverlay *get_canvas_overlay() const { return canvas_overlay; }
@@ -819,6 +838,105 @@ public:
 
 	ClockGearsUiDesignEditor();
 	virtual ~ClockGearsUiDesignEditor();
+};
+
+// ============================================================================
+// ClockGearsUiElementFloatingWindow — Ventana flotante no modal por elemento
+// 5 pestañas: General, Aspecto, Imagen, Texto, Acciones (sincronizada 2 vías)
+// ============================================================================
+class ClockGearsUiElementFloatingWindow : public Window {
+	GDCLASS(ClockGearsUiElementFloatingWindow, Window);
+
+private:
+	ClockGearsUiDesignEditor *owner_editor = nullptr;
+	String target_screen_id;
+	String target_elem_id;
+	Dictionary working_elem;
+	bool updating = false;
+
+	PanelContainer *bg_root = nullptr;
+	TabContainer *tabs = nullptr;
+
+	// General
+	LineEdit *name_edit = nullptr;
+	Label *type_lbl = nullptr;
+	CheckBox *visible_chk = nullptr;
+	CheckBox *locked_chk = nullptr;
+	CheckBox *clip_children_chk = nullptr;
+	Button *anchor_btns[9] = { nullptr };
+	SpinBox *ox_spin = nullptr;
+	SpinBox *oy_spin = nullptr;
+	SpinBox *w_spin = nullptr;
+	SpinBox *h_spin = nullptr;
+	SpinBox *layer_spin = nullptr;
+
+	// Aspecto
+	CheckBox *show_bg_chk = nullptr;
+	OptionButton *style_opt = nullptr;
+	OptionButton *shape_opt = nullptr;
+	HSlider *radius_slider = nullptr;
+	Label *radius_val_lbl = nullptr;
+	HSlider *opacity_slider = nullptr;
+	Label *opacity_val_lbl = nullptr;
+	ColorPickerButton *fill_color_btn = nullptr;
+	CheckBox *grad_chk = nullptr;
+	ColorPickerButton *grad_top_btn = nullptr;
+	ColorPickerButton *grad_bot_btn = nullptr;
+	HSlider *border_w_slider = nullptr;
+	ColorPickerButton *border_col_btn = nullptr;
+	CheckBox *shadow_chk = nullptr;
+	CheckBox *glow_chk = nullptr;
+	ColorPickerButton *glow_col_btn = nullptr;
+
+	// Imagen
+	LineEdit *image_edit = nullptr;
+	OptionButton *scale_opt = nullptr;
+	SpinBox *nine_slice_spin = nullptr;
+	OptionButton *filter_opt = nullptr;
+	LineEdit *btn_state_edits[4] = { nullptr, nullptr, nullptr, nullptr };
+	FileDialog *img_file_dialog = nullptr;
+	int picking_img_target = -1; // -1=main, 0..3=btn state
+
+	// Texto
+	TextEdit *text_edit = nullptr;
+	OptionButton *font_opt = nullptr;
+	SpinBox *font_size_spin = nullptr;
+	ColorPickerButton *font_color_btn = nullptr;
+	OptionButton *align_opt = nullptr;
+	OptionButton *binding_opt = nullptr;
+	LineEdit *var_edit = nullptr;
+	FileDialog *font_file_dialog = nullptr;
+
+	// Acciones (host reutilizado en P4 + P5 lista de comandos)
+	VBoxContainer *actions_host = nullptr;
+	OptionButton *quick_action_opt = nullptr;
+	Label *actions_summary_lbl = nullptr;
+
+	void _build_ui();
+	void _emit_commit();
+	void _on_anchor_pressed(int p_idx);
+	void _on_any_changed();
+	void _on_open_img_picker(int p_target);
+	void _on_clear_img_picker(int p_target);
+	void _on_img_file_selected(const String &p_path);
+	void _on_open_font_picker();
+	void _on_font_file_selected(const String &p_path);
+	void _on_theme_changed();
+
+protected:
+	static void _bind_methods();
+	void _notification(int p_what);
+
+public:
+	void configure(ClockGearsUiDesignEditor *p_owner, const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem);
+	void sync_from_element(const Dictionary &p_elem);
+	void refresh_theme();
+	String get_target_screen_id() const { return target_screen_id; }
+	String get_target_elem_id() const { return target_elem_id; }
+	Dictionary get_ui_handles() const;
+	VBoxContainer *get_actions_host() const { return actions_host; }
+
+	ClockGearsUiElementFloatingWindow();
 };
 
 #endif // CLOCKGEARS_UI_DESIGN_EDITOR_H

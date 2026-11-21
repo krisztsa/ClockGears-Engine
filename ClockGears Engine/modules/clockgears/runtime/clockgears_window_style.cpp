@@ -268,6 +268,16 @@ Vector<Vector2> ClockGearsWindowStyleBox::build_shape_polygon(const Rect2 &p_rec
 		pts.push_back(Vector2(x0, y0 + h));
 		return pts;
 	}
+	if (st == "square") {
+		float side = MIN(w, h);
+		float sx = x0 + (w - side) * 0.5f;
+		float sy = y0 + (h - side) * 0.5f;
+		pts.push_back(Vector2(sx, sy));
+		pts.push_back(Vector2(sx + side, sy));
+		pts.push_back(Vector2(sx + side, sy + side));
+		pts.push_back(Vector2(sx, sy + side));
+		return pts;
+	}
 	if (st == "circle") {
 		float rad = MIN(w, h) * 0.5f;
 		Vector2 c(x0 + w * 0.5f, y0 + h * 0.5f);

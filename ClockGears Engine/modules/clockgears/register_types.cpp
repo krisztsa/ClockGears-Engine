@@ -123,6 +123,7 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsUiPaletteButton);
 		GDREGISTER_CLASS(ClockGearsUiCanvasOverlay);
 		GDREGISTER_CLASS(ClockGearsUiDesignEditor);
+		GDREGISTER_CLASS(ClockGearsUiElementFloatingWindow);
 #endif
 
 		cg_system_catalog_singleton = memnew(ClockGearsSystemCatalog);

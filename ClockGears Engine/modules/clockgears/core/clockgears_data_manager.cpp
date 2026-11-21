@@ -4859,7 +4859,8 @@ static String _cg_norm_color_rgba(const Variant &p_val, const String &p_fallback
 
 static String _cg_norm_shape_type(const Variant &p_val) {
 	String s = String(p_val).strip_edges().to_lower();
-	if (s == "rect" || s == "recto" || s == "square") return "rect";
+	if (s == "square" || s == "cuadrado") return "square";
+	if (s == "rect" || s == "recto" || s == "rectangulo" || s == String::utf8("rectángulo")) return "rect";
 	if (s == "rounded" || s == "redondeado") return "rounded";
 	if (s == "pill" || s == "pildora" || s == String::utf8("píldora") || s == "capsule") return "pill";
 	if (s == "circle" || s == "circulo" || s == String::utf8("círculo")) return "circle";
