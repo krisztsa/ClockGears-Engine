@@ -335,6 +335,9 @@ public:
 	static Dictionary make_default_pager_config();
 	static Dictionary normalize_pager_config(const Dictionary &p_cfg);
 	static Rect2 compute_pager_body_rect(const Rect2 &p_pager_rect, const Dictionary &p_pager_cfg, float p_scale = 1.0f);
+	static Dictionary make_default_ui_input_binding();
+	static Dictionary normalize_ui_input_binding(const Dictionary &p_binding);
+	static Array detect_ui_input_conflicts(const Dictionary &p_design);
 	String add_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_name = String(), const String &p_icon = String(), const String &p_dup_from_page_id = String(), bool p_record_undo = true);
 	bool duplicate_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_page_id, bool p_record_undo = true);
 	bool delete_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_page_id, bool p_record_undo = true);

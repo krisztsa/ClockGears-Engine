@@ -3118,6 +3118,9 @@ bool ClockGearsGameMenu::_execute_button_step(const Dictionary &p_step, const St
 		}
 		return false;
 	}
+	if (custom_ui_layer && ClockGearsUiDesignLayer::execute_common_action_step(p_step, custom_ui_layer)) {
+		return true;
+	}
 
 	// Compatibilidad: acciones antiguas o ID directo de subpantalla/menú
 	if (dm && dm->has_menu(step_type)) {

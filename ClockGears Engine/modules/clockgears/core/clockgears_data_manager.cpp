@@ -5160,6 +5160,49 @@ static Dictionary _cg_norm_button_action_step(const Dictionary &p_step) {
 		out["type"] = t;
 		return out;
 	}
+	if (t == "next_page" || t == "prev_page") {
+		out["type"] = t;
+		out["target_elem"] = String(p_step.get("target_elem", p_step.get("target", ""))).strip_edges();
+		return out;
+	}
+	if (t == "go_to_page") {
+		out["type"] = t;
+		out["target_elem"] = String(p_step.get("target_elem", p_step.get("target", ""))).strip_edges();
+		out["page_index"] = MAX(0, int(p_step.get("page_index", 0)));
+		String pid = String(p_step.get("page_id", "")).strip_edges();
+		if (!pid.is_empty()) out["page_id"] = pid;
+		return out;
+	}
+	if (t == "open_container" || t == "close_container" || t == "toggle_container") {
+		out["type"] = t;
+		out["target_elem"] = String(p_step.get("target_elem", p_step.get("target", ""))).strip_edges();
+		String tt = String(p_step.get("transition_type", "scale")).strip_edges().to_lower();
+		if (tt != "none" && tt != "fade" && tt != "scale" && tt != "slide") tt = "scale";
+		out["transition_type"] = tt;
+		out["transition_duration"] = CLAMP(double(p_step.get("transition_duration", 0.16)), 0.05, 1.5);
+		return out;
+	}
+	if (t == "focus_container") {
+		out["type"] = t;
+		out["target_elem"] = String(p_step.get("target_elem", p_step.get("target", ""))).strip_edges();
+		return out;
+	}
+	if (t == "set_container_filter") {
+		out["type"] = t;
+		out["target_elem"] = String(p_step.get("target_elem", p_step.get("target", ""))).strip_edges();
+		String fc = String(p_step.get("filter_category", "all")).strip_edges().to_lower();
+		if (fc != "all" && fc != "consumable" && fc != "weapon" && fc != "armor" && fc != "shield" && fc != "accessory" && fc != "key" && fc != "material") {
+			fc = "all";
+		}
+		out["filter_category"] = fc;
+		return out;
+	}
+	if (t == "set_container_data_source") {
+		out["type"] = t;
+		out["target_elem"] = String(p_step.get("target_elem", p_step.get("target", ""))).strip_edges();
+		out["data_source"] = ClockGearsDataManager::normalize_ui_data_source(p_step.get("data_source", "inventory"));
+		return out;
+	}
 	out["type"] = t.is_empty() ? String("close") : t;
 	return out;
 }
@@ -5907,6 +5950,15 @@ Array ClockGearsDataManager::get_all_ui_button_action_types() {
 	push_t("item_discard", "Tirar objeto seleccionado");
 	push_t("equip_apply", "Equipar pieza seleccionada");
 	push_t("equip_clear", "Desequipar hueco seleccionado");
+	push_t("next_page", String::utf8("Página siguiente (Paginador)"));
+	push_t("prev_page", String::utf8("Página anterior (Paginador)"));
+	push_t("go_to_page", String::utf8("Ir a página (Paginador)"));
+	push_t("open_container", "Abrir contenedor");
+	push_t("close_container", "Cerrar contenedor");
+	push_t("toggle_container", "Alternar contenedor");
+	push_t("focus_container", "Enfocar contenedor");
+	push_t("set_container_filter", "Cambiar filtro contenedor");
+	push_t("set_container_data_source", "Cambiar fuente de datos");
 	return out;
 }
 
@@ -6577,6 +6629,169 @@ Rect2 ClockGearsDataManager::compute_pager_body_rect(const Rect2 &p_pager_rect, 
 	return r;
 }
 
+Dictionary ClockGearsDataManager::make_default_ui_input_binding() {
+	Dictionary d;
+	d["triggers"] = Array();
+	d["require_focus"] = false;
+	d["actions"] = Array();
+	return d;
+}
+
+Dictionary ClockGearsDataManager::normalize_ui_input_binding(const Dictionary &p_binding) {
+	Dictionary out;
+	Array norm_tr;
+	if (p_binding.has("triggers") && p_binding["triggers"].get_type() == Variant::ARRAY) {
+		Array raw_tr = p_binding["triggers"];
+		for (int i = 0; i < raw_tr.size(); i++) {
+			if (raw_tr[i].get_type() == Variant::DICTIONARY) {
+				Dictionary nt = normalize_menu_trigger(Dictionary(raw_tr[i]));
+				if (!nt.is_empty()) {
+					norm_tr.push_back(nt);
+				}
+			}
+		}
+	}
+	out["triggers"] = norm_tr;
+	out["require_focus"] = bool(p_binding.get("require_focus", false));
+	Array norm_acts;
+	if (p_binding.has("actions") && p_binding["actions"].get_type() == Variant::ARRAY) {
+		Array raw_acts = p_binding["actions"];
+		for (int i = 0; i < raw_acts.size(); i++) {
+			if (raw_acts[i].get_type() == Variant::DICTIONARY) {
+				norm_acts.push_back(_cg_norm_button_action_step(Dictionary(raw_acts[i])));
+			}
+		}
+	}
+	out["actions"] = norm_acts;
+	return out;
+}
+
+static String _cg_trigger_sig(const Dictionary &p_trig, String *r_label = nullptr) {
+	String kind = String(p_trig.get("kind", "key")).strip_edges().to_lower();
+	if (kind == "key") {
+		int64_t kc = int64_t(p_trig.get("keycode", 0));
+		String kn = String(p_trig.get("key_name", ""));
+		if (kc == 0 && !kn.is_empty()) kc = (int64_t)find_keycode(kn);
+		if (kn.is_empty() && kc > 0) kn = keycode_get_string((Key)kc);
+		if (r_label) *r_label = kn.is_empty() ? itos(kc) : kn;
+		return (kc > 0) ? ("key:" + itos(kc)) : ("keyname:" + kn.to_lower());
+	}
+	if (kind == "joy_button") {
+		int jb = int(p_trig.get("joy_button", -1));
+		if (r_label) *r_label = "Mando " + itos(jb);
+		return "joy:" + itos(jb);
+	}
+	if (kind == "mouse_button") {
+		int mb = int(p_trig.get("mouse_button", 1));
+		if (r_label) *r_label = String::utf8("Ratón ") + itos(mb);
+		return "mouse:" + itos(mb);
+	}
+	String an = String(p_trig.get("action_name", "")).strip_edges().to_lower();
+	if (r_label) *r_label = an;
+	return "act:" + an;
+}
+
+Array ClockGearsDataManager::detect_ui_input_conflicts(const Dictionary &p_design) {
+	Array warnings;
+	struct TrigOcc {
+		String sig;
+		String label;
+		String owner_id;
+		String owner_name;
+		String pager_page_id;
+		bool require_focus = false;
+	};
+	Vector<TrigOcc> occs;
+
+	Array elems = (p_design.has("elements") && p_design["elements"].get_type() == Variant::ARRAY) ? Array(p_design["elements"]) : Array();
+	HashMap<String, Dictionary> elem_map;
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() == Variant::DICTIONARY) {
+			Dictionary ed = elems[i];
+			String eid = String(ed.get("id", ""));
+			if (!eid.is_empty()) elem_map[eid] = ed;
+		}
+	}
+	auto resolve_page_anc = [&](const String &p_id) -> String {
+		String cur = p_id;
+		HashSet<String> vis;
+		while (!cur.is_empty() && elem_map.has(cur) && !vis.has(cur)) {
+			vis.insert(cur);
+			const Dictionary &ed = elem_map[cur];
+			if (String(ed.get("type", "")) == "folder" && String(ed.get("role", "")) == "pager_page") {
+				return cur;
+			}
+			cur = String(ed.get("parent_id", "")).strip_edges();
+		}
+		return String();
+	};
+
+	auto push_trigs = [&](const Array &p_trigs, const String &p_oid, const String &p_oname, const String &p_page_anc, bool p_req_focus) {
+		for (int ti = 0; ti < p_trigs.size(); ti++) {
+			if (p_trigs[ti].get_type() != Variant::DICTIONARY) continue;
+			String lbl;
+			String sig = _cg_trigger_sig(Dictionary(p_trigs[ti]), &lbl);
+			if (sig.ends_with(":")) continue;
+			TrigOcc o;
+			o.sig = sig;
+			o.label = lbl;
+			o.owner_id = p_oid;
+			o.owner_name = p_oname;
+			o.pager_page_id = p_page_anc;
+			o.require_focus = p_req_focus;
+			occs.push_back(o);
+		}
+	};
+
+	if (p_design.has("inputs") && p_design["inputs"].get_type() == Variant::ARRAY) {
+		Array sins = p_design["inputs"];
+		for (int si = 0; si < sins.size(); si++) {
+			if (sins[si].get_type() != Variant::DICTIONARY) continue;
+			Dictionary bd = sins[si];
+			push_trigs(bd.get("triggers", Array()), "_screen", String::utf8("Pantalla"), String(), false);
+		}
+	}
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary ed = elems[i];
+		String eid = String(ed.get("id", ""));
+		String ename = String(ed.get("name", eid));
+		String etype = String(ed.get("type", "")).to_lower();
+		String page_anc = resolve_page_anc(eid);
+		if (etype == "pager" && ed.has("pager") && ed["pager"].get_type() == Variant::DICTIONARY) {
+			Dictionary pcfg = ed["pager"];
+			push_trigs(pcfg.get("prev_triggers", Array()), eid + ":prev", ename + String::utf8(" (Pág. ant.)"), page_anc, false);
+			push_trigs(pcfg.get("next_triggers", Array()), eid + ":next", ename + String::utf8(" (Pág. sig.)"), page_anc, false);
+		}
+		if (ed.has("inputs") && ed["inputs"].get_type() == Variant::ARRAY) {
+			Array eins = ed["inputs"];
+			for (int ii = 0; ii < eins.size(); ii++) {
+				if (eins[ii].get_type() != Variant::DICTIONARY) continue;
+				Dictionary bd = eins[ii];
+				push_trigs(bd.get("triggers", Array()), eid, ename, page_anc, bool(bd.get("require_focus", false)));
+			}
+		}
+	}
+
+	HashSet<String> reported;
+	for (int i = 0; i < occs.size(); i++) {
+		for (int j = i + 1; j < occs.size(); j++) {
+			if (occs[i].sig != occs[j].sig) continue;
+			if (!occs[i].pager_page_id.is_empty() && !occs[j].pager_page_id.is_empty() && occs[i].pager_page_id != occs[j].pager_page_id) {
+				continue;
+			}
+			if (occs[i].require_focus && occs[j].require_focus && occs[i].owner_id != occs[j].owner_id) {
+				continue;
+			}
+			String rk = occs[i].sig + "|" + occs[i].owner_id + "|" + occs[j].owner_id;
+			if (reported.has(rk)) continue;
+			reported.insert(rk);
+			warnings.push_back(vformat(String::utf8("Conflicto '%s': en %s y %s."), occs[i].label, occs[i].owner_name, occs[j].owner_name));
+		}
+	}
+	return warnings;
+}
+
 Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, const String &p_screen_id) {
 	String etype = _cg_norm_ui_elem_type(p_type);
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
@@ -6905,6 +7120,16 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 		}
 		out["enter_actions"] = eacts_out;
 	}
+	if (p_elem.has("inputs") && p_elem["inputs"].get_type() == Variant::ARRAY) {
+		Array ins_in = p_elem["inputs"];
+		Array ins_out;
+		for (int ii = 0; ii < ins_in.size(); ii++) {
+			if (ins_in[ii].get_type() == Variant::DICTIONARY) {
+				ins_out.push_back(normalize_ui_input_binding(Dictionary(ins_in[ii])));
+			}
+		}
+		out["inputs"] = ins_out;
+	}
 	if (etype == "pager") {
 		Dictionary raw_pg = (p_elem.has("pager") && p_elem["pager"].get_type() == Variant::DICTIONARY) ? Dictionary(p_elem["pager"]) : Dictionary();
 		out["pager"] = normalize_pager_config(raw_pg);
@@ -7163,6 +7388,16 @@ Dictionary ClockGearsDataManager::normalize_ui_screen_design(const String &p_scr
 	String bgm_p = String(p_design.get("bgm_path", "")).strip_edges();
 	if (!bgm_p.is_empty()) {
 		out["bgm_path"] = bgm_p;
+	}
+	if (p_design.has("inputs") && p_design["inputs"].get_type() == Variant::ARRAY) {
+		Array ins_in = p_design["inputs"];
+		Array ins_out;
+		for (int ii = 0; ii < ins_in.size(); ii++) {
+			if (ins_in[ii].get_type() == Variant::DICTIONARY) {
+				ins_out.push_back(normalize_ui_input_binding(Dictionary(ins_in[ii])));
+			}
+		}
+		out["inputs"] = ins_out;
 	}
 	return out;
 }
@@ -14451,6 +14686,9 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instantiate_screen_template_as_component", "screen_id", "template_id", "pos", "parent_id"), &ClockGearsDataManager::instantiate_screen_template_as_component, DEFVAL(Vector2i(-1, -1)), DEFVAL(String()));
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("make_default_pager_config"), &ClockGearsDataManager::make_default_pager_config);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_pager_config", "cfg"), &ClockGearsDataManager::normalize_pager_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("make_default_ui_input_binding"), &ClockGearsDataManager::make_default_ui_input_binding);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_input_binding", "binding"), &ClockGearsDataManager::normalize_ui_input_binding);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("detect_ui_input_conflicts", "design"), &ClockGearsDataManager::detect_ui_input_conflicts);
 	ClassDB::bind_method(D_METHOD("add_pager_page", "screen_id", "pager_id", "name", "icon", "dup_from_page_id", "record_undo"), &ClockGearsDataManager::add_pager_page, DEFVAL(String()), DEFVAL(String()), DEFVAL(String()), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("duplicate_pager_page", "screen_id", "pager_id", "page_id", "record_undo"), &ClockGearsDataManager::duplicate_pager_page, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("delete_pager_page", "screen_id", "pager_id", "page_id", "record_undo"), &ClockGearsDataManager::delete_pager_page, DEFVAL(true));

@@ -732,6 +732,18 @@ private:
 	LineEdit *prop_pager_sound_edit = nullptr;
 	int capturing_key_for_pager_mode = 0; // 0=none, 1=prev, 2=next
 
+	// Entradas de pantalla y contenedor (BotW 2/2 Punto 3)
+	VBoxContainer *prop_inputs_box = nullptr;
+	Button *prop_inputs_add_btn = nullptr;
+	VBoxContainer *prop_inputs_list_vbox = nullptr;
+	Label *prop_inputs_conflict_lbl = nullptr;
+	Button *ss_inputs_hdr = nullptr;
+	Button *ss_inputs_add_btn = nullptr;
+	VBoxContainer *ss_inputs_list_vbox = nullptr;
+	Label *ss_inputs_conflict_lbl = nullptr;
+	String capturing_input_ctx; // "" = none, "elem" | "screen"
+	int capturing_input_binding_idx = -1;
+
 	// Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B)
 	FileDialog *import_image_dialog = nullptr;
 	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF, 10..13=estados boton
@@ -871,7 +883,17 @@ private:
 	void _on_ss_hud_sample_changed(double p_val = 0.0);
 	void _on_ss_gameover_changed();
 	void _refresh_multi_actions_ui(const Dictionary &p_elem);
-	void _populate_multi_actions_list(VBoxContainer *p_vbox, const Array &p_acts);
+	void _populate_multi_actions_list(VBoxContainer *p_vbox, const Array &p_acts, const String &p_ctx = String());
+	void _populate_input_bindings_list(VBoxContainer *p_vbox, const Array &p_inputs, const String &p_ctx_prefix, bool p_allow_focus_chk, Label *p_conflict_lbl);
+	void _refresh_elem_inputs_inspector(const Dictionary &p_el);
+	bool _read_multi_actions_ctx(const String &p_ctx, Array &r_acts) const;
+	bool _write_multi_actions_ctx(const String &p_ctx, const Array &p_acts, bool p_rebuild_ui = true, bool p_record_undo = true);
+	void _on_input_binding_add_pressed(const String &p_ctx_prefix);
+	void _on_input_binding_remove_pressed(const String &p_ctx_prefix, int p_idx);
+	void _on_input_binding_capture_pressed(const String &p_ctx_prefix, int p_idx);
+	void _on_input_binding_clear_trigs_pressed(const String &p_ctx_prefix, int p_idx);
+	void _on_input_binding_focus_toggled(bool p_req, const String &p_ctx_prefix, int p_idx);
+	void _on_input_binding_add_action_pressed(const String &p_ctx_prefix, int p_idx, ObjectID p_opt_id);
 	Dictionary _get_active_radial_layout(bool *r_is_elem = nullptr) const;
 	void _commit_active_radial_layout(const Dictionary &p_lay, bool p_push_undo = true, bool p_refresh_inspector = true);
 	void _refresh_radial_inspector();
@@ -934,10 +956,10 @@ private:
 	void _on_prop_font_import_pressed();
 	void _on_font_file_selected(const String &p_path);
 	void _on_prop_add_multi_action_pressed();
-	void _on_prop_remove_multi_action_pressed(int p_idx);
-	void _on_prop_move_multi_action_pressed(int p_idx, int p_delta);
-	void _on_prop_edit_multi_action_step(const Variant &p_val, int p_idx, const String &p_key);
-	void _on_prop_edit_multi_action_menu(int p_opt_idx, ObjectID p_opt_id, int p_idx, const String &p_key);
+	void _on_prop_remove_multi_action_pressed(int p_idx, const String &p_ctx = String());
+	void _on_prop_move_multi_action_pressed(int p_idx, int p_delta, const String &p_ctx = String());
+	void _on_prop_edit_multi_action_step(const Variant &p_val, int p_idx, const String &p_key, const String &p_ctx = String());
+	void _on_prop_edit_multi_action_menu(int p_opt_idx, ObjectID p_opt_id, int p_idx, const String &p_key, const String &p_ctx = String());
 	void _on_prop_btn_state_import_pressed(int p_state);
 	void _on_prop_btn_state_clear_pressed(int p_state);
 	void _on_prop_btn_shortcut_capture_pressed();

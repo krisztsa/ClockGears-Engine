@@ -2408,7 +2408,7 @@ static Dictionary s_input_event_to_trigger(const Ref<InputEvent> &p_ev) {
 }
 
 void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
-	if (!capturing_key_for_screen && !capturing_key_for_wizard && !capturing_key_for_btn_shortcut && capturing_key_for_pager_mode == 0) {
+	if (!capturing_key_for_screen && !capturing_key_for_wizard && !capturing_key_for_btn_shortcut && capturing_key_for_pager_mode == 0 && capturing_input_ctx.is_empty()) {
 		return;
 	}
 	if (!is_visible_in_tree()) {
@@ -2416,6 +2416,8 @@ void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
 		capturing_key_for_wizard = false;
 		capturing_key_for_btn_shortcut = false;
 		capturing_key_for_pager_mode = 0;
+		capturing_input_ctx = String();
+		capturing_input_binding_idx = -1;
 		return;
 	}
 	Dictionary tr = s_input_event_to_trigger(p_event);
@@ -2474,6 +2476,44 @@ void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
 				ensure_screen_customizable_for_edit(false);
 				dm->update_ui_element(current_screen_id, pager_id, pager_el, true);
 				_notify_data_mutated(true);
+			}
+		}
+	} else if (!capturing_input_ctx.is_empty() && capturing_input_binding_idx >= 0) {
+		String ctx = capturing_input_ctx;
+		int b_idx = capturing_input_binding_idx;
+		capturing_input_ctx = String();
+		capturing_input_binding_idx = -1;
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		Dictionary norm_tr = ClockGearsDataManager::normalize_menu_trigger(tr);
+		if (dm && !norm_tr.is_empty()) {
+			if (ctx == "screen") {
+				Dictionary sd = dm->get_ui_screen_design(current_screen_id);
+				Array ins = sd.has("inputs") && sd["inputs"].get_type() == Variant::ARRAY ? Array(sd["inputs"]).duplicate(true) : Array();
+				if (b_idx >= 0 && b_idx < ins.size() && ins[b_idx].get_type() == Variant::DICTIONARY) {
+					Dictionary bd = Dictionary(ins[b_idx]).duplicate(true);
+					Array trs = bd.has("triggers") && bd["triggers"].get_type() == Variant::ARRAY ? Array(bd["triggers"]).duplicate(true) : Array();
+					if (!trs.has(norm_tr)) trs.push_back(norm_tr);
+					bd["triggers"] = trs;
+					ins[b_idx] = ClockGearsDataManager::normalize_ui_input_binding(bd);
+					sd["inputs"] = ins;
+					sd["custom_enabled"] = true;
+					dm->set_ui_screen_design(current_screen_id, sd, true);
+					_notify_data_mutated(true);
+				}
+			} else if (ctx == "elem" && !selected_elem_id.is_empty()) {
+				Dictionary el = _get_selected_element_copy();
+				Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]).duplicate(true) : Array();
+				if (b_idx >= 0 && b_idx < ins.size() && ins[b_idx].get_type() == Variant::DICTIONARY) {
+					Dictionary bd = Dictionary(ins[b_idx]).duplicate(true);
+					Array trs = bd.has("triggers") && bd["triggers"].get_type() == Variant::ARRAY ? Array(bd["triggers"]).duplicate(true) : Array();
+					if (!trs.has(norm_tr)) trs.push_back(norm_tr);
+					bd["triggers"] = trs;
+					ins[b_idx] = ClockGearsDataManager::normalize_ui_input_binding(bd);
+					el["inputs"] = ins;
+					ensure_screen_customizable_for_edit(false);
+					dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+					_notify_data_mutated(true);
+				}
 			}
 		}
 	} else if (capturing_key_for_screen) {
@@ -4859,6 +4899,32 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_pager_sound_edit->set_placeholder("res://audio/...");
 	prop_pager_sound_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
 	make_prop_row(prop_pager_box, "Sonido cambio:", String::utf8("Efecto de sonido al cambiar de página."), "paginador sonido sfx", true, prop_pager_sound_edit, "pager,pager_page");
+
+	// Sección 8: Entradas del contenedor / elemento (BotW 2/2 Punto 3)
+	add_prop_section(props_fields_box, "Entradas", false, prop_inputs_box);
+	{
+		VBoxContainer *in_wrap = memnew(VBoxContainer);
+		in_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		in_wrap->add_theme_constant_override("separation", int(4 * EDSCALE));
+		prop_inputs_conflict_lbl = memnew(Label);
+		prop_inputs_conflict_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		prop_inputs_conflict_lbl->add_theme_color_override("font_color", Color(1.0f, 0.45f, 0.38f, 1.0f));
+		prop_inputs_conflict_lbl->set_visible(false);
+		in_wrap->add_child(prop_inputs_conflict_lbl);
+
+		prop_inputs_add_btn = memnew(Button(String::utf8("+ Añadir entrada")));
+		prop_inputs_add_btn->set_tooltip_text(String::utf8("Asocia una tecla, botón de mando o clic a acciones cuando este elemento está en pantalla."));
+		s_make_rounded_action_btn(prop_inputs_add_btn);
+		prop_inputs_add_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_add_pressed).bind(String("elem")), CONNECT_DEFERRED);
+		in_wrap->add_child(prop_inputs_add_btn);
+
+		prop_inputs_list_vbox = memnew(VBoxContainer);
+		prop_inputs_list_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		prop_inputs_list_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
+		in_wrap->add_child(prop_inputs_list_vbox);
+		prop_inputs_box->add_child(in_wrap);
+		_register_prop_filter_row(in_wrap, "entradas tecla mando foco contenedor atajo", false, "container,radial,pager,pager_page,frame,widget,button");
+	}
 
 	// --- Sección contextual consolidada: Ajustes de la pantalla (9B Corr Punto 5) ---
 	screen_settings_box = memnew(VBoxContainer);
@@ -7261,7 +7327,7 @@ void ClockGearsUiDesignEditor::_refresh_multi_actions_ui(const Dictionary &p_ele
 	_populate_multi_actions_list(prop_multi_actions_vbox, p_elem.get("actions", Array()));
 }
 
-void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbox, const Array &p_acts) {
+void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbox, const Array &p_acts, const String &p_ctx) {
 	if (!p_vbox) {
 		return;
 	}
@@ -7278,6 +7344,36 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 		return p_t;
 	};
 	Array menus = dm ? dm->get_all_menus_for_selector() : Array();
+	Array scr_elems = get_effective_screen_elements();
+	auto clamp_opt = [&](OptionButton *p_o) {
+		if (!p_o) return;
+		p_o->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		p_o->set_fit_to_longest_item(false);
+		p_o->set_clip_text(true);
+		p_o->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		p_o->set_custom_minimum_size(Size2(72.0f * EDSCALE, 28.0f * EDSCALE));
+	};
+	auto make_target_opt = [&](const String &p_cur_tgt, int p_step_i) {
+		OptionButton *t_opt = memnew(OptionButton);
+		t_opt->add_item("(Auto / este elemento)", 0);
+		t_opt->set_item_metadata(0, String());
+		int oi = 1;
+		for (int ei = 0; ei < scr_elems.size(); ei++) {
+			if (scr_elems[ei].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ed = scr_elems[ei];
+			String eid = String(ed.get("id", ""));
+			if (eid.is_empty()) continue;
+			String ename = String(ed.get("name", eid));
+			t_opt->add_item(ename + " (" + eid + ")", oi);
+			t_opt->set_item_metadata(oi, eid);
+			oi++;
+		}
+		s_select_option_meta(t_opt, p_cur_tgt);
+		clamp_opt(t_opt);
+		t_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(t_opt->get_instance_id(), p_step_i, String("target_elem"), p_ctx));
+		return t_opt;
+	};
+
 	Array acts = p_acts;
 	for (int i = 0; i < acts.size(); i++) {
 		if (acts[i].get_type() != Variant::DICTIONARY) {
@@ -7294,33 +7390,33 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 		Label *l = memnew(Label(itos(i + 1) + ". " + action_label(atype)));
 		l->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		l->set_clip_text(true);
+		l->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		hb->add_child(l);
 
 		Button *ub = memnew(Button(String::utf8("▲")));
 		ub->set_tooltip_text(String::utf8("Subir acción en el orden."));
 		ub->set_disabled(i == 0);
 		s_make_rounded_action_btn(ub);
-		ub->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed).bind(i, -1), CONNECT_DEFERRED);
+		ub->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed).bind(i, -1, p_ctx), CONNECT_DEFERRED);
 		hb->add_child(ub);
 
 		Button *db = memnew(Button(String::utf8("▼")));
 		db->set_tooltip_text(String::utf8("Bajar acción en el orden."));
 		db->set_disabled(i + 1 >= acts.size());
 		s_make_rounded_action_btn(db);
-		db->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed).bind(i, 1), CONNECT_DEFERRED);
+		db->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed).bind(i, 1, p_ctx), CONNECT_DEFERRED);
 		hb->add_child(db);
 
 		Button *rb = memnew(Button("x"));
 		rb->set_tooltip_text(String::utf8("Quitar esta acción de la lista."));
 		s_make_rounded_action_btn(rb);
-		rb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed).bind(i), CONNECT_DEFERRED);
+		rb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed).bind(i, p_ctx), CONNECT_DEFERRED);
 		hb->add_child(rb);
 		card->add_child(hb);
 
 		if (atype == "open_menu" || atype == "open_system_screen") {
 			OptionButton *m_opt = memnew(OptionButton);
-			m_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			s_clamp_narrow_controls(m_opt, EDSCALE);
+			clamp_opt(m_opt);
 			String cur_m = String(a.get("menu_id", a.get("target", a.get("screen_id", ""))));
 			for (int mi = 0; mi < menus.size(); mi++) {
 				Dictionary md = menus[mi];
@@ -7330,14 +7426,14 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 			}
 			s_select_option_meta(m_opt, cur_m);
 			String pk = (atype == "open_system_screen") ? "screen_id" : "menu_id";
-			m_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(m_opt->get_instance_id(), i, pk));
+			m_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(m_opt->get_instance_id(), i, pk, p_ctx));
 			card->add_child(m_opt);
 		} else if (atype == "play_sound" || atype == "play_music") {
 			LineEdit *se = memnew(LineEdit);
 			se->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			se->set_placeholder("res://audio/...");
 			se->set_text(String(a.get("sound_path", a.get("path", ""))));
-			se->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("sound_path")));
+			se->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("sound_path"), p_ctx));
 			card->add_child(se);
 		} else if (atype == "common_event") {
 			SpinBox *ces = memnew(SpinBox);
@@ -7345,7 +7441,7 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 			ces->set_max(999);
 			ces->set_prefix("EC #");
 			ces->set_value(int(a.get("common_event_id", 1)));
-			ces->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("common_event_id")));
+			ces->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("common_event_id"), p_ctx));
 			card->add_child(ces);
 		} else if (atype == "set_switch") {
 			HBoxContainer *swb = memnew(HBoxContainer);
@@ -7353,11 +7449,11 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 			swe->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			swe->set_placeholder("interruptor");
 			swe->set_text(String(a.get("switch_name", "")));
-			swe->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("switch_name")));
+			swe->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("switch_name"), p_ctx));
 			swb->add_child(swe);
 			CheckBox *swc = memnew(CheckBox("ON"));
 			swc->set_pressed(bool(a.get("value", true)));
-			swc->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("value")));
+			swc->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("value"), p_ctx));
 			swb->add_child(swc);
 			card->add_child(swb);
 		} else if (atype == "set_variable") {
@@ -7366,18 +7462,18 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 			ve->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			ve->set_placeholder("variable");
 			ve->set_text(String(a.get("variable_name", "")));
-			ve->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("variable_name")));
+			ve->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("variable_name"), p_ctx));
 			vb->add_child(ve);
 			SpinBox *vs = memnew(SpinBox);
 			vs->set_min(-99999);
 			vs->set_max(99999);
 			vs->set_value(int(a.get("value", 0)));
-			vs->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("value")));
+			vs->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("value"), p_ctx));
 			vb->add_child(vs);
 			card->add_child(vb);
 		} else if (atype == "hud_visibility") {
 			OptionButton *h_opt = memnew(OptionButton);
-			h_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			clamp_opt(h_opt);
 			h_opt->add_item("Mostrar", 0); h_opt->set_item_metadata(0, true);
 			h_opt->add_item("Ocultar", 1); h_opt->set_item_metadata(1, false);
 			h_opt->add_item("Alternar", 2); h_opt->set_item_metadata(2, String("toggle"));
@@ -7387,8 +7483,72 @@ void ClockGearsUiDesignEditor::_populate_multi_actions_list(VBoxContainer *p_vbo
 			} else {
 				h_opt->select(bool(hv) ? 0 : 1);
 			}
-			h_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(h_opt->get_instance_id(), i, String("visible")));
+			h_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(h_opt->get_instance_id(), i, String("visible"), p_ctx));
 			card->add_child(h_opt);
+		} else if (atype == "next_page" || atype == "prev_page" || atype == "focus_container") {
+			card->add_child(make_target_opt(String(a.get("target_elem", "")), i));
+		} else if (atype == "go_to_page") {
+			HBoxContainer *gp_hb = memnew(HBoxContainer);
+			gp_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+			gp_hb->add_child(make_target_opt(String(a.get("target_elem", "")), i));
+			SpinBox *ps = memnew(SpinBox);
+			ps->set_min(0);
+			ps->set_max(31);
+			ps->set_prefix("Ind ");
+			ps->set_value(int(a.get("page_index", 0)));
+			ps->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("page_index"), p_ctx));
+			gp_hb->add_child(ps);
+			card->add_child(gp_hb);
+		} else if (atype == "open_container" || atype == "close_container" || atype == "toggle_container") {
+			card->add_child(make_target_opt(String(a.get("target_elem", "")), i));
+			HBoxContainer *tr_hb = memnew(HBoxContainer);
+			tr_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+			OptionButton *t_opt = memnew(OptionButton);
+			t_opt->add_item("Escala", 0); t_opt->set_item_metadata(0, "scale");
+			t_opt->add_item("Desvanecimiento", 1); t_opt->set_item_metadata(1, "fade");
+			t_opt->add_item("Deslizamiento", 2); t_opt->set_item_metadata(2, "slide");
+			t_opt->add_item("Ninguna", 3); t_opt->set_item_metadata(3, "none");
+			s_select_option_meta(t_opt, String(a.get("transition_type", "scale")));
+			clamp_opt(t_opt);
+			t_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(t_opt->get_instance_id(), i, String("transition_type"), p_ctx));
+			tr_hb->add_child(t_opt);
+			SpinBox *ds = memnew(SpinBox);
+			ds->set_min(0.05); ds->set_max(1.50); ds->set_step(0.05); ds->set_suffix(" s");
+			ds->set_value(double(a.get("transition_duration", 0.16)));
+			ds->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step).bind(i, String("transition_duration"), p_ctx));
+			tr_hb->add_child(ds);
+			card->add_child(tr_hb);
+		} else if (atype == "set_container_filter") {
+			card->add_child(make_target_opt(String(a.get("target_elem", "")), i));
+			OptionButton *f_opt = memnew(OptionButton);
+			f_opt->add_item("Todos", 0); f_opt->set_item_metadata(0, "all");
+			f_opt->add_item("Consumibles", 1); f_opt->set_item_metadata(1, "consumable");
+			f_opt->add_item("Armas", 2); f_opt->set_item_metadata(2, "weapon");
+			f_opt->add_item("Armaduras", 3); f_opt->set_item_metadata(3, "armor");
+			f_opt->add_item("Escudos", 4); f_opt->set_item_metadata(4, "shield");
+			f_opt->add_item("Accesorios", 5); f_opt->set_item_metadata(5, "accessory");
+			f_opt->add_item("Clave", 6); f_opt->set_item_metadata(6, "key");
+			f_opt->add_item("Materiales", 7); f_opt->set_item_metadata(7, "material");
+			s_select_option_meta(f_opt, String(a.get("filter_category", "all")));
+			clamp_opt(f_opt);
+			f_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(f_opt->get_instance_id(), i, String("filter_category"), p_ctx));
+			card->add_child(f_opt);
+		} else if (atype == "set_container_data_source") {
+			card->add_child(make_target_opt(String(a.get("target_elem", "")), i));
+			OptionButton *d_opt = memnew(OptionButton);
+			d_opt->add_item("Inventario completo", 0); d_opt->set_item_metadata(0, "inventory");
+			d_opt->add_item("Consumibles", 1); d_opt->set_item_metadata(1, "consumables");
+			d_opt->add_item("Clave y materiales", 2); d_opt->set_item_metadata(2, "key_materials");
+			d_opt->add_item("Armas", 3); d_opt->set_item_metadata(3, "weapons");
+			d_opt->add_item("Armaduras", 4); d_opt->set_item_metadata(4, "armors");
+			d_opt->add_item("Escudos", 5); d_opt->set_item_metadata(5, "shields");
+			d_opt->add_item("Accesorios", 6); d_opt->set_item_metadata(6, "accessories");
+			d_opt->add_item("Equipo compatible", 7); d_opt->set_item_metadata(7, "equip_compatible");
+			d_opt->add_item("Lista manual", 8); d_opt->set_item_metadata(8, "manual");
+			s_select_option_meta(d_opt, String(a.get("data_source", "inventory")));
+			clamp_opt(d_opt);
+			d_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu).bind(d_opt->get_instance_id(), i, String("data_source"), p_ctx));
+			card->add_child(d_opt);
 		}
 	}
 }
@@ -7717,6 +7877,7 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 		}
 		_refresh_pager_inspector(el);
 	}
+	_refresh_elem_inputs_inspector(el);
 
 	updating_ui = prev_upd;
 	_apply_properties_filter();
@@ -10744,107 +10905,106 @@ void ClockGearsUiDesignEditor::_on_prop_add_multi_action_pressed() {
 	_notify_data_mutated(true);
 }
 
-void ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed(int p_idx) {
+bool ClockGearsUiDesignEditor::_read_multi_actions_ctx(const String &p_ctx, Array &r_acts) const {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return false;
+	if (p_ctx.begins_with("screen_in:")) {
+		int b_idx = p_ctx.get_slice(":", 1).to_int();
+		Dictionary sd = dm->get_ui_screen_design(current_screen_id);
+		Array ins = sd.has("inputs") && sd["inputs"].get_type() == Variant::ARRAY ? Array(sd["inputs"]) : Array();
+		if (b_idx < 0 || b_idx >= ins.size() || ins[b_idx].get_type() != Variant::DICTIONARY) return false;
+		Dictionary bd = ins[b_idx];
+		r_acts = bd.has("actions") && bd["actions"].get_type() == Variant::ARRAY ? Array(bd["actions"]).duplicate(true) : Array();
+		return true;
+	}
 	Dictionary el = _get_selected_element_copy();
-	if (!dm || el.is_empty()) {
-		return;
+	if (el.is_empty()) return false;
+	if (p_ctx.begins_with("elem_in:")) {
+		int b_idx = p_ctx.get_slice(":", 1).to_int();
+		Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]) : Array();
+		if (b_idx < 0 || b_idx >= ins.size() || ins[b_idx].get_type() != Variant::DICTIONARY) return false;
+		Dictionary bd = ins[b_idx];
+		r_acts = bd.has("actions") && bd["actions"].get_type() == Variant::ARRAY ? Array(bd["actions"]).duplicate(true) : Array();
+		return true;
 	}
 	if (String(el.get("type", "")) == "radial") {
 		Dictionary lay = _get_active_radial_layout();
-		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
-		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
-		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
-		Array acts = rs.get("actions", Array()).duplicate(true);
-		if (p_idx >= 0 && p_idx < acts.size()) {
-			acts.remove_at(p_idx);
-			rs["actions"] = acts;
-			slots[prop_rad_selected_slot] = rs;
-			lay["radial_slots"] = slots;
-			_commit_active_radial_layout(lay, true);
-		}
-		return;
+		Array slots = Array(lay.get("radial_slots", Array()));
+		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return false;
+		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]);
+		r_acts = rs.get("actions", Array()).duplicate(true);
+		return true;
 	}
 	String pager_id = _resolve_active_pager_id(el);
 	if (!pager_id.is_empty() && prop_pager_page_opt && prop_pager_page_opt->get_selected() >= 0) {
 		String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
 		Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
 		if (pg.is_empty()) pg = get_effective_element(page_id);
-		Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
-		if (p_idx >= 0 && p_idx < acts.size()) {
-			acts.remove_at(p_idx);
-			pg["enter_actions"] = acts;
-			ensure_screen_customizable_for_edit(false);
-			dm->update_ui_element(current_screen_id, page_id, pg, true);
-			_notify_data_mutated(true);
-		}
-		return;
+		r_acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
+		return true;
 	}
-	Array acts = el.get("actions", Array()).duplicate(true);
-	if (p_idx >= 0 && p_idx < acts.size()) {
-		acts.remove_at(p_idx);
-		el["actions"] = acts;
-		Dictionary snap = dm->get_ui_screen_design(current_screen_id);
-		bool prev_custom = dm->has_custom_ui_design(current_screen_id);
-		ensure_screen_customizable_for_edit(false);
-		dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
-		if (!prev_custom) {
-			dm->push_ui_design_undo_state(current_screen_id, snap);
-		}
-		_notify_data_mutated(true);
-	}
+	r_acts = el.get("actions", Array()).duplicate(true);
+	return true;
 }
 
-void ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed(int p_idx, int p_delta) {
+bool ClockGearsUiDesignEditor::_write_multi_actions_ctx(const String &p_ctx, const Array &p_acts, bool p_rebuild_ui, bool p_record_undo) {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return false;
+	if (p_ctx.begins_with("screen_in:")) {
+		int b_idx = p_ctx.get_slice(":", 1).to_int();
+		Dictionary sd = dm->get_ui_screen_design(current_screen_id);
+		Array ins = sd.has("inputs") && sd["inputs"].get_type() == Variant::ARRAY ? Array(sd["inputs"]).duplicate(true) : Array();
+		if (b_idx < 0 || b_idx >= ins.size() || ins[b_idx].get_type() != Variant::DICTIONARY) return false;
+		Dictionary bd = Dictionary(ins[b_idx]).duplicate(true);
+		bd["actions"] = p_acts;
+		ins[b_idx] = ClockGearsDataManager::normalize_ui_input_binding(bd);
+		sd["inputs"] = ins;
+		sd["custom_enabled"] = true;
+		dm->set_ui_screen_design(current_screen_id, sd, p_record_undo);
+		if (p_rebuild_ui) _notify_data_mutated(true);
+		else emit_signal("design_modified");
+		return true;
+	}
 	Dictionary el = _get_selected_element_copy();
-	if (!dm || el.is_empty()) {
-		return;
+	if (el.is_empty()) return false;
+	if (p_ctx.begins_with("elem_in:")) {
+		int b_idx = p_ctx.get_slice(":", 1).to_int();
+		Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]).duplicate(true) : Array();
+		if (b_idx < 0 || b_idx >= ins.size() || ins[b_idx].get_type() != Variant::DICTIONARY) return false;
+		Dictionary bd = Dictionary(ins[b_idx]).duplicate(true);
+		bd["actions"] = p_acts;
+		ins[b_idx] = ClockGearsDataManager::normalize_ui_input_binding(bd);
+		el["inputs"] = ins;
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, selected_elem_id, el, p_record_undo);
+		if (p_rebuild_ui) _notify_data_mutated(true);
+		else emit_signal("design_modified");
+		return true;
 	}
 	if (String(el.get("type", "")) == "radial") {
 		Dictionary lay = _get_active_radial_layout();
 		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
-		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
+		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return false;
 		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
-		Array acts = rs.get("actions", Array()).duplicate(true);
-		int target = p_idx + p_delta;
-		if (p_idx < 0 || p_idx >= acts.size() || target < 0 || target >= acts.size() || target == p_idx) return;
-		Variant moved = acts[p_idx];
-		acts.remove_at(p_idx);
-		acts.insert(target, moved);
-		rs["actions"] = acts;
+		rs["actions"] = p_acts;
 		slots[prop_rad_selected_slot] = rs;
 		lay["radial_slots"] = slots;
-		_commit_active_radial_layout(lay, true);
-		return;
+		_commit_active_radial_layout(lay, p_rebuild_ui, p_record_undo);
+		return true;
 	}
 	String pager_id = _resolve_active_pager_id(el);
 	if (!pager_id.is_empty() && prop_pager_page_opt && prop_pager_page_opt->get_selected() >= 0) {
 		String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
 		Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
 		if (pg.is_empty()) pg = get_effective_element(page_id);
-		Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
-		int target = p_idx + p_delta;
-		if (p_idx >= 0 && p_idx < acts.size() && target >= 0 && target < acts.size() && target != p_idx) {
-			Variant moved = acts[p_idx];
-			acts.remove_at(p_idx);
-			acts.insert(target, moved);
-			pg["enter_actions"] = acts;
-			ensure_screen_customizable_for_edit(false);
-			dm->update_ui_element(current_screen_id, page_id, pg, true);
-			_notify_data_mutated(true);
-		}
-		return;
+		pg["enter_actions"] = p_acts;
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, page_id, pg, p_record_undo);
+		if (p_rebuild_ui) _notify_data_mutated(true);
+		else emit_signal("design_modified");
+		return true;
 	}
-	Array acts = el.get("actions", Array()).duplicate(true);
-	int target = p_idx + p_delta;
-	if (p_idx < 0 || p_idx >= acts.size() || target < 0 || target >= acts.size() || target == p_idx) {
-		return;
-	}
-	Variant moved = acts[p_idx];
-	acts.remove_at(p_idx);
-	acts.insert(target, moved);
-	el["actions"] = acts;
+	el["actions"] = p_acts;
 	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
 	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
 	ensure_screen_customizable_for_edit(false);
@@ -10852,53 +11012,38 @@ void ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed(int p_idx, int
 	if (!prev_custom) {
 		dm->push_ui_design_undo_state(current_screen_id, snap);
 	}
-	_notify_data_mutated(true);
+	if (p_rebuild_ui) _notify_data_mutated(true);
+	else emit_signal("design_modified");
+	return true;
 }
 
-void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step(const Variant &p_val, int p_idx, const String &p_key) {
+void ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed(int p_idx, const String &p_ctx) {
+	Array acts;
+	if (!_read_multi_actions_ctx(p_ctx, acts)) return;
+	if (p_idx >= 0 && p_idx < acts.size()) {
+		acts.remove_at(p_idx);
+		_write_multi_actions_ctx(p_ctx, acts, true, true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed(int p_idx, int p_delta, const String &p_ctx) {
+	Array acts;
+	if (!_read_multi_actions_ctx(p_ctx, acts)) return;
+	int target = p_idx + p_delta;
+	if (p_idx >= 0 && p_idx < acts.size() && target >= 0 && target < acts.size() && target != p_idx) {
+		Variant moved = acts[p_idx];
+		acts.remove_at(p_idx);
+		acts.insert(target, moved);
+		_write_multi_actions_ctx(p_ctx, acts, true, true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step(const Variant &p_val, int p_idx, const String &p_key, const String &p_ctx) {
 	if (updating_ui) {
 		return;
 	}
-	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	Dictionary el = _get_selected_element_copy();
-	if (!dm || el.is_empty()) {
-		return;
-	}
-	if (String(el.get("type", "")) == "radial") {
-		Dictionary lay = _get_active_radial_layout();
-		Array slots = Array(lay.get("radial_slots", Array())).duplicate(true);
-		if (prop_rad_selected_slot < 0 || prop_rad_selected_slot >= slots.size()) return;
-		Dictionary rs = Dictionary(slots[prop_rad_selected_slot]).duplicate(true);
-		Array acts = rs.get("actions", Array()).duplicate(true);
-		if (p_idx < 0 || p_idx >= acts.size() || acts[p_idx].get_type() != Variant::DICTIONARY) return;
-		Dictionary step = Dictionary(acts[p_idx]).duplicate(true);
-		step[p_key] = p_val;
-		if (p_key == "menu_id") step["target"] = p_val;
-		acts[p_idx] = step;
-		rs["actions"] = acts;
-		slots[prop_rad_selected_slot] = rs;
-		lay["radial_slots"] = slots;
-		_commit_active_radial_layout(lay, false, false);
-		return;
-	}
-	String pager_id = _resolve_active_pager_id(el);
-	if (!pager_id.is_empty() && prop_pager_page_opt && prop_pager_page_opt->get_selected() >= 0) {
-		String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
-		Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
-		if (pg.is_empty()) pg = get_effective_element(page_id);
-		Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
-		if (p_idx < 0 || p_idx >= acts.size() || acts[p_idx].get_type() != Variant::DICTIONARY) return;
-		Dictionary step = Dictionary(acts[p_idx]).duplicate(true);
-		step[p_key] = p_val;
-		if (p_key == "menu_id") step["target"] = p_val;
-		acts[p_idx] = step;
-		pg["enter_actions"] = acts;
-		ensure_screen_customizable_for_edit(false);
-		dm->update_ui_element(current_screen_id, page_id, pg, true);
-		emit_signal("design_modified");
-		return;
-	}
-	Array acts = el.get("actions", Array()).duplicate(true);
+	Array acts;
+	if (!_read_multi_actions_ctx(p_ctx, acts)) return;
 	if (p_idx < 0 || p_idx >= acts.size() || acts[p_idx].get_type() != Variant::DICTIONARY) {
 		return;
 	}
@@ -10908,23 +11053,15 @@ void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step(const Variant &p_
 		step["target"] = p_val;
 	}
 	acts[p_idx] = step;
-	el["actions"] = acts;
-	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
-	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
-	ensure_screen_customizable_for_edit(false);
-	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
-	if (!prev_custom) {
-		dm->push_ui_design_undo_state(current_screen_id, snap);
-	}
-	emit_signal("design_modified");
+	_write_multi_actions_ctx(p_ctx, acts, false, false);
 }
 
-void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu(int p_opt_idx, ObjectID p_opt_id, int p_idx, const String &p_key) {
+void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_menu(int p_opt_idx, ObjectID p_opt_id, int p_idx, const String &p_key, const String &p_ctx) {
 	OptionButton *opt = Object::cast_to<OptionButton>(ObjectDB::get_instance(p_opt_id));
 	if (!opt || p_opt_idx < 0) {
 		return;
 	}
-	_on_prop_edit_multi_action_step(opt->get_item_metadata(p_opt_idx), p_idx, p_key);
+	_on_prop_edit_multi_action_step(opt->get_item_metadata(p_opt_idx), p_idx, p_key, p_ctx);
 }
 
 void ClockGearsUiDesignEditor::_on_prop_btn_state_import_pressed(int p_state) {
@@ -11714,6 +11851,260 @@ void ClockGearsUiDesignEditor::_on_prop_pager_clr_trigger_pressed(int p_mode) {
 	ensure_screen_customizable_for_edit(false);
 	dm->update_ui_element(current_screen_id, pager_id, pager_el, true);
 	_notify_data_mutated(true);
+}
+
+static String s_fmt_input_triggers_list(const Array &p_trigs) {
+	if (p_trigs.is_empty()) {
+		return "Sin tecla";
+	}
+	PackedStringArray parts;
+	for (int i = 0; i < p_trigs.size(); i++) {
+		if (p_trigs[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary d = p_trigs[i];
+		String kind = String(d.get("kind", "key")).strip_edges().to_lower();
+		if (kind == "key") {
+			String kn = String(d.get("key_name", "")).strip_edges();
+			if (kn.is_empty() && int64_t(d.get("keycode", 0)) > 0) kn = keycode_get_string((Key)int64_t(d["keycode"]));
+			if (!kn.is_empty()) parts.push_back(kn);
+		} else if (kind == "joy_button") {
+			int jb = int(d.get("joy_button", -1));
+			if (jb == (int)JoyButton::LEFT_SHOULDER) parts.push_back("L1");
+			else if (jb == (int)JoyButton::RIGHT_SHOULDER) parts.push_back("R1");
+			else parts.push_back("Mando " + itos(jb));
+		} else if (kind == "mouse_button") {
+			parts.push_back(String::utf8("Ratón ") + itos(int(d.get("mouse_button", 1))));
+		} else if (kind == "action") {
+			parts.push_back(String(d.get("action_name", "")));
+		}
+	}
+	return parts.is_empty() ? String("Sin tecla") : String(", ").join(parts);
+}
+
+void ClockGearsUiDesignEditor::_populate_input_bindings_list(VBoxContainer *p_vbox, const Array &p_inputs, const String &p_ctx_prefix, bool p_allow_focus_chk, Label *p_conflict_lbl) {
+	if (!p_vbox) return;
+	s_clear_container_children(p_vbox);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (p_conflict_lbl && dm) {
+		Array conf = ClockGearsDataManager::detect_ui_input_conflicts(dm->get_ui_screen_design(current_screen_id));
+		if (conf.is_empty()) {
+			p_conflict_lbl->set_visible(false);
+			p_conflict_lbl->set_text("");
+		} else {
+			PackedStringArray lines;
+			for (int ci = 0; ci < conf.size(); ci++) lines.push_back(String(conf[ci]));
+			p_conflict_lbl->set_text(String("\n").join(lines));
+			p_conflict_lbl->set_visible(true);
+		}
+	}
+	Array all_types = ClockGearsDataManager::get_all_ui_button_action_types();
+	String ctx_tag = (p_ctx_prefix == "screen") ? "screen_in" : "elem_in";
+	for (int i = 0; i < p_inputs.size(); i++) {
+		if (p_inputs[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary bd = p_inputs[i];
+		PanelContainer *pc = memnew(PanelContainer);
+		pc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		p_vbox->add_child(pc);
+
+		VBoxContainer *card = memnew(VBoxContainer);
+		card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		card->add_theme_constant_override("separation", int(3 * EDSCALE));
+		pc->add_child(card);
+
+		HBoxContainer *hdr = memnew(HBoxContainer);
+		hdr->add_theme_constant_override("separation", int(3 * EDSCALE));
+		Label *tl = memnew(Label(s_fmt_input_triggers_list(bd.get("triggers", Array()))));
+		tl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		tl->set_clip_text(true);
+		tl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		if (capturing_input_ctx == p_ctx_prefix && capturing_input_binding_idx == i) {
+			tl->set_text("Pulsa tecla/mando...");
+		}
+		hdr->add_child(tl);
+
+		Button *cap_b = memnew(Button("+Tecla"));
+		cap_b->set_tooltip_text(String::utf8("Capturar tecla, botón de mando o clic de ratón."));
+		s_make_rounded_action_btn(cap_b);
+		cap_b->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_capture_pressed).bind(p_ctx_prefix, i), CONNECT_DEFERRED);
+		hdr->add_child(cap_b);
+
+		Button *clr_b = memnew(Button("Limpiar"));
+		s_make_rounded_action_btn(clr_b);
+		clr_b->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_clear_trigs_pressed).bind(p_ctx_prefix, i), CONNECT_DEFERRED);
+		hdr->add_child(clr_b);
+
+		Button *del_b = memnew(Button("x"));
+		del_b->set_tooltip_text(String::utf8("Eliminar esta entrada."));
+		s_make_rounded_action_btn(del_b);
+		del_b->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_remove_pressed).bind(p_ctx_prefix, i), CONNECT_DEFERRED);
+		hdr->add_child(del_b);
+		card->add_child(hdr);
+
+		if (p_allow_focus_chk) {
+			CheckBox *fchk = memnew(CheckBox(String::utf8("Solo si el contenedor tiene el foco")));
+			fchk->set_pressed(bool(bd.get("require_focus", false)));
+			fchk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_focus_toggled).bind(p_ctx_prefix, i), CONNECT_DEFERRED);
+			card->add_child(fchk);
+		}
+
+		HBoxContainer *act_add_hb = memnew(HBoxContainer);
+		act_add_hb->add_theme_constant_override("separation", int(3 * EDSCALE));
+		OptionButton *act_opt = memnew(OptionButton);
+		act_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		act_opt->set_fit_to_longest_item(false);
+		act_opt->set_clip_text(true);
+		act_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		act_opt->set_custom_minimum_size(Size2(72.0f * EDSCALE, 28.0f * EDSCALE));
+		for (int ai = 0; ai < all_types.size(); ai++) {
+			Dictionary ad = all_types[ai];
+			act_opt->add_item(String(ad.get("label", ad.get("id", ""))), ai);
+			act_opt->set_item_metadata(ai, String(ad.get("id", "")));
+		}
+		act_add_hb->add_child(act_opt);
+
+		Button *act_add_b = memnew(Button("+"));
+		act_add_b->set_tooltip_text(String::utf8("Añadir acción a esta entrada."));
+		s_make_rounded_action_btn(act_add_b);
+		act_add_b->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_add_action_pressed).bind(p_ctx_prefix, i, act_opt->get_instance_id()), CONNECT_DEFERRED);
+		act_add_hb->add_child(act_add_b);
+		card->add_child(act_add_hb);
+
+		VBoxContainer *acts_vb = memnew(VBoxContainer);
+		acts_vb->add_theme_constant_override("separation", int(3 * EDSCALE));
+		card->add_child(acts_vb);
+		_populate_multi_actions_list(acts_vb, bd.get("actions", Array()), ctx_tag + ":" + itos(i));
+	}
+}
+
+void ClockGearsUiDesignEditor::_refresh_elem_inputs_inspector(const Dictionary &p_el) {
+	if (!prop_inputs_list_vbox) return;
+	Array ins = p_el.has("inputs") && p_el["inputs"].get_type() == Variant::ARRAY ? Array(p_el["inputs"]) : Array();
+	_populate_input_bindings_list(prop_inputs_list_vbox, ins, "elem", true, prop_inputs_conflict_lbl);
+}
+
+void ClockGearsUiDesignEditor::_on_input_binding_add_pressed(const String &p_ctx_prefix) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+	Dictionary nb = ClockGearsDataManager::make_default_ui_input_binding();
+	if (p_ctx_prefix == "screen") {
+		Dictionary sd = dm->get_ui_screen_design(current_screen_id);
+		Array ins = sd.has("inputs") && sd["inputs"].get_type() == Variant::ARRAY ? Array(sd["inputs"]).duplicate(true) : Array();
+		ins.push_back(nb);
+		sd["inputs"] = ins;
+		sd["custom_enabled"] = true;
+		dm->set_ui_screen_design(current_screen_id, sd, true);
+		_notify_data_mutated(true);
+		return;
+	}
+	if (selected_elem_id.is_empty()) return;
+	Dictionary el = _get_selected_element_copy();
+	if (el.is_empty()) return;
+	Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]).duplicate(true) : Array();
+	ins.push_back(nb);
+	el["inputs"] = ins;
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_input_binding_remove_pressed(const String &p_ctx_prefix, int p_idx) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+	if (p_ctx_prefix == "screen") {
+		Dictionary sd = dm->get_ui_screen_design(current_screen_id);
+		Array ins = sd.has("inputs") && sd["inputs"].get_type() == Variant::ARRAY ? Array(sd["inputs"]).duplicate(true) : Array();
+		if (p_idx >= 0 && p_idx < ins.size()) {
+			ins.remove_at(p_idx);
+			sd["inputs"] = ins;
+			sd["custom_enabled"] = true;
+			dm->set_ui_screen_design(current_screen_id, sd, true);
+			_notify_data_mutated(true);
+		}
+		return;
+	}
+	Dictionary el = _get_selected_element_copy();
+	Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]).duplicate(true) : Array();
+	if (p_idx >= 0 && p_idx < ins.size()) {
+		ins.remove_at(p_idx);
+		el["inputs"] = ins;
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_input_binding_capture_pressed(const String &p_ctx_prefix, int p_idx) {
+	capturing_key_for_screen = false;
+	capturing_key_for_wizard = false;
+	capturing_key_for_btn_shortcut = false;
+	capturing_key_for_pager_mode = 0;
+	capturing_input_ctx = p_ctx_prefix;
+	capturing_input_binding_idx = p_idx;
+	if (p_ctx_prefix == "screen") {
+		_refresh_screen_settings_panel();
+	} else {
+		_refresh_elem_inputs_inspector(_get_selected_element_copy());
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_input_binding_clear_trigs_pressed(const String &p_ctx_prefix, int p_idx) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) return;
+	if (p_ctx_prefix == "screen") {
+		Dictionary sd = dm->get_ui_screen_design(current_screen_id);
+		Array ins = sd.has("inputs") && sd["inputs"].get_type() == Variant::ARRAY ? Array(sd["inputs"]).duplicate(true) : Array();
+		if (p_idx >= 0 && p_idx < ins.size() && ins[p_idx].get_type() == Variant::DICTIONARY) {
+			Dictionary bd = Dictionary(ins[p_idx]).duplicate(true);
+			bd["triggers"] = Array();
+			ins[p_idx] = bd;
+			sd["inputs"] = ins;
+			sd["custom_enabled"] = true;
+			dm->set_ui_screen_design(current_screen_id, sd, true);
+			_notify_data_mutated(true);
+		}
+		return;
+	}
+	Dictionary el = _get_selected_element_copy();
+	Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]).duplicate(true) : Array();
+	if (p_idx >= 0 && p_idx < ins.size() && ins[p_idx].get_type() == Variant::DICTIONARY) {
+		Dictionary bd = Dictionary(ins[p_idx]).duplicate(true);
+		bd["triggers"] = Array();
+		ins[p_idx] = bd;
+		el["inputs"] = ins;
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_input_binding_focus_toggled(bool p_req, const String &p_ctx_prefix, int p_idx) {
+	if (updating_ui) return;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || p_ctx_prefix != "elem") return;
+	Dictionary el = _get_selected_element_copy();
+	Array ins = el.has("inputs") && el["inputs"].get_type() == Variant::ARRAY ? Array(el["inputs"]).duplicate(true) : Array();
+	if (p_idx >= 0 && p_idx < ins.size() && ins[p_idx].get_type() == Variant::DICTIONARY) {
+		Dictionary bd = Dictionary(ins[p_idx]).duplicate(true);
+		bd["require_focus"] = p_req;
+		ins[p_idx] = ClockGearsDataManager::normalize_ui_input_binding(bd);
+		el["inputs"] = ins;
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_input_binding_add_action_pressed(const String &p_ctx_prefix, int p_idx, ObjectID p_opt_id) {
+	OptionButton *opt = Object::cast_to<OptionButton>(ObjectDB::get_instance(p_opt_id));
+	if (!opt || opt->get_selected() < 0) return;
+	String atype = String(opt->get_item_metadata(opt->get_selected()));
+	if (atype.is_empty()) return;
+	String ctx = ((p_ctx_prefix == "screen") ? "screen_in:" : "elem_in:") + itos(p_idx);
+	Array acts;
+	if (!_read_multi_actions_ctx(ctx, acts)) return;
+	Dictionary step;
+	step["type"] = atype;
+	acts.push_back(step);
+	_write_multi_actions_ctx(ctx, acts, true, true);
 }
 
 void ClockGearsUiDesignEditor::_on_prop_slot_style_state_selected(int p_idx) {
@@ -12645,6 +13036,14 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["prop_pager_rem_focus_chk"] = prop_pager_rem_focus_chk;
 	out["prop_pager_rem_scroll_chk"] = prop_pager_rem_scroll_chk;
 	out["prop_pager_sound_edit"] = prop_pager_sound_edit;
+	out["prop_inputs_box"] = prop_inputs_box;
+	out["prop_inputs_add_btn"] = prop_inputs_add_btn;
+	out["prop_inputs_list_vbox"] = prop_inputs_list_vbox;
+	out["prop_inputs_conflict_lbl"] = prop_inputs_conflict_lbl;
+	out["ss_inputs_hdr"] = ss_inputs_hdr;
+	out["ss_inputs_add_btn"] = ss_inputs_add_btn;
+	out["ss_inputs_list_vbox"] = ss_inputs_list_vbox;
+	out["ss_inputs_conflict_lbl"] = ss_inputs_conflict_lbl;
 	return out;
 }
 
@@ -12882,6 +13281,10 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 	ss_cred_item_img_edit = nullptr;
 	ss_cred_item_spacer_spin = nullptr;
 	ss_cred_item_align_opt = nullptr;
+	ss_inputs_hdr = nullptr;
+	ss_inputs_add_btn = nullptr;
+	ss_inputs_list_vbox = nullptr;
+	ss_inputs_conflict_lbl = nullptr;
 
 	bool prev_upd = updating_ui;
 	updating_ui = true;
@@ -13367,8 +13770,49 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 		screen_settings_body->add_child(info);
 	}
 
+	// Sección "Entradas globales de la pantalla" (BotW 2/2 Punto 3)
+	VBoxContainer *ss_in_body = memnew(VBoxContainer);
+	ss_in_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ss_in_body->add_theme_constant_override("separation", int(4 * EDSCALE));
+	ss_inputs_hdr = _attach_collapsible_header(screen_settings_body, "Entradas globales", ss_in_body, false);
+	if (ss_inputs_hdr) {
+		ss_inputs_hdr->set_tooltip_text(String::utf8("Atajos activos en toda esta pantalla (p. ej. abrir rueda radial, cambiar página o filtrar contenedores)."));
+	}
+	screen_settings_body->add_child(ss_in_body);
+	ss_inputs_conflict_lbl = memnew(Label);
+	ss_inputs_conflict_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	ss_inputs_conflict_lbl->add_theme_color_override("font_color", Color(1.0f, 0.45f, 0.38f, 1.0f));
+	ss_inputs_conflict_lbl->set_visible(false);
+	ss_in_body->add_child(ss_inputs_conflict_lbl);
+
+	ss_inputs_add_btn = memnew(Button(String::utf8("+ Añadir entrada de pantalla")));
+	s_make_rounded_action_btn(ss_inputs_add_btn);
+	ss_inputs_add_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_add_pressed).bind(String("screen")), CONNECT_DEFERRED);
+	ss_in_body->add_child(ss_inputs_add_btn);
+
+	ss_inputs_list_vbox = memnew(VBoxContainer);
+	ss_inputs_list_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ss_inputs_list_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
+	ss_in_body->add_child(ss_inputs_list_vbox);
+	{
+		Dictionary cur_sd = dm->get_ui_screen_design(current_screen_id);
+		Array scr_ins = cur_sd.has("inputs") && cur_sd["inputs"].get_type() == Variant::ARRAY ? Array(cur_sd["inputs"]) : Array();
+		_populate_input_bindings_list(ss_inputs_list_vbox, scr_ins, "screen", false, ss_inputs_conflict_lbl);
+	}
+
 	updating_ui = prev_upd;
 	s_clamp_narrow_controls(screen_settings_body, EDSCALE);
+	if (ss_inputs_list_vbox) {
+		TypedArray<Node> opts = ss_inputs_list_vbox->find_children("*", "OptionButton", true, false);
+		for (int oi = 0; oi < opts.size(); oi++) {
+			if (OptionButton *o = Object::cast_to<OptionButton>(opts[oi])) {
+				o->set_fit_to_longest_item(false);
+				o->set_clip_text(true);
+				o->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+				o->set_custom_minimum_size(Size2(72.0f * EDSCALE, 28.0f * EDSCALE));
+			}
+		}
+	}
 	if (ClockGearsTheme::get_singleton() && ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass") {
 		ClockGearsTheme::get_singleton()->apply_theme_to_node_tree(screen_settings_body);
 	}

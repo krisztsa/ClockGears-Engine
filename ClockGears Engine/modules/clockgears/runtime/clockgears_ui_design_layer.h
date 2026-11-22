@@ -272,6 +272,16 @@ private:
 		double pager_trans_duration = 0.22;
 		HashMap<String, String> pager_page_focus_elem;
 		HashMap<String, Vector2> pager_page_scroll;
+
+		// Runtime open/close container state & transition (Punto 3)
+		bool runtime_vis_override_set = false;
+		bool runtime_vis_override = true;
+		bool container_trans_active = false;
+		bool container_trans_showing = true;
+		String container_trans_type;
+		double container_trans_elapsed = 0.0;
+		double container_trans_duration = 0.16;
+		Vector2 container_base_pos;
 	};
 
 	Vector<ElementEntry> elements;
@@ -317,6 +327,7 @@ private:
 	int runtime_equip_slot_idx = 0;
 	bool use_editor_test_data = false;
 	String last_focused_container_id;
+	String active_focus_container_id;
 	Dictionary last_focused_data_entry;
 	Dictionary focused_entry_by_container;
 	Dictionary dynamic_slot_actions_by_id;
@@ -359,6 +370,9 @@ private:
 	void _save_pager_page_state(ElementEntry &r_entry, const String &p_page_id);
 	void _restore_pager_page_state(ElementEntry &r_entry, const String &p_page_id);
 	void _execute_action_list(const Array &p_actions, const String &p_src_id = String());
+	bool _does_element_have_focus(const ElementEntry &p_entry) const;
+	bool _are_ancestors_visible_in_tree(const ElementEntry &p_entry) const;
+	void _apply_container_transition_pose(ElementEntry &r_entry, float p_t);
 
 protected:
 	static void _bind_methods();
@@ -435,6 +449,14 @@ public:
 	bool step_pager_page(const String &p_pager_id, int p_delta, bool p_animate = true);
 	int get_pager_active_page(const String &p_pager_id) const;
 	Dictionary get_pager_info(const String &p_pager_id) const;
+
+	bool set_container_open(const String &p_elem_id, bool p_open, const String &p_trans = "scale", double p_dur = 0.16);
+	bool toggle_container_open(const String &p_elem_id, const String &p_trans = "scale", double p_dur = 0.16);
+	bool is_container_open(const String &p_elem_id) const;
+	bool focus_container(const String &p_elem_id);
+	String get_active_focus_container_id() const { return active_focus_container_id; }
+	bool set_container_filter(const String &p_elem_id, const String &p_filter_category);
+	bool set_container_data_source(const String &p_elem_id, const String &p_data_source);
 
 	bool trigger_action(const String &p_action);
 	bool owns_control(const Control *p_ctrl) const;
