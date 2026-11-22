@@ -14,21 +14,25 @@ class ClockGearsSimplifiedExportDialog;
 class ButtonGroup;
 class Theme;
 
-// ClockGears icon-only command bar with 32px pixel-art icons and tooltips.
-// Fits on 1 row when space allows, wraps between groups to 2 rows, and scrolls horizontally when very narrow.
+// ClockGears single-row command bar with 32px pixel-art icons and tooltips.
+// Always stays on 1 row (~44 px); overflows trailing groups into a "»" menu when narrow.
 class ClockGearsTopBar : public PanelContainer {
 	GDCLASS(ClockGearsTopBar, PanelContainer);
 
-	ScrollContainer *scroll_container = nullptr;
-	VBoxContainer *rows_vbox = nullptr;
+	Control *clip_host = nullptr;
 	HBoxContainer *row1_box = nullptr;
-	HBoxContainer *row2_box = nullptr;
+	Control *overflow_spacer = nullptr;
+	MenuButton *overflow_btn = nullptr;
+	PopupMenu *overflow_popup = nullptr;
 	Vector<HBoxContainer *> all_groups;
+	Vector<String> group_names;
 	Vector<Control *> all_separators;
-	int split_group_index = 4;
-	int last_two_row_state = -1;
+	Vector<Button *> overflow_item_buttons;
+	int visible_group_count = 0;
+	int last_overflow_start = -1;
+	int last_playtest_txt_state = -1;
 	int last_icon_scale = 0;
-	float bar_h_padding = 14.0f;
+	float bar_h_padding = 12.0f;
 	float last_layout_width = -1.0f;
 
 	struct ToolbarIconEntry {
@@ -84,6 +88,8 @@ class ClockGearsTopBar : public PanelContainer {
 	void _on_zoom_in_pressed();
 	void _on_zoom_out_pressed();
 	void _on_playtest_pressed();
+	void _on_overflow_about_to_popup();
+	void _on_overflow_id_pressed(int p_id);
 	void _on_dm_data_changed_topbar(const String &p_category, int p_id);
 
 protected:
@@ -101,6 +107,11 @@ public:
 	Button *get_layer_button(int p_idx) const { return (p_idx >= 0 && p_idx < 6) ? layer_buttons[p_idx] : nullptr; }
 	Button *get_tool_button(int p_idx) const { return (p_idx >= 0 && p_idx < 8) ? tool_buttons[p_idx] : nullptr; }
 	Button *get_playtest_button() const { return playtest_btn; }
+	MenuButton *get_overflow_button() const { return overflow_btn; }
+	int get_visible_group_count() const { return visible_group_count; }
+	int get_total_group_count() const { return int(all_groups.size()); }
+	int get_overflow_group_count() const { return MAX(0, int(all_groups.size()) - visible_group_count); }
+	bool is_single_row() const { return true; }
 	Array get_toolbar_icons_audit() const;
 	void set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEventEditorDialog *p_ev, ClockGearsSimplifiedExportDialog *p_exp);
 

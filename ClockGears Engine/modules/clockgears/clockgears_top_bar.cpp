@@ -62,6 +62,11 @@ void ClockGearsTopBar::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_layer_button", "idx"), &ClockGearsTopBar::get_layer_button);
 	ClassDB::bind_method(D_METHOD("get_tool_button", "idx"), &ClockGearsTopBar::get_tool_button);
 	ClassDB::bind_method(D_METHOD("get_playtest_button"), &ClockGearsTopBar::get_playtest_button);
+	ClassDB::bind_method(D_METHOD("get_overflow_button"), &ClockGearsTopBar::get_overflow_button);
+	ClassDB::bind_method(D_METHOD("get_visible_group_count"), &ClockGearsTopBar::get_visible_group_count);
+	ClassDB::bind_method(D_METHOD("get_total_group_count"), &ClockGearsTopBar::get_total_group_count);
+	ClassDB::bind_method(D_METHOD("get_overflow_group_count"), &ClockGearsTopBar::get_overflow_group_count);
+	ClassDB::bind_method(D_METHOD("is_single_row"), &ClockGearsTopBar::is_single_row);
 	ClassDB::bind_method(D_METHOD("get_toolbar_icons_audit"), &ClockGearsTopBar::get_toolbar_icons_audit);
 }
 
@@ -114,6 +119,8 @@ void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button, const Ref<T
 	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
 	const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, float(ui_scale));
 	const bool is_playtest = (p_button == playtest_btn);
+	const bool is_overflow = (p_button == overflow_btn);
+	const bool playtest_has_txt = is_playtest && !p_button->get_text().is_empty();
 
 	Ref<StyleBoxFlat> normal;
 	normal.instantiate();
@@ -124,14 +131,18 @@ void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button, const Ref<T
 		normal->set_border_width_all(1);
 		normal->set_border_color(Color(gcol.r, gcol.g, gcol.b, 0.72f));
 	} else {
-		normal->set_bg_color(Color(tk.surface_panel.r, tk.surface_panel.g, tk.surface_panel.b, 0.0f));
-		normal->set_border_width_all(1);
-		normal->set_border_color(tk.border_subtle);
+		// En reposo: SIN borde ni caja (fondo transparente); el borde cobrizo y el tinte solo salen en hover/activo.
+		normal->set_draw_center(false);
+		normal->set_bg_color(Color(0, 0, 0, 0));
+		normal->set_border_width_all(0);
+		normal->set_border_color(Color(0, 0, 0, 0));
 	}
 	normal->set_corner_radius_all(radius);
-	normal->set_content_margin_individual(is_playtest ? (margin_h + 4 * ui_scale) : margin_h, margin_v, is_playtest ? (margin_h + 6 * ui_scale) : margin_h, margin_v);
+	normal->set_content_margin_individual(playtest_has_txt ? (margin_h + 4 * ui_scale) : margin_h, margin_v, playtest_has_txt ? (margin_h + 6 * ui_scale) : margin_h, margin_v);
 
 	Ref<StyleBoxFlat> hover = normal->duplicate();
+	hover->set_draw_center(true);
+	hover->set_border_width_all(1);
 	if (is_playtest) {
 		const Color gcol = ClockGearsTheme::color_success().lightened(0.14f);
 		hover->set_bg_color(Color(gcol.r, gcol.g, gcol.b, 0.24f));
@@ -149,17 +160,17 @@ void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button, const Ref<T
 
 	// Herramienta o capa activa: borde neón (2 px), halo y tinte ámbar
 	Ref<StyleBoxFlat> pressed = normal->duplicate();
+	pressed->set_draw_center(true);
+	pressed->set_border_width_all(2);
 	if (is_playtest) {
 		const Color gcol = ClockGearsTheme::color_success();
 		pressed->set_bg_color(Color(gcol.r, gcol.g, gcol.b, 0.34f));
-		pressed->set_border_width_all(2);
 		pressed->set_border_color(gcol.lightened(0.18f));
 		pressed->set_shadow_color(Color(gcol.r, gcol.g, gcol.b, tk.halo_color.a));
 		pressed->set_shadow_size(tk.halo_radius_px);
 		pressed->set_shadow_offset(Vector2(0, 0));
 	} else {
 		pressed->set_bg_color(tk.surface_panel.lerp(tk.accent_neon, 0.24f));
-		pressed->set_border_width_all(2);
 		pressed->set_border_color(tk.accent_neon);
 		pressed->set_shadow_color(tk.halo_color);
 		pressed->set_shadow_size(tk.halo_radius_px);
@@ -172,12 +183,15 @@ void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button, const Ref<T
 	}
 
 	Ref<StyleBoxFlat> disabled = normal->duplicate();
-	disabled->set_bg_color(Color(1, 1, 1, 0.0f));
-	disabled->set_border_color(Color(tk.border_subtle.r, tk.border_subtle.g, tk.border_subtle.b, 0.08f));
+	disabled->set_draw_center(false);
+	disabled->set_bg_color(Color(0, 0, 0, 0));
+	disabled->set_border_width_all(0);
+	disabled->set_border_color(Color(0, 0, 0, 0));
 	disabled->set_shadow_size(0);
 
 	Ref<StyleBoxFlat> focus_ring = normal->duplicate();
 	focus_ring->set_draw_center(false);
+	focus_ring->set_border_width_all(1);
 	focus_ring->set_border_color(tk.accent_neon);
 	focus_ring->set_shadow_color(tk.halo_color);
 	focus_ring->set_shadow_size(tk.halo_radius_px);
@@ -199,11 +213,21 @@ void ClockGearsTopBar::_apply_toolbar_button_style(Button *p_button, const Ref<T
 	p_button->add_theme_color_override("icon_focus_color", Color(1, 1, 1, 1));
 	p_button->add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.40f));
 
+	if (is_overflow) {
+		Ref<Theme> ath = ClockGearsTheme::get_singleton() ? ClockGearsTheme::get_singleton()->get_active_theme() : Ref<Theme>();
+		Color ov_fg = (ath.is_valid() && ath->has_color("font_color", "Button")) ? ath->get_color("font_color", "Button") : ClockGearsTheme::color_text_primary();
+		p_button->add_theme_color_override("font_color", ov_fg);
+		p_button->add_theme_color_override("font_hover_color", tk.accent_neon);
+		p_button->add_theme_color_override("font_pressed_color", tk.accent_neon);
+		p_button->set_custom_minimum_size(Size2(30 * ui_scale, btn_side));
+		return;
+	}
+
 	// 32 px (o multiplo entero exacto) + filtro nearest sin suavizado.
 	p_button->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	p_button->add_theme_constant_override("icon_max_width", 32 * p_int_scale);
-	p_button->add_theme_constant_override("h_separation", is_playtest ? (6 * ui_scale) : 0);
-	p_button->set_custom_minimum_size(Size2(btn_side, 32 * p_int_scale + margin_v * 2));
+	p_button->add_theme_constant_override("h_separation", playtest_has_txt ? (6 * ui_scale) : 0);
+	p_button->set_custom_minimum_size(Size2(btn_side, btn_side));
 }
 
 Button *ClockGearsTopBar::_make_icon_button(HBoxContainer *p_parent, const Ref<Texture2D> &p_icon, const String &p_tooltip, const Callable &p_action, const Ref<Theme> &p_editor_theme, int p_int_scale) {
@@ -229,11 +253,13 @@ Button *ClockGearsTopBar::_make_icon_toggle_button(HBoxContainer *p_parent, cons
 }
 
 Control *ClockGearsTopBar::_make_group_separator(int p_int_scale) const {
+	const int ui_scale = _get_ui_scale_int();
 	MarginContainer *sep_wrap = memnew(MarginContainer);
 	sep_wrap->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	sep_wrap->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	sep_wrap->add_theme_constant_override("margin_left", 0);
-	sep_wrap->add_theme_constant_override("margin_right", 0);
+	// 8 px de margen exacto a cada lado de los separadores
+	sep_wrap->add_theme_constant_override("margin_left", 8 * ui_scale);
+	sep_wrap->add_theme_constant_override("margin_right", 8 * ui_scale);
 	sep_wrap->add_theme_constant_override("margin_top", 6 * p_int_scale);
 	sep_wrap->add_theme_constant_override("margin_bottom", 6 * p_int_scale);
 
@@ -244,72 +270,158 @@ Control *ClockGearsTopBar::_make_group_separator(int p_int_scale) const {
 	ColorRect *line = memnew(ColorRect);
 	line->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	line->set_color(tk.border_subtle);
-	line->set_custom_minimum_size(Size2(MAX(1, p_int_scale), 0));
+	line->set_custom_minimum_size(Size2(MAX(1, ui_scale), 0));
 	line->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	sep_wrap->add_child(line);
 	return sep_wrap;
 }
 
 void ClockGearsTopBar::_relayout_rows() {
-	if (!row1_box || !row2_box || all_groups.is_empty()) {
+	if (!row1_box || all_groups.is_empty()) {
 		return;
 	}
 
 	const int ui_scale = _get_ui_scale_int();
-	const float row_sep = float(4 * ui_scale);
+	const int int_scale = ClockGearsIcons::get_editor_icon_scale(this);
 	const float avail_width = get_size().x - bar_h_padding;
+	Ref<Theme> editor_theme = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_theme() : Ref<Theme>();
 
-	if (playtest_btn) {
-		const String want_txt = (avail_width <= 0.0f || avail_width >= float(1300 * ui_scale)) ? CG_TR("Probar (F5)") : String();
-		if (playtest_btn->get_text() != want_txt) {
-			playtest_btn->set_text(want_txt);
-			playtest_btn->set_icon_alignment(want_txt.is_empty() ? HORIZONTAL_ALIGNMENT_CENTER : HORIZONTAL_ALIGNMENT_LEFT);
-		}
-	}
-
-	float single_row_width = 0.0f;
-	for (int i = 0; i < all_groups.size(); i++) {
-		if (i > 0) {
-			single_row_width += row_sep;
-			if (i - 1 < all_separators.size()) {
-				single_row_width += all_separators[i - 1]->get_combined_minimum_size().x + row_sep;
+	auto sum_prefix_width = [&](int p_group_count) -> float {
+		float w = 0.0f;
+		for (int i = 0; i < p_group_count; i++) {
+			if (i > 0 && i - 1 < all_separators.size() && all_separators[i - 1]) {
+				w += all_separators[i - 1]->get_combined_minimum_size().x;
+			}
+			if (all_groups[i]) {
+				w += all_groups[i]->get_combined_minimum_size().x;
 			}
 		}
-		single_row_width += all_groups[i]->get_combined_minimum_size().x;
+		return w;
+	};
+
+	auto set_playtest_label = [&](bool p_show_text) {
+		if (!playtest_btn) {
+			return;
+		}
+		const String want_txt = p_show_text ? CG_TR("Probar (F5)") : String();
+		if (playtest_btn->get_text() != want_txt) {
+			playtest_btn->set_text(want_txt);
+			playtest_btn->set_icon_alignment(p_show_text ? HORIZONTAL_ALIGNMENT_LEFT : HORIZONTAL_ALIGNMENT_CENTER);
+			_apply_toolbar_button_style(playtest_btn, editor_theme, int_scale);
+		}
+	};
+
+	// 1. Si no tiene tamaño aún o cabe con "Probar (F5)" en texto completo, mostrar todos en 1 fila.
+	bool show_pt_text = false;
+	int first_overflow = int(all_groups.size());
+	if (avail_width <= 0.0f) {
+		show_pt_text = true;
+		set_playtest_label(true);
+		first_overflow = int(all_groups.size());
+	} else {
+		set_playtest_label(true);
+		const float w_with_txt = sum_prefix_width(int(all_groups.size()));
+		if (w_with_txt <= avail_width + 0.5f) {
+			show_pt_text = true;
+			first_overflow = int(all_groups.size());
+		} else {
+			set_playtest_label(false);
+			const float w_icons_only = sum_prefix_width(int(all_groups.size()));
+			if (w_icons_only <= avail_width + 0.5f) {
+				show_pt_text = false;
+				first_overflow = int(all_groups.size());
+			} else {
+				// Pantalla estrecha (p. ej. 960x540): NUNCA envolver en 2 filas; mandar últimos grupos al menú "»".
+				show_pt_text = false;
+				const float ov_reserve = (overflow_btn ? overflow_btn->get_combined_minimum_size().x : float(30 * ui_scale)) + float(8 * ui_scale);
+				float used = 0.0f;
+				int fitted = 0;
+				for (int i = 0; i < all_groups.size(); i++) {
+					const float sep_w = (i > 0 && i - 1 < all_separators.size() && all_separators[i - 1]) ? all_separators[i - 1]->get_combined_minimum_size().x : 0.0f;
+					const float grp_w = all_groups[i] ? all_groups[i]->get_combined_minimum_size().x : 0.0f;
+					if (i == 0 || (used + sep_w + grp_w + ov_reserve) <= avail_width + 0.5f) {
+						used += sep_w + grp_w;
+						fitted = i + 1;
+					} else {
+						break;
+					}
+				}
+				first_overflow = MAX(1, fitted);
+			}
+		}
 	}
 
-	const int want_state = (avail_width <= 0.0f || avail_width + 0.5f < single_row_width) ? 1 : 0;
-	if (want_state == last_two_row_state) {
+	const int pt_state = show_pt_text ? 1 : 0;
+	if (first_overflow == last_overflow_start && pt_state == last_playtest_txt_state) {
 		return;
 	}
-	last_two_row_state = want_state;
-	const bool need_two_rows = (want_state == 1);
+	last_overflow_start = first_overflow;
+	last_playtest_txt_state = pt_state;
+	visible_group_count = first_overflow;
 
 	for (int i = 0; i < all_groups.size(); i++) {
-		Node *p = all_groups[i]->get_parent();
-		if (p) {
-			p->remove_child(all_groups[i]);
+		const bool vis = (i < first_overflow);
+		if (all_groups[i]) {
+			all_groups[i]->set_visible(vis);
 		}
-	}
-	for (int i = 0; i < all_separators.size(); i++) {
-		Node *p = all_separators[i]->get_parent();
-		if (p) {
-			p->remove_child(all_separators[i]);
+		if (i > 0 && i - 1 < all_separators.size() && all_separators[i - 1]) {
+			all_separators[i - 1]->set_visible(vis);
 		}
 	}
 
-	for (int i = 0; i < all_groups.size(); i++) {
-		const bool on_second_row = need_two_rows && i >= split_group_index;
-		HBoxContainer *target = on_second_row ? row2_box : row1_box;
-
-		const bool is_first_in_row = on_second_row ? (i == split_group_index) : (i == 0);
-		if (!is_first_in_row && i - 1 >= 0 && i - 1 < all_separators.size()) {
-			target->add_child(all_separators[i - 1]);
-		}
-		target->add_child(all_groups[i]);
+	const bool has_overflow = (first_overflow < int(all_groups.size()));
+	if (overflow_spacer) {
+		overflow_spacer->set_visible(has_overflow);
 	}
-
-	row2_box->set_visible(need_two_rows);
+	if (overflow_btn) {
+		overflow_btn->set_visible(has_overflow);
+	}
+	if (overflow_popup) {
+		overflow_popup->clear();
+		overflow_item_buttons.clear();
+		if (has_overflow) {
+			overflow_popup->add_theme_constant_override("icon_max_width", 20 * ui_scale);
+			for (int gi = first_overflow; gi < all_groups.size(); gi++) {
+				HBoxContainer *g = all_groups[gi];
+				if (!g) {
+					continue;
+				}
+				if (gi > first_overflow) {
+					overflow_popup->add_separator((gi < group_names.size()) ? group_names[gi] : String());
+				} else if (gi < group_names.size() && !group_names[gi].is_empty()) {
+					overflow_popup->add_separator(group_names[gi]);
+				}
+				for (int bi = 0; bi < g->get_child_count(); bi++) {
+					Button *b = Object::cast_to<Button>(g->get_child(bi));
+					if (!b) {
+						continue;
+					}
+					const int item_id = overflow_item_buttons.size();
+					String label = b->get_text().strip_edges();
+					if (label.is_empty()) {
+						label = b->get_tooltip_text().strip_edges();
+					}
+					if (label.is_empty()) {
+						label = CG_TR("Herramienta");
+					}
+					if (b->is_toggle_mode()) {
+						overflow_popup->add_check_item(label, item_id);
+						overflow_popup->set_item_checked(overflow_popup->get_item_index(item_id), b->is_pressed());
+					} else {
+						overflow_popup->add_item(label, item_id);
+					}
+					const int idx = overflow_popup->get_item_index(item_id);
+					if (idx >= 0) {
+						if (b->get_button_icon().is_valid()) {
+							overflow_popup->set_item_icon(idx, b->get_button_icon());
+						}
+						overflow_popup->set_item_disabled(idx, b->is_disabled());
+					}
+					overflow_item_buttons.push_back(b);
+				}
+			}
+		}
+	}
 }
 
 void ClockGearsTopBar::_refresh_icon_scale() {
@@ -341,16 +453,17 @@ void ClockGearsTopBar::_refresh_icon_scale() {
 		}
 		entry.button->set_button_icon(resolved_icon);
 		if (entry.button == playtest_btn) {
-			const float avail_w = get_size().x - bar_h_padding;
-			const String pt_txt = (avail_w <= 0.0f || avail_w >= float(1300 * _get_ui_scale_int())) ? CG_TR("Probar (F5)") : String();
-			entry.button->set_text(pt_txt);
-			entry.button->set_icon_alignment(pt_txt.is_empty() ? HORIZONTAL_ALIGNMENT_CENTER : HORIZONTAL_ALIGNMENT_LEFT);
+			// El texto "Probar (F5)" se decide en _relayout_rows() según el ancho disponible en 1 fila.
+			entry.button->set_icon_alignment(entry.button->get_text().is_empty() ? HORIZONTAL_ALIGNMENT_CENTER : HORIZONTAL_ALIGNMENT_LEFT);
 		} else if (resolved_icon.is_null() && !entry.fallback_text.is_empty()) {
 			entry.button->set_text(entry.fallback_text);
 		} else {
 			entry.button->set_text(String());
 		}
 		_apply_toolbar_button_style(entry.button, editor_theme, icon_scale);
+	}
+	if (overflow_btn) {
+		_apply_toolbar_button_style(overflow_btn, editor_theme, icon_scale);
 	}
 	const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
 	const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
@@ -362,9 +475,10 @@ void ClockGearsTopBar::_refresh_icon_scale() {
 			}
 		}
 	}
-	last_two_row_state = -1;
+	last_overflow_start = -1;
+	last_playtest_txt_state = -1;
 	last_layout_width = -1.0f;
-	call_deferred("_relayout_rows");
+	_relayout_rows();
 }
 
 void ClockGearsTopBar::_on_editor_settings_changed() {
@@ -667,6 +781,50 @@ void ClockGearsTopBar::set_dialogs(ClockGearsDatabaseDialog *p_db, ClockGearsEve
 	export_dialog = p_exp;
 }
 
+void ClockGearsTopBar::_on_overflow_about_to_popup() {
+	if (!overflow_popup) {
+		return;
+	}
+	for (int id = 0; id < overflow_item_buttons.size(); id++) {
+		Button *b = overflow_item_buttons[id];
+		if (!b) {
+			continue;
+		}
+		const int idx = overflow_popup->get_item_index(id);
+		if (idx < 0) {
+			continue;
+		}
+		if (b->is_toggle_mode()) {
+			overflow_popup->set_item_checked(idx, b->is_pressed());
+		}
+		overflow_popup->set_item_disabled(idx, b->is_disabled());
+	}
+}
+
+void ClockGearsTopBar::_on_overflow_id_pressed(int p_id) {
+	if (p_id < 0 || p_id >= overflow_item_buttons.size()) {
+		return;
+	}
+	Button *b = overflow_item_buttons[p_id];
+	if (!b || b->is_disabled()) {
+		return;
+	}
+	if (b == folders_btn && folders_popup && overflow_btn) {
+		const Rect2 r = overflow_btn->get_screen_rect();
+		folders_popup->set_position(Vector2i(int(r.position.x), int(r.position.y + r.size.y)));
+		folders_popup->popup();
+		return;
+	}
+	if (b->is_toggle_mode()) {
+		if (b->get_button_group().is_valid()) {
+			b->set_pressed(true);
+		} else {
+			b->set_pressed(!b->is_pressed());
+		}
+	}
+	b->emit_signal(SceneStringName(pressed));
+}
+
 void ClockGearsTopBar::_apply_bar_container_style() {
 	if (applying_bar_style) {
 		return;
@@ -674,7 +832,7 @@ void ClockGearsTopBar::_apply_bar_container_style() {
 	applying_bar_style = true;
 	const int ui_scale = _get_ui_scale_int();
 	set_meta("_cg_theme_managed_container", true);
-	add_theme_style_override(SceneStringName(panel), ClockGearsTheme::make_container_stylebox(float(ui_scale), 6, 3, 1));
+	add_theme_style_override(SceneStringName(panel), ClockGearsTheme::make_container_stylebox(float(ui_scale), 6, 2, 1));
 	bar_h_padding = float(12 * ui_scale + 2);
 	applying_bar_style = false;
 }
@@ -688,39 +846,29 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	last_icon_scale = int_scale;
 
 	_apply_bar_container_style();
+	set_custom_minimum_size(Size2(0, 44 * ui_scale));
+	set_clip_contents(true);
 
-	Ref<StyleBoxEmpty> scroll_empty;
-	scroll_empty.instantiate();
-
-	scroll_container = memnew(ScrollContainer);
-	scroll_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	scroll_container->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
-	scroll_container->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
-	scroll_container->set_follow_focus(false);
-	scroll_container->add_theme_style_override(SceneStringName(panel), scroll_empty);
-	add_child(scroll_container);
-
-	rows_vbox = memnew(VBoxContainer);
-	rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	rows_vbox->add_theme_constant_override("separation", 4 * ui_scale);
-	scroll_container->add_child(rows_vbox);
+	clip_host = memnew(Control);
+	clip_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	clip_host->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	clip_host->set_custom_minimum_size(Size2(0, 40 * ui_scale));
+	clip_host->set_clip_contents(true);
+	clip_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	add_child(clip_host);
 
 	row1_box = memnew(HBoxContainer);
-	row1_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	row1_box->add_theme_constant_override("separation", 4 * ui_scale);
-	rows_vbox->add_child(row1_box);
-
-	row2_box = memnew(HBoxContainer);
-	row2_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	row2_box->add_theme_constant_override("separation", 4 * ui_scale);
-	rows_vbox->add_child(row2_box);
+	row1_box->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	row1_box->add_theme_constant_override("separation", 0);
+	clip_host->add_child(row1_box);
 
 	EditorNode *en = EditorNode::get_singleton();
 	Ref<Theme> editor_theme = en ? en->get_editor_theme() : Ref<Theme>();
-	const auto make_group = [ui_scale, this]() -> HBoxContainer * {
+	const auto make_group = [ui_scale, this](const String &p_group_name) -> HBoxContainer * {
 		HBoxContainer *g = memnew(HBoxContainer);
-		g->add_theme_constant_override("separation", 4 * ui_scale);
+		g->add_theme_constant_override("separation", 2 * ui_scale);
 		all_groups.push_back(g);
+		group_names.push_back(p_group_name);
 		return g;
 	};
 	const auto track_png = [this](Button *p_btn, const String &p_png, const String &p_fallback_txt = String(), const String &p_cg_fallback = String(), const String &p_svg_fallback = String()) -> Button * {
@@ -751,7 +899,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	// ------------------------------------------------------------------
 	// Fila 1 (en 2 filas) - Grupo 0: Archivo
 	// ------------------------------------------------------------------
-	HBoxContainer *grp_file = make_group();
+	HBoxContainer *grp_file = make_group(CG_TR("Archivo"));
 	track_png(_make_icon_button(grp_file, _get_png_icon("nuevo_mapa_icono", int_scale), CG_TR("Nuevo Mapa (Ctrl+N)"), en ? callable_mp(en, &EditorNode::clockgears_new_scene) : Callable(), editor_theme, int_scale), "nuevo_mapa_icono");
 	track_png(_make_icon_button(grp_file, _get_png_icon("abrir_mapa_icono", int_scale), CG_TR("Abrir Mapa (Ctrl+O)"), en ? callable_mp(en, &EditorNode::clockgears_open_scene) : Callable(), editor_theme, int_scale), "abrir_mapa_icono");
 	track_png(_make_icon_button(grp_file, _get_png_icon("guardar_proyecto_icono", int_scale), CG_TR("Guardar (Ctrl+S)"), en ? callable_mp(en, &EditorNode::clockgears_save_scene) : Callable(), editor_theme, int_scale), "guardar_proyecto_icono");
@@ -801,7 +949,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	// ------------------------------------------------------------------
 	// Fila 1 (en 2 filas) - Grupo 1: Edición e historial
 	// ------------------------------------------------------------------
-	HBoxContainer *grp_edit = make_group();
+	HBoxContainer *grp_edit = make_group(CG_TR("Edición"));
 	track_png(_make_icon_button(grp_edit, _get_png_icon("cortar", int_scale, "cut"), CG_TR("Cortar (Ctrl+X)"), callable_mp(this, &ClockGearsTopBar::_on_cut_pressed), editor_theme, int_scale), "cortar", CG_TR("Cort."), "cut");
 	track_png(_make_icon_button(grp_edit, _get_png_icon("copiar", int_scale, "copy"), CG_TR("Copiar (Ctrl+C)"), callable_mp(this, &ClockGearsTopBar::_on_copy_pressed), editor_theme, int_scale), "copiar", CG_TR("Cop."), "copy");
 	track_png(_make_icon_button(grp_edit, _get_png_icon("pegar", int_scale, "paste"), CG_TR("Pegar (Ctrl+V)"), callable_mp(this, &ClockGearsTopBar::_on_paste_pressed), editor_theme, int_scale), "pegar", CG_TR("Peg."), "paste");
@@ -811,7 +959,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	// ------------------------------------------------------------------
 	// Fila 1 (en 2 filas) - Grupo 2: Base de Datos y Modos
 	// ------------------------------------------------------------------
-	HBoxContainer *grp_db_modes = make_group();
+	HBoxContainer *grp_db_modes = make_group(CG_TR("Base de Datos y Modos"));
 	database_btn = track_png(_make_icon_button(grp_db_modes, _get_png_icon("database_icon_mainmenu", int_scale), CG_TR("Base de Datos - RPG Maker Paradigm (F9)"), callable_mp(this, &ClockGearsTopBar::_on_database_pressed), editor_theme, int_scale), "database_icon_mainmenu");
 
 	Ref<ButtonGroup> mode_group;
@@ -826,7 +974,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	// ------------------------------------------------------------------
 	// Fila 1 (en 2 filas) - Grupo 3: Capas (1..4, A, R)
 	// ------------------------------------------------------------------
-	HBoxContainer *grp_layers = make_group();
+	HBoxContainer *grp_layers = make_group(CG_TR("Capas"));
 	Ref<ButtonGroup> layer_group;
 	layer_group.instantiate();
 	const char *layer_icons[6] = { "capa1_icono", "capa2_icono", "capa3_icono", "capa4_icono", "capa_auto_icono", "capa_r_icono" };
@@ -839,14 +987,12 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	sync_active_layer_display();
 
 	// ------------------------------------------------------------------
-	// Fila 2 (en 2 filas) - Grupos 4 y 5: Herramientas (dibujo y mapa)
+	// Grupos 4 y 5: Herramientas (dibujo y selección)
 	// ------------------------------------------------------------------
-	split_group_index = all_groups.size(); // 4: a partir de aqui pasan a fila 2 cuando no cabe todo en 1 fila
-
 	Ref<ButtonGroup> tool_group;
 	tool_group.instantiate();
 
-	HBoxContainer *grp_tools_draw = make_group();
+	HBoxContainer *grp_tools_draw = make_group(CG_TR("Dibujo"));
 	tool_buttons[0] = track_png(_make_icon_toggle_button(grp_tools_draw, _get_png_icon("lapiz_icono", int_scale), CG_TR("Lápiz (Individual o Bloque)"), tool_group, editor_theme, int_scale), "lapiz_icono");
 	tool_buttons[1] = track_png(_make_icon_toggle_button(grp_tools_draw, _get_png_icon("rectangulo_icono", int_scale), CG_TR("Rectángulo"), tool_group, editor_theme, int_scale), "rectangulo_icono");
 	tool_buttons[2] = track_png(_make_icon_toggle_button(grp_tools_draw, _get_png_icon("elipse_icono", int_scale), CG_TR("Elipse"), tool_group, editor_theme, int_scale), "elipse_icono");
@@ -857,7 +1003,7 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	}
 	tool_buttons[4] = track_png(_make_icon_toggle_button(grp_tools_draw, shadow_ic, CG_TR("Pincel de Sombra"), tool_group, editor_theme, int_scale), "pincel_de_sombra", String(), String(), CLOCKGEARS_SHADOW_SVG);
 
-	HBoxContainer *grp_tools_map = make_group();
+	HBoxContainer *grp_tools_map = make_group(CG_TR("Selección y Mapa"));
 	tool_buttons[5] = track_svg(_make_icon_toggle_button(grp_tools_map, _make_svg_icon(CLOCKGEARS_SELECT_SVG, int_scale), CG_TR("Selección Rectangular (Ctrl+C / Ctrl+V / Supr)"), tool_group, editor_theme, int_scale), CLOCKGEARS_SELECT_SVG);
 	tool_buttons[6] = track_png(_make_icon_toggle_button(grp_tools_map, _get_png_icon("posicion_jugador", int_scale), CG_TR("Posición Inicial del Jugador (Clic para colocar / Clic repetido para rotar dirección)"), tool_group, editor_theme, int_scale), "posicion_jugador");
 	tool_buttons[7] = track_png(_make_icon_toggle_button(grp_tools_map, _get_png_icon("goma_borrar", int_scale), CG_TR("Goma de Borrar (Eliminar tiles con clic o arrastre)"), tool_group, editor_theme, int_scale), "goma_borrar");
@@ -868,21 +1014,46 @@ ClockGearsTopBar::ClockGearsTopBar() {
 	tool_buttons[0]->set_pressed(true);
 
 	// ------------------------------------------------------------------
-	// Fila 2 (en 2 filas) - Grupos 6 y 7: Zoom y Ejecutar
+	// Grupos 6 y 7: Zoom y Ejecutar
 	// ------------------------------------------------------------------
-	HBoxContainer *grp_zoom = make_group();
+	HBoxContainer *grp_zoom = make_group(CG_TR("Zoom"));
 	track_png(_make_icon_button(grp_zoom, _get_png_icon("zoom_icono", int_scale), CG_TR("Acercar Zoom"), callable_mp(this, &ClockGearsTopBar::_on_zoom_in_pressed), editor_theme, int_scale), "zoom_icono");
 	track_png(_make_icon_button(grp_zoom, _get_png_icon("alejar_icono", int_scale), CG_TR("Alejar Zoom"), callable_mp(this, &ClockGearsTopBar::_on_zoom_out_pressed), editor_theme, int_scale), "alejar_icono");
 
-	HBoxContainer *grp_play = make_group();
+	HBoxContainer *grp_play = make_group(CG_TR("Ejecutar"));
 	playtest_btn = track_png(_make_icon_button(grp_play, _get_png_icon("test_game", int_scale), CG_TR("Probar Juego (Playtest F5)"), callable_mp(this, &ClockGearsTopBar::_on_playtest_pressed), editor_theme, int_scale), "test_game");
 	playtest_btn->set_text(CG_TR("Probar (F5)"));
 	playtest_btn->set_icon_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 	_apply_toolbar_button_style(playtest_btn, editor_theme, int_scale);
 
-	for (int i = 0; i < all_groups.size() - 1; i++) {
-		all_separators.push_back(_make_group_separator(ui_scale));
+	for (int i = 0; i < all_groups.size(); i++) {
+		if (i > 0) {
+			Control *sep = _make_group_separator(ui_scale);
+			all_separators.push_back(sep);
+			row1_box->add_child(sep);
+		}
+		row1_box->add_child(all_groups[i]);
 	}
+
+	overflow_spacer = memnew(Control);
+	overflow_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	overflow_spacer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	overflow_spacer->hide();
+	row1_box->add_child(overflow_spacer);
+
+	overflow_btn = memnew(MenuButton);
+	overflow_btn->set_flat(false);
+	overflow_btn->set_text(String::utf8("»"));
+	overflow_btn->set_tooltip_text(CG_TR("Más herramientas..."));
+	overflow_btn->set_focus_mode(Control::FOCUS_NONE);
+	overflow_btn->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	_apply_toolbar_button_style(overflow_btn, editor_theme, int_scale);
+	overflow_btn->hide();
+	row1_box->add_child(overflow_btn);
+
+	overflow_popup = overflow_btn->get_popup();
+	overflow_popup->connect("about_to_popup", callable_mp(this, &ClockGearsTopBar::_on_overflow_about_to_popup));
+	overflow_popup->connect("id_pressed", callable_mp(this, &ClockGearsTopBar::_on_overflow_id_pressed));
 
 	_relayout_rows();
 }
