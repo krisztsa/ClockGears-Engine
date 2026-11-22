@@ -1816,6 +1816,7 @@ bool ClockGearsGameMenu::open_subscreen(const String &p_id) {
 		if (confirm_title_panel) confirm_title_panel->set_visible(false);
 		custom_ui_layer->set_window_type_fallback("game_menu");
 		custom_ui_layer->set_preview_mode(preview_mode);
+		custom_ui_layer->set_use_editor_test_data(dm && dm->get_editor_test_data_count() >= 0);
 		custom_ui_layer->clear_disabled_actions();
 		if (!custom_ui_layer->is_visible()) {
 			custom_ui_layer->capture_backdrop_from_viewport();

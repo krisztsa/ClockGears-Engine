@@ -87,6 +87,8 @@ public:
 		String visibility_switch;
 		bool visible = true;
 		bool disabled = false;
+		int quantity = 0;
+		bool is_empty = false;
 		String shape;
 		String image_normal;
 		String image_hover;
@@ -158,6 +160,7 @@ public:
 	Dictionary get_selected_slot_info() const;
 	Dictionary get_radial_layout_config() const { return layout_cfg.duplicate(true); }
 	Dictionary get_radial_slot_visual_config(int p_index) const;
+	virtual String get_tooltip(const Point2 &p_pos) const override;
 
 	ClockGearsRadialCanvas();
 };

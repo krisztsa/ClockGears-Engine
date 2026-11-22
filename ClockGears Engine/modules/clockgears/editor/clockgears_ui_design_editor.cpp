@@ -990,6 +990,13 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					next_elem["height"] = nh;
 					next_elem["offset_x"] = CLAMP(nox, -ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_W);
 					next_elem["offset_y"] = CLAMP(noy, -ClockGearsUiDesignEditor::BASE_H, ClockGearsUiDesignEditor::BASE_H);
+					if (String(next_elem.get("type", "")).strip_edges().to_lower() == "radial") {
+						Dictionary rlay = (next_elem.has("layout") && next_elem["layout"].get_type() == Variant::DICTIONARY)
+								? Dictionary(next_elem["layout"]).duplicate(true)
+								: Dictionary();
+						rlay["radial_radius"] = CLAMP(int(Math::round(float(MIN(nw, nh)) * 0.36f)), 32, 240);
+						next_elem["layout"] = rlay;
+					}
 				}
 
 				if (int(next_elem["offset_x"]) != ox0 || int(next_elem["offset_y"]) != oy0 ||
@@ -6517,10 +6524,16 @@ void ClockGearsUiDesignEditor::_refresh_layers_list() {
 				bool locked = bool(e.get("locked", false));
 				bool collapsed = bool(e.get("collapsed", false));
 				Array vslots;
-				if (etype == "radial" || etype == "container") {
+				bool has_real_children = (children.has(eid) && !children[eid].is_empty());
+				if (etype == "container" || (etype == "radial" && !has_real_children)) {
 					vslots = s_collect_virtual_slot_dicts(dm, sid, e);
+				} else if (etype == "radial") {
+					String rad_ds = ClockGearsDataManager::normalize_ui_data_source(e.get("data_source", "manual"));
+					if (rad_ds != "manual") {
+						vslots = s_collect_virtual_slot_dicts(dm, sid, e);
+					}
 				}
-				bool has_kids = (children.has(eid) && !children[eid].is_empty()) || !vslots.is_empty();
+				bool has_kids = has_real_children || !vslots.is_empty();
 
 				ClockGearsDesignCardRow *row = memnew(ClockGearsDesignCardRow);
 				box->add_child(row);
@@ -6530,7 +6543,7 @@ void ClockGearsUiDesignEditor::_refresh_layers_list() {
 				r_order.push_back(eid);
 
 				if (!collapsed) {
-					if (children.has(eid) && !children[eid].is_empty()) {
+					if (has_real_children && !(etype == "radial" && ClockGearsDataManager::normalize_ui_data_source(e.get("data_source", "manual")) != "manual")) {
 						run(ed, box, eid, depth + 1, by_id, children, r_rows, r_order, eye_on, eye_off, lock_on, lock_off);
 					}
 					if (!vslots.is_empty()) {
@@ -12426,6 +12439,85 @@ void ClockGearsUiDesignEditor::_on_ss_title_changed() {
 	emit_signal("design_modified");
 }
 
+static void s_sync_ss_entries_to_design(ClockGearsUiDesignEditor *p_ed, ClockGearsDataManager *p_dm, bool p_is_game_menu, const Array &p_entries) {
+	if (!p_dm) {
+		return;
+	}
+	String sid = p_is_game_menu ? String("game_menu_main") : String("title");
+	if (!p_dm->has_custom_ui_design(sid)) {
+		return;
+	}
+	Dictionary d = p_dm->get_ui_screen_design(sid);
+	Array els = d.has("elements") && d["elements"].get_type() == Variant::ARRAY ? Array(d["elements"]).duplicate(true) : Array();
+	if (els.is_empty()) {
+		return;
+	}
+	HashMap<String, Dictionary> entry_map;
+	HashMap<String, int> order_map;
+	for (int i = 0; i < p_entries.size(); i++) {
+		if (p_entries[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = p_entries[i];
+		String eid = String(e.get("id", "")).strip_edges().to_lower();
+		if (!eid.is_empty()) {
+			entry_map[eid] = e;
+			order_map[eid] = i;
+		}
+	}
+	bool changed = false;
+	for (int i = 0; i < els.size(); i++) {
+		if (els[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary el = els[i];
+		if (String(el.get("type", "")).to_lower() != "button") continue;
+		String act = String(el.get("action", "")).strip_edges().to_lower();
+		String el_id = String(el.get("id", "")).strip_edges().to_lower();
+		String key;
+		if (entry_map.has(act)) {
+			key = act;
+		} else if (el_id.begins_with("menu_btn_") && entry_map.has(el_id.substr(9))) {
+			key = el_id.substr(9);
+		} else if (el_id.begins_with("btn_") && entry_map.has(el_id.substr(4))) {
+			key = el_id.substr(4);
+		}
+		if (key.is_empty()) continue;
+		Dictionary src = entry_map[key];
+		bool en = bool(src.get("enabled", true));
+		String txt = String(src.get("text", el.get("text", "")));
+		el["visible"] = en;
+		el["visibility_mode"] = en ? String("always") : String("never");
+		el["text"] = txt;
+		el["name"] = txt;
+		el["focus_order"] = order_map[key];
+		if (String(el.get("role", "")) == "radial_slot") {
+			el["slot_index"] = order_map[key];
+		}
+		els[i] = el;
+		changed = true;
+	}
+	if (changed) {
+		// Reordenar botones de radial / menu_btn_* según p_entries cuando corresponda
+		for (int i = 0; i < els.size(); i++) {
+			if (els[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary a = els[i];
+			if (String(a.get("role", "")) != "radial_slot") continue;
+			for (int j = i + 1; j < els.size(); j++) {
+				if (els[j].get_type() != Variant::DICTIONARY) continue;
+				Dictionary b = els[j];
+				if (String(b.get("role", "")) != "radial_slot" || String(b.get("parent_id", "")) != String(a.get("parent_id", ""))) continue;
+				if (int(b.get("slot_index", 0)) < int(a.get("slot_index", 0))) {
+					els[i] = b;
+					els[j] = a;
+					a = b;
+				}
+			}
+		}
+		d["elements"] = els;
+		p_dm->set_ui_screen_design(sid, d, false);
+		if (p_ed) {
+			p_ed->refresh_from_data_manager();
+		}
+	}
+}
+
 void ClockGearsUiDesignEditor::_on_ss_entry_toggled(bool p_enabled, const String &p_entry_id, bool p_is_game_menu) {
 	if (updating_ui) return;
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -12443,6 +12535,7 @@ void ClockGearsUiDesignEditor::_on_ss_entry_toggled(bool p_enabled, const String
 	cfg["entries"] = entries;
 	if (p_is_game_menu) dm->set_game_menu_config(cfg);
 	else dm->set_title_menu_config(cfg);
+	s_sync_ss_entries_to_design(this, dm, p_is_game_menu, entries);
 	_refresh_canvas_stage();
 	emit_signal("design_modified");
 }
@@ -12464,6 +12557,7 @@ void ClockGearsUiDesignEditor::_on_ss_entry_text_changed(const String &p_text, c
 	cfg["entries"] = entries;
 	if (p_is_game_menu) dm->set_game_menu_config(cfg);
 	else dm->set_title_menu_config(cfg);
+	s_sync_ss_entries_to_design(this, dm, p_is_game_menu, entries);
 	_refresh_canvas_stage();
 	emit_signal("design_modified");
 }
@@ -12494,6 +12588,7 @@ void ClockGearsUiDesignEditor::_on_ss_entry_move(const String &p_entry_id, int p
 	cfg["entries"] = entries;
 	if (p_is_game_menu) dm->set_game_menu_config(cfg);
 	else dm->set_title_menu_config(cfg);
+	s_sync_ss_entries_to_design(this, dm, p_is_game_menu, entries);
 	_refresh_screen_settings_panel();
 	_refresh_canvas_stage();
 	emit_signal("design_modified");
@@ -13446,7 +13541,7 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	rad_count_src_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(dist_radial_box, "Origen ranuras:", rad_count_src_opt);
 
-	make_spin(dist_radial_box, "Ranuras radial:", 3, 12, rad_count_spin);
+	make_spin(dist_radial_box, "Ranuras radial:", 1, 16, rad_count_spin);
 	make_spin(dist_radial_box, "Radio (px):", 48, 250, rad_radius_spin);
 	make_spin(dist_radial_box, String::utf8("Ángulo inicio:"), -360, 360, rad_start_spin);
 
@@ -14038,13 +14133,36 @@ void ClockGearsUiElementFloatingWindow::sync_from_element(const Dictionary &p_el
 	}
 
 	Dictionary lay = (p_elem.has("layout") && p_elem["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(p_elem["layout"]) : Dictionary();
-	bool is_rad = (tp == "radial") || (tp == "slot" && String(p_elem.get("_slot_parent_type", "")) == "radial");
+	ClockGearsDataManager *dm_fw = ClockGearsDataManager::get_singleton();
+	bool is_rad_btn_child = false;
+	if (tp == "button" && dm_fw && !target_screen_id.is_empty()) {
+		String pid = String(p_elem.get("parent_id", "")).strip_edges();
+		if (!pid.is_empty()) {
+			Dictionary pel = dm_fw->get_ui_element(target_screen_id, pid);
+			if (String(pel.get("type", "")).strip_edges().to_lower() == "radial") {
+				is_rad_btn_child = true;
+			}
+		}
+	}
+	bool is_rad = (tp == "radial") || (tp == "slot" && String(p_elem.get("_slot_parent_type", "")) == "radial") || is_rad_btn_child;
 	bool is_cont = (tp == "container") || (tp == "slot" && String(p_elem.get("_slot_parent_type", "")) == "container");
 	if (dist_radial_box) dist_radial_box->set_visible(is_rad);
 	if (dist_grid_box) dist_grid_box->set_visible(is_cont || !is_rad);
 	if (rad_count_src_opt) s_select_option_meta(rad_count_src_opt, String(lay.get("radial_slot_count_source", "manual")));
 	Array rslots = (lay.has("radial_slots") && lay["radial_slots"].get_type() == Variant::ARRAY) ? Array(lay["radial_slots"]) : Array();
-	if (rad_count_spin) rad_count_spin->set_value(rslots.is_empty() ? 6 : rslots.size());
+	int child_btn_cnt = 0;
+	if (tp == "radial" && dm_fw && !target_screen_id.is_empty()) {
+		Array sc_els = dm_fw->get_ui_screen_elements(target_screen_id);
+		String tid_low = target_elem_id.to_lower();
+		for (int bi = 0; bi < sc_els.size(); bi++) {
+			if (sc_els[bi].get_type() != Variant::DICTIONARY) continue;
+			Dictionary bd = sc_els[bi];
+			if (String(bd.get("type", "")).to_lower() == "button" && String(bd.get("parent_id", "")).to_lower() == tid_low) {
+				child_btn_cnt++;
+			}
+		}
+	}
+	if (rad_count_spin) rad_count_spin->set_value(child_btn_cnt > 0 ? child_btn_cnt : (rslots.is_empty() ? 6 : rslots.size()));
 	if (rad_radius_spin) rad_radius_spin->set_value(int(lay.get("radial_radius", 128)));
 	if (rad_start_spin) rad_start_spin->set_value(float(lay.get("radial_start_angle_deg", -90.0)));
 	float rsweep = float(lay.get("radial_sweep_angle_deg", 360.0));
@@ -14100,7 +14218,7 @@ void ClockGearsUiElementFloatingWindow::sync_from_element(const Dictionary &p_el
 	if (el_empty_cnt_spin) el_empty_cnt_spin->set_value(int(p_elem.get("data_empty_count", 8)));
 	if (el_slot_action_opt) s_select_option_meta(el_slot_action_opt, String(p_elem.get("slot_action", "show_detail")));
 	if (el_create_tpl_btn) el_create_tpl_btn->set_visible(tp == "container");
-	if (el_apply_all_btn) el_apply_all_btn->set_visible(tp == "slot" || tp == "radial" || tp == "container");
+	if (el_apply_all_btn) el_apply_all_btn->set_visible(tp == "slot" || tp == "radial" || tp == "container" || is_rad_btn_child);
 
 	if (anim_type_opt) s_select_option_meta(anim_type_opt, String(lay.get("radial_open_anim", p_elem.get("open_anim", "radial_spin"))));
 	if (anim_dur_spin) anim_dur_spin->set_value(int(lay.get("radial_open_duration_ms", p_elem.get("open_duration_ms", 220))));
@@ -14264,13 +14382,23 @@ void ClockGearsUiElementFloatingWindow::_emit_commit() {
 	if (slot_en_mode_opt && slot_en_mode_opt->get_selected() >= 0) el["enabled_mode"] = String(slot_en_mode_opt->get_item_metadata(slot_en_mode_opt->get_selected()));
 	if (slot_en_sw_edit) el["enabled_switch"] = slot_en_sw_edit->get_text().strip_edges();
 
-	bool is_rad = (tp == "radial") || (tp == "slot" && String(el.get("_slot_parent_type", "")) == "radial");
-	if (tp == "radial" || tp == "container" || tp == "slot") {
+	bool is_rad_btn_child = false;
+	if (tp == "button" && ClockGearsDataManager::get_singleton() && !target_screen_id.is_empty()) {
+		String pid = String(el.get("parent_id", "")).strip_edges();
+		if (!pid.is_empty()) {
+			Dictionary pel = ClockGearsDataManager::get_singleton()->get_ui_element(target_screen_id, pid);
+			if (String(pel.get("type", "")).strip_edges().to_lower() == "radial") {
+				is_rad_btn_child = true;
+			}
+		}
+	}
+	bool is_rad = (tp == "radial") || (tp == "slot" && String(el.get("_slot_parent_type", "")) == "radial") || is_rad_btn_child;
+	if (tp == "radial" || tp == "container" || tp == "slot" || is_rad_btn_child) {
 		Dictionary lay = (el.has("layout") && el["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(el["layout"]).duplicate(true) : Dictionary();
 		if (is_rad) {
 			if (rad_count_src_opt && rad_count_src_opt->get_selected() >= 0) lay["radial_slot_count_source"] = String(rad_count_src_opt->get_item_metadata(rad_count_src_opt->get_selected()));
 			if (rad_count_spin && tp == "radial") {
-				int target_cnt = CLAMP(int(Math::round(rad_count_spin->get_value())), 3, 12);
+				int target_cnt = CLAMP(int(Math::round(rad_count_spin->get_value())), 1, 16);
 				Array cur_slots = (lay.has("radial_slots") && lay["radial_slots"].get_type() == Variant::ARRAY) ? Array(lay["radial_slots"]).duplicate(true) : Array();
 				if (cur_slots.size() != target_cnt) {
 					Array def_slots = ClockGearsDataManager::make_default_radial_slots(target_cnt, target_screen_id);
@@ -14279,6 +14407,63 @@ void ClockGearsUiElementFloatingWindow::_emit_commit() {
 						next_slots.push_back(i < cur_slots.size() ? cur_slots[i] : def_slots[i]);
 					}
 					lay["radial_slots"] = next_slots;
+				}
+				// Sincronizar también botones hijo reales cuando data_source es manual
+				String cur_ds = (el_data_source_opt && el_data_source_opt->get_selected() >= 0)
+						? String(el_data_source_opt->get_item_metadata(el_data_source_opt->get_selected()))
+						: String(el.get("data_source", "manual"));
+				if (ClockGearsDataManager::normalize_ui_data_source(cur_ds) == "manual") {
+					if (ClockGearsDataManager *dm_c = ClockGearsDataManager::get_singleton()) {
+						Dictionary sd_full = dm_c->get_ui_screen_design(target_screen_id);
+						Array sc_els = sd_full.has("elements") && sd_full["elements"].get_type() == Variant::ARRAY
+								? Array(sd_full["elements"]).duplicate(true)
+								: Array();
+						Vector<int> kid_indices;
+						String tid_low = target_elem_id.to_lower();
+						HashSet<String> used_ids;
+						for (int i = 0; i < sc_els.size(); i++) {
+							if (sc_els[i].get_type() != Variant::DICTIONARY) continue;
+							Dictionary kd = sc_els[i];
+							used_ids.insert(String(kd.get("id", "")));
+							if (String(kd.get("type", "")).to_lower() == "button" && String(kd.get("parent_id", "")).to_lower() == tid_low) {
+								kid_indices.push_back(i);
+							}
+						}
+						if (kid_indices.size() != target_cnt) {
+							if (kid_indices.size() > target_cnt) {
+								for (int r = kid_indices.size() - 1; r >= target_cnt; r--) {
+									sc_els.remove_at(kid_indices[r]);
+								}
+							} else {
+								Array def_s = ClockGearsDataManager::make_default_radial_slots(target_cnt, target_screen_id);
+								int base_l = int(el.get("layer_order", 1)) + 1;
+								for (int add_i = kid_indices.size(); add_i < target_cnt; add_i++) {
+									Dictionary sl = (add_i < def_s.size()) ? Dictionary(def_s[add_i]) : Dictionary();
+									Dictionary nb = dm_c->make_default_ui_element("button", target_screen_id);
+									String bid = target_elem_id + "_slot_" + itos(add_i + 1);
+									int suf = 2;
+									while (used_ids.has(bid)) {
+										bid = target_elem_id + "_slot_" + itos(add_i + 1) + "_" + itos(suf++);
+									}
+									used_ids.insert(bid);
+									nb["id"] = bid;
+									nb["parent_id"] = target_elem_id;
+									nb["role"] = "radial_slot";
+									nb["slot_index"] = add_i;
+									String ttl = String(sl.get("title", vformat("Ranura %d", add_i + 1)));
+									nb["name"] = ttl;
+									nb["text"] = ttl;
+									nb["action"] = String(sl.get("action", ""));
+									if (sl.has("actions")) nb["actions"] = Array(sl["actions"]).duplicate(true);
+									nb["layer_order"] = base_l + add_i;
+									nb["focus_order"] = add_i;
+									sc_els.push_back(nb);
+								}
+							}
+							sd_full["elements"] = sc_els;
+							dm_c->set_ui_screen_design(target_screen_id, sd_full, false);
+						}
+					}
 				}
 			}
 			if (rad_radius_spin) lay["radial_radius"] = int(Math::round(rad_radius_spin->get_value()));
@@ -14482,6 +14667,16 @@ void ClockGearsUiElementFloatingWindow::_on_apply_all_slots_pressed() {
 	String parent_id = target_elem_id;
 	int dummy_idx = -1;
 	bool is_vslot = s_parse_virtual_slot_id(target_elem_id, parent_id, dummy_idx);
+	Dictionary cur_w = owner_editor->get_effective_element(target_elem_id);
+	if (!is_vslot && String(cur_w.get("type", "")).to_lower() == "button") {
+		String pid = String(cur_w.get("parent_id", "")).strip_edges();
+		if (!pid.is_empty()) {
+			Dictionary pel = owner_editor->get_effective_element(pid);
+			if (String(pel.get("type", "")).strip_edges().to_lower() == "radial") {
+				parent_id = pid;
+			}
+		}
+	}
 	Dictionary parent_el = owner_editor->get_effective_element(parent_id);
 	if (parent_el.is_empty()) {
 		return;
@@ -14524,6 +14719,39 @@ void ClockGearsUiElementFloatingWindow::_on_apply_all_slots_pressed() {
 		}
 		lay["radial_slots"] = slots;
 		parent_el["layout"] = lay;
+		// Aplicar también a todos los botones hijo reales de esta rueda radial en el diseño
+		Dictionary sd_full = dm->get_ui_screen_design(target_screen_id);
+		Array sc_els = sd_full.has("elements") && sd_full["elements"].get_type() == Variant::ARRAY
+				? Array(sd_full["elements"]).duplicate(true)
+				: Array();
+		String pid_low = parent_id.to_lower();
+		bool any_btn_updated = false;
+		for (int bi = 0; bi < sc_els.size(); bi++) {
+			if (sc_els[bi].get_type() != Variant::DICTIONARY) continue;
+			Dictionary bd = Dictionary(sc_els[bi]).duplicate(true);
+			if (String(bd.get("type", "")).to_lower() == "button" && String(bd.get("parent_id", "")).to_lower() == pid_low) {
+				if (!slot_shape.is_empty()) {
+					Dictionary blay = (bd.has("layout") && bd["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(bd["layout"]).duplicate(true) : Dictionary();
+					blay["radial_slot_shape"] = slot_shape;
+					bd["layout"] = blay;
+				}
+				Dictionary bsh = ClockGearsDataManager::normalize_ui_shape(bd.get("shape", Dictionary()));
+				bsh["fill_color"] = fill_c;
+				bsh["border_color"] = border_c;
+				bd["shape"] = bsh;
+				bd["font_color"] = font_c;
+				bd["image_normal"] = img_n;
+				bd["image_hover"] = img_h;
+				bd["image_pressed"] = img_p;
+				bd["image_disabled"] = img_d;
+				sc_els[bi] = bd;
+				any_btn_updated = true;
+			}
+		}
+		if (any_btn_updated) {
+			sd_full["elements"] = sc_els;
+			dm->set_ui_screen_design(target_screen_id, sd_full, false);
+		}
 	} else if (ptype == "container") {
 		int cnt = MAX(1, MIN(32, int(parent_el.get("data_empty_count", 8))));
 		if (String(parent_el.get("data_source", "manual")) != "manual") {
