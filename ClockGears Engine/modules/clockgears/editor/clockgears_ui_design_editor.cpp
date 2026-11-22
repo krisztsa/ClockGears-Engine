@@ -1811,7 +1811,7 @@ ClockGearsUiDesignEditor::ClockGearsUiDesignEditor() {
 	set_name("UiDesignEditorPanel");
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	add_theme_constant_override("separation", int(10 * EDSCALE));
+	add_theme_constant_override("separation", int(6 * EDSCALE));
 	set_process_input(true);
 	set_process_shortcut_input(true);
 	_build_ui();
@@ -2092,11 +2092,13 @@ void ClockGearsUiDesignEditor::_refresh_theme_icons() {
 	};
 	assign_btn_icon(new_menu_wizard_btn, SNAME("New"), "ui_wizard");
 	assign_btn_icon(add_submenu_btn, SNAME("Window"), "ui_frame");
-	assign_btn_icon(add_button_bar_btn, SNAME("Button"), "ui_button");
 	assign_btn_icon(templates_btn, SNAME("FileList"), "ui_templates");
 	assign_btn_icon(undo_btn, SNAME("UndoRedo"), "ui_undo", true, "Deshacer");
 	assign_btn_icon(redo_btn, SNAME("Redo"), "ui_redo", true, "Rehacer");
-	assign_btn_icon(reset_btn, SNAME("Reload"), "ui_reset");
+	assign_btn_icon(reset_btn, SNAME("Reload"), "ui_reset", true, "Restaurar");
+	if (top_card) {
+		top_card->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 6, 4, 0));
+	}
 	assign_btn_icon(menu_restore_btn, SNAME("Reload"), "ui_reset");
 	assign_btn_icon(test_btn, SNAME("Play"), "ui_play");
 	assign_btn_icon(align_center_h_btn, SNAME("AlignHorizontalCenter"), "ui_align_ch", true, "H");
@@ -2517,36 +2519,51 @@ void ClockGearsUiDesignEditor::_register_prop_filter_row(Control *p_row, const S
 void ClockGearsUiDesignEditor::_build_ui() {
 	const float row_h = 32.0f * EDSCALE;
 
-	// --- Barra superior ÚNICA y FIJA agrupada por separadores ---
-	PanelContainer *top_card = memnew(PanelContainer);
+	// --- Barra superior COMPACTA (máx. 2 filas a 1366x768 = <=96 px; 1 fila desde 1920 px = <=48 px) ---
+	top_card = memnew(PanelContainer);
 	top_card->set_name("UiDesignerTopBarCard");
-	top_card->set_theme_type_variation("ClockGearsContainer");
+	top_card->set_meta("_cg_theme_managed_container", true);
+	top_card->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 6, 4, 0));
 	top_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	top_card->set_v_size_flags(Control::SIZE_SHRINK_BEGIN);
 	top_card->set_clip_contents(false);
 	add_child(top_card);
 
-	HFlowContainer *top_flow = memnew(HFlowContainer);
-	top_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	top_flow->add_theme_constant_override("h_separation", int(8 * EDSCALE));
-	top_flow->add_theme_constant_override("v_separation", int(6 * EDSCALE));
-	top_card->add_child(top_flow);
+	top_rows_vbox = memnew(VBoxContainer);
+	top_rows_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	top_rows_vbox->add_theme_constant_override("separation", int(4 * EDSCALE));
+	top_card->add_child(top_rows_vbox);
 
-	auto add_top_sep = [&]() {
+	top_row1_flow = memnew(HFlowContainer);
+	top_row1_flow->set_name("UiDesignerTopRow1");
+	top_row1_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	top_row1_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	top_row1_flow->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	top_rows_vbox->add_child(top_row1_flow);
+
+	top_row2_flow = memnew(HFlowContainer);
+	top_row2_flow->set_name("UiDesignerTopRow2");
+	top_row2_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	top_row2_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	top_row2_flow->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	top_rows_vbox->add_child(top_row2_flow);
+
+	auto make_top_sep = [&](Control *p_parent) -> VSeparator * {
 		VSeparator *sep = memnew(VSeparator);
 		sep->set_custom_minimum_size(Size2(int(4 * EDSCALE), int(22 * EDSCALE)));
 		sep->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-		top_flow->add_child(sep);
+		p_parent->add_child(sep);
+		return sep;
 	};
 
-	// Grupo 1: Pantalla y diseño
+	// Fila 1 - Grupo 1: Pantalla, Nuevo diseño, + Submenú, Plantillas..., Restaurar (solo icono)
 	top_bar = memnew(HBoxContainer);
 	top_bar->add_theme_constant_override("separation", int(6 * EDSCALE));
-	top_flow->add_child(top_bar);
+	top_row1_flow->add_child(top_bar);
 
 	top_bar->add_child(memnew(Label(String::utf8("Pantalla:"))));
 	screen_opt = memnew(OptionButton);
-	screen_opt->set_custom_minimum_size(Size2(165 * EDSCALE, row_h));
+	screen_opt->set_custom_minimum_size(Size2(148 * EDSCALE, row_h));
 	screen_opt->set_clip_text(true);
 	screen_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	screen_opt->set_fit_to_longest_item(false);
@@ -2554,7 +2571,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	top_bar->add_child(screen_opt);
 
 	new_menu_wizard_btn = memnew(Button(String::utf8("Nuevo diseño")));
-	new_menu_wizard_btn->set_custom_minimum_size(Size2(118 * EDSCALE, row_h));
+	new_menu_wizard_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
 	new_menu_wizard_btn->set_clip_text(false);
 	new_menu_wizard_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	new_menu_wizard_btn->set_tooltip_text(String::utf8("Abre el asistente guiado (3 pasos) para crear un diseño nuevo."));
@@ -2563,7 +2580,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	top_bar->add_child(new_menu_wizard_btn);
 
 	add_submenu_btn = memnew(Button(String::utf8("+ Submenú")));
-	add_submenu_btn->set_custom_minimum_size(Size2(102 * EDSCALE, row_h));
+	add_submenu_btn->set_custom_minimum_size(Size2(96 * EDSCALE, row_h));
 	add_submenu_btn->set_clip_text(false);
 	add_submenu_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	add_submenu_btn->set_tooltip_text(String::utf8("Crea un submenú propio anidado bajo la pantalla actual."));
@@ -2571,36 +2588,28 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	add_submenu_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_add_submenu_pressed));
 	top_bar->add_child(add_submenu_btn);
 
-	add_button_bar_btn = memnew(Button(String::utf8("+ Botón")));
-	add_button_bar_btn->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
-	add_button_bar_btn->set_clip_text(false);
-	add_button_bar_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
-	add_button_bar_btn->set_tooltip_text(String::utf8("Añade un botón interactivo en el diseño actual."));
-	s_make_rounded_action_btn(add_button_bar_btn);
-	add_button_bar_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_add_button_bar_pressed));
-	top_bar->add_child(add_button_bar_btn);
-
 	templates_btn = memnew(Button(String::utf8("Plantillas…")));
 	templates_btn->set_custom_minimum_size(Size2(0, row_h));
 	templates_btn->set_clip_text(false);
+	templates_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	templates_btn->set_tooltip_text(String::utf8("Explora plantillas de pantallas, componentes o tus diseños guardados."));
 	s_make_rounded_action_btn(templates_btn);
 	templates_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_templates_btn_pressed));
 	top_bar->add_child(templates_btn);
 
-	reset_btn = memnew(Button(String::utf8("Restaurar plantilla original")));
-	reset_btn->set_custom_minimum_size(Size2(0, row_h));
+	reset_btn = memnew(Button("Restaurar"));
+	reset_btn->set_custom_minimum_size(Size2(row_h, row_h));
 	reset_btn->set_clip_text(false);
-	reset_btn->set_tooltip_text(String::utf8("Restaura la pantalla actual a su diseño por defecto."));
+	reset_btn->set_tooltip_text(String::utf8("Restaurar plantilla original"));
 	s_make_rounded_action_btn(reset_btn);
 	reset_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_reset_pressed));
 	top_bar->add_child(reset_btn);
 
-	// Grupo 2: Deshacer y rehacer
-	add_top_sep();
-	HBoxContainer *undo_hb = memnew(HBoxContainer);
+	// Fila 1 - Grupo 2: Deshacer y Rehacer (solo icono, sin "(0)")
+	row1_sep_undo = make_top_sep(top_row1_flow);
+	undo_hb = memnew(HBoxContainer);
 	undo_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
-	top_flow->add_child(undo_hb);
+	top_row1_flow->add_child(undo_hb);
 
 	undo_btn = memnew(Button("Deshacer"));
 	undo_btn->set_custom_minimum_size(Size2(row_h, row_h));
@@ -2616,14 +2625,31 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	redo_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_redo_pressed));
 	undo_hb->add_child(redo_btn);
 
-	// Grupo 3: Vista previa y zoom (Ajustar por defecto, 100 %, 200 %)
-	add_top_sep();
-	HBoxContainer *res_hb = memnew(HBoxContainer);
+	// Fila 1 - Grupo 3: Probar
+	row1_sep_play = make_top_sep(top_row1_flow);
+	play_hb = memnew(HBoxContainer);
+	play_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	top_row1_flow->add_child(play_hb);
+
+	test_btn = memnew(Button("Probar"));
+	test_btn->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	test_btn->set_tooltip_text(String::utf8("Prueba el menú actual en tiempo real con datos de ejemplo."));
+	s_make_rounded_action_btn(test_btn);
+	test_btn->set_clip_text(false);
+	test_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+	test_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_pressed));
+	play_hb->add_child(test_btn);
+
+	// Fila 2 - Grupo 4: Vista (tamaño) y Zoom (Ajustar, 50 %, 100 %, 200 %, 300 %)
+	wide_sep_rows = make_top_sep(top_row2_flow);
+	wide_sep_rows->hide();
+
+	res_hb = memnew(HBoxContainer);
 	res_hb->add_theme_constant_override("separation", int(5 * EDSCALE));
-	top_flow->add_child(res_hb);
+	top_row2_flow->add_child(res_hb);
 	res_hb->add_child(memnew(Label("Vista:")));
 	preview_res_opt = memnew(OptionButton);
-	preview_res_opt->set_custom_minimum_size(Size2(170 * EDSCALE, row_h));
+	preview_res_opt->set_custom_minimum_size(Size2(154 * EDSCALE, row_h));
 	preview_res_opt->set_fit_to_longest_item(true);
 	preview_res_opt->set_clip_text(false);
 	preview_res_opt->set_tooltip_text(String::utf8("Resolución de vista previa del diseño (960x540 base 16:9)."));
@@ -2639,9 +2665,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	preview_res_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_preview_res_selected));
 	res_hb->add_child(preview_res_opt);
 
-	HBoxContainer *zoom_hb = memnew(HBoxContainer);
+	zoom_hb = memnew(HBoxContainer);
 	zoom_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
-	top_flow->add_child(zoom_hb);
+	top_row2_flow->add_child(zoom_hb);
 	static const int k_zoom_order[5] = { 0, 3, 1, 2, 4 };
 	static const char *k_zoom_labels[5] = { "Ajustar", "100 %", "200 %", "50 %", "300 %" };
 	static const char *k_zoom_tips[5] = {
@@ -2656,7 +2682,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		Button *zb = memnew(Button(String::utf8(k_zoom_labels[z])));
 		zb->set_toggle_mode(true);
 		zb->set_pressed(z == canvas_zoom_mode);
-		zb->set_custom_minimum_size(Size2((z == 0 ? 74.0f : 56.0f) * EDSCALE, row_h));
+		zb->set_custom_minimum_size(Size2((z == 0 ? 68.0f : 52.0f) * EDSCALE, row_h));
 		zb->set_clip_text(false);
 		zb->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		zb->set_tooltip_text(String::utf8(k_zoom_tips[z]));
@@ -2665,15 +2691,12 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		zoom_hb->add_child(zb);
 		zoom_btns[z] = zb;
 	}
-	zoom_info_lbl = memnew(Label("960x540"));
-	zoom_info_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
-	zoom_hb->add_child(zoom_info_lbl);
 
-	// Grupo 4: Rejilla e imán
-	add_top_sep();
-	HBoxContainer *grid_hb = memnew(HBoxContainer);
+	// Fila 2 - Grupo 5: Rejilla, tamaño, Imán, Guías
+	row2_sep_grid = make_top_sep(top_row2_flow);
+	grid_hb = memnew(HBoxContainer);
 	grid_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
-	top_flow->add_child(grid_hb);
+	top_row2_flow->add_child(grid_hb);
 
 	grid_chk = memnew(CheckBox("Rejilla"));
 	grid_chk->set_tooltip_text(String::utf8("Mostrar u ocultar la cuadrícula de alineación sobre el lienzo."));
@@ -2688,7 +2711,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	grid_step_opt->add_item("32 px", 2);
 	grid_step_opt->set_item_metadata(2, 32);
 	grid_step_opt->select(1);
-	grid_step_opt->set_custom_minimum_size(Size2(72 * EDSCALE, row_h));
+	grid_step_opt->set_custom_minimum_size(Size2(66 * EDSCALE, row_h));
 	grid_step_opt->set_tooltip_text(String::utf8("Tamaño del paso de rejilla e imán (8, 16 o 32 px)."));
 	grid_step_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_grid_step_selected));
 	grid_hb->add_child(grid_step_opt);
@@ -2703,11 +2726,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	guides_chk->set_pressed(true);
 	grid_hb->add_child(guides_chk);
 
-	// Grupo 5: Alinear
-	add_top_sep();
-	HBoxContainer *align_hb = memnew(HBoxContainer);
+	// Fila 2 - Grupo 6: Alinear (3 botones)
+	row2_sep_align = make_top_sep(top_row2_flow);
+	align_hb = memnew(HBoxContainer);
 	align_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
-	top_flow->add_child(align_hb);
+	top_row2_flow->add_child(align_hb);
 
 	align_center_h_btn = memnew(Button("Centrar H"));
 	align_center_h_btn->set_custom_minimum_size(Size2(row_h, row_h));
@@ -2730,11 +2753,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	dist_v_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_distribute_vertical_pressed));
 	align_hb->add_child(dist_v_btn);
 
-	// Grupo 6: Copiar y pegar
-	add_top_sep();
-	HBoxContainer *clip_hb = memnew(HBoxContainer);
+	// Fila 2 - Grupo 7: Duplicar, Copiar y Pegar
+	row2_sep_clip = make_top_sep(top_row2_flow);
+	clip_hb = memnew(HBoxContainer);
 	clip_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
-	top_flow->add_child(clip_hb);
+	top_row2_flow->add_child(clip_hb);
 
 	dup_elem_btn = memnew(Button("Duplicar"));
 	dup_elem_btn->set_custom_minimum_size(Size2(row_h, row_h));
@@ -2757,36 +2780,17 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	paste_elem_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_paste_elem_pressed));
 	clip_hb->add_child(paste_elem_btn);
 
-	// Grupo 7: Probar y estado activo
-	add_top_sep();
-	HBoxContainer *play_hb = memnew(HBoxContainer);
-	play_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
-	top_flow->add_child(play_hb);
-
-	test_btn = memnew(Button("Probar"));
-	test_btn->set_custom_minimum_size(Size2(92 * EDSCALE, row_h));
-	test_btn->set_tooltip_text(String::utf8("Prueba el menú actual en tiempo real con datos de ejemplo."));
-	s_make_rounded_action_btn(test_btn);
-	test_btn->set_clip_text(false);
-	test_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
-	test_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_pressed));
-	play_hb->add_child(test_btn);
-
-	screen_status_lbl = memnew(Label);
-	screen_status_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
-	play_hb->add_child(screen_status_lbl);
-
 	// --- Contenedores de distribución en 3 columnas (Lienzo dominante >= 60%) ---
 	layout_root = memnew(VBoxContainer);
 	layout_root->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	layout_root->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	layout_root->add_theme_constant_override("separation", int(8 * EDSCALE));
+	layout_root->add_theme_constant_override("separation", int(6 * EDSCALE));
 	add_child(layout_root);
 
 	wide_hbox = memnew(HSplitContainer);
 	wide_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	wide_hbox->add_theme_constant_override("separation", int(8 * EDSCALE));
+	wide_hbox->add_theme_constant_override("separation", int(6 * EDSCALE));
 	wide_hbox->connect("dragged", callable_mp(this, &ClockGearsUiDesignEditor::_on_wide_split_dragged).bind(0));
 	if (Control *dr0 = wide_hbox->get_drag_area_control()) {
 		dr0->set_tooltip_text(String::utf8("Arrastra para ajustar · Doble clic para restablecer"));
@@ -3165,6 +3169,26 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_aspect->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized), CONNECT_DEFERRED);
 	canvas_scroll->add_child(canvas_aspect);
 	canvas_scroll->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_scroll_resized), CONNECT_DEFERRED);
+
+	HBoxContainer *canvas_status_hb = memnew(HBoxContainer);
+	canvas_status_hb->set_name("UiDesignerCanvasStatusBar");
+	canvas_status_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	canvas_status_hb->set_custom_minimum_size(Size2(0, 20 * EDSCALE));
+	canvas_status_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	can_vb->add_child(canvas_status_hb);
+
+	screen_status_lbl = memnew(Label);
+	screen_status_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	screen_status_lbl->set_clip_text(true);
+	screen_status_lbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	screen_status_lbl->add_theme_font_size_override("font_size", int(11 * EDSCALE));
+	screen_status_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
+	canvas_status_hb->add_child(screen_status_lbl);
+
+	zoom_info_lbl = memnew(Label("960x540"));
+	zoom_info_lbl->add_theme_font_size_override("font_size", int(11 * EDSCALE));
+	zoom_info_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
+	canvas_status_hb->add_child(zoom_info_lbl);
 
 	canvas_fit_holder = memnew(Control);
 	canvas_fit_holder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
@@ -4547,8 +4571,86 @@ int ClockGearsUiDesignEditor::_anchor_index_by_key(const String &p_key) {
 	return 0;
 }
 
+void ClockGearsUiDesignEditor::_relayout_top_toolbar(int p_avail_w) {
+	if (!top_row1_flow || !top_row2_flow) {
+		return;
+	}
+	int eff_w = p_avail_w > 0 ? p_avail_w : (get_size().x > 200.0f ? int(get_size().x) : 1366);
+	float single_need = 28.0f * EDSCALE;
+	const int flow_sep = int(6 * EDSCALE);
+	Control *single_items[] = {
+		top_bar, row1_sep_undo, undo_hb, wide_sep_rows, res_hb, zoom_hb,
+		row2_sep_grid, grid_hb, row2_sep_align, align_hb, row2_sep_clip, clip_hb,
+		row1_sep_play, play_hb
+	};
+	int item_cnt = 0;
+	for (Control *c : single_items) {
+		if (!c) {
+			continue;
+		}
+		single_need += c->get_combined_minimum_size().x;
+		item_cnt++;
+	}
+	if (item_cnt > 1) {
+		single_need += float(item_cnt - 1) * float(flow_sep);
+	}
+	bool want_single_row = (float(eff_w) >= single_need);
+	top_bar_single_row_mode = want_single_row;
+
+	auto move_to = [](Control *p_ctrl, Control *p_target) {
+		if (!p_ctrl || !p_target) {
+			return;
+		}
+		if (p_ctrl->get_parent() != p_target) {
+			if (p_ctrl->get_parent()) {
+				p_ctrl->get_parent()->remove_child(p_ctrl);
+			}
+			p_target->add_child(p_ctrl);
+		}
+	};
+
+	if (want_single_row) {
+		top_row2_flow->hide();
+		move_to(top_bar, top_row1_flow);
+		move_to(row1_sep_undo, top_row1_flow);
+		move_to(undo_hb, top_row1_flow);
+		move_to(wide_sep_rows, top_row1_flow);
+		if (wide_sep_rows) wide_sep_rows->show();
+		move_to(res_hb, top_row1_flow);
+		move_to(zoom_hb, top_row1_flow);
+		move_to(row2_sep_grid, top_row1_flow);
+		move_to(grid_hb, top_row1_flow);
+		move_to(row2_sep_align, top_row1_flow);
+		move_to(align_hb, top_row1_flow);
+		move_to(row2_sep_clip, top_row1_flow);
+		move_to(clip_hb, top_row1_flow);
+		move_to(row1_sep_play, top_row1_flow);
+		move_to(play_hb, top_row1_flow);
+	} else {
+		move_to(top_bar, top_row1_flow);
+		move_to(row1_sep_undo, top_row1_flow);
+		move_to(undo_hb, top_row1_flow);
+		move_to(row1_sep_play, top_row1_flow);
+		move_to(play_hb, top_row1_flow);
+
+		if (wide_sep_rows) {
+			wide_sep_rows->hide();
+		}
+		move_to(res_hb, top_row2_flow);
+		move_to(zoom_hb, top_row2_flow);
+		move_to(row2_sep_grid, top_row2_flow);
+		move_to(grid_hb, top_row2_flow);
+		move_to(row2_sep_align, top_row2_flow);
+		move_to(align_hb, top_row2_flow);
+		move_to(row2_sep_clip, top_row2_flow);
+		move_to(clip_hb, top_row2_flow);
+		top_row2_flow->show();
+	}
+}
+
 void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 	last_adapt_width = p_avail_w;
+	_relayout_top_toolbar(p_avail_w);
 	bool want_compact = (p_avail_w > 0 && p_avail_w < int(780 * EDSCALE));
 	compact_two_row_layout = want_compact;
 
@@ -6162,11 +6264,21 @@ void ClockGearsUiDesignEditor::_refresh_undo_redo_buttons() {
 	int rc = dm->get_ui_design_redo_count(current_screen_id);
 	if (undo_btn) {
 		undo_btn->set_disabled(uc <= 0);
-		undo_btn->set_text("Deshacer (" + itos(uc) + ")");
+		undo_btn->set_tooltip_text(String::utf8("Deshacer último cambio (Ctrl+Z) (") + itos(uc) + ")");
+		if (undo_btn->get_button_icon().is_valid()) {
+			undo_btn->set_text(String());
+		} else {
+			undo_btn->set_text("Deshacer");
+		}
 	}
 	if (redo_btn) {
 		redo_btn->set_disabled(rc <= 0);
-		redo_btn->set_text("Rehacer (" + itos(rc) + ")");
+		redo_btn->set_tooltip_text(String::utf8("Rehacer cambio deshecho (Ctrl+Y) (") + itos(rc) + ")");
+		if (redo_btn->get_button_icon().is_valid()) {
+			redo_btn->set_text(String());
+		} else {
+			redo_btn->set_text("Rehacer");
+		}
 	}
 }
 
@@ -9848,6 +9960,9 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["reset_btn"] = reset_btn;
 	out["reset_confirm_dialog"] = reset_confirm_dialog;
 	out["test_btn"] = test_btn;
+	out["top_card"] = top_card;
+	out["top_row1_flow"] = top_row1_flow;
+	out["top_row2_flow"] = top_row2_flow;
 	out["screen_status_lbl"] = screen_status_lbl;
 	out["canvas_card"] = canvas_card;
 	out["wide_left_col"] = wide_left_col;

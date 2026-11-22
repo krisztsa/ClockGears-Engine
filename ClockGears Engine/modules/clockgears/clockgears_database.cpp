@@ -1523,7 +1523,7 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		}
 	}
 	if (tab0_margin_container) {
-		int pad = is_ui_designer ? int(6 * EDSCALE) : int(12 * EDSCALE);
+		int pad = is_ui_designer ? 0 : int(12 * EDSCALE);
 		tab0_margin_container->add_theme_constant_override("margin_left", pad);
 		tab0_margin_container->add_theme_constant_override("margin_top", pad);
 		tab0_margin_container->add_theme_constant_override("margin_right", pad);
@@ -1654,8 +1654,8 @@ void ClockGearsDatabaseDialog::_refresh_category_view() {
 		tileset_collision_box->set_visible(is_tileset);
 	}
 	if (tab0_margin_container) {
-		int m_lr = is_tileset ? int(8 * EDSCALE) : int(12 * EDSCALE);
-		int m_tb = is_tileset ? 0 : int(12 * EDSCALE);
+		int m_lr = is_ui_designer ? 0 : (is_tileset ? int(8 * EDSCALE) : int(12 * EDSCALE));
+		int m_tb = (is_tileset || is_ui_designer) ? 0 : int(12 * EDSCALE);
 		tab0_margin_container->add_theme_constant_override("margin_left", m_lr);
 		tab0_margin_container->add_theme_constant_override("margin_top", m_tb);
 		tab0_margin_container->add_theme_constant_override("margin_right", m_lr);
@@ -5769,16 +5769,16 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	root_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	root_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	root_margin->set_clip_contents(true);
-	root_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
-	root_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
-	root_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	root_margin->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_left", int(6 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_top", int(6 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_right", int(6 * EDSCALE));
+	root_margin->add_theme_constant_override("margin_bottom", int(6 * EDSCALE));
 	dlg_outer_vbox->add_child(root_margin);
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
 	main_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	main_vbox->add_theme_constant_override("separation", int(8 * EDSCALE));
+	main_vbox->add_theme_constant_override("separation", int(6 * EDSCALE));
 	root_margin->add_child(main_vbox);
 
 	// ========================================================================
@@ -5788,7 +5788,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	chapters_panel->set_name("ClockGearsDbChaptersPanel");
 	chapters_panel->set_meta("_cg_theme_managed_container", true);
 	chapters_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	chapters_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 6, 1));
+	chapters_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 6, 4, 1));
 	main_vbox->add_child(chapters_panel);
 
 	HBoxContainer *chapters_bar = memnew(HBoxContainer);
@@ -5815,12 +5815,12 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cats_panel->set_name("ClockGearsDbCatsPanel");
 	cats_panel->set_meta("_cg_theme_managed_container", true);
 	cats_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	cats_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 8, 6, 2));
+	cats_panel->add_theme_style_override("panel", ClockGearsTheme::make_container_stylebox(EDSCALE, 6, 4, 2));
 	main_vbox->add_child(cats_panel);
 
 	HFlowContainer *cats_bar = memnew(HFlowContainer);
 	cats_bar->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	cats_bar->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	cats_bar->add_theme_constant_override("h_separation", int(6 * EDSCALE));
 	cats_bar->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	cats_panel->add_child(cats_bar);
 

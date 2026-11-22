@@ -89,6 +89,50 @@ func _run() -> void:
 							worst_msg = "%s %s %s intersects footer (%s vs %s)" % [str(res), cat_k, (panel_k as Node).name, str(pr), str(frect)]
 		check(overlaps == 0, "Punto 1: Zero footer overlaps across all chapters at 1366/1920/2560 (%s)" % worst_msg)
 
+	# --- PUNTO 2: BARRA DE HERRAMIENTAS COMPACTA ---
+	db.select_category_by_key("main_menu")
+	db.size = Vector2i(1366, 768)
+	db.adapt_to_window_size(Vector2i(1366, 768))
+	await pump(4)
+	var h2: Dictionary = db.call("get_ui_designer_ui_handles")
+	var top_card: Control = h2.get("top_card")
+	var row1_flow: HFlowContainer = h2.get("top_row1_flow")
+	var row2_flow: HFlowContainer = h2.get("top_row2_flow")
+	var reset_b: Button = h2.get("reset_btn")
+	var undo_b: Button = h2.get("undo_btn")
+	var redo_b: Button = h2.get("redo_btn")
+	var st_lbl: Label = h2.get("screen_status_lbl")
+	check(h2.get("add_button_bar_btn") == null, "Punto 2: + Boton removed from top toolbar (stays in Disenos)")
+	check(h2.get("layer_add_button_btn") != null, "Punto 2: + Boton still present in Disenos panel")
+	if top_card and row1_flow and row2_flow:
+		check(top_card.size.y <= 96.0 and row1_flow.size.y <= 44.0 and row2_flow.size.y <= 44.0,
+			"Punto 2 (1366x768): Compact 2-row toolbar <=96px total, <=44px/row (total=%.1f, r1=%.1f, r2=%.1f)" % [top_card.size.y, row1_flow.size.y, row2_flow.size.y])
+		check(row1_flow.get_line_count() == 1 and row2_flow.get_line_count() == 1,
+			"Punto 2 (1366x768): Row1 and Row2 each stay 1 line (lines=%d, %d)" % [row1_flow.get_line_count(), row2_flow.get_line_count()])
+	if reset_b and undo_b and redo_b:
+		check(reset_b.tooltip_text.contains("Restaurar plantilla original") and reset_b.icon != null and reset_b.text.is_empty(),
+			"Punto 2: Restaurar is icon-only with tooltip")
+		check(not undo_b.text.contains("(0)") and not redo_b.text.contains("(0)"),
+			"Punto 2: Deshacer/Rehacer do not show '(0)' text (u='%s', r='%s')" % [undo_b.text, redo_b.text])
+	if st_lbl:
+		var ccard: Control = h2.get("canvas_card")
+		check(ccard != null and ccard.is_ancestor_of(st_lbl) and not top_card.is_ancestor_of(st_lbl),
+			"Punto 2: Status line moved outside top toolbar to bottom of canvas card")
+
+	db.size = Vector2i(1920, 1080)
+	db.adapt_to_window_size(Vector2i(1920, 1080))
+	await pump(4)
+	var single_ok: bool = (not row2_flow.visible and row1_flow.get_line_count() == 1 and top_card.size.y <= 52.0)
+	var two_clean_ok: bool = (row2_flow.visible and row1_flow.get_line_count() == 1 and row2_flow.get_line_count() == 1 and top_card.size.y <= 96.0)
+	check(single_ok or two_clean_ok,
+		"Punto 2 (1920x1080): Clean 1-row or 2-row toolbar without wrapping (total=%.1f, r2_vis=%s, lines=%d,%d)" % [top_card.size.y, str(row2_flow.visible), row1_flow.get_line_count(), row2_flow.get_line_count()])
+
+	db.size = Vector2i(2560, 1440)
+	db.adapt_to_window_size(Vector2i(2560, 1440))
+	await pump(4)
+	check(top_card.size.y <= 52.0 and not row2_flow.visible and row1_flow.get_line_count() == 1,
+		"Punto 2 (2560x1440): Toolbar fits in 1 single row (total=%.1f, r2_vis=%s, lines=%d)" % [top_card.size.y, str(row2_flow.visible), row1_flow.get_line_count()])
+
 	db.queue_free()
 	await pump(2)
 	if dm_owned and dm and is_instance_valid(dm):

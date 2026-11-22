@@ -307,8 +307,26 @@ private:
 	bool compact_two_row_layout = false;
 	int last_adapt_width = 1920;
 
-	// Cabecera / barra superior
+	// Cabecera / barra superior (máximo 2 filas a 1366x768, 1 fila desde 1920 px)
+	PanelContainer *top_card = nullptr;
+	VBoxContainer *top_rows_vbox = nullptr;
+	HFlowContainer *top_row1_flow = nullptr;
+	HFlowContainer *top_row2_flow = nullptr;
 	HBoxContainer *top_bar = nullptr;
+	HBoxContainer *undo_hb = nullptr;
+	HBoxContainer *play_hb = nullptr;
+	HBoxContainer *res_hb = nullptr;
+	HBoxContainer *zoom_hb = nullptr;
+	HBoxContainer *grid_hb = nullptr;
+	HBoxContainer *align_hb = nullptr;
+	HBoxContainer *clip_hb = nullptr;
+	VSeparator *row1_sep_undo = nullptr;
+	VSeparator *row1_sep_play = nullptr;
+	VSeparator *row2_sep_grid = nullptr;
+	VSeparator *row2_sep_align = nullptr;
+	VSeparator *row2_sep_clip = nullptr;
+	VSeparator *wide_sep_rows = nullptr;
+	bool top_bar_single_row_mode = false;
 	OptionButton *screen_opt = nullptr;
 	OptionButton *preview_res_opt = nullptr;
 	Button *zoom_btns[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
@@ -711,6 +729,7 @@ private:
 	void _on_split_dragger_gui_input(const Ref<InputEvent> &p_ev, int p_split_idx);
 	void _reset_wide_split(int p_split_idx);
 	void _rebalance_responsive_layout(int p_avail_w);
+	void _relayout_top_toolbar(int p_avail_w);
 	void _update_canvas_fit_scale();
 	void _apply_canvas_zoom_layout(bool p_recalc_fit);
 	void _on_canvas_scroll_resized();
