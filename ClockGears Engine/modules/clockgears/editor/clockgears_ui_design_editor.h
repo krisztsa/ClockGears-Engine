@@ -651,6 +651,7 @@ private:
 	SpinBox *prop_container_rows_spin = nullptr;
 	SpinBox *prop_container_spx_spin = nullptr;
 	SpinBox *prop_container_spy_spin = nullptr;
+	SpinBox *prop_container_pad_spin = nullptr;
 	CheckBox *prop_container_scroll_chk = nullptr;
 	CheckBox *prop_data_show_empty_chk = nullptr;
 	SpinBox *prop_data_empty_cnt_spin = nullptr;
@@ -1205,6 +1206,7 @@ private:
 	SpinBox *cont_rows_spin = nullptr;
 	SpinBox *cont_spx_spin = nullptr;
 	SpinBox *cont_spy_spin = nullptr;
+	SpinBox *cont_pad_spin = nullptr;
 	CheckBox *cont_scroll_chk = nullptr;
 
 	// Elementos (fuente datos, filtros, estados casilla y Aplicar a todas)

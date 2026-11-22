@@ -12,6 +12,7 @@
 #include "core/math/math_funcs.h"
 #include "core/object/callable_mp.h"
 #include "scene/gui/box_container.h"
+#include "scene/gui/margin_container.h"
 #include "scene/gui/nine_patch_rect.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/main/viewport.h"
@@ -3657,8 +3658,13 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 	}
 
 	Array entries = dm->resolve_ui_container_entries(r_entry.config, runtime_actor_id, runtime_equip_slot_idx, (preview_mode || use_editor_test_data));
+	float spx = float(CLAMP(int(r_entry.config.get("layout_spacing", 8)), 0, 64)) * p_scale;
+	float spy = float(CLAMP(int(r_entry.config.get("layout_spacing_y", r_entry.config.get("layout_spacing", 8))), 0, 64)) * p_scale;
+	float cell_pad = float(CLAMP(int(r_entry.config.get("cell_padding", 6)), 0, 32)) * p_scale;
 	String sig = ds + "|" + r_entry.config.get("layout_mode", "grid").operator String() + "|" + itos(entries.size()) + "|" +
 			itos(int(Math::round(avail.x))) + "x" + itos(int(Math::round(avail.y))) + "|" + itos(r_entry.data_carousel_offset) + "|" +
+			itos(int(Math::round(spx))) + "x" + itos(int(Math::round(spy))) + "p" + itos(int(Math::round(cell_pad))) + "|" +
+			itos(int(r_entry.config.get("layout_columns", 4))) + "r" + itos(int(r_entry.config.get("layout_rows", 2))) + "|" +
 			itos(int(preview_mode)) + "|" + itos(int(use_editor_test_data));
 	for (int i = 0; i < entries.size() && i < 64; i++) {
 		Dictionary ed = entries[i];
@@ -3682,8 +3688,6 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 	bool scroll_on = r_entry.config.has("layout_scroll") ? bool(r_entry.config["layout_scroll"]) : true;
 	int cols = (lmode == "vertical_list") ? 1 : MAX(1, CLAMP(int(r_entry.config.get("layout_columns", 4)), 1, 20));
 	int rows_cfg = CLAMP(int(r_entry.config.get("layout_rows", 2)), 0, 20);
-	float spx = float(CLAMP(int(r_entry.config.get("layout_spacing", 8)), 0, 64)) * p_scale;
-	float spy = float(CLAMP(int(r_entry.config.get("layout_spacing_y", r_entry.config.get("layout_spacing", 8))), 0, 64)) * p_scale;
 	bool pa = bool(r_entry.config.get("pixel_art", true));
 
 	int total = entries.size();
@@ -3811,16 +3815,42 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 			apply_ov_tex("pressed", o_img_p);
 			apply_ov_tex("focus", o_img_h);
 			apply_ov_tex("disabled", o_img_d);
-		} else if (ov.has("fill_color") || ov.has("border_color")) {
+		} else {
+			Dictionary sstyles = (r_entry.config.has("slot_styles") && r_entry.config["slot_styles"].get_type() == Variant::DICTIONARY)
+					? Dictionary(r_entry.config["slot_styles"])
+					: Dictionary();
+			Dictionary st_n = ov.has("fill_color") || ov.has("border_color")
+					? ov
+					: (is_empty && sstyles.has("empty") && sstyles["empty"].get_type() == Variant::DICTIONARY
+							? Dictionary(sstyles["empty"])
+							: (sstyles.has("normal") && sstyles["normal"].get_type() == Variant::DICTIONARY ? Dictionary(sstyles["normal"]) : Dictionary()));
+			Dictionary st_s = (sstyles.has("selected") && sstyles["selected"].get_type() == Variant::DICTIONARY)
+					? Dictionary(sstyles["selected"])
+					: Dictionary();
+			Color def_bg = is_empty ? Color(0.08f, 0.10f, 0.14f, 0.78f) : Color(0.11f, 0.13f, 0.18f, 0.94f);
+			Color def_bd = is_empty ? Color(0.45f, 0.50f, 0.60f, 0.48f) : Color(0.83f, 0.61f, 0.26f, 0.85f);
+			int bw_n = MAX(1, int(st_n.get("border_width", 1)));
+			int rad_px = CLAMP(int(6.0f * p_scale), 2, 12);
+
 			Ref<StyleBoxFlat> osb;
 			osb.instantiate();
-			osb->set_bg_color(_cg_ui_parse_color(ov.get("fill_color", "#1c1f29f0"), Color(0.11f, 0.12f, 0.16f, 0.94f)));
-			osb->set_border_color(_cg_ui_parse_color(ov.get("border_color", "#d8a040ff"), Color(0.85f, 0.63f, 0.25f, 1.0f)));
-			osb->set_border_width_all(1);
-			osb->set_corner_radius_all(4);
+			osb->set_bg_color(_cg_ui_parse_color(st_n.get("fill_color", ""), def_bg));
+			osb->set_border_color(_cg_ui_parse_color(st_n.get("border_color", ""), def_bd));
+			osb->set_border_width_all(bw_n);
+			osb->set_corner_radius_all(rad_px);
+
+			Ref<StyleBoxFlat> hsb;
+			hsb.instantiate();
+			hsb->set_bg_color(_cg_ui_parse_color(st_s.get("fill_color", ""), Color(0.17f, 0.20f, 0.28f, 0.98f)));
+			hsb->set_border_color(_cg_ui_parse_color(st_s.get("border_color", ""), Color(0.96f, 0.74f, 0.33f, 1.0f)));
+			hsb->set_border_width_all(MAX(2, int(st_s.get("border_width", 2))));
+			hsb->set_corner_radius_all(rad_px);
+
 			cb->add_theme_style_override("normal", osb);
-			cb->add_theme_style_override("hover", osb);
-			cb->add_theme_style_override("focus", osb);
+			cb->add_theme_style_override("disabled", osb);
+			cb->add_theme_style_override("hover", is_empty ? osb : hsb);
+			cb->add_theme_style_override("focus", is_empty ? osb : hsb);
+			cb->add_theme_style_override("pressed", hsb);
 		}
 		if (ov.has("font_color")) {
 			cb->add_theme_color_override("font_color", _cg_ui_parse_color(ov["font_color"], Color(1, 1, 1, 1)));
@@ -3835,13 +3865,15 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 
 		if (!r_entry.data_tpl_children.is_empty()) {
 			Vector2 base_sz = Vector2(MAX(40.0f, r_entry.data_tpl_cell_base_size.x), MAX(30.0f, r_entry.data_tpl_cell_base_size.y));
-			float sx = cell_r.size.x / base_sz.x;
-			float sy = cell_r.size.y / base_sz.y;
+			float inner_w = MAX(16.0f, cell_r.size.x - cell_pad * 2.0f);
+			float inner_h = MAX(16.0f, cell_r.size.y - cell_pad * 2.0f);
+			float sx = inner_w / base_sz.x;
+			float sy = inner_h / base_sz.y;
 			for (int k = 0; k < r_entry.data_tpl_children.size(); k++) {
 				const Dictionary &tc = r_entry.data_tpl_children[k];
 				String ttype = String(tc.get("type", "text")).strip_edges().to_lower();
 				String tbind = String(tc.get("data_binding", "none")).strip_edges().to_lower();
-				Vector2 child_pos(float(int(tc.get("offset_x", 0))) * sx, float(int(tc.get("offset_y", 0))) * sy);
+				Vector2 child_pos(cell_pad + float(int(tc.get("offset_x", 0))) * sx, cell_pad + float(int(tc.get("offset_y", 0))) * sy);
 				Vector2 child_sz(MAX(8.0f, float(int(tc.get("width", 48))) * sx), MAX(8.0f, float(int(tc.get("height", 20))) * sy));
 				if (ttype == "image" || tbind == "item_icon") {
 					TextureRect *tr = memnew(TextureRect);
@@ -3881,47 +3913,98 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 				}
 			}
 		} else {
-			// Plantilla por defecto integrada si el contenedor aún no tiene carpeta de plantilla hija
-			HBoxContainer *hb = memnew(HBoxContainer);
-			hb->set_mouse_filter(MOUSE_FILTER_IGNORE);
-			hb->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
-			hb->add_theme_constant_override("separation", MAX(4, int(6.0f * p_scale)));
-			cb->add_child(hb);
+			// Plantilla por defecto integrada con relleno interior, icono, nombre y cantidad (o Vacía N)
+			MarginContainer *cmc = memnew(MarginContainer);
+			cmc->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			cmc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+			int pad_i = MAX(2, int(Math::round(cell_pad)));
+			cmc->add_theme_constant_override("margin_left", pad_i);
+			cmc->add_theme_constant_override("margin_right", pad_i);
+			cmc->add_theme_constant_override("margin_top", pad_i);
+			cmc->add_theme_constant_override("margin_bottom", pad_i);
+			cb->add_child(cmc);
 
-			float ic_px = CLAMP(MIN(cell_r.size.y - 10.0f * p_scale, 36.0f * p_scale), 16.0f, 44.0f);
-			TextureRect *ic = memnew(TextureRect);
-			ic->set_mouse_filter(MOUSE_FILTER_IGNORE);
-			ic->set_custom_minimum_size(Size2(ic_px, ic_px));
-			ic->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
-			ic->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
-			ic->set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
-			if (!is_empty) {
-				ic->set_texture(dm->get_entry_icon_texture(ed, MAX(16, int(ic_px))));
-			}
-			hb->add_child(ic);
-
-			Label *nlbl = memnew(Label);
-			nlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
-			nlbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-			nlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
-			nlbl->set_clip_text(true);
-			nlbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-			int fsz = MAX(9, int(Math::round(13.0f * p_scale)));
-			nlbl->add_theme_font_size_override("font_size", fsz);
-			if (cfont.is_valid()) nlbl->add_theme_font_override("font", cfont);
 			String disp_name = ov.has("text") ? String(ov["text"]) : dm->resolve_ui_entry_field_binding("item_name", ed, Dictionary(), (preview_mode || use_editor_test_data));
-			nlbl->set_text(disp_name);
-			hb->add_child(nlbl);
-
 			String qty_str = dm->resolve_ui_entry_field_binding("item_qty", ed, Dictionary(), (preview_mode || use_editor_test_data));
-			if (!qty_str.is_empty()) {
-				Label *qlbl = memnew(Label);
-				qlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
-				qlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
-				qlbl->add_theme_font_size_override("font_size", MAX(8, fsz - 1));
-				if (cfont.is_valid()) qlbl->add_theme_font_override("font", cfont);
-				qlbl->set_text(qty_str);
-				hb->add_child(qlbl);
+			int fsz = MAX(9, int(Math::round(13.0f * p_scale)));
+			const bool vertical_card = (lmode == "grid" || lmode == "carousel") && cell_r.size.y >= 84.0f * p_scale && cell_r.size.x < 240.0f * p_scale;
+			if (vertical_card && !is_empty) {
+				VBoxContainer *vb = memnew(VBoxContainer);
+				vb->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+				vb->add_theme_constant_override("separation", MAX(2, int(4.0f * p_scale)));
+				cmc->add_child(vb);
+
+				float ic_px = CLAMP(MIN(cell_r.size.y * 0.42f, 44.0f * p_scale), 18.0f, 48.0f);
+				TextureRect *ic = memnew(TextureRect);
+				ic->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				ic->set_custom_minimum_size(Size2(ic_px, ic_px));
+				ic->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+				ic->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+				ic->set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+				ic->set_texture(dm->get_entry_icon_texture(ed, MAX(16, int(ic_px))));
+				vb->add_child(ic);
+
+				Label *nlbl = memnew(Label);
+				nlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				nlbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+				nlbl->set_clip_text(true);
+				nlbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+				nlbl->add_theme_font_size_override("font_size", fsz);
+				if (cfont.is_valid()) nlbl->add_theme_font_override("font", cfont);
+				nlbl->set_text(disp_name);
+				vb->add_child(nlbl);
+
+				if (!qty_str.is_empty()) {
+					Label *qlbl = memnew(Label);
+					qlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					qlbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+					qlbl->add_theme_font_size_override("font_size", MAX(8, fsz - 1));
+					if (cfont.is_valid()) qlbl->add_theme_font_override("font", cfont);
+					qlbl->add_theme_color_override("font_color", Color(0.95f, 0.78f, 0.42f, 1.0f));
+					qlbl->set_text(qty_str);
+					vb->add_child(qlbl);
+				}
+			} else {
+				HBoxContainer *hb = memnew(HBoxContainer);
+				hb->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				hb->add_theme_constant_override("separation", MAX(4, int(6.0f * p_scale)));
+				cmc->add_child(hb);
+
+				if (!is_empty) {
+					float ic_px = CLAMP(MIN(cell_r.size.y - float(pad_i) * 2.0f, 36.0f * p_scale), 16.0f, 44.0f);
+					TextureRect *ic = memnew(TextureRect);
+					ic->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					ic->set_custom_minimum_size(Size2(ic_px, ic_px));
+					ic->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+					ic->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+					ic->set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+					ic->set_texture(dm->get_entry_icon_texture(ed, MAX(16, int(ic_px))));
+					hb->add_child(ic);
+				}
+
+				Label *nlbl = memnew(Label);
+				nlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				nlbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+				nlbl->set_horizontal_alignment(is_empty ? HORIZONTAL_ALIGNMENT_CENTER : HORIZONTAL_ALIGNMENT_LEFT);
+				nlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+				nlbl->set_clip_text(true);
+				nlbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+				nlbl->add_theme_font_size_override("font_size", fsz);
+				if (cfont.is_valid()) nlbl->add_theme_font_override("font", cfont);
+				if (is_empty) nlbl->add_theme_color_override("font_color", Color(0.68f, 0.72f, 0.80f, 0.65f));
+				nlbl->set_text(disp_name);
+				hb->add_child(nlbl);
+
+				if (!qty_str.is_empty()) {
+					Label *qlbl = memnew(Label);
+					qlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					qlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+					qlbl->add_theme_font_size_override("font_size", MAX(8, fsz - 1));
+					if (cfont.is_valid()) qlbl->add_theme_font_override("font", cfont);
+					qlbl->set_text(qty_str);
+					hb->add_child(qlbl);
+				}
 			}
 		}
 	}

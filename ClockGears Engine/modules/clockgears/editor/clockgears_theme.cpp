@@ -3655,14 +3655,38 @@ Rect2i ClockGearsTheme::get_window_usable_rect(Window *p_window) {
 			host = nullptr;
 		}
 	}
-	if ((p_window && p_window->is_embedded()) || (host && host->is_embedding_subwindows())) {
-		Size2i vr = host ? Vector2i(host->get_visible_rect().size) : Vector2i();
-		if (vr.x >= 320 && vr.y >= 240) {
-			return Rect2i(Vector2i(), vr);
+	Window *embedder = nullptr;
+	if (p_window && p_window->is_embedded()) {
+		embedder = Object::cast_to<Window>(p_window->get_embedder());
+	}
+	if (!embedder) {
+		Window *cur = host;
+		while (cur) {
+			if (cur->is_embedding_subwindows()) {
+				embedder = cur;
+				break;
+			}
+			Node *par = cur->get_parent();
+			cur = par ? par->get_window() : nullptr;
+			if (cur == host) {
+				cur = nullptr;
+			}
 		}
-		Size2i hsz = host ? host->get_size() : Size2i();
-		if (hsz.x >= 320 && hsz.y >= 240) {
-			return Rect2i(Vector2i(), hsz);
+	}
+	if (!embedder && p_window && p_window->is_inside_tree() && p_window->get_tree()) {
+		Window *rt = p_window->get_tree()->get_root();
+		if (rt && rt != p_window && rt->is_embedding_subwindows()) {
+			embedder = rt;
+		}
+	}
+	if (embedder) {
+		Size2i vr = Vector2i(embedder->get_visible_rect().size);
+		if (vr.x < 320 || vr.y < 240) {
+			vr = embedder->get_size();
+		}
+		if (vr.x >= 320 && vr.y >= 240) {
+			int top_decor = (p_window && !p_window->get_flag(Window::FLAG_BORDERLESS)) ? int(32 * MAX(0.5f, float(CG_SCALE))) : 0;
+			return Rect2i(Vector2i(0, top_decor), Size2i(vr.x, MAX(220, vr.y - top_decor)));
 		}
 	}
 	if (DisplayServer::get_singleton()) {

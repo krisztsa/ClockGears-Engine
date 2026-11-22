@@ -195,82 +195,110 @@ static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
 class ClockGearsTemplateThumbCtrl : public Control {
 	GDCLASS(ClockGearsTemplateThumbCtrl, Control);
 
-	Dictionary design_data;
-	Dictionary comp_elem;
-	bool is_comp = false;
+	SubViewport *vp = nullptr;
+	ColorRect *vp_bg = nullptr;
+	ClockGearsUiDesignLayer *preview_layer = nullptr;
+	TextureRect *tex_rect = nullptr;
+	bool built = false;
+
+	void _ensure_built() {
+		if (built) {
+			return;
+		}
+		built = true;
+		set_clip_contents(true);
+		set_mouse_filter(MOUSE_FILTER_IGNORE);
+
+		vp = memnew(SubViewport);
+		vp->set_name("ThumbViewport");
+		vp->set_size(Size2i(640, 360));
+		vp->set_disable_input(true);
+		vp->set_transparent_background(false);
+		vp->set_update_mode(SubViewport::UPDATE_ONCE);
+		add_child(vp);
+
+		vp_bg = memnew(ColorRect);
+		vp_bg->set_name("ThumbBackdrop");
+		vp_bg->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		vp_bg->set_color(ClockGearsTheme::color_bg_dark().darkened(0.35f));
+		vp->add_child(vp_bg);
+
+		preview_layer = memnew(ClockGearsUiDesignLayer);
+		preview_layer->set_name("ThumbDesignLayer");
+		preview_layer->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		preview_layer->set_size(Size2(640, 360));
+		preview_layer->set_preview_mode(true);
+		vp->add_child(preview_layer);
+
+		tex_rect = memnew(TextureRect);
+		tex_rect->set_name("ThumbTexRect");
+		tex_rect->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		tex_rect->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		tex_rect->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+		tex_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+		tex_rect->set_texture_filter(Control::TEXTURE_FILTER_LINEAR);
+		tex_rect->set_texture(vp->get_texture());
+		add_child(tex_rect);
+	}
 
 protected:
 	void _notification(int p_what) {
-		if (p_what != NOTIFICATION_DRAW) {
-			return;
-		}
-		Size2 sz = get_size();
-		if (sz.x <= 4.0f || sz.y <= 4.0f) {
-			return;
-		}
-		draw_rect(Rect2(Vector2(), sz), Color(0.08f, 0.10f, 0.15f, 1.0f));
-		Dictionary bg = design_data.get("background", Dictionary());
-		String bt = String(bg.get("type", "none")).to_lower();
-		if (bt == "color" && bg.has("color") && Color::html_is_valid(String(bg["color"]))) {
-			draw_rect(Rect2(Vector2(), sz), Color::html(String(bg["color"])));
-		} else if (bt == "gradient") {
-			Color gt = bg.has("gradient_top") && Color::html_is_valid(String(bg["gradient_top"])) ? Color::html(String(bg["gradient_top"])) : Color(0.14f, 0.17f, 0.28f, 1.0f);
-			draw_rect(Rect2(Vector2(), sz), gt);
-		}
-		if (is_comp && !comp_elem.is_empty()) {
-			Rect2 r(sz.x * 0.2f, sz.y * 0.2f, sz.x * 0.6f, sz.y * 0.6f);
-			draw_rect(r, Color(0.22f, 0.26f, 0.36f, 1.0f));
-			draw_rect(r, Color(0.95f, 0.72f, 0.30f, 1.0f), false, 1.5f);
-			return;
-		}
-		float sx = sz.x / 960.0f;
-		float sy = sz.y / 540.0f;
-		Dictionary lay = design_data.get("layout", Dictionary());
-		if (String(lay.get("mode", "")) == "radial") {
-			Vector2 c(float(lay.get("radial_center_x", 480)) * sx, float(lay.get("radial_center_y", 270)) * sy);
-			float r = float(lay.get("radial_radius", 145)) * MIN(sx, sy);
-			float start_deg = float(lay.get("radial_start_angle_deg", -90.0));
-			float sweep_deg = float(lay.get("radial_sweep_angle_deg", 360.0));
-			bool cw = lay.has("radial_clockwise") ? bool(lay["radial_clockwise"]) : true;
-			Array rslots = lay.get("radial_slots", Array());
-			int n = MAX(4, rslots.size());
-			draw_arc(c, r, Math::deg_to_rad(start_deg), Math::deg_to_rad(start_deg + (cw ? sweep_deg : -sweep_deg)), 24, Color(0.88f, 0.63f, 0.25f, 0.45f), 1.5f);
-			for (int i = 0; i < n; i++) {
-				float frac = (sweep_deg >= 359.0f) ? (float(i) / float(n)) : (n > 1 ? float(i) / float(n - 1) : 0.0f);
-				float a = Math::deg_to_rad(start_deg + (cw ? 1.0f : -1.0f) * sweep_deg * frac);
-				Vector2 sp = c + Vector2(Math::cos(a), Math::sin(a)) * r;
-				draw_circle(sp, MAX(4.0f, r * 0.18f), (i == 0) ? Color(0.95f, 0.72f, 0.30f, 1.0f) : Color(0.24f, 0.28f, 0.38f, 0.95f));
+		if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_VISIBILITY_CHANGED || p_what == NOTIFICATION_RESIZED) {
+			if (vp && is_visible_in_tree()) {
+				vp->set_update_mode(SubViewport::UPDATE_ONCE);
 			}
-			draw_circle(c, MAX(6.0f, r * 0.30f), Color(0.14f, 0.16f, 0.22f, 0.95f));
-		} else {
-			Array els = design_data.get("elements", Array());
-			for (int i = 0; i < els.size(); i++) {
-				if (els[i].get_type() != Variant::DICTIONARY) continue;
-				Dictionary el = els[i];
-				Rect2 r = ClockGearsUiDesignLayer::compute_element_rect(el, Rect2(Vector2(), sz), MIN(sx, sy));
-				String et = String(el.get("type", "text"));
-				Color fc(0.22f, 0.26f, 0.36f, 0.85f);
-				Color bc(0.88f, 0.63f, 0.25f, 0.75f);
-				if (et == "button") {
-					fc = Color(0.26f, 0.22f, 0.16f, 0.95f);
-					bc = Color(0.95f, 0.72f, 0.30f, 0.95f);
-				} else if (et == "text") {
-					fc = Color(0.85f, 0.88f, 0.95f, 0.55f);
-				} else if (et == "bar") {
-					fc = Color(0.82f, 0.25f, 0.25f, 0.90f);
-				}
-				draw_rect(r, fc, true);
-				draw_rect(r, bc, false, 1.0f);
+			queue_redraw();
+		} else if (p_what == NOTIFICATION_DRAW) {
+			Size2 sz = get_size();
+			if (sz.x > 4.0f && sz.y > 4.0f) {
+				Color bc = ClockGearsTheme::color_accent_amber();
+				bc.a = 0.45f;
+				draw_rect(Rect2(Vector2(), sz), bc, false, 1.0f);
 			}
 		}
-		draw_rect(Rect2(Vector2(), sz), Color(0.45f, 0.50f, 0.60f, 0.75f), false, 1.0f);
 	}
 
 public:
-	void setup_template(const Dictionary &p_tpl) {
-		is_comp = bool(p_tpl.get("is_component", false));
-		comp_elem = is_comp ? Dictionary(p_tpl.get("element", Dictionary())) : Dictionary();
-		design_data = is_comp ? Dictionary() : Dictionary(p_tpl.get("design", Dictionary()));
+	void setup_template(const Dictionary &p_tpl, const String &p_screen_id = String()) {
+		_ensure_built();
+		bool is_comp = bool(p_tpl.get("is_component", false));
+		String target_sid = p_screen_id.is_empty() ? String("game_menu_main") : p_screen_id;
+		Dictionary render_design;
+		if (is_comp) {
+			Dictionary cel = Dictionary(p_tpl.get("element", Dictionary())).duplicate(true);
+			if (!cel.is_empty()) {
+				int bw = MAX(32, int(cel.get("width", 120)));
+				int bh = MAX(32, int(cel.get("height", 120)));
+				float mult = CLAMP(MIN(420.0f / float(bw), 260.0f / float(bh)), 0.8f, 3.0f);
+				cel["anchor"] = "center";
+				cel["offset_x"] = 0;
+				cel["offset_y"] = 0;
+				cel["width"] = int(Math::round(float(bw) * mult));
+				cel["height"] = int(Math::round(float(bh) * mult));
+				if (String(cel.get("type", "")) == "container" && !p_screen_id.is_empty()) {
+					String ctx_ds = ClockGearsDataManager::get_contextual_data_source_for_screen(p_screen_id);
+					if (!ctx_ds.is_empty() && ctx_ds != "battle_commands") {
+						cel["data_source"] = ctx_ds;
+					}
+				}
+				Array els;
+				els.push_back(cel);
+				render_design["custom_enabled"] = true;
+				render_design["elements"] = els;
+			}
+		} else if (!p_screen_id.is_empty()) {
+			render_design = ClockGearsDataManager::adapt_ui_template_design_for_screen(p_tpl, p_screen_id);
+		} else {
+			render_design = Dictionary(p_tpl.get("design", Dictionary())).duplicate(true);
+		}
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			preview_layer->set_use_editor_test_data(dm->get_editor_test_data_count() >= 0);
+		}
+		vp->set_size(Size2i(640, 360));
+		preview_layer->set_size(Size2(640, 360));
+		preview_layer->apply_screen_design(target_sid, render_design);
+		tex_rect->set_texture(vp->get_texture());
+		vp->set_update_mode(SubViewport::UPDATE_ONCE);
 		queue_redraw();
 	}
 };
@@ -4168,6 +4196,12 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	sp_hb->add_child(prop_container_spy_spin);
 	make_prop_row(prop_container_box, String::utf8("Separación:"), String::utf8("Espacio en píxeles entre casillas."), "separacion espacio", false, sp_hb, "container,widget");
 
+	prop_container_pad_spin = memnew(SpinBox);
+	prop_container_pad_spin->set_min(0); prop_container_pad_spin->set_max(32); prop_container_pad_spin->set_suffix("px");
+	prop_container_pad_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_container_pad_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, "Relleno:", String::utf8("Margen interior en píxeles dentro de cada celda."), "relleno padding margen celda", false, prop_container_pad_spin, "container,widget");
+
 	prop_container_scroll_chk = memnew(CheckBox("Permitir scroll"));
 	prop_container_scroll_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
 	make_prop_row(prop_container_box, "Scroll:", String::utf8("Permite desplazarse cuando hay más elementos que el área visible."), "scroll desplazamiento", false, prop_container_scroll_chk, "container,widget");
@@ -4940,16 +4974,26 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	template_gallery_dialog->set_exclusive(false);
 	template_gallery_dialog->set_close_on_escape(true);
 	template_gallery_dialog->get_ok_button()->hide();
+	if (Control *ok_bar = Object::cast_to<Control>(template_gallery_dialog->get_ok_button()->get_parent())) {
+		ok_bar->hide();
+	}
 	template_gallery_dialog->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_close_requested));
 	template_gallery_dialog->connect("canceled", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_close_requested));
 	template_gallery_dialog->connect("window_input", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_window_input));
 	add_child(template_gallery_dialog);
 
+	Control *gal_host = memnew(Control);
+	gal_host->set_name("GalHost");
+	gal_host->set_clip_contents(true);
+	gal_host->set_custom_minimum_size(Size2(int(640 * EDSCALE), int(420 * EDSCALE)));
+	template_gallery_dialog->add_child(gal_host);
+
 	VBoxContainer *gal_vb = memnew(VBoxContainer);
+	gal_vb->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	gal_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	gal_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	gal_vb->add_theme_constant_override("separation", int(8 * EDSCALE));
-	template_gallery_dialog->add_child(gal_vb);
+	gal_host->add_child(gal_vb);
 
 	HBoxContainer *gal_hdr = memnew(HBoxContainer);
 	gal_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -4999,6 +5043,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	gal_vb->add_child(tpl_selected_info_lbl);
 
 	HFlowContainer *gal_acts = memnew(HFlowContainer);
+	gal_acts->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	gal_acts->add_theme_constant_override("h_separation", int(6 * EDSCALE));
 	gal_acts->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	gal_vb->add_child(gal_acts);
@@ -9382,8 +9427,8 @@ void ClockGearsUiDesignEditor::_open_menu_wizard() {
 			vb->add_theme_constant_override("separation", int(4 * EDSCALE));
 			card->add_child(vb);
 			ClockGearsTemplateThumbCtrl *th = memnew(ClockGearsTemplateThumbCtrl);
-			th->set_custom_minimum_size(Size2(180 * EDSCALE, 101 * EDSCALE));
-			th->setup_template(t);
+			th->set_custom_minimum_size(Size2(192 * EDSCALE, 108 * EDSCALE));
+			th->setup_template(t, current_screen_id);
 			vb->add_child(th);
 			Button *sb = memnew(Button(String(t.get("name", tid))));
 			sb->set_toggle_mode(true);
@@ -9493,6 +9538,9 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 	}
 	auto fill_grid = [&](GridContainer *p_grid, const Array &p_list) {
 		if (!p_grid) return;
+		if (ScrollContainer *sc_parent = Object::cast_to<ScrollContainer>(p_grid->get_parent())) {
+			sc_parent->set_v_scroll(0);
+		}
 		s_clear_container_children(p_grid);
 		for (int i = 0; i < p_list.size(); i++) {
 			Dictionary t = p_list[i];
@@ -9504,8 +9552,9 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			vb->add_theme_constant_override("separation", int(4 * EDSCALE));
 			card->add_child(vb);
 			ClockGearsTemplateThumbCtrl *th = memnew(ClockGearsTemplateThumbCtrl);
-			th->set_custom_minimum_size(Size2(192 * EDSCALE, 108 * EDSCALE));
-			th->setup_template(t);
+			th->set_custom_minimum_size(Size2(224 * EDSCALE, 126 * EDSCALE));
+			th->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			th->setup_template(t, current_screen_id);
 			vb->add_child(th);
 			String tname = String(t.get("name", tid));
 			String tdesc = String(t.get("description", ""));
@@ -9573,8 +9622,8 @@ void ClockGearsUiDesignEditor::_on_templates_btn_pressed() {
 	}
 	ClockGearsTheme::popup_fitted_window(
 			template_gallery_dialog,
-			Size2i(int(900 * EDSCALE), int(640 * EDSCALE)),
-			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			Size2i(int(920 * EDSCALE), int(620 * EDSCALE)),
+			Size2i(int(640 * EDSCALE), int(440 * EDSCALE)),
 			"ui_template_gallery");
 }
 
@@ -10684,6 +10733,7 @@ void ClockGearsUiDesignEditor::_refresh_container_inspector(const Dictionary &p_
 	if (prop_container_rows_spin) prop_container_rows_spin->set_value(CLAMP(int(p_el.get("layout_rows", 2)), 0, 20));
 	if (prop_container_spx_spin) prop_container_spx_spin->set_value(CLAMP(int(p_el.get("layout_spacing", 8)), 0, 64));
 	if (prop_container_spy_spin) prop_container_spy_spin->set_value(CLAMP(int(p_el.get("layout_spacing_y", p_el.get("layout_spacing", 8))), 0, 64));
+	if (prop_container_pad_spin) prop_container_pad_spin->set_value(CLAMP(int(p_el.get("cell_padding", 6)), 0, 32));
 	if (prop_container_scroll_chk) prop_container_scroll_chk->set_pressed(p_el.has("layout_scroll") ? bool(p_el["layout_scroll"]) : true);
 	if (prop_data_show_empty_chk) prop_data_show_empty_chk->set_pressed(p_el.has("data_show_empty") ? bool(p_el["data_show_empty"]) : true);
 	if (prop_data_empty_cnt_spin) prop_data_empty_cnt_spin->set_value(CLAMP(int(p_el.get("data_empty_count", 8)), 0, 64));
@@ -10719,6 +10769,7 @@ void ClockGearsUiDesignEditor::_on_prop_container_changed() {
 	if (prop_container_rows_spin) el["layout_rows"] = int(Math::round(prop_container_rows_spin->get_value()));
 	if (prop_container_spx_spin) el["layout_spacing"] = int(Math::round(prop_container_spx_spin->get_value()));
 	if (prop_container_spy_spin) el["layout_spacing_y"] = int(Math::round(prop_container_spy_spin->get_value()));
+	if (prop_container_pad_spin) el["cell_padding"] = int(Math::round(prop_container_pad_spin->get_value()));
 	if (prop_container_scroll_chk) el["layout_scroll"] = prop_container_scroll_chk->is_pressed();
 	if (prop_data_show_empty_chk) el["data_show_empty"] = prop_data_show_empty_chk->is_pressed();
 	if (prop_data_empty_cnt_spin) el["data_empty_count"] = int(Math::round(prop_data_empty_cnt_spin->get_value()));
@@ -11421,6 +11472,10 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["tpl_user_grid"] = tpl_user_grid;
 	out["tpl_apply_btn"] = tpl_apply_btn;
 	out["template_apply_confirm_dialog"] = template_apply_confirm_dialog;
+	out["prop_container_spx_spin"] = prop_container_spx_spin;
+	out["prop_container_spy_spin"] = prop_container_spy_spin;
+	out["prop_container_pad_spin"] = prop_container_pad_spin;
+	out["design_layer"] = design_layer;
 	out["props_mode_simple_btn"] = props_mode_simple_btn;
 	out["props_mode_adv_btn"] = props_mode_adv_btn;
 	out["props_search_edit"] = props_search_edit;
@@ -13684,8 +13739,9 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 
 	make_spin(dist_grid_box, "Columnas:", 1, 20, cont_cols_spin);
 	make_spin(dist_grid_box, "Filas:", 0, 20, cont_rows_spin);
-	make_spin(dist_grid_box, "Espacio X:", 0, 128, cont_spx_spin);
-	make_spin(dist_grid_box, "Espacio Y:", 0, 128, cont_spy_spin);
+	make_spin(dist_grid_box, String::utf8("Separación X:"), 0, 64, cont_spx_spin);
+	make_spin(dist_grid_box, String::utf8("Separación Y:"), 0, 64, cont_spy_spin);
+	make_spin(dist_grid_box, "Relleno:", 0, 32, cont_pad_spin);
 
 	cont_scroll_chk = memnew(CheckBox("Permitir desplazamiento (scroll)"));
 	cont_scroll_chk->set_clip_text(false);
@@ -14230,12 +14286,13 @@ void ClockGearsUiElementFloatingWindow::sync_from_element(const Dictionary &p_el
 	if (rad_ind_img_edit && rad_ind_img_edit->get_text() != String(lay.get("radial_indicator_image", ""))) {
 		rad_ind_img_edit->set_text(String(lay.get("radial_indicator_image", "")));
 	}
-	if (cont_layout_opt) s_select_option_meta(cont_layout_opt, String(lay.get("mode", "grid")));
-	if (cont_cols_spin) cont_cols_spin->set_value(int(lay.get("columns", 4)));
-	if (cont_rows_spin) cont_rows_spin->set_value(int(lay.get("rows", 0)));
-	if (cont_spx_spin) cont_spx_spin->set_value(int(lay.get("spacing_x", 10)));
-	if (cont_spy_spin) cont_spy_spin->set_value(int(lay.get("spacing_y", 10)));
-	if (cont_scroll_chk) cont_scroll_chk->set_pressed(lay.has("scroll_enabled") ? bool(lay["scroll_enabled"]) : true);
+	if (cont_layout_opt) s_select_option_meta(cont_layout_opt, String(p_elem.get("layout_mode", lay.get("mode", "grid"))));
+	if (cont_cols_spin) cont_cols_spin->set_value(int(p_elem.get("layout_columns", lay.get("columns", 4))));
+	if (cont_rows_spin) cont_rows_spin->set_value(int(p_elem.get("layout_rows", lay.get("rows", 2))));
+	if (cont_spx_spin) cont_spx_spin->set_value(int(p_elem.get("layout_spacing", lay.get("spacing_x", 8))));
+	if (cont_spy_spin) cont_spy_spin->set_value(int(p_elem.get("layout_spacing_y", lay.get("spacing_y", p_elem.get("layout_spacing", 8)))));
+	if (cont_pad_spin) cont_pad_spin->set_value(int(p_elem.get("cell_padding", 6)));
+	if (cont_scroll_chk) cont_scroll_chk->set_pressed(p_elem.has("layout_scroll") ? bool(p_elem["layout_scroll"]) : (lay.has("scroll_enabled") ? bool(lay["scroll_enabled"]) : true));
 
 	if (el_data_source_opt) s_select_option_meta(el_data_source_opt, String(p_elem.get("data_source", "manual")));
 	if (el_filter_opt) s_select_option_meta(el_filter_opt, String(p_elem.get("data_filter_category", "")));
@@ -14526,12 +14583,37 @@ void ClockGearsUiElementFloatingWindow::_emit_commit() {
 			if (rad_ind_col_btn) lay["radial_indicator_color"] = "#" + rad_ind_col_btn->get_pick_color().to_html(true);
 			if (rad_ind_img_edit) lay["radial_indicator_image"] = rad_ind_img_edit->get_text().strip_edges();
 		} else if (tp == "container") {
-			if (cont_layout_opt && cont_layout_opt->get_selected() >= 0) lay["mode"] = String(cont_layout_opt->get_item_metadata(cont_layout_opt->get_selected()));
-			if (cont_cols_spin) lay["columns"] = int(Math::round(cont_cols_spin->get_value()));
-			if (cont_rows_spin) lay["rows"] = int(Math::round(cont_rows_spin->get_value()));
-			if (cont_spx_spin) lay["spacing_x"] = int(Math::round(cont_spx_spin->get_value()));
-			if (cont_spy_spin) lay["spacing_y"] = int(Math::round(cont_spy_spin->get_value()));
-			if (cont_scroll_chk) lay["scroll_enabled"] = cont_scroll_chk->is_pressed();
+			String lm_str = (cont_layout_opt && cont_layout_opt->get_selected() >= 0) ? String(cont_layout_opt->get_item_metadata(cont_layout_opt->get_selected())) : String("grid");
+			lay["mode"] = lm_str;
+			el["layout_mode"] = lm_str;
+			if (cont_cols_spin) {
+				int cv = int(Math::round(cont_cols_spin->get_value()));
+				lay["columns"] = cv;
+				el["layout_columns"] = cv;
+			}
+			if (cont_rows_spin) {
+				int rv = int(Math::round(cont_rows_spin->get_value()));
+				lay["rows"] = rv;
+				el["layout_rows"] = rv;
+			}
+			if (cont_spx_spin) {
+				int sxv = int(Math::round(cont_spx_spin->get_value()));
+				lay["spacing_x"] = sxv;
+				el["layout_spacing"] = sxv;
+			}
+			if (cont_spy_spin) {
+				int syv = int(Math::round(cont_spy_spin->get_value()));
+				lay["spacing_y"] = syv;
+				el["layout_spacing_y"] = syv;
+			}
+			if (cont_pad_spin) {
+				el["cell_padding"] = int(Math::round(cont_pad_spin->get_value()));
+			}
+			if (cont_scroll_chk) {
+				bool sc = cont_scroll_chk->is_pressed();
+				lay["scroll_enabled"] = sc;
+				el["layout_scroll"] = sc;
+			}
 		}
 		if (anim_type_opt && anim_type_opt->get_selected() >= 0) lay["radial_open_anim"] = String(anim_type_opt->get_item_metadata(anim_type_opt->get_selected()));
 		if (anim_dur_spin) lay["radial_open_duration_ms"] = int(Math::round(anim_dur_spin->get_value()));
