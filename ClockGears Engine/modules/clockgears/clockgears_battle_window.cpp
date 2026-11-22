@@ -1250,9 +1250,12 @@ void ClockGearsBattleScene::_display_message(const String &p_text) {
 	if (message_window) {
 		String notice_wt;
 		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
-			Dictionary bdesign = dm->has_custom_ui_design("battle")
-					? dm->get_ui_screen_design("battle")
-					: dm->get_default_ui_screen_template("battle");
+			String scr_id = (dm->has_menu("battle_notice") && (dm->has_custom_ui_design("battle_notice") || !dm->has_custom_ui_design("battle")))
+					? String("battle_notice")
+					: String("battle");
+			Dictionary bdesign = dm->has_custom_ui_design(scr_id)
+					? dm->get_ui_screen_design(scr_id)
+					: dm->get_default_ui_screen_template("battle_notice");
 			Array belems = bdesign.get("elements", Array());
 			for (int i = 0; i < belems.size(); i++) {
 				if (belems[i].get_type() != Variant::DICTIONARY) continue;
@@ -1262,7 +1265,7 @@ void ClockGearsBattleScene::_display_message(const String &p_text) {
 				if (eid == "battle_notice_frame" || ename == "aviso de batalla") {
 					message_window->set_meta("_cg_battle_notice_source", el.get("id", "battle_notice_frame"));
 					String ws = String(el.get("window_style_id", "")).strip_edges().to_lower();
-					if (!ws.is_empty() && ws != "dialog" && ws != "default" && dm->has_custom_ui_design("battle")) {
+					if (!ws.is_empty() && ws != "dialog" && ws != "default" && dm->has_custom_ui_design(scr_id)) {
 						notice_wt = ws;
 					}
 					break;

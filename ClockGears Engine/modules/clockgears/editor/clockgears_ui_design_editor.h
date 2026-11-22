@@ -340,6 +340,10 @@ private:
 	Button *add_button_bar_btn = nullptr;
 	Button *templates_btn = nullptr;
 	Label *screen_status_lbl = nullptr;
+	CheckBox *view_context_chk = nullptr;
+	CheckBox *sample_scene_chk = nullptr;
+	Control *ctx_battle_backdrop_node = nullptr;
+	Control *context_layers_root = nullptr;
 
 	// Barra de edición rápida (rejilla, paso, imán, guías, alinear, distribuir, duplicar, copiar/pegar)
 	CheckBox *grid_chk = nullptr;
@@ -741,6 +745,9 @@ private:
 	void _on_preview_res_selected(int p_idx);
 	void _refresh_canvas_stage();
 	void _refresh_background_and_default_preview(bool p_has_custom);
+	void _refresh_context_preview();
+	void _on_context_chk_toggled(bool p_pressed);
+	void _on_sample_scene_chk_toggled(bool p_pressed);
 	void _refresh_menus_list();
 	void _refresh_screen_dropdown();
 	void _refresh_layers_list();

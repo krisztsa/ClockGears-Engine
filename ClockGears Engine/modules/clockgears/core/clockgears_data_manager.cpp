@@ -2015,7 +2015,7 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		bool has_legacy_mb = raw_scr_map.has("messages_battle") || raw_scr_map.has("mensajes_batalla") || raw_scr_map.has("mensajes y batalla") || raw_scr_map.has("battle_messages");
 		ui_designs_config = normalize_ui_designs_config(raw_uid);
 		if ((raw_ui_schema < CURRENT_UI_DESIGNS_SCHEMA_VERSION || has_legacy_mb) && FileAccess::exists(ui_designs_path)) {
-			String orig_bak = ui_designs_path + (raw_ui_schema < 2 ? String(".pre_menu_v2.bak") : (raw_ui_schema < 3 ? String(".pre_hierarchy_v3.bak") : String(".pre_messages_battle_split.bak")));
+			String orig_bak = ui_designs_path + (raw_ui_schema < 2 ? String(".pre_menu_v2.bak") : (raw_ui_schema < 3 ? String(".pre_hierarchy_v3.bak") : (raw_ui_schema < 4 ? String(".pre_messages_battle_split.bak") : String(".pre_subscreens_v5.bak"))));
 			if (!FileAccess::exists(orig_bak)) {
 				PackedByteArray raw_bytes = FileAccess::get_file_as_bytes(ui_designs_path);
 				Ref<FileAccess> fb = FileAccess::open(orig_bak, FileAccess::WRITE);
@@ -4836,9 +4836,18 @@ static String _cg_norm_ui_screen_id(const String &p_raw) {
 			s == "messages_battle" || s == "mensajes_batalla" || s == "mensajes y batalla" || s == "battle_messages") {
 		return "messages";
 	}
+	if (s == "messages_choices" || s == "ventana_elecciones") return "messages_choices";
+	if (s == "messages_number" || s == "entrada_numero") return "messages_number";
+	if (s == "messages_history" || s == "historial_mensajes") return "messages_history";
+	if (s == "messages_gold" || s == "ventana_oro") return "messages_gold";
 	if (s == "battle" || s == "batalla" || s == "combat" || s == "combate") {
 		return "battle";
 	}
+	if (s == "battle_party" || s == "panel_grupo") return "battle_party";
+	if (s == "battle_enemies" || s == "panel_enemigos") return "battle_enemies";
+	if (s == "battle_notice" || s == "aviso_batalla" || s == "avisos_batalla") return "battle_notice";
+	if (s == "battle_submenu" || s == "battle_skills" || s == "habilidades_objetos") return "battle_submenu";
+	if (s == "battle_target" || s == "seleccion_objetivo") return "battle_target";
 	String slug = _cg_slugify_menu_id(s);
 	return slug.is_empty() ? String("menu_custom") : slug;
 }
@@ -4848,7 +4857,20 @@ static bool _cg_is_system_menu_id(const String &p_id) {
 			p_id == "game_menu_equip" || p_id == "game_menu_status" ||
 			p_id == "game_menu_save" || p_id == "game_menu_options" ||
 			p_id == "credits" || p_id == "hud" || p_id == "game_over" ||
-			p_id == "messages" || p_id == "battle";
+			p_id == "messages" || p_id == "messages_choices" || p_id == "messages_number" ||
+			p_id == "messages_history" || p_id == "messages_gold" ||
+			p_id == "battle" || p_id == "battle_party" || p_id == "battle_enemies" ||
+			p_id == "battle_notice" || p_id == "battle_submenu" || p_id == "battle_target";
+}
+
+static String _cg_system_subscreen_parent_id(const String &p_id) {
+	if (p_id == "messages_choices" || p_id == "messages_number" || p_id == "messages_history" || p_id == "messages_gold") {
+		return "messages";
+	}
+	if (p_id == "battle_party" || p_id == "battle_enemies" || p_id == "battle_notice" || p_id == "battle_submenu" || p_id == "battle_target") {
+		return "battle";
+	}
+	return "";
 }
 
 static String _cg_default_system_menu_name(const String &p_id) {
@@ -4862,8 +4884,17 @@ static String _cg_default_system_menu_name(const String &p_id) {
 	if (p_id == "credits") return String::utf8("Créditos");
 	if (p_id == "hud") return "HUD";
 	if (p_id == "game_over") return "Game Over";
-	if (p_id == "messages") return "Mensajes";
-	if (p_id == "battle") return "Batalla";
+	if (p_id == "messages") return String::utf8("Cuadro de diálogo");
+	if (p_id == "messages_choices") return "Ventana de elecciones";
+	if (p_id == "messages_number") return String::utf8("Entrada de número");
+	if (p_id == "messages_history") return "Historial de mensajes";
+	if (p_id == "messages_gold") return "Ventana de oro";
+	if (p_id == "battle") return "Panel de comandos";
+	if (p_id == "battle_party") return "Panel del grupo";
+	if (p_id == "battle_enemies") return "Panel de enemigos";
+	if (p_id == "battle_notice") return "Avisos de batalla";
+	if (p_id == "battle_submenu") return "Lista de habilidades y objetos";
+	if (p_id == "battle_target") return String::utf8("Selección de objetivo");
 	return p_id;
 }
 
@@ -4872,7 +4903,10 @@ static String _cg_default_system_menu_win_type(const String &p_id) {
 	if (p_id == "game_menu_save") return "save_list";
 	if (p_id == "game_menu_options") return "options";
 	if (p_id == "hud") return "hud";
-	if (p_id == "messages") return "dialog";
+	if (p_id == "messages" || p_id == "messages_number" || p_id == "messages_history" || p_id == "messages_gold" || p_id == "battle_notice") return "dialog";
+	if (p_id == "messages_choices") return "choices";
+	if (p_id == "battle_party") return "battle_party";
+	if (p_id == "battle" || p_id == "battle_submenu" || p_id == "battle_target") return "battle_commands";
 	return "game_menu";
 }
 
@@ -5607,7 +5641,16 @@ PackedStringArray ClockGearsDataManager::get_system_menu_ids() {
 	out.push_back("game_over");
 	out.push_back("hud");
 	out.push_back("messages");
+	out.push_back("messages_choices");
+	out.push_back("messages_number");
+	out.push_back("messages_history");
+	out.push_back("messages_gold");
 	out.push_back("battle");
+	out.push_back("battle_party");
+	out.push_back("battle_enemies");
+	out.push_back("battle_notice");
+	out.push_back("battle_submenu");
+	out.push_back("battle_target");
 	return out;
 }
 
@@ -6016,14 +6059,14 @@ Array ClockGearsDataManager::get_ui_button_actions(const String &p_screen_id) {
 	} else if (sid == "credits") {
 		push_a("back", "Volver");
 		push_a("close", String::utf8("Cerrar créditos"));
-	} else if (sid == "messages") {
+	} else if (sid == "messages" || sid.begins_with("messages_")) {
 		push_a("close", "Continuar / Confirmar");
 		push_a("open_system_screen", "Abrir pantalla de sistema");
 		push_a("common_event", String::utf8("Ejecutar evento común"));
 		push_a("set_switch", "Cambiar interruptor");
 		push_a("set_variable", "Cambiar variable");
-	} else if (sid == "battle") {
-		push_a("close", "Confirmar / Ejecutar acción");
+	} else if (sid == "battle" || sid.begins_with("battle_")) {
+		push_a("close", String::utf8("Confirmar / Ejecutar acción"));
 		push_a("open_system_screen", "Abrir habilidad u objeto");
 		push_a("common_event", String::utf8("Ejecutar evento común"));
 		push_a("set_switch", "Cambiar interruptor");
@@ -6773,6 +6816,123 @@ Dictionary ClockGearsDataManager::normalize_ui_designs_config(const Dictionary &
 		raw_screens.erase(legacy_mb_key);
 	}
 
+	// Migración v4 -> v5: repartir sub-pantallas por grupos de primer nivel entre Mensajes y Batalla
+	auto split_parent_subscreens = [&](const String &p_parent_id, const Vector<String> &p_sub_ids, bool p_is_battle) {
+		if (!raw_screens.has(p_parent_id) || raw_screens[p_parent_id].get_type() != Variant::DICTIONARY) {
+			return;
+		}
+		bool any_missing = false;
+		for (int i = 0; i < p_sub_ids.size(); i++) {
+			if (!raw_screens.has(p_sub_ids[i])) {
+				any_missing = true;
+				break;
+			}
+		}
+		if (!any_missing) {
+			return;
+		}
+		Dictionary par_raw = Dictionary(raw_screens[p_parent_id]).duplicate(true);
+		Array par_elems = par_raw.has("elements") && par_raw["elements"].get_type() == Variant::ARRAY ? Array(par_raw["elements"]) : Array();
+		bool par_custom = bool(par_raw.get("custom_enabled", false));
+		HashMap<String, Dictionary> by_id;
+		for (int i = 0; i < par_elems.size(); i++) {
+			if (par_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary e = par_elems[i];
+			String eid = String(e.get("id", "")).strip_edges().to_lower();
+			if (!eid.is_empty()) by_id[eid] = e;
+		}
+		auto classify_elem_dest = [&](const Dictionary &p_el) -> String {
+			String cur_pid = String(p_el.get("parent_id", "")).strip_edges().to_lower();
+			HashSet<String> seen;
+			Dictionary root_el = p_el;
+			while (!cur_pid.is_empty() && by_id.has(cur_pid) && !seen.has(cur_pid)) {
+				seen.insert(cur_pid);
+				root_el = by_id[cur_pid];
+				cur_pid = String(root_el.get("parent_id", "")).strip_edges().to_lower();
+			}
+			String rid = String(root_el.get("id", "")).strip_edges().to_lower();
+			String rname = String(root_el.get("name", "")).strip_edges().to_lower();
+			if (!p_is_battle) {
+				if (rid.begins_with("msg_choices") || rname.contains("elecci")) return "messages_choices";
+				if (rid.begins_with("msg_number") || rname.contains(String::utf8("número")) || rname.contains("numero")) return "messages_number";
+				if (rid.begins_with("msg_history") || rname.contains("historial")) return "messages_history";
+				if (rid.begins_with("msg_gold") || rname.contains("oro")) return "messages_gold";
+				return "messages";
+			} else {
+				if (rid.begins_with("battle_party") || rname.contains("grupo") || rname.contains("party")) return "battle_party";
+				if (rid.begins_with("battle_enemies") || rname.contains("enemig") || rname.contains("enemy")) return "battle_enemies";
+				if (rid.begins_with("battle_notice") || rname.contains("aviso")) return "battle_notice";
+				if (rid.begins_with("battle_submenu") || rname.contains("habilidad") || rname.contains("objeto") || rname.contains("submen")) return "battle_submenu";
+				if (rid.begins_with("battle_target") || rname.contains("objetivo")) return "battle_target";
+				return "battle";
+			}
+		};
+		HashMap<String, Array> partitioned;
+		partitioned[p_parent_id] = Array();
+		for (int i = 0; i < p_sub_ids.size(); i++) {
+			partitioned[p_sub_ids[i]] = Array();
+		}
+		Array rep_rows = s_last_ui_migration_report.has("elements") && s_last_ui_migration_report["elements"].get_type() == Variant::ARRAY
+				? Array(s_last_ui_migration_report["elements"]).duplicate(true)
+				: Array();
+		for (int i = 0; i < par_elems.size(); i++) {
+			if (par_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary el = Dictionary(par_elems[i]).duplicate(true);
+			String dest = classify_elem_dest(el);
+			if (!partitioned.has(dest)) dest = p_parent_id;
+			partitioned[dest].push_back(el);
+			if (dest != p_parent_id || rep_rows.is_empty()) {
+				Dictionary rr;
+				rr["id"] = String(el.get("id", vformat("elem_%d", i + 1)));
+				rr["name"] = String(el.get("name", rr["id"]));
+				rr["type"] = String(el.get("type", "frame"));
+				rr["from"] = p_parent_id;
+				rr["to"] = dest;
+				rep_rows.push_back(rr);
+			}
+		}
+		if (!par_elems.is_empty()) {
+			Dictionary updated_parent = par_raw.duplicate(true);
+			updated_parent["elements"] = partitioned[p_parent_id];
+			updated_parent["custom_enabled"] = par_custom && !partitioned[p_parent_id].is_empty();
+			raw_screens[p_parent_id] = updated_parent;
+		}
+		for (int i = 0; i < p_sub_ids.size(); i++) {
+			const String &sub_id = p_sub_ids[i];
+			if (raw_screens.has(sub_id)) continue;
+			Dictionary sd = par_raw.duplicate(true);
+			Array selems = partitioned[sub_id];
+			sd["screen_id"] = sub_id;
+			sd["parent_id"] = p_parent_id;
+			sd["system_group"] = p_parent_id;
+			sd["name"] = _cg_default_system_menu_name(sub_id);
+			sd["window_type"] = _cg_default_system_menu_win_type(sub_id);
+			sd["elements"] = selems;
+			sd["custom_enabled"] = !selems.is_empty();
+			raw_screens[sub_id] = sd;
+		}
+		if (!par_elems.is_empty()) {
+			s_last_ui_migration_report["migrated"] = true;
+			s_last_ui_migration_report["elements"] = rep_rows;
+		}
+	};
+	if (raw_screens.has("messages") || raw_screens.has("battle")) {
+		Vector<String> msg_subs;
+		msg_subs.push_back("messages_choices");
+		msg_subs.push_back("messages_number");
+		msg_subs.push_back("messages_history");
+		msg_subs.push_back("messages_gold");
+		split_parent_subscreens("messages", msg_subs, false);
+
+		Vector<String> bat_subs;
+		bat_subs.push_back("battle_party");
+		bat_subs.push_back("battle_enemies");
+		bat_subs.push_back("battle_notice");
+		bat_subs.push_back("battle_submenu");
+		bat_subs.push_back("battle_target");
+		split_parent_subscreens("battle", bat_subs, true);
+	}
+
 	PackedStringArray sys_sids = get_system_menu_ids();
 	HashSet<String> seen_keys;
 	for (int i = 0; i < sys_sids.size(); i++) {
@@ -7233,14 +7393,15 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		tb["focus_order"] = 1;
 		elems.push_back(tb);
 	} else if (sid == "messages") {
+		// Posición y tamaño reales de ClockGearsMessageWindow::main_panel a 960x540 (margin_x=38.4, win_w=883.2, win_h=151.2, win_y=372.8)
 		Dictionary mfr = make_default_ui_element("frame", sid);
 		mfr["id"] = "msg_box_frame";
 		mfr["name"] = String::utf8("Cuadro de diálogo");
-		mfr["anchor"] = "bottom_center";
-		mfr["offset_x"] = 0;
-		mfr["offset_y"] = -16;
-		mfr["width"] = 880;
-		mfr["height"] = 156;
+		mfr["anchor"] = "top_left";
+		mfr["offset_x"] = 38;
+		mfr["offset_y"] = 373;
+		mfr["width"] = 883;
+		mfr["height"] = 151;
 		mfr["window_style_id"] = "dialog";
 		mfr["layer_order"] = 0;
 		elems.push_back(mfr);
@@ -7251,12 +7412,26 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		nfr["name"] = "Caja de nombre";
 		nfr["anchor"] = "top_left";
 		nfr["offset_x"] = 16;
-		nfr["offset_y"] = -34;
-		nfr["width"] = 220;
-		nfr["height"] = 32;
+		nfr["offset_y"] = -30;
+		nfr["width"] = 116;
+		nfr["height"] = 28;
 		nfr["window_style_id"] = "dialog";
 		nfr["layer_order"] = 1;
 		elems.push_back(nfr);
+
+		Dictionary spk = make_default_ui_element("text", sid);
+		spk["id"] = "msg_speaker_lbl";
+		spk["parent_id"] = "msg_name_frame";
+		spk["name"] = "Nombre hablante";
+		spk["text"] = "Personaje";
+		spk["anchor"] = "top_left";
+		spk["offset_x"] = 8;
+		spk["offset_y"] = 3;
+		spk["width"] = 100;
+		spk["height"] = 22;
+		spk["font_size"] = 16;
+		spk["layer_order"] = 2;
+		elems.push_back(spk);
 
 		Dictionary por = make_default_ui_element("image", sid);
 		por["id"] = "msg_portrait";
@@ -7264,25 +7439,11 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		por["name"] = "Retrato hablante";
 		por["anchor"] = "top_left";
 		por["offset_x"] = 16;
-		por["offset_y"] = 32;
-		por["width"] = 96;
-		por["height"] = 96;
+		por["offset_y"] = 31;
+		por["width"] = 88;
+		por["height"] = 88;
 		por["layer_order"] = 2;
 		elems.push_back(por);
-
-		Dictionary spk = make_default_ui_element("text", sid);
-		spk["id"] = "msg_speaker_lbl";
-		spk["parent_id"] = "msg_box_frame";
-		spk["name"] = "Nombre hablante";
-		spk["text"] = "Personaje";
-		spk["anchor"] = "top_left";
-		spk["offset_x"] = 128;
-		spk["offset_y"] = 16;
-		spk["width"] = 300;
-		spk["height"] = 28;
-		spk["font_size"] = 20;
-		spk["layer_order"] = 2;
-		elems.push_back(spk);
 
 		Dictionary bdy = make_default_ui_element("text", sid);
 		bdy["id"] = "msg_body_lbl";
@@ -7290,24 +7451,25 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		bdy["name"] = "Texto mensaje";
 		bdy["text"] = String::utf8("Texto de diálogo...");
 		bdy["anchor"] = "top_left";
-		bdy["offset_x"] = 128;
-		bdy["offset_y"] = 52;
-		bdy["width"] = 700;
-		bdy["height"] = 86;
-		bdy["font_size"] = 18;
+		bdy["offset_x"] = 116;
+		bdy["offset_y"] = 20;
+		bdy["width"] = 740;
+		bdy["height"] = 110;
+		bdy["font_size"] = 16;
 		bdy["layer_order"] = 2;
 		elems.push_back(bdy);
-
+	} else if (sid == "messages_choices") {
+		// Posición y tamaño reales de ClockGearsMessageWindow::choices_panel a 960x540 (pos=(595.2, 148.8), size=(326.4, 216.0))
 		Dictionary chfr = make_default_ui_element("frame", sid);
 		chfr["id"] = "msg_choices_frame";
 		chfr["name"] = "Ventana de elecciones";
-		chfr["anchor"] = "bottom_right";
-		chfr["offset_x"] = -40;
-		chfr["offset_y"] = -184;
-		chfr["width"] = 260;
-		chfr["height"] = 136;
+		chfr["anchor"] = "top_left";
+		chfr["offset_x"] = 595;
+		chfr["offset_y"] = 149;
+		chfr["width"] = 326;
+		chfr["height"] = 216;
 		chfr["window_style_id"] = "choices";
-		chfr["layer_order"] = 1;
+		chfr["layer_order"] = 0;
 		elems.push_back(chfr);
 
 		Dictionary chlbl = make_default_ui_element("text", sid);
@@ -7318,22 +7480,23 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		chlbl["anchor"] = "top_left";
 		chlbl["offset_x"] = 16;
 		chlbl["offset_y"] = 14;
-		chlbl["width"] = 228;
-		chlbl["height"] = 108;
-		chlbl["font_size"] = 18;
+		chlbl["width"] = 294;
+		chlbl["height"] = 188;
+		chlbl["font_size"] = 16;
 		chlbl["layer_order"] = 2;
 		elems.push_back(chlbl);
-
+	} else if (sid == "messages_number") {
+		// Posición y tamaño reales de ClockGearsMessageWindow::number_panel a 960x540 (340, 235, 280, 70)
 		Dictionary nmb = make_default_ui_element("frame", sid);
 		nmb["id"] = "msg_number_frame";
 		nmb["name"] = String::utf8("Entrada de número");
-		nmb["anchor"] = "center";
-		nmb["offset_x"] = 0;
-		nmb["offset_y"] = -30;
-		nmb["width"] = 260;
-		nmb["height"] = 68;
+		nmb["anchor"] = "top_left";
+		nmb["offset_x"] = 340;
+		nmb["offset_y"] = 235;
+		nmb["width"] = 280;
+		nmb["height"] = 70;
 		nmb["window_style_id"] = "dialog";
-		nmb["layer_order"] = 1;
+		nmb["layer_order"] = 0;
 		elems.push_back(nmb);
 
 		Dictionary nmbl = make_default_ui_element("text", sid);
@@ -7349,17 +7512,18 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		nmbl["font_size"] = 22;
 		nmbl["layer_order"] = 2;
 		elems.push_back(nmbl);
-
+	} else if (sid == "messages_history") {
+		// Posición y tamaño reales de ClockGearsMessageWindow::history_panel a 960x540 (38.4, 20, 883.2, 500)
 		Dictionary hfr = make_default_ui_element("frame", sid);
 		hfr["id"] = "msg_history_frame";
 		hfr["name"] = "Historial de mensajes";
 		hfr["anchor"] = "top_left";
-		hfr["offset_x"] = 40;
-		hfr["offset_y"] = 24;
-		hfr["width"] = 340;
-		hfr["height"] = 132;
+		hfr["offset_x"] = 38;
+		hfr["offset_y"] = 20;
+		hfr["width"] = 883;
+		hfr["height"] = 500;
 		hfr["window_style_id"] = "dialog";
-		hfr["layer_order"] = 1;
+		hfr["layer_order"] = 0;
 		elems.push_back(hfr);
 
 		Dictionary hlbl = make_default_ui_element("text", sid);
@@ -7368,48 +7532,50 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		hlbl["name"] = "Entradas del historial";
 		hlbl["text"] = String::utf8("Historial:\n· Aldeano: ¡Bienvenido al pueblo!");
 		hlbl["anchor"] = "top_left";
-		hlbl["offset_x"] = 14;
-		hlbl["offset_y"] = 12;
-		hlbl["width"] = 312;
-		hlbl["height"] = 108;
+		hlbl["offset_x"] = 16;
+		hlbl["offset_y"] = 16;
+		hlbl["width"] = 850;
+		hlbl["height"] = 468;
 		hlbl["font_size"] = 15;
 		hlbl["layer_order"] = 2;
 		elems.push_back(hlbl);
+	} else if (sid == "messages_gold") {
+		// Posición y tamaño reales de ClockGearsMessageWindow::gold_panel a 960x540 (780, 16, 160, 43)
+		Dictionary gfr = make_default_ui_element("frame", sid);
+		gfr["id"] = "msg_gold_frame";
+		gfr["name"] = "Ventana de oro";
+		gfr["anchor"] = "top_left";
+		gfr["offset_x"] = 780;
+		gfr["offset_y"] = 16;
+		gfr["width"] = 160;
+		gfr["height"] = 43;
+		gfr["window_style_id"] = "dialog";
+		gfr["layer_order"] = 0;
+		elems.push_back(gfr);
+
+		Dictionary glbl = make_default_ui_element("text", sid);
+		glbl["id"] = "msg_gold_lbl";
+		glbl["parent_id"] = "msg_gold_frame";
+		glbl["name"] = "Cantidad de oro";
+		glbl["text"] = "Oro: 1250 G";
+		glbl["anchor"] = "top_left";
+		glbl["offset_x"] = 12;
+		glbl["offset_y"] = 9;
+		glbl["width"] = 136;
+		glbl["height"] = 24;
+		glbl["font_size"] = 15;
+		glbl["layer_order"] = 2;
+		elems.push_back(glbl);
 	} else if (sid == "battle") {
-		Dictionary efr = make_default_ui_element("frame", sid);
-		efr["id"] = "battle_enemies_frame";
-		efr["name"] = "Panel de enemigos";
-		efr["anchor"] = "top_left";
-		efr["offset_x"] = 24;
-		efr["offset_y"] = 24;
-		efr["width"] = 660;
-		efr["height"] = 180;
-		efr["window_style_id"] = "game_menu";
-		efr["layer_order"] = 0;
-		elems.push_back(efr);
-
-		Dictionary elbl = make_default_ui_element("text", sid);
-		elbl["id"] = "battle_enemies_lbl";
-		elbl["parent_id"] = "battle_enemies_frame";
-		elbl["name"] = "Enemigos en combate";
-		elbl["text"] = "Slime Lv.2   ·   Murciélago Lv.3";
-		elbl["anchor"] = "top_left";
-		elbl["offset_x"] = 16;
-		elbl["offset_y"] = 16;
-		elbl["width"] = 628;
-		elbl["height"] = 148;
-		elbl["font_size"] = 18;
-		elbl["layer_order"] = 2;
-		elems.push_back(elbl);
-
+		// Posición y tamaño reales de ClockGearsBattleScene::actions_panel a 960x540 (776, 313, 160, 211)
 		Dictionary bfr = make_default_ui_element("frame", sid);
 		bfr["id"] = "battle_cmd_frame";
 		bfr["name"] = "Marco comandos batalla";
-		bfr["anchor"] = "top_right";
-		bfr["offset_x"] = -24;
-		bfr["offset_y"] = 24;
-		bfr["width"] = 220;
-		bfr["height"] = 258;
+		bfr["anchor"] = "top_left";
+		bfr["offset_x"] = 776;
+		bfr["offset_y"] = 313;
+		bfr["width"] = 160;
+		bfr["height"] = 211;
 		bfr["window_style_id"] = "battle_commands";
 		bfr["layer_order"] = 0;
 		elems.push_back(bfr);
@@ -7427,23 +7593,25 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 				bb["target_screen"] = "game_menu_items";
 			}
 			bb["anchor"] = "top_left";
-			bb["offset_x"] = 16;
-			bb["offset_y"] = 14 + i * 46;
-			bb["width"] = 188;
-			bb["height"] = 38;
+			bb["offset_x"] = 8;
+			bb["offset_y"] = 10 + i * 39;
+			bb["width"] = 144;
+			bb["height"] = 34;
+			bb["font_size"] = 14;
 			bb["focus_order"] = i;
 			bb["layer_order"] = 2;
 			elems.push_back(bb);
 		}
-
+	} else if (sid == "battle_party") {
+		// Posición y tamaño reales de ClockGearsBattleScene::party_container a 960x540 (16, 313, 744, 211)
 		Dictionary pfr = make_default_ui_element("frame", sid);
 		pfr["id"] = "battle_party_frame";
 		pfr["name"] = "Panel del grupo";
-		pfr["anchor"] = "bottom_left";
-		pfr["offset_x"] = 40;
-		pfr["offset_y"] = -184;
-		pfr["width"] = 660;
-		pfr["height"] = 128;
+		pfr["anchor"] = "top_left";
+		pfr["offset_x"] = 16;
+		pfr["offset_y"] = 313;
+		pfr["width"] = 744;
+		pfr["height"] = 211;
 		pfr["window_style_id"] = "battle_party";
 		pfr["layer_order"] = 0;
 		elems.push_back(pfr);
@@ -7452,41 +7620,125 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		plbl["id"] = "battle_party_lbl";
 		plbl["parent_id"] = "battle_party_frame";
 		plbl["name"] = "Estado del grupo";
-		plbl["text"] = String::utf8("Héroe   PV 120/120   PM 45/45");
+		plbl["text"] = String::utf8("Héroe (Nv 1)   HP: 120 / 120   PM: 45 / 45");
 		plbl["anchor"] = "top_left";
 		plbl["offset_x"] = 16;
 		plbl["offset_y"] = 16;
-		plbl["width"] = 628;
-		plbl["height"] = 96;
-		plbl["font_size"] = 18;
+		plbl["width"] = 712;
+		plbl["height"] = 179;
+		plbl["font_size"] = 16;
 		plbl["layer_order"] = 2;
 		elems.push_back(plbl);
+	} else if (sid == "battle_enemies") {
+		// En combate real, enemies_field abarca el campo superior (sin marco en pantalla; área 16, 12, 920, 360)
+		Dictionary efr = make_default_ui_element("frame", sid);
+		efr["id"] = "battle_enemies_frame";
+		efr["name"] = "Panel de enemigos";
+		efr["anchor"] = "top_left";
+		efr["offset_x"] = 16;
+		efr["offset_y"] = 12;
+		efr["width"] = 920;
+		efr["height"] = 360;
+		efr["show_bg"] = false;
+		efr["border_width"] = 0;
+		efr["window_style_id"] = "game_menu";
+		efr["layer_order"] = 0;
+		elems.push_back(efr);
 
+		Dictionary elbl = make_default_ui_element("text", sid);
+		elbl["id"] = "battle_enemies_lbl";
+		elbl["parent_id"] = "battle_enemies_frame";
+		elbl["name"] = "Enemigos en combate";
+		elbl["text"] = String::utf8("Slime Lv.2   ·   Murciélago Lv.3");
+		elbl["anchor"] = "top_left";
+		elbl["offset_x"] = 200;
+		elbl["offset_y"] = 150;
+		elbl["width"] = 480;
+		elbl["height"] = 40;
+		elbl["font_size"] = 16;
+		elbl["layer_order"] = 2;
+		elems.push_back(elbl);
+	} else if (sid == "battle_notice") {
+		// Avisos de batalla (incluye "¡Slime te ataca!" y Resumen de victoria) — usa main_panel real (38, 373, 883, 151)
 		Dictionary bnfr = make_default_ui_element("frame", sid);
 		bnfr["id"] = "battle_notice_frame";
 		bnfr["name"] = "Aviso de batalla";
-		bnfr["anchor"] = "bottom_center";
-		bnfr["offset_x"] = 0;
-		bnfr["offset_y"] = -16;
-		bnfr["width"] = 880;
-		bnfr["height"] = 156;
+		bnfr["anchor"] = "top_left";
+		bnfr["offset_x"] = 38;
+		bnfr["offset_y"] = 373;
+		bnfr["width"] = 883;
+		bnfr["height"] = 151;
 		bnfr["window_style_id"] = "dialog";
-		bnfr["layer_order"] = 1;
+		bnfr["layer_order"] = 0;
 		elems.push_back(bnfr);
 
 		Dictionary bnlbl = make_default_ui_element("text", sid);
 		bnlbl["id"] = "battle_notice_lbl";
 		bnlbl["parent_id"] = "battle_notice_frame";
 		bnlbl["name"] = "Texto aviso de batalla";
-		bnlbl["text"] = String::utf8("¡Slime te ataca!");
+		bnlbl["text"] = String::utf8("¡Slime te ataca! · ¡Victoria! Has ganado 25 EXP.");
 		bnlbl["anchor"] = "top_left";
 		bnlbl["offset_x"] = 24;
-		bnlbl["offset_y"] = 24;
-		bnlbl["width"] = 832;
-		bnlbl["height"] = 108;
-		bnlbl["font_size"] = 18;
+		bnlbl["offset_y"] = 22;
+		bnlbl["width"] = 835;
+		bnlbl["height"] = 107;
+		bnlbl["font_size"] = 16;
 		bnlbl["layer_order"] = 2;
 		elems.push_back(bnlbl);
+	} else if (sid == "battle_submenu") {
+		// Posición y tamaño reales de ClockGearsBattleScene::sub_menu_panel (Habilidad/Objeto) a 960x540 (546, 273, 220, 160)
+		Dictionary smfr = make_default_ui_element("frame", sid);
+		smfr["id"] = "battle_submenu_frame";
+		smfr["name"] = "Lista de habilidades y objetos";
+		smfr["anchor"] = "top_left";
+		smfr["offset_x"] = 546;
+		smfr["offset_y"] = 273;
+		smfr["width"] = 220;
+		smfr["height"] = 160;
+		smfr["window_style_id"] = "battle_commands";
+		smfr["layer_order"] = 0;
+		elems.push_back(smfr);
+
+		Dictionary smlbl = make_default_ui_element("text", sid);
+		smlbl["id"] = "battle_submenu_lbl";
+		smlbl["parent_id"] = "battle_submenu_frame";
+		smlbl["name"] = "Lista de acciones";
+		smlbl["text"] = String::utf8("Seleccionar Habilidad:\n· Golpe Fuerte (10 PM)\n· Cancelar");
+		smlbl["anchor"] = "top_left";
+		smlbl["offset_x"] = 12;
+		smlbl["offset_y"] = 12;
+		smlbl["width"] = 196;
+		smlbl["height"] = 136;
+		smlbl["font_size"] = 14;
+		smlbl["layer_order"] = 2;
+		elems.push_back(smlbl);
+	} else if (sid == "battle_target") {
+		// Posición y tamaño reales de ClockGearsBattleScene::sub_menu_panel (Objetivo) a 960x540 (546, 273, 220, 160)
+		Dictionary tgfr = make_default_ui_element("frame", sid);
+		tgfr["id"] = "battle_target_frame";
+		tgfr["name"] = String::utf8("Selección de objetivo");
+		tgfr["anchor"] = "top_left";
+		tgfr["offset_x"] = 546;
+		tgfr["offset_y"] = 273;
+		tgfr["width"] = 220;
+		tgfr["height"] = 160;
+		tgfr["window_style_id"] = "battle_commands";
+		tgfr["layer_order"] = 0;
+		elems.push_back(tgfr);
+
+		Dictionary tglbl = make_default_ui_element("text", sid);
+		tglbl["id"] = "battle_target_lbl";
+		tglbl["parent_id"] = "battle_target_frame";
+		tglbl["name"] = "Lista de objetivos";
+		tglbl["text"] = String::utf8("Seleccionar Objetivo:\n· Slime (HP: 40/40)\n· Cancelar");
+		tglbl["anchor"] = "top_left";
+		tglbl["offset_x"] = 12;
+		tglbl["offset_y"] = 12;
+		tglbl["width"] = 196;
+		tglbl["height"] = 136;
+		tglbl["font_size"] = 14;
+		tglbl["layer_order"] = 2;
+		elems.push_back(tglbl);
 	} else {
 		Dictionary close_b = make_default_ui_element("button", sid);
 		close_b["id"] = "btn_close";
@@ -7581,7 +7833,8 @@ String ClockGearsDataManager::get_menu_system_group(const String &p_menu_id) con
 		return "";
 	}
 	if (_cg_is_system_menu_id(cur)) {
-		return cur;
+		String sp = _cg_system_subscreen_parent_id(cur);
+		return sp.is_empty() ? cur : sp;
 	}
 	Dictionary screens = ui_designs_config.get("screens", Dictionary());
 	for (int hop = 0; hop < 8; hop++) {
@@ -7629,7 +7882,7 @@ Dictionary ClockGearsDataManager::get_menu_metadata(const String &p_menu_id) con
 	out["name"] = String(d.get("name", _cg_is_system_menu_id(sid) ? _cg_default_system_menu_name(sid) : sid));
 	out["is_system"] = _cg_is_system_menu_id(sid);
 	out["order"] = int(d.get("order", 0));
-	out["parent_id"] = _cg_is_system_menu_id(sid) ? String("") : String(d.get("parent_id", ""));
+	out["parent_id"] = _cg_is_system_menu_id(sid) ? _cg_system_subscreen_parent_id(sid) : String(d.get("parent_id", ""));
 	out["system_group"] = get_menu_system_group(sid);
 	out["window_type"] = String(d.get("window_type", _cg_default_system_menu_win_type(sid)));
 	out["custom_enabled"] = bool(d.get("custom_enabled", false));
@@ -9273,9 +9526,9 @@ Array ClockGearsDataManager::get_ui_templates_for_system(const String &p_screen_
 		pref_cat = "hud";
 	} else if (sid == "game_menu_items" || sid == "game_menu_equip") {
 		pref_cat = "grid";
-	} else if (sid == "messages") {
+	} else if (sid == "messages" || sid.begins_with("messages_")) {
 		pref_cat = "messages";
-	} else if (sid == "battle") {
+	} else if (sid == "battle" || sid.begins_with("battle_")) {
 		pref_cat = "battle";
 	}
 	Array prioritized;

@@ -50,7 +50,7 @@ class ClockGearsDataManager : public Object {
 
 public:
 	static constexpr int CURRENT_SCHEMA_VERSION = 3;
-	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 4;
+	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 5;
 	static constexpr int MAX_CUSTOM_MAP_LAYERS = 16;
 
 	static void normalize_record_defaults(int p_category, Dictionary &r_record);

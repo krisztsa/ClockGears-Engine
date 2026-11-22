@@ -44,6 +44,57 @@ protected:
 	}
 };
 
+class UiBattleBackdropPreview : public Control {
+	GDCLASS(UiBattleBackdropPreview, Control);
+
+protected:
+	void _notification(int p_what) {
+		if (p_what == NOTIFICATION_DRAW) {
+			Size2 sz = get_size();
+			const bool is_brass = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "brass");
+			const bool is_light = ClockGearsTheme::get_singleton() && (ClockGearsTheme::get_singleton()->get_active_theme_id() == "light");
+			const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(is_brass, is_light, 1.0f);
+			Color sky = tk.surface_base.darkened(0.15f);
+			Color floor_c = tk.surface_panel.lightened(0.05f);
+			draw_rect(Rect2(0, 0, sz.x, sz.y * 0.42f), sky);
+			draw_rect(Rect2(0, sz.y * 0.42f, sz.x, sz.y * 0.58f), floor_c);
+			draw_line(Vector2(0, sz.y * 0.42f), Vector2(sz.x, sz.y * 0.42f), tk.border_subtle, 1.0f);
+			// Enemigo de ejemplo atenuado en el área de batalla (sin inventar datos)
+			Ref<Texture2D> en_tex;
+			String en_label = "Enemigo de ejemplo";
+			if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+				Array ens = dm->get_category_array(CAT_ENEMIES);
+				if (!ens.is_empty() && ens[0].get_type() == Variant::DICTIONARY) {
+					Dictionary ed = ens[0];
+					String en_name = String(ed.get("name", ""));
+					if (!en_name.is_empty()) en_label = en_name;
+					String gp = String(ed.get("graphic_path", ed.get("sprite_path", ""))).strip_edges();
+					if (!gp.is_empty() && ResourceLoader::exists(gp)) {
+						en_tex = ResourceLoader::load(gp);
+					}
+				}
+			}
+			Vector2 center(sz.x * 0.5f, sz.y * 0.36f);
+			if (en_tex.is_valid()) {
+				Size2 ts = en_tex->get_size();
+				float s = MIN(128.0f / MAX(1.0f, ts.x), 128.0f / MAX(1.0f, ts.y));
+				Size2 ds = ts * s;
+				draw_texture_rect(en_tex, Rect2(center - ds * 0.5f, ds), false);
+			} else {
+				draw_circle(center + Vector2(0, 42), 34.0f, Color(tk.surface_base.r, tk.surface_base.g, tk.surface_base.b, 0.55f));
+				draw_circle(center, 30.0f, tk.border_copper);
+				draw_arc(center, 30.0f, 0, Math::TAU, 24, tk.border_subtle, 1.5f);
+			}
+			Ref<Font> f = get_theme_default_font();
+			if (f.is_valid()) {
+				int fs = 13;
+				Size2 lsz = f->get_string_size(en_label, HORIZONTAL_ALIGNMENT_CENTER, -1, fs);
+				draw_string(f, Vector2(center.x - lsz.x * 0.5f, center.y + 52.0f), en_label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ClockGearsTheme::color_text_secondary());
+			}
+		}
+	}
+};
+
 static void s_reparent_ctrl(Control *p_ctrl, Control *p_new_parent) {
 	if (!p_ctrl || !p_new_parent || p_ctrl->get_parent() == p_new_parent) {
 		return;
@@ -3184,6 +3235,20 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	screen_status_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
 	canvas_status_hb->add_child(screen_status_lbl);
 
+	view_context_chk = memnew(CheckBox("Ver contexto"));
+	view_context_chk->set_name("UiDesignerViewContextChk");
+	view_context_chk->set_pressed(true);
+	view_context_chk->set_tooltip_text(String::utf8("Muestra las demás sub-pantallas de esta pestaña atenuadas (35%) en el lienzo."));
+	view_context_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_chk_toggled));
+	canvas_status_hb->add_child(view_context_chk);
+
+	sample_scene_chk = memnew(CheckBox("Escena de ejemplo"));
+	sample_scene_chk->set_name("UiDesignerSampleSceneChk");
+	sample_scene_chk->set_pressed(true);
+	sample_scene_chk->set_tooltip_text(String::utf8("Muestra un fondo de batalla y un enemigo de ejemplo atenuados y no editables."));
+	sample_scene_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_sample_scene_chk_toggled));
+	canvas_status_hb->add_child(sample_scene_chk);
+
 	zoom_info_lbl = memnew(Label("960x540"));
 	zoom_info_lbl->add_theme_font_size_override("font_size", int(11 * EDSCALE));
 	zoom_info_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
@@ -3220,6 +3285,21 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_hud_grid_bg->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	canvas_hud_grid_bg->hide();
 	canvas_stage->add_child(canvas_hud_grid_bg);
+
+	ctx_battle_backdrop_node = memnew(UiBattleBackdropPreview);
+	ctx_battle_backdrop_node->set_name("UiDesignerBattleBackdrop");
+	ctx_battle_backdrop_node->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	ctx_battle_backdrop_node->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	ctx_battle_backdrop_node->set_modulate(Color(1, 1, 1, 0.35f));
+	ctx_battle_backdrop_node->hide();
+	canvas_stage->add_child(ctx_battle_backdrop_node);
+
+	context_layers_root = memnew(Control);
+	context_layers_root->set_name("UiDesignerContextLayers");
+	context_layers_root->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	context_layers_root->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	context_layers_root->set_modulate(Color(1, 1, 1, 0.35f));
+	canvas_stage->add_child(context_layers_root);
 
 	design_layer = memnew(ClockGearsUiDesignLayer);
 	design_layer->set_preview_mode(true);
@@ -5033,6 +5113,84 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 		canvas_overlay->set_size(stage_sz);
 		canvas_overlay->queue_redraw();
 	}
+	_refresh_context_preview();
+}
+
+static Ref<Texture2D> _cg_icon_for_screen_id(const String &p_id, Control *p_ref) {
+	ClockGearsIcons *ci = ClockGearsIcons::get_singleton();
+	if (!ci) return Ref<Texture2D>();
+	String iname = "ui_frame";
+	if (p_id == "messages" || p_id == "battle_notice") iname = "cmd_message";
+	else if (p_id == "messages_choices" || p_id == "battle") iname = "ui_button";
+	else if (p_id == "messages_number" || p_id == "battle_party") iname = "ui_bar";
+	else if (p_id == "messages_history" || p_id == "battle_submenu") iname = "ui_templates";
+	else if (p_id == "messages_gold") iname = "ui_item";
+	else if (p_id == "battle_enemies") iname = "ui_image";
+	else if (p_id == "battle_target") iname = "ui_widget";
+	else if (p_id == "title") iname = "cmd_scene";
+	return ci->get_icon_with_fallback(iname, "db_system", 1.0f);
+}
+
+void ClockGearsUiDesignEditor::_on_context_chk_toggled(bool p_pressed) {
+	_refresh_context_preview();
+}
+
+void ClockGearsUiDesignEditor::_on_sample_scene_chk_toggled(bool p_pressed) {
+	_refresh_context_preview();
+}
+
+void ClockGearsUiDesignEditor::_refresh_context_preview() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String scope = dm ? dm->get_menu_system_group(current_screen_id) : system_scope_root;
+	if (scope.is_empty()) scope = system_scope_root;
+	bool has_subscreen_scope = (scope == "messages" || scope == "battle");
+	bool is_battle_scope = (scope == "battle");
+
+	if (view_context_chk) {
+		view_context_chk->set_visible(has_subscreen_scope);
+	}
+	if (sample_scene_chk) {
+		sample_scene_chk->set_visible(is_battle_scope);
+	}
+	if (ctx_battle_backdrop_node) {
+		bool show_bd = is_battle_scope && (!sample_scene_chk || sample_scene_chk->is_pressed());
+		ctx_battle_backdrop_node->set_visible(show_bd);
+		ctx_battle_backdrop_node->set_size(Vector2(BASE_W, BASE_H));
+		if (show_bd) {
+			ctx_battle_backdrop_node->queue_redraw();
+		}
+	}
+	if (!context_layers_root) {
+		return;
+	}
+	while (context_layers_root->get_child_count() > 0) {
+		Node *ch = context_layers_root->get_child(0);
+		context_layers_root->remove_child(ch);
+		memdelete(ch);
+	}
+	bool show_ctx = has_subscreen_scope && (!view_context_chk || view_context_chk->is_pressed());
+	context_layers_root->set_visible(show_ctx);
+	context_layers_root->set_modulate(Color(1, 1, 1, 0.35f));
+	if (!show_ctx || !dm) {
+		return;
+	}
+	Array menus = dm->get_all_menus_for_selector();
+	for (int i = 0; i < menus.size(); i++) {
+		Dictionary sd = menus[i];
+		String sid = String(sd.get("id", ""));
+		if (sid.is_empty() || sid == current_screen_id) continue;
+		String sg = String(sd.get("system_group", dm->get_menu_system_group(sid)));
+		if (sid != scope && sg != scope) continue;
+		Dictionary d = dm->has_custom_ui_design(sid) ? dm->get_ui_screen_design(sid) : dm->get_default_ui_screen_template(sid);
+		ClockGearsUiDesignLayer *ctx_l = memnew(ClockGearsUiDesignLayer);
+		ctx_l->set_name("CtxLayer_" + sid);
+		ctx_l->set_preview_mode(true);
+		ctx_l->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		ctx_l->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		ctx_l->set_viewport_size_override(Vector2(BASE_W, BASE_H));
+		context_layers_root->add_child(ctx_l);
+		ctx_l->apply_prebuilt_screen_design(sid, d);
+	}
 }
 
 void ClockGearsUiDesignEditor::_refresh_screen_dropdown() {
@@ -5070,11 +5228,15 @@ void ClockGearsUiDesignEditor::_refresh_screen_dropdown() {
 		String id = String(sd.get("id", ""));
 		String lbl = String(sd.get("label", sd.get("name", id)));
 		String pid = String(sd.get("parent_id", ""));
-		if (!pid.is_empty() && !ClockGearsDataManager::is_system_menu_id(id)) {
-			lbl = String::utf8("↳ ") + lbl;
+		if (!pid.is_empty()) {
+			lbl = String::utf8("  ↳ ") + lbl;
 		}
 		int item_i = screen_opt->get_item_count();
 		screen_opt->add_item(lbl, item_i);
+		Ref<Texture2D> ic = _cg_icon_for_screen_id(id, screen_opt);
+		if (ic.is_valid()) {
+			screen_opt->set_item_icon(item_i, ic);
+		}
 		screen_opt->set_item_metadata(item_i, id);
 		if (id == current_screen_id) {
 			sel_idx = item_i;
@@ -9886,23 +10048,59 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 		test_hud->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		test_window->add_child(test_hud);
 		test_hud->reload_from_data_manager();
-	} else if (current_screen_id == "messages" || current_screen_id == "battle" || (current_screen_id == "game_over" && !dm->has_custom_ui_design("game_over"))) {
+	} else if (current_screen_id == "messages" || current_screen_id.begins_with("messages_") || current_screen_id == "battle" || current_screen_id.begins_with("battle_") || (current_screen_id == "game_over" && !dm->has_custom_ui_design("game_over"))) {
+		String scope_id = dm->get_menu_system_group(current_screen_id);
+		if (scope_id.is_empty()) scope_id = current_screen_id;
 		ColorRect *bg = memnew(ColorRect);
 		bg->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-		bg->set_color(current_screen_id == "game_over" ? Color::html("#0c070cff") : Color::html("#131823ff"));
+		const ClockGearsTheme::NeonCopperTokens tk = ClockGearsTheme::get_neon_copper_tokens(false, false, 1.0f);
+		bg->set_color(tk.surface_base);
 		test_window->add_child(bg);
 
-		ClockGearsUiDesignLayer *layer = memnew(ClockGearsUiDesignLayer);
-		layer->set_name("TestUiIsolatedLayer");
-		layer->set_preview_mode(false);
-		layer->set_window_type_fallback(current_screen_id == "messages" ? "message" : (current_screen_id == "battle" ? "battle_commands" : "game_menu"));
-		layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-		Dictionary d = dm->has_custom_ui_design(current_screen_id)
-				? dm->get_ui_screen_design(current_screen_id)
-				: dm->get_default_ui_screen_template(current_screen_id);
-		layer->apply_prebuilt_screen_design(current_screen_id, d);
-		layer->connect("action_triggered", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested).unbind(3), CONNECT_DEFERRED);
-		test_window->add_child(layer);
+		if (scope_id == "battle") {
+			UiBattleBackdropPreview *bd = memnew(UiBattleBackdropPreview);
+			bd->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+			bd->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+			test_window->add_child(bd);
+		}
+
+		Control *comp_root = memnew(Control);
+		comp_root->set_name("TestUiIsolatedLayer");
+		comp_root->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		comp_root->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+		test_window->add_child(comp_root);
+
+		if (scope_id == "messages" || scope_id == "battle") {
+			Array all_m = dm->get_all_menus_for_selector();
+			for (int i = 0; i < all_m.size(); i++) {
+				Dictionary md = all_m[i];
+				String msid = String(md.get("id", ""));
+				String msg_grp = String(md.get("system_group", dm->get_menu_system_group(msid)));
+				if (msid != scope_id && msg_grp != scope_id) continue;
+				// En Probar completo para Batalla o Mensajes mostramos las sub-pantallas clave juntas sin solapar submenús modales sobre diálogo
+				ClockGearsUiDesignLayer *layer = memnew(ClockGearsUiDesignLayer);
+				layer->set_name("TestSub_" + msid);
+				layer->set_preview_mode(false);
+				layer->set_window_type_fallback(scope_id == "messages" ? "message" : "battle_commands");
+				layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+				Dictionary d = dm->has_custom_ui_design(msid) ? dm->get_ui_screen_design(msid) : dm->get_default_ui_screen_template(msid);
+				layer->apply_prebuilt_screen_design(msid, d);
+				layer->connect("action_triggered", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested).unbind(3), CONNECT_DEFERRED);
+				comp_root->add_child(layer);
+			}
+		} else {
+			ClockGearsUiDesignLayer *layer = memnew(ClockGearsUiDesignLayer);
+			layer->set_name("TestUiIsolatedLayerGameOver");
+			layer->set_preview_mode(false);
+			layer->set_window_type_fallback("game_menu");
+			layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+			Dictionary d = dm->has_custom_ui_design(current_screen_id)
+					? dm->get_ui_screen_design(current_screen_id)
+					: dm->get_default_ui_screen_template(current_screen_id);
+			layer->apply_prebuilt_screen_design(current_screen_id, d);
+			layer->connect("action_triggered", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested).unbind(3), CONNECT_DEFERRED);
+			comp_root->add_child(layer);
+		}
 	} else {
 		test_gmenu = memnew(ClockGearsGameMenu);
 		test_gmenu->set_editor_test_popup_mode(true);
@@ -10035,6 +10233,10 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["top_row1_flow"] = top_row1_flow;
 	out["top_row2_flow"] = top_row2_flow;
 	out["screen_status_lbl"] = screen_status_lbl;
+	out["view_context_chk"] = view_context_chk;
+	out["sample_scene_chk"] = sample_scene_chk;
+	out["context_layers_root"] = context_layers_root;
+	out["ctx_battle_backdrop_node"] = ctx_battle_backdrop_node;
 	out["canvas_card"] = canvas_card;
 	out["wide_left_col"] = wide_left_col;
 	out["left_col_scroll"] = left_col_scroll;
