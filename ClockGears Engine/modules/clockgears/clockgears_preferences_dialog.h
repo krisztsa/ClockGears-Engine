@@ -31,6 +31,7 @@ private:
 	SpinBox *inactive_layer_opacity_spin = nullptr;
 	OptionButton *editor_theme_opt = nullptr;
 	OptionButton *glow_effects_opt = nullptr;
+	SpinBox *long_help_delay_spin = nullptr;
 
 	// Tab 2: Exportación
 	LineEdit *windows_path_edit = nullptr;
@@ -45,6 +46,7 @@ private:
 	void _on_dim_inactive_toggled(bool p_pressed);
 	void _on_editor_theme_selected(int p_idx);
 	void _on_glow_effects_selected(int p_idx);
+	void _on_long_help_delay_changed(double p_val);
 	void _on_export_now_pressed();
 	void _on_dialog_confirmed();
 	void _load_settings();
@@ -69,6 +71,9 @@ public:
 	OptionButton *get_glow_effects_option_button() const { return glow_effects_opt; }
 	bool is_glow_effects_checked() const;
 	void set_glow_effects_checked(bool p_enabled);
+	int get_long_help_delay_sec_value() const;
+	void set_long_help_delay_sec_value(int p_sec);
+	SpinBox *get_long_help_delay_spin() const { return long_help_delay_spin; }
 	void apply_and_save_preferences();
 
 	ClockGearsPreferencesDialog();

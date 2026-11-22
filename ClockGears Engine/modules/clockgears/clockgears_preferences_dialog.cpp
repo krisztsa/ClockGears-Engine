@@ -23,6 +23,9 @@ void ClockGearsPreferencesDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_glow_effects_option_button"), &ClockGearsPreferencesDialog::get_glow_effects_option_button);
 	ClassDB::bind_method(D_METHOD("is_glow_effects_checked"), &ClockGearsPreferencesDialog::is_glow_effects_checked);
 	ClassDB::bind_method(D_METHOD("set_glow_effects_checked", "enabled"), &ClockGearsPreferencesDialog::set_glow_effects_checked);
+	ClassDB::bind_method(D_METHOD("get_long_help_delay_sec_value"), &ClockGearsPreferencesDialog::get_long_help_delay_sec_value);
+	ClassDB::bind_method(D_METHOD("set_long_help_delay_sec_value", "seconds"), &ClockGearsPreferencesDialog::set_long_help_delay_sec_value);
+	ClassDB::bind_method(D_METHOD("get_long_help_delay_spin"), &ClockGearsPreferencesDialog::get_long_help_delay_spin);
 	ClassDB::bind_method(D_METHOD("apply_and_save_preferences"), &ClockGearsPreferencesDialog::apply_and_save_preferences);
 }
 
@@ -187,6 +190,9 @@ void ClockGearsPreferencesDialog::_load_settings() {
 		}
 		glow_effects_opt->select(MAX(0, idx));
 	}
+	if (long_help_delay_spin) {
+		long_help_delay_spin->set_value(ClockGearsTheme::get_long_help_delay_sec());
+	}
 }
 
 void ClockGearsPreferencesDialog::_save_settings() {
@@ -240,6 +246,11 @@ void ClockGearsPreferencesDialog::_save_settings() {
 		ps->set_setting("clockgears/editor/glow_effects_level", lvl);
 		ps->set_setting("clockgears/editor/glow_effects", lvl != int(ClockGearsTheme::GLOW_DISABLED));
 		ClockGearsTheme::set_glow_effects_level(lvl);
+	}
+	if (long_help_delay_spin) {
+		const int sec = CLAMP(int(Math::round(long_help_delay_spin->get_value())), 1, 6);
+		ps->set_setting("clockgears/editor/long_help_delay_sec", sec);
+		ClockGearsTheme::set_long_help_delay_sec(sec);
 	}
 
 	ps->save();
@@ -362,6 +373,25 @@ bool ClockGearsPreferencesDialog::is_glow_effects_checked() const {
 
 void ClockGearsPreferencesDialog::set_glow_effects_checked(bool p_enabled) {
 	select_glow_effects_level(p_enabled ? int(ClockGearsTheme::GLOW_SOFT) : int(ClockGearsTheme::GLOW_DISABLED));
+}
+
+void ClockGearsPreferencesDialog::_on_long_help_delay_changed(double p_val) {
+	ClockGearsTheme::set_long_help_delay_sec(CLAMP(int(Math::round(p_val)), 1, 6));
+}
+
+int ClockGearsPreferencesDialog::get_long_help_delay_sec_value() const {
+	if (long_help_delay_spin) {
+		return CLAMP(int(Math::round(long_help_delay_spin->get_value())), 1, 6);
+	}
+	return ClockGearsTheme::get_long_help_delay_sec();
+}
+
+void ClockGearsPreferencesDialog::set_long_help_delay_sec_value(int p_sec) {
+	const int clamped = CLAMP(p_sec, 1, 6);
+	if (long_help_delay_spin) {
+		long_help_delay_spin->set_value(clamped);
+	}
+	ClockGearsTheme::set_long_help_delay_sec(clamped);
 }
 
 void ClockGearsPreferencesDialog::_refresh_pref_theme_accents() {
@@ -499,6 +529,21 @@ ClockGearsPreferencesDialog::ClockGearsPreferencesDialog() {
 	glow_effects_opt->connect(SceneStringName(item_selected), callable_mp(this, &ClockGearsPreferencesDialog::_on_glow_effects_selected));
 	glow_hb->add_child(glow_effects_opt);
 	theme_box->add_child(glow_hb);
+
+	HBoxContainer *help_delay_hb = memnew(HBoxContainer);
+	help_delay_hb->add_theme_constant_override("separation", 8);
+	help_delay_hb->add_child(memnew(Label(String::utf8("Retardo de las ayudas largas:"))));
+	long_help_delay_spin = memnew(SpinBox);
+	long_help_delay_spin->set_min(1);
+	long_help_delay_spin->set_max(6);
+	long_help_delay_spin->set_step(1);
+	long_help_delay_spin->set_value(ClockGearsTheme::get_long_help_delay_sec());
+	long_help_delay_spin->set_suffix(" s");
+	long_help_delay_spin->set_custom_minimum_size(Size2(110 * EDSCALE, 0));
+	long_help_delay_spin->set_tooltip_text(String::utf8("Segundos con el cursor quieto antes de mostrar la explicación larga (1 a 6 s). Se aplica al instante."));
+	long_help_delay_spin->connect(SceneStringName(value_changed), callable_mp(this, &ClockGearsPreferencesDialog::_on_long_help_delay_changed));
+	help_delay_hb->add_child(long_help_delay_spin);
+	theme_box->add_child(help_delay_hb);
 
 	PanelContainer *res_card = memnew(PanelContainer);
 	res_card->set_theme_type_variation("ClockGearsContainer");

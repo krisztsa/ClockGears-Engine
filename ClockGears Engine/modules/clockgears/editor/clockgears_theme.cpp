@@ -12,6 +12,7 @@
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/margin_container.h"
 #include "scene/gui/menu_bar.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel.h"
@@ -25,6 +26,7 @@
 #include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
 #include "scene/resources/style_box_line.h"
+#include "servers/display/display_server.h"
 #include "servers/rendering/rendering_server.h"
 
 #ifdef TOOLS_ENABLED
@@ -240,6 +242,47 @@ void ClockGearsTheme::set_glow_effects_level(int p_level) {
 		singleton->brass_has_editor_base = false;
 		singleton->refresh_all_themed_roots();
 	}
+}
+
+int ClockGearsTheme::get_long_help_delay_sec() {
+	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("clockgears/editor/long_help_delay_sec")) {
+		const int sec = int(ProjectSettings::get_singleton()->get_setting("clockgears/editor/long_help_delay_sec"));
+		return CLAMP(sec, 1, 6);
+	}
+	return 3;
+}
+
+void ClockGearsTheme::set_long_help_delay_sec(int p_sec) {
+	const int clamped = CLAMP(p_sec, 1, 6);
+	if (ProjectSettings::get_singleton()) {
+		ProjectSettings::get_singleton()->set_setting("clockgears/editor/long_help_delay_sec", clamped);
+	}
+}
+
+void ClockGearsTheme::set_control_long_help(Control *p_ctrl, const String &p_help) {
+	if (!p_ctrl) {
+		return;
+	}
+	if (p_help.is_empty()) {
+		if (p_ctrl->has_meta("_cg_long_help")) {
+			p_ctrl->remove_meta("_cg_long_help");
+		}
+	} else {
+		p_ctrl->set_meta("_cg_long_help", p_help);
+	}
+}
+
+String ClockGearsTheme::get_control_long_help(const Control *p_ctrl) {
+	if (!p_ctrl) {
+		return "";
+	}
+	if (p_ctrl->has_meta("_cg_long_help")) {
+		return String(p_ctrl->get_meta("_cg_long_help"));
+	}
+	if (p_ctrl->has_meta("long_help")) {
+		return String(p_ctrl->get_meta("long_help"));
+	}
+	return "";
 }
 
 ClockGearsTheme::NeonCopperTokens ClockGearsTheme::get_neon_copper_tokens(bool p_brass, bool p_light, float p_scale, int p_glow_level) {
@@ -3936,6 +3979,8 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_container_corner_radius", "scale"), &ClockGearsTheme::get_container_corner_radius, DEFVAL(1.0f));
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_glow_effects_level"), &ClockGearsTheme::get_glow_effects_level);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("set_glow_effects_level", "level"), &ClockGearsTheme::set_glow_effects_level);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_long_help_delay_sec"), &ClockGearsTheme::get_long_help_delay_sec);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("set_long_help_delay_sec", "seconds"), &ClockGearsTheme::set_long_help_delay_sec);
 	ClassDB::bind_method(D_METHOD("get_theme_tokens_dict", "theme_id"), &ClockGearsTheme::get_theme_tokens_dict, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("get_container_stylebox", "scale", "margin_h", "margin_v", "variant"), &ClockGearsTheme::get_container_stylebox, DEFVAL(1.0f), DEFVAL(12), DEFVAL(12), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("get_sunken_list_stylebox", "scale"), &ClockGearsTheme::get_sunken_list_stylebox, DEFVAL(1.0f));
@@ -3951,4 +3996,393 @@ ClockGearsTheme::~ClockGearsTheme() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+}
+
+// ============================================================================
+// ClockGearsLongHelpController
+// ============================================================================
+
+static Window *s_get_long_help_host_parent(Node *p_owner) {
+	if (!p_owner) {
+		return nullptr;
+	}
+	if (SceneTree *st = p_owner->get_tree()) {
+		if (st->get_root()) {
+			return st->get_root();
+		}
+	}
+	return Object::cast_to<Window>(p_owner) ? Object::cast_to<Window>(p_owner) : p_owner->get_window();
+}
+
+static Vector2 s_window_point_to_host_coords(const Window *p_src, Window *p_host_parent, const Vector2 &p_local_pos) {
+	if (!p_src) {
+		return p_local_pos;
+	}
+	Vector2 scale(1.0f, 1.0f);
+	const Rect2 vis = p_src->get_visible_rect();
+	const Vector2i wsz = p_src->get_size();
+	if (vis.size.x > 1.0f && wsz.x > 0) {
+		scale.x = float(wsz.x) / vis.size.x;
+	}
+	if (vis.size.y > 1.0f && wsz.y > 0) {
+		scale.y = float(wsz.y) / vis.size.y;
+	}
+	Vector2 out = p_local_pos * scale;
+	const bool host_embeds = p_host_parent && p_host_parent->is_embedding_subwindows();
+	const Window *w = p_src;
+	if (host_embeds) {
+		while (w && w != p_host_parent) {
+			out += Vector2(w->get_position());
+			if (!w->is_embedded()) {
+				break;
+			}
+			Node *par = w->get_parent();
+			w = par ? par->get_window() : nullptr;
+		}
+	} else {
+		while (w) {
+			out += Vector2(w->get_position());
+			if (!w->is_embedded()) {
+				break;
+			}
+			Node *par = w->get_parent();
+			w = par ? par->get_window() : nullptr;
+		}
+	}
+	return out;
+}
+
+Rect2 ClockGearsLongHelpController::get_control_global_rect_in_host(const Control *p_ctrl, Window *p_host_parent) {
+	if (!p_ctrl) {
+		return Rect2();
+	}
+	const Rect2 lr = p_ctrl->get_global_rect();
+	const Window *sw = p_ctrl->get_window();
+	if (!sw) {
+		return lr;
+	}
+	const Vector2 p0 = s_window_point_to_host_coords(sw, p_host_parent, lr.position);
+	const Vector2 p1 = s_window_point_to_host_coords(sw, p_host_parent, lr.position + lr.size);
+	return Rect2(p0, p1 - p0);
+}
+
+Rect2 ClockGearsLongHelpController::get_popup_global_rect_in_host(const Window *p_win, Window *p_host_parent) {
+	if (!p_win) {
+		return Rect2();
+	}
+	const Vector2 p0 = s_window_point_to_host_coords(p_win, p_host_parent, Vector2());
+	return Rect2(p0, Vector2(p_win->get_size()));
+}
+
+Vector2 ClockGearsLongHelpController::host_point_to_window_local(const Window *p_win, Window *p_host_parent, const Vector2 &p_host_pos) {
+	if (!p_win) {
+		return p_host_pos;
+	}
+	const Vector2 origin = s_window_point_to_host_coords(p_win, p_host_parent, Vector2());
+	Vector2 scale(1.0f, 1.0f);
+	const Rect2 vis = p_win->get_visible_rect();
+	const Vector2i wsz = p_win->get_size();
+	if (vis.size.x > 1.0f && wsz.x > 0) {
+		scale.x = vis.size.x / float(wsz.x);
+	}
+	if (vis.size.y > 1.0f && wsz.y > 0) {
+		scale.y = vis.size.y / float(wsz.y);
+	}
+	return (p_host_pos - origin) * scale;
+}
+
+static Control *s_find_long_help_ctrl_recursive(Node *p_node, const Vector2 &p_local_pos, const Rect2 &p_clip) {
+	if (!p_node) {
+		return nullptr;
+	}
+	Rect2 child_clip = p_clip;
+	Control *ctrl = Object::cast_to<Control>(p_node);
+	if (ctrl) {
+		if (!ctrl->is_visible()) {
+			return nullptr;
+		}
+		const Rect2 r = ctrl->get_global_rect();
+		const Rect2 clipped = p_clip.intersection(r);
+		if (ctrl->is_clipping_contents()) {
+			if (!clipped.has_point(p_local_pos)) {
+				return nullptr;
+			}
+			child_clip = clipped;
+		}
+	}
+	for (int i = p_node->get_child_count() - 1; i >= 0; i--) {
+		Node *ch = p_node->get_child(i);
+		// No bajar a sub-Windows desde el padre (se consultan como ventanas separadas)
+		if (Object::cast_to<Window>(ch)) {
+			continue;
+		}
+		if (Control *found = s_find_long_help_ctrl_recursive(ch, p_local_pos, child_clip)) {
+			return found;
+		}
+	}
+	if (ctrl && !ClockGearsTheme::get_control_long_help(ctrl).is_empty()) {
+		const Rect2 hit_r = p_clip.intersection(ctrl->get_global_rect());
+		if (hit_r.has_point(p_local_pos)) {
+			return ctrl;
+		}
+	}
+	return nullptr;
+}
+
+Control *ClockGearsLongHelpController::find_long_help_control_in_window(Window *p_win, const Vector2 &p_local_pos) {
+	if (!p_win || !p_win->is_visible()) {
+		return nullptr;
+	}
+	const Rect2 vis = p_win->get_visible_rect();
+	if (vis.size.x <= 1.0f || vis.size.y <= 1.0f || !vis.has_point(p_local_pos)) {
+		return nullptr;
+	}
+	return s_find_long_help_ctrl_recursive(p_win, p_local_pos, vis);
+}
+
+void ClockGearsLongHelpController::_ensure_window(Node *p_owner) {
+	Window *existing = win_id.is_valid() ? Object::cast_to<Window>(ObjectDB::get_instance(win_id)) : nullptr;
+	if (existing && existing->is_inside_tree()) {
+		return;
+	}
+	if (existing) {
+		existing->queue_free();
+		win_id = ObjectID();
+	}
+	Window *host_parent = s_get_long_help_host_parent(p_owner);
+	if (!host_parent || !host_parent->is_inside_tree()) {
+		return;
+	}
+	Window *w = memnew(Window);
+	w->set_name("ClockGearsLongHelpWindow");
+	w->set_flag(Window::FLAG_NO_FOCUS, true);
+	w->set_flag(Window::FLAG_BORDERLESS, true);
+	w->set_flag(Window::FLAG_ALWAYS_ON_TOP, true);
+	w->set_flag(Window::FLAG_POPUP, false);
+	w->set_flag(Window::FLAG_MOUSE_PASSTHROUGH, true);
+	w->set_flag(Window::FLAG_RESIZE_DISABLED, true);
+	w->set_wrap_controls(true);
+	w->set_visible(false);
+	host_parent->add_child(w);
+
+	PanelContainer *panel = memnew(PanelContainer);
+	panel->set_theme_type_variation("TooltipPanel");
+	panel->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	panel->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	w->add_child(panel);
+
+	MarginContainer *mc = memnew(MarginContainer);
+	mc->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	mc->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	mc->add_theme_constant_override("margin_top", int(9 * EDSCALE));
+	mc->add_theme_constant_override("margin_bottom", int(9 * EDSCALE));
+	mc->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	panel->add_child(mc);
+
+	VBoxContainer *vb = memnew(VBoxContainer);
+	vb->add_theme_constant_override("separation", int(5 * EDSCALE));
+	vb->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	mc->add_child(vb);
+
+	Label *tlbl = memnew(Label);
+	tlbl->set_theme_type_variation("TooltipLabel");
+	tlbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	tlbl->set_custom_minimum_size(Size2(int(272 * EDSCALE), 0));
+	tlbl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	vb->add_child(tlbl);
+
+	HSeparator *sep = memnew(HSeparator);
+	sep->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	vb->add_child(sep);
+
+	Label *blbl = memnew(Label);
+	blbl->set_theme_type_variation("TooltipLabel");
+	blbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	blbl->set_custom_minimum_size(Size2(int(272 * EDSCALE), 0));
+	blbl->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	vb->add_child(blbl);
+
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(w);
+	}
+
+	win_id = w->get_instance_id();
+	panel_id = panel->get_instance_id();
+	title_lbl_id = tlbl->get_instance_id();
+	sep_id = sep->get_instance_id();
+	body_lbl_id = blbl->get_instance_id();
+}
+
+void ClockGearsLongHelpController::_update_window_contents(const Target &p_target, Node *p_owner) {
+	_ensure_window(p_owner);
+	Window *w = win_id.is_valid() ? Object::cast_to<Window>(ObjectDB::get_instance(win_id)) : nullptr;
+	Label *tlbl = title_lbl_id.is_valid() ? Object::cast_to<Label>(ObjectDB::get_instance(title_lbl_id)) : nullptr;
+	HSeparator *sep = sep_id.is_valid() ? Object::cast_to<HSeparator>(ObjectDB::get_instance(sep_id)) : nullptr;
+	Label *blbl = body_lbl_id.is_valid() ? Object::cast_to<Label>(ObjectDB::get_instance(body_lbl_id)) : nullptr;
+	PanelContainer *panel = panel_id.is_valid() ? Object::cast_to<PanelContainer>(ObjectDB::get_instance(panel_id)) : nullptr;
+	if (!w || !tlbl || !blbl || !panel) {
+		return;
+	}
+	if (ClockGearsTheme::get_singleton()) {
+		ClockGearsTheme::get_singleton()->apply_to_window(w);
+		if (Ref<Theme> th = ClockGearsTheme::get_singleton()->get_active_theme(); th.is_valid()) {
+			const Color acc = th->get_color("accent_color", "ClockGears");
+			tlbl->add_theme_color_override("font_color", acc);
+		}
+	}
+
+	String title_str;
+	String body_str = p_target.text.strip_edges();
+	const int nl = body_str.find("\n");
+	if (nl > 0) {
+		title_str = body_str.substr(0, nl).strip_edges();
+		body_str = body_str.substr(nl + 1).strip_edges();
+	}
+	tlbl->set_visible(!title_str.is_empty());
+	tlbl->set_text(title_str);
+	if (sep) {
+		sep->set_visible(!title_str.is_empty() && !body_str.is_empty());
+	}
+	blbl->set_visible(!body_str.is_empty());
+	blbl->set_text(body_str);
+
+	const int max_w = int(320 * EDSCALE);
+	tlbl->set_custom_minimum_size(Size2(MIN(max_w, int(296 * EDSCALE)), 0));
+	blbl->set_custom_minimum_size(Size2(MIN(max_w, int(296 * EDSCALE)), 0));
+
+	Size2 min_sz = panel->get_combined_minimum_size();
+	Size2i win_sz(CLAMP(int(Math::ceil(min_sz.x)) + 4, int(220 * EDSCALE), int(350 * EDSCALE)),
+			MAX(int(Math::ceil(min_sz.y)) + 4, int(44 * EDSCALE)));
+	w->set_size(win_sz);
+
+	Window *host_parent = s_get_long_help_host_parent(p_owner);
+	Rect2i usable_rect(0, 0, 1366, 768);
+	if (host_parent && host_parent->is_embedding_subwindows()) {
+		usable_rect = Rect2i(Vector2i(), Vector2i(host_parent->get_visible_rect().size));
+	} else if (DisplayServer::get_singleton()) {
+		const int scr = host_parent ? host_parent->get_current_screen() : 0;
+		usable_rect = DisplayServer::get_singleton()->screen_get_usable_rect(scr);
+	}
+
+	const int gap = int(8 * EDSCALE);
+	const Rect2 anchor = p_target.anchor_global_rect;
+	const Rect2 avoid = p_target.avoid_global_rect.size.x > 0.0f ? p_target.avoid_global_rect : anchor;
+	Vector2i target_pos;
+	if (p_target.prefer_beside) {
+		// Al lado derecho del menú desplegable sin taparlo; si no cabe, a la izquierda.
+		int right_x = int(Math::round(avoid.position.x + avoid.size.x)) + gap;
+		int left_x = int(Math::round(avoid.position.x)) - win_sz.x - gap;
+		if (right_x + win_sz.x <= usable_rect.position.x + usable_rect.size.x) {
+			target_pos.x = right_x;
+		} else if (left_x >= usable_rect.position.x) {
+			target_pos.x = left_x;
+		} else {
+			target_pos.x = CLAMP(right_x, usable_rect.position.x + 4, MAX(usable_rect.position.x + 4, usable_rect.position.x + usable_rect.size.x - win_sz.x - 4));
+		}
+		target_pos.y = CLAMP(int(Math::round(anchor.position.y)),
+				usable_rect.position.y + 4,
+				MAX(usable_rect.position.y + 4, usable_rect.position.y + usable_rect.size.y - win_sz.y - 4));
+	} else {
+		int below_y = int(Math::round(anchor.position.y + anchor.size.y)) + gap;
+		int above_y = int(Math::round(anchor.position.y)) - win_sz.y - gap;
+		if (below_y + win_sz.y <= usable_rect.position.y + usable_rect.size.y) {
+			target_pos.y = below_y;
+		} else if (above_y >= usable_rect.position.y) {
+			target_pos.y = above_y;
+		} else {
+			target_pos.y = CLAMP(below_y, usable_rect.position.y + 4, MAX(usable_rect.position.y + 4, usable_rect.position.y + usable_rect.size.y - win_sz.y - 4));
+		}
+		target_pos.x = CLAMP(int(Math::round(anchor.position.x)),
+				usable_rect.position.x + 4,
+				MAX(usable_rect.position.x + 4, usable_rect.position.x + usable_rect.size.x - win_sz.x - 4));
+	}
+	w->set_position(target_pos);
+	w->set_visible(true);
+	showing = true;
+}
+
+void ClockGearsLongHelpController::step(Node *p_owner, float p_delta, const Vector2 &p_pointer_pos, const Target &p_target) {
+	if (!p_owner || p_target.key.is_empty() || p_target.text.strip_edges().is_empty()) {
+		hide_help();
+		return;
+	}
+	if (p_target.key != active_key) {
+		hide_help();
+		active_key = p_target.key;
+		last_mouse_pos = p_pointer_pos;
+		quiet_elapsed_sec = 0.0f;
+		return;
+	}
+	const float move_tol = 4.0f * EDSCALE;
+	if (p_pointer_pos.distance_to(last_mouse_pos) > move_tol) {
+		// Movimiento rápido del cursor: ocultar y reiniciar espera.
+		if (showing) {
+			Window *w = win_id.is_valid() ? Object::cast_to<Window>(ObjectDB::get_instance(win_id)) : nullptr;
+			if (w) {
+				w->hide();
+			}
+			showing = false;
+		}
+		quiet_elapsed_sec = 0.0f;
+		last_mouse_pos = p_pointer_pos;
+		return;
+	}
+	quiet_elapsed_sec += MAX(0.0f, p_delta);
+	const float delay_sec = float(ClockGearsTheme::get_long_help_delay_sec());
+	if (quiet_elapsed_sec >= delay_sec) {
+		if (!showing) {
+			_update_window_contents(p_target, p_owner);
+		}
+	}
+}
+
+void ClockGearsLongHelpController::hide_help() {
+	if (Window *w = win_id.is_valid() ? Object::cast_to<Window>(ObjectDB::get_instance(win_id)) : nullptr) {
+		if (w->is_visible()) {
+			w->hide();
+		}
+	}
+	active_key = "";
+	quiet_elapsed_sec = 0.0f;
+	showing = false;
+}
+
+void ClockGearsLongHelpController::cleanup() {
+	hide_help();
+	if (Window *w = win_id.is_valid() ? Object::cast_to<Window>(ObjectDB::get_instance(win_id)) : nullptr) {
+		w->queue_free();
+	}
+	win_id = ObjectID();
+	panel_id = ObjectID();
+	title_lbl_id = ObjectID();
+	sep_id = ObjectID();
+	body_lbl_id = ObjectID();
+}
+
+Dictionary ClockGearsLongHelpController::get_debug_state() const {
+	Dictionary out;
+	out["visible"] = showing;
+	out["active_key"] = active_key;
+	out["quiet_elapsed_sec"] = quiet_elapsed_sec;
+	out["delay_sec"] = ClockGearsTheme::get_long_help_delay_sec();
+	if (Window *w = win_id.is_valid() ? Object::cast_to<Window>(ObjectDB::get_instance(win_id)) : nullptr) {
+		out["window_visible"] = w->is_visible();
+		out["window_rect"] = Rect2(w->get_position(), w->get_size());
+		out["no_focus"] = w->get_flag(Window::FLAG_NO_FOCUS);
+		out["popup_flag"] = w->get_flag(Window::FLAG_POPUP);
+	} else {
+		out["window_visible"] = false;
+		out["window_rect"] = Rect2();
+	}
+	if (Label *tl = title_lbl_id.is_valid() ? Object::cast_to<Label>(ObjectDB::get_instance(title_lbl_id)) : nullptr) {
+		out["title"] = tl->get_text();
+	}
+	if (Label *bl = body_lbl_id.is_valid() ? Object::cast_to<Label>(ObjectDB::get_instance(body_lbl_id)) : nullptr) {
+		out["body"] = bl->get_text();
+	}
+	return out;
+}
+
+ClockGearsLongHelpController::~ClockGearsLongHelpController() {
+	cleanup();
 }

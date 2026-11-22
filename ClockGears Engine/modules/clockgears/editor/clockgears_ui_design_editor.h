@@ -1,6 +1,7 @@
 #ifndef CLOCKGEARS_UI_DESIGN_EDITOR_H
 #define CLOCKGEARS_UI_DESIGN_EDITOR_H
 
+#include "editor/clockgears_theme.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
@@ -682,6 +683,7 @@ private:
 	Array wizard_triggers;
 
 	AcceptDialog *template_gallery_dialog = nullptr;
+	ClockGearsLongHelpController long_help_ctrl;
 	Button *tpl_close_x_btn = nullptr;
 	TabContainer *template_tabs = nullptr;
 	GridContainer *tpl_screen_grid = nullptr;
@@ -1034,6 +1036,12 @@ public:
 	Rect2 get_rendered_element_stage_rect(const String &p_elem_id) const;
 	Dictionary get_ui_handles() const;
 	Dictionary get_test_popup_info() const;
+
+	static String get_screen_long_help(const String &p_screen_id, const String &p_screen_name = "");
+	static String get_section_long_help(const String &p_section_title);
+	bool resolve_long_help_target(Window *p_host_parent, const Vector2 &p_pointer_in_host, ClockGearsLongHelpController::Target &r_target) const;
+	Dictionary debug_step_long_help(float p_delta_sec, const Vector2 &p_pointer_pos = Vector2(-1, -1));
+	Dictionary debug_get_long_help_state() const;
 
 	ClockGearsUiDesignEditor();
 	virtual ~ClockGearsUiDesignEditor();

@@ -4,6 +4,7 @@
 #include "clockgears_animation.h"
 #include "core/clockgears_data_manager.h"
 #include "core/variant/dictionary.h"
+#include "editor/clockgears_theme.h"
 #include "editor/clockgears_tile_picker.h"
 #include "editor/clockgears_ui_widgets.h"
 #include "scene/resources/atlas_texture.h"
@@ -1000,6 +1001,7 @@ private:
 
 	// Editor Visual de Interfaz (9B Tanda 6B-1)
 	ClockGearsUiDesignEditor *ui_design_editor_panel = nullptr;
+	ClockGearsLongHelpController db_long_help_ctrl;
 
 	// Menús -> Game Over (9B Punto 8)
 	Dictionary game_over_config_draft;
@@ -1639,11 +1641,16 @@ public:
 	ClockGearsGameOverScreen *get_game_over_live_preview() { _setup_game_over_editor_ui(); return go_live_preview; }
 	Dictionary get_game_over_editor_ui_handles();
 
+	Button *get_category_button(int p_category) const;
+	Dictionary debug_step_long_help(float p_delta_sec, const Vector2 &p_pointer_pos = Vector2(-1, -1));
+	Dictionary debug_get_long_help_state() const;
+
 	static ClockGearsDatabaseDialog *get_singleton() { return singleton; }
 	void sync_system_player_start(const String &p_map_path, int p_x, int p_y);
 
 	ClockGearsDatabaseDialog();
 	virtual ~ClockGearsDatabaseDialog() {
+		db_long_help_ctrl.cleanup();
 		if (singleton == this) {
 			singleton = nullptr;
 		}

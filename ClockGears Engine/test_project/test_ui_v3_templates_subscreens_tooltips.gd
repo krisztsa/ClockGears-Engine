@@ -424,6 +424,130 @@ func _run() -> void:
 		da_cl5.list_dir_end()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(mig_v5))
 
+	# --- PUNTO 3: Ayudas largas tras cursor quieto (3s por defecto, 1..6s en Preferencias) ---
+	var host_center := func(ctrl: Control) -> Vector2:
+		if ctrl == null:
+			return Vector2(-1000, -1000)
+		var pt := ctrl.get_global_rect().get_center()
+		var w := ctrl.get_window()
+		while w != null and w != get_root() and w.is_embedded():
+			pt += Vector2(w.position)
+			var par := w.get_parent()
+			w = par.get_window() if par else null
+		return pt
+
+	ProjectSettings.set_setting("clockgears/editor/long_help_delay_sec", 3)
+	check(ClockGearsTheme.get_long_help_delay_sec() == 3,
+		"Punto 3: Default long help delay is 3 seconds")
+	var prefs := ClockGearsPreferencesDialog.new()
+	get_root().add_child(prefs)
+	await pump(2)
+	var delay_spin: SpinBox = prefs.get_long_help_delay_spin()
+	check(delay_spin != null and int(delay_spin.min_value) == 1 and int(delay_spin.max_value) == 6 and prefs.get_long_help_delay_sec_value() == 3,
+		"Punto 3: Preferences > Apariencia has delay SpinBox (1..6 s, default 3)")
+	prefs.set_long_help_delay_sec_value(2)
+	check(ClockGearsTheme.get_long_help_delay_sec() == 2,
+		"Punto 3: Delay change updates ClockGearsTheme immediately")
+	prefs.set_long_help_delay_sec_value(3)
+
+	db.select_category_by_key("messages")
+	db.adapt_to_window_size(Vector2i(1366, 768))
+	await pump(3)
+	var h3: Dictionary = db.call("get_ui_designer_ui_handles")
+	var chap_info: Dictionary = db.call("get_chapter_structure_info")
+	var msg_cat_id := -1
+	for ch in chap_info.get("chapters", []):
+		if str(ch.get("name", "")) == "Menús":
+			var keys: Array = ch.get("category_keys", [])
+			var ids: Array = ch.get("category_ids", [])
+			var mi := keys.find("messages")
+			if mi >= 0 and mi < ids.size():
+				msg_cat_id = int(ids[mi])
+	var cat_msg_btn: Button = db.call("get_category_button", msg_cat_id) if msg_cat_id >= 0 else null
+	check(cat_msg_btn != null, "Punto 3: Menús category button accessible")
+	if cat_msg_btn:
+		var cpos: Vector2 = host_center.call(cat_msg_btn)
+		db.call("debug_step_long_help", 0.05, cpos)
+		var st_early: Dictionary = db.call("debug_step_long_help", 2.0, cpos)
+		check(not bool(st_early.get("window_visible", false)),
+			"Punto 3: Long help stays hidden before 3 seconds (at 2.0 s)")
+		var st_shown: Dictionary = db.call("debug_step_long_help", 1.15, cpos)
+		check(bool(st_shown.get("window_visible", false)) and bool(st_shown.get("no_focus", false)) and not bool(st_shown.get("popup_flag", true)) and str(st_shown.get("body", "")).length() > 10,
+			"Punto 3: Long help shows after 3s quiet without stealing focus (%s)" % str(st_shown.get("title", "")))
+		var st_moved: Dictionary = db.call("debug_step_long_help", 0.1, cpos + Vector2(24, 0))
+		check(not bool(st_moved.get("window_visible", false)),
+			"Punto 3: Quick cursor movement hides long help immediately")
+
+	var ubtn: Button = h3.get("undo_btn")
+	if ubtn:
+		var upos: Vector2 = host_center.call(ubtn)
+		db.call("debug_step_long_help", 0.05, upos)
+		var st_u: Dictionary = db.call("debug_step_long_help", 3.1, upos)
+		check(bool(st_u.get("window_visible", false)) and not ubtn.tooltip_text.is_empty(),
+			"Punto 3: Icon button keeps short tooltip and shows long help after 3s")
+
+	var cards_box: Container = h3.get("design_cards_vbox")
+	if cards_box and cards_box.get_child_count() > 0:
+		var first_card := cards_box.get_child(0) as Control
+		if first_card:
+			var kpos: Vector2 = host_center.call(first_card)
+			db.call("debug_step_long_help", 0.05, kpos)
+			var st_c: Dictionary = db.call("debug_step_long_help", 3.1, kpos)
+			check(bool(st_c.get("window_visible", false)) and not str(st_c.get("body", "")).is_empty(),
+				"Punto 3: Left panel design/element card shows long help after 3s")
+
+	# Dropdown "Pantalla" abierto: mostrar al lado sin tapar ni cerrar el menú
+	var sopt3: OptionButton = h3.get("screen_opt")
+	if sopt3:
+		sopt3.show_popup()
+		await pump(2)
+		var pop3 := sopt3.get_popup()
+		if pop3 and pop3.visible:
+			var pop_host_pos := Vector2(pop3.position)
+			if not get_root().is_embedding_subwindows():
+				pop_host_pos = Vector2(pop3.position)
+			var pop_rect := Rect2(pop_host_pos, Vector2(pop3.size))
+			var item_pos := Vector2(pop_rect.position.x + pop_rect.size.x * 0.5, pop_rect.position.y + minf(24.0, pop_rect.size.y * 0.25))
+			db.call("debug_step_long_help", 0.05, item_pos)
+			var st_p2: Dictionary = db.call("debug_step_long_help", 1.8, item_pos)
+			check(not bool(st_p2.get("window_visible", false)),
+				"Punto 3: Screen dropdown item waits delay before showing long help")
+			var st_ps: Dictionary = db.call("debug_step_long_help", 1.35, item_pos)
+			var help_r: Rect2 = st_ps.get("window_rect", Rect2())
+			check(bool(st_ps.get("window_visible", false)) and pop3.visible and not help_r.intersects(pop_rect),
+				"Punto 3: Open Screen dropdown keeps popup open and places long help beside without overlap (pop=%s, help=%s)" % [str(pop_rect), str(help_r)])
+			pop3.hide()
+			await pump(1)
+
+	# Template card long help
+	if tbtn and gal and xbtn and sgrid and sgrid.get_child_count() > 0:
+		tbtn.emit_signal("pressed")
+		await pump(3)
+		var card_tpl := sgrid.get_child(0) as Control
+		if card_tpl:
+			var tpos := card_tpl.get_global_rect().get_center()
+			if gal.is_embedded():
+				tpos += Vector2(gal.position)
+			db.call("debug_step_long_help", 0.05, tpos)
+			var st_tpl: Dictionary = db.call("debug_step_long_help", 3.1, tpos)
+			check(bool(st_tpl.get("window_visible", false)),
+				"Punto 3: Template gallery card shows long help after 3s")
+		xbtn.emit_signal("pressed")
+		await pump(1)
+
+	# Configurable 1s delay works immediately without restart
+	prefs.set_long_help_delay_sec_value(1)
+	if ubtn:
+		db.call("debug_step_long_help", 0.05, Vector2(0, 0))
+		var upos2: Vector2 = host_center.call(ubtn)
+		db.call("debug_step_long_help", 0.05, upos2)
+		var st_05: Dictionary = db.call("debug_step_long_help", 0.5, upos2)
+		var st_11: Dictionary = db.call("debug_step_long_help", 0.65, upos2)
+		check(not bool(st_05.get("window_visible", false)) and bool(st_11.get("window_visible", false)),
+			"Punto 3: Setting delay to 1s applies immediately (0.5s=false, 1.15s=true)")
+	prefs.set_long_help_delay_sec_value(3)
+	prefs.queue_free()
+
 	db.queue_free()
 	await pump(2)
 	if dm_owned and dm and is_instance_valid(dm):

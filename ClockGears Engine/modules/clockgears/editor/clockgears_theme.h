@@ -115,6 +115,10 @@ public:
 	static NeonCopperTokens get_neon_copper_tokens(bool p_brass = false, bool p_light = false, float p_scale = 1.0f, int p_glow_level = -1);
 	static int get_glow_effects_level();
 	static void set_glow_effects_level(int p_level);
+	static int get_long_help_delay_sec();
+	static void set_long_help_delay_sec(int p_sec);
+	static void set_control_long_help(Control *p_ctrl, const String &p_help);
+	static String get_control_long_help(const Control *p_ctrl);
 	Dictionary get_theme_tokens_dict(const String &p_theme_id = "") const;
 
 	struct SplashPalette {
@@ -231,4 +235,47 @@ public:
 
 	ClockGearsTheme();
 	~ClockGearsTheme();
+};
+
+class PopupMenu;
+
+// Controlador compartido para ventanas de ayuda larga tras cursor quieto (sin robar foco).
+class ClockGearsLongHelpController {
+public:
+	struct Target {
+		String key;
+		String text;
+		Rect2 anchor_global_rect;
+		Rect2 avoid_global_rect;
+		bool prefer_beside = false;
+	};
+
+private:
+	ObjectID win_id;
+	ObjectID panel_id;
+	ObjectID title_lbl_id;
+	ObjectID body_lbl_id;
+	ObjectID sep_id;
+
+	String active_key;
+	Vector2 last_mouse_pos = Vector2(-10000, -10000);
+	float quiet_elapsed_sec = 0.0f;
+	bool showing = false;
+	bool last_has_override_pos = false;
+
+	void _ensure_window(Node *p_owner);
+	void _update_window_contents(const Target &p_target, Node *p_owner);
+
+public:
+	static Control *find_long_help_control_in_window(Window *p_win, const Vector2 &p_local_pos);
+	static Vector2 host_point_to_window_local(const Window *p_win, Window *p_host_parent, const Vector2 &p_host_pos);
+	static Rect2 get_control_global_rect_in_host(const Control *p_ctrl, Window *p_host_parent);
+	static Rect2 get_popup_global_rect_in_host(const Window *p_win, Window *p_host_parent);
+
+	void step(Node *p_owner, float p_delta, const Vector2 &p_pointer_pos, const Target &p_target);
+	void hide_help();
+	void cleanup();
+	Dictionary get_debug_state() const;
+
+	~ClockGearsLongHelpController();
 };

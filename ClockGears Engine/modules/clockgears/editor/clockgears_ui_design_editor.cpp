@@ -25,6 +25,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/text_edit.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 #include "scene/resources/image_texture.h"
@@ -1607,6 +1608,8 @@ void ClockGearsDesignCardRow::setup(ClockGearsUiDesignEditor *p_owner, ClockGear
 		tip += String::utf8("\nHijo de: ") + p_parent_name;
 	}
 	set_tooltip_text(tip);
+	String card_lh = ename + String::utf8(" (") + (elem_type == "folder" ? String("carpeta") : elem_type) + String::utf8(")\nHaz clic para seleccionarlo y editar sus propiedades en el panel derecho, o arrástralo para cambiar el orden de capas.");
+	ClockGearsTheme::set_control_long_help(this, card_lh);
 
 	if (!is_connected("mouse_entered", callable_mp(this, &ClockGearsDesignCardRow::_on_mouse_entered))) {
 		connect("mouse_entered", callable_mp(this, &ClockGearsDesignCardRow::_on_mouse_entered));
@@ -1682,6 +1685,7 @@ void ClockGearsDesignCardRow::setup(ClockGearsUiDesignEditor *p_owner, ClockGear
 	eye_btn->set_focus_mode(Control::FOCUS_NONE);
 	eye_btn->set_custom_minimum_size(Size2(int(22 * EDSCALE), int(22 * EDSCALE)));
 	eye_btn->set_tooltip_text(elem_visible ? String::utf8("Ocultar elemento") : String::utf8("Mostrar elemento"));
+	ClockGearsTheme::set_control_long_help(eye_btn, elem_visible ? String::utf8("Ocultar elemento en el lienzo\nDesactiva temporalmente la visibilidad de este elemento en la vista previa y el editor.") : String::utf8("Mostrar elemento en el lienzo\nVuelve a mostrar este elemento oculto en el lienzo y en la vista previa."));
 	if (p_eye_icon.is_valid()) {
 		eye_btn->set_button_icon(p_eye_icon);
 		eye_btn->add_theme_constant_override("icon_max_width", int(14 * EDSCALE));
@@ -1696,6 +1700,7 @@ void ClockGearsDesignCardRow::setup(ClockGearsUiDesignEditor *p_owner, ClockGear
 	lock_btn->set_focus_mode(Control::FOCUS_NONE);
 	lock_btn->set_custom_minimum_size(Size2(int(22 * EDSCALE), int(22 * EDSCALE)));
 	lock_btn->set_tooltip_text(elem_locked ? String::utf8("Desbloquear elemento") : String::utf8("Bloquear elemento"));
+	ClockGearsTheme::set_control_long_help(lock_btn, elem_locked ? String::utf8("Desbloquear elemento\nPermite mover o redimensionar de nuevo este elemento directamente desde el lienzo.") : String::utf8("Bloquear elemento\nEvita que este elemento se mueva o seleccione por accidente al arrastrar otros elementos."));
 	if (p_lock_icon.is_valid()) {
 		lock_btn->set_button_icon(p_lock_icon);
 		lock_btn->add_theme_constant_override("icon_max_width", int(14 * EDSCALE));
@@ -1864,12 +1869,14 @@ ClockGearsUiDesignEditor::ClockGearsUiDesignEditor() {
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	add_theme_constant_override("separation", int(6 * EDSCALE));
+	set_process(true);
 	set_process_input(true);
 	set_process_shortcut_input(true);
 	_build_ui();
 }
 
 ClockGearsUiDesignEditor::~ClockGearsUiDesignEditor() {
+	long_help_ctrl.cleanup();
 	open_floating_windows.clear();
 	create_floating_window = nullptr;
 	ghost_preview_active = false;
@@ -1990,6 +1997,8 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("reset_split_layout", "split_idx"), &ClockGearsUiDesignEditor::_reset_wide_split, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("open_manual_image_adjust_for_selected"), &ClockGearsUiDesignEditor::open_manual_image_adjust_for_selected);
 	ClassDB::bind_method(D_METHOD("open_manual_image_adjust_for_screen_bg"), &ClockGearsUiDesignEditor::open_manual_image_adjust_for_screen_bg);
+	ClassDB::bind_method(D_METHOD("debug_step_long_help", "delta_sec", "pointer_pos"), &ClockGearsUiDesignEditor::debug_step_long_help, DEFVAL(Vector2(-1, -1)));
+	ClassDB::bind_method(D_METHOD("debug_get_long_help_state"), &ClockGearsUiDesignEditor::debug_get_long_help_state);
 }
 
 float ClockGearsUiDesignEditor::persisted_left_split_w = -1.0f;
@@ -2207,9 +2216,26 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 			refresh_from_data_manager();
 			callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 		} else {
+			long_help_ctrl.hide_help();
 			close_test_popup();
 		}
+	} else if (p_what == NOTIFICATION_PROCESS) {
+		const bool db_owns = (owner_db != nullptr && owner_db->is_visible());
+		if (!db_owns && is_visible_in_tree()) {
+			Window *host_parent = get_window();
+			if (get_tree() && get_tree()->get_root()) {
+				host_parent = get_tree()->get_root();
+			}
+			Vector2 pointer_pos = host_parent ? host_parent->get_mouse_position() : Vector2(-10000, -10000);
+			if (host_parent && !host_parent->is_embedding_subwindows() && DisplayServer::get_singleton()) {
+				pointer_pos = Vector2(DisplayServer::get_singleton()->mouse_get_position());
+			}
+			ClockGearsLongHelpController::Target tgt;
+			resolve_long_help_target(host_parent, pointer_pos, tgt);
+			long_help_ctrl.step(this, get_process_delta_time(), pointer_pos, tgt);
+		}
 	} else if (p_what == NOTIFICATION_EXIT_TREE) {
+		long_help_ctrl.cleanup();
 		close_test_popup();
 		close_all_floating_element_windows();
 	} else if (p_what == NOTIFICATION_RESIZED) {
@@ -2387,6 +2413,10 @@ Button *ClockGearsUiDesignEditor::_attach_collapsible_header(VBoxContainer *p_ca
 	hdr->set_clip_text(false);
 	hdr->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	hdr->set_tooltip_text(p_title);
+	const String sec_help = get_section_long_help(p_title);
+	if (!sec_help.is_empty()) {
+		ClockGearsTheme::set_control_long_help(hdr, sec_help);
+	}
 	hdr->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
 	// Oro luminoso (>= 9.5:1 contraste tanto en tema Oscuro como en Latón)
 	const Color hdr_gold(0.98f, 0.87f, 0.56f);
@@ -4660,6 +4690,47 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	s_make_rounded_action_btn(tpl_delete_user_btn);
 	tpl_delete_user_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_delete_user_pressed));
 	gal_acts->add_child(tpl_delete_user_btn);
+
+	// Ayudas largas (tras cursor quieto) en botones de iconos, acciones y controles del lienzo
+	ClockGearsTheme::set_control_long_help(new_menu_wizard_btn, String::utf8("Nuevo diseño\nAbre el asistente de 3 pasos para crear un menú o ventana nueva con su distribución, estilo y botones base."));
+	ClockGearsTheme::set_control_long_help(add_submenu_btn, String::utf8("Añadir submenú\nCrea una sub-pantalla anidada dentro del módulo actual para añadir ventanas auxiliares o listados propios."));
+	ClockGearsTheme::set_control_long_help(templates_btn, String::utf8("Galería de plantillas\nExplora plantillas completas de pantalla, componentes listos o tus propios diseños guardados."));
+	ClockGearsTheme::set_control_long_help(reset_btn, String::utf8("Restaurar plantilla original\nDevuelve la pantalla actual a su configuración predeterminada (pide confirmación antes de sobrescribir)."));
+	ClockGearsTheme::set_control_long_help(undo_btn, String::utf8("Deshacer (Ctrl+Z)\nRevierte el último cambio de posición, tamaño, texto o estilo realizado en esta pantalla."));
+	ClockGearsTheme::set_control_long_help(redo_btn, String::utf8("Rehacer (Ctrl+Y)\nVuelve a aplicar el último cambio que acabas de deshacer."));
+	ClockGearsTheme::set_control_long_help(test_btn, String::utf8("Probar en vivo\nAbre una vista previa interactiva con datos de ejemplo para comprobar el menú o la batalla al completo."));
+	ClockGearsTheme::set_control_long_help(preview_res_opt, String::utf8("Resolución de vista previa\nSimula cómo se adapta el diseño en pantallas 16:9 de 960x540, 1366x768, Full HD o QHD."));
+	ClockGearsTheme::set_control_long_help(zoom_btns[0], String::utf8("Zoom Ajustar\nEncaja toda la pantalla 16:9 completa dentro del espacio disponible del lienzo."));
+	ClockGearsTheme::set_control_long_help(zoom_btns[1], String::utf8("Zoom 200 %\nAmplía el lienzo al doble de su tamaño para alinear detalles píxel a píxel."));
+	ClockGearsTheme::set_control_long_help(zoom_btns[2], String::utf8("Zoom 50 %\nReduce el lienzo a la mitad para ver diseños amplios con comodidad."));
+	ClockGearsTheme::set_control_long_help(zoom_btns[3], String::utf8("Zoom 100 %\nMuestra el lienzo a escala real 1:1 según la resolución elegida en Vista."));
+	ClockGearsTheme::set_control_long_help(zoom_btns[4], String::utf8("Zoom 300 %\nAmplía el lienzo al triple para ajustar iconos, marcos 9-slice y tipografía fina."));
+	ClockGearsTheme::set_control_long_help(grid_chk, String::utf8("Mostrar rejilla\nDibuja líneas guía sobre el lienzo para ayudarte a alinear cajas y botones de forma uniforme."));
+	ClockGearsTheme::set_control_long_help(grid_step_opt, String::utf8("Tamaño de rejilla\nDefine cada cuántos píxeles se dibujan las celdas de la rejilla y se imantan los elementos (8, 16 o 32 px)."));
+	ClockGearsTheme::set_control_long_help(snap_chk, String::utf8("Imán a la rejilla\nAjusta automáticamente la posición y tamaño de cada elemento al paso de rejilla al arrastrar."));
+	ClockGearsTheme::set_control_long_help(guides_chk, String::utf8("Guías inteligentes\nMuestra líneas de alineación respecto a bordes, centros y elementos vecinos mientras mueves o escalas."));
+	ClockGearsTheme::set_control_long_help(align_center_h_btn, String::utf8("Centrar horizontalmente\nColoca el elemento seleccionado justo en el centro horizontal del lienzo."));
+	ClockGearsTheme::set_control_long_help(align_center_v_btn, String::utf8("Centrar verticalmente\nColoca el elemento seleccionado justo en el centro vertical del lienzo."));
+	ClockGearsTheme::set_control_long_help(dist_v_btn, String::utf8("Distribuir en vertical\nReparte uniformemente el espacio vertical entre los elementos visibles o seleccionados."));
+	ClockGearsTheme::set_control_long_help(dup_elem_btn, String::utf8("Duplicar elemento (Ctrl+D)\nCrea una copia exacta del elemento seleccionado ligeramente desplazada en la misma pantalla."));
+	ClockGearsTheme::set_control_long_help(copy_elem_btn, String::utf8("Copiar elemento (Ctrl+C)\nGuarda en el portapapeles el elemento seleccionado para pegarlo aquí o en otra pantalla."));
+	ClockGearsTheme::set_control_long_help(paste_elem_btn, String::utf8("Pegar elemento (Ctrl+V)\nInserta una copia del elemento previamente copiado en el diseño activo."));
+	ClockGearsTheme::set_control_long_help(view_context_chk, String::utf8("Ver contexto\nMuestra el resto de ventanas de este módulo atenuadas en segundo plano para alinear sin perder referencias."));
+	ClockGearsTheme::set_control_long_help(sample_scene_chk, String::utf8("Escena de ejemplo\nMuestra un campo de batalla y enemigos de muestra detrás de los paneles para comprobar la legibilidad."));
+	ClockGearsTheme::set_control_long_help(layer_add_button_btn, String::utf8("+ Botón\nAbre la ventana rápida para crear un botón nuevo con su texto, posición y acción."));
+	ClockGearsTheme::set_control_long_help(layer_add_folder_btn, String::utf8("+ Carpeta\nCrea una carpeta organizadora en el árbol de capas para agrupar elementos relacionados."));
+	ClockGearsTheme::set_control_long_help(layer_group_btn, String::utf8("Agrupar en carpeta\nMete los elementos seleccionados dentro de una carpeta común para moverlos u ocultarlos juntos."));
+	ClockGearsTheme::set_control_long_help(layer_ungroup_btn, String::utf8("Desagrupar carpeta\nSaca los elementos hijos fuera de la carpeta seleccionada manteniendo sus propiedades."));
+	ClockGearsTheme::set_control_long_help(layer_up_btn, String::utf8("Subir capa\nMueve el elemento seleccionado un nivel hacia delante en el orden de dibujado."));
+	ClockGearsTheme::set_control_long_help(layer_down_btn, String::utf8("Bajar capa\nMueve el elemento seleccionado un nivel hacia atrás en el orden de dibujado."));
+	ClockGearsTheme::set_control_long_help(layer_del_btn, String::utf8("Borrar elemento\nElimina del diseño el elemento seleccionado (se puede revertir con Deshacer)."));
+	for (int pi = 0; pi < palette_buttons.size(); pi++) {
+		if (ClockGearsUiPaletteButton *pb = palette_buttons[pi]) {
+			const String tname = pb->get_text();
+			const String et = pb->get_element_type();
+			ClockGearsTheme::set_control_long_help(pb, tname + String::utf8("\nArrastra este componente al lienzo (o haz clic para añadirlo) para crear un elemento de tipo «") + et + String::utf8("»."));
+		}
+	}
 }
 
 String ClockGearsUiDesignEditor::_anchor_key_by_index(int p_idx) {
@@ -5244,7 +5315,10 @@ void ClockGearsUiDesignEditor::_refresh_screen_dropdown() {
 	}
 	if (screen_opt->get_item_count() > 0) {
 		screen_opt->select(sel_idx);
-		screen_opt->set_tooltip_text(screen_opt->get_item_text(sel_idx));
+		const String cur_lbl = screen_opt->get_item_text(sel_idx).trim_prefix(String::utf8("  ↳ "));
+		const String cur_id = String(screen_opt->get_item_metadata(sel_idx));
+		screen_opt->set_tooltip_text(cur_lbl);
+		ClockGearsTheme::set_control_long_help(screen_opt, get_screen_long_help(cur_id, cur_lbl));
 	}
 	updating_ui = prev;
 }
@@ -8501,14 +8575,16 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			vb->add_child(th);
 			String tname = String(t.get("name", tid));
 			String tdesc = String(t.get("description", ""));
+			String tpl_tip = tdesc.is_empty() ? tname : (tname + "\n" + tdesc);
 			Button *sb = memnew(Button(tname));
 			sb->set_toggle_mode(true);
 			sb->set_pressed(tid == selected_gallery_template_id);
 			sb->set_clip_text(true);
 			sb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-			sb->set_tooltip_text(tdesc.is_empty() ? tname : (tname + "\n" + tdesc));
+			sb->set_tooltip_text(tpl_tip);
 			sb->set_meta("tpl_id", tid);
-			sb->set_meta("long_help", tdesc.is_empty() ? tname : tdesc);
+			ClockGearsTheme::set_control_long_help(sb, tpl_tip);
+			ClockGearsTheme::set_control_long_help(card, tpl_tip);
 			s_make_rounded_action_btn(sb);
 			sb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_card_selected).bind(tid));
 			vb->add_child(sb);
@@ -10391,6 +10467,160 @@ Dictionary ClockGearsUiDesignEditor::get_test_popup_info() const {
 	out["credits"] = test_credits;
 	out["hud"] = test_hud;
 	return out;
+}
+
+String ClockGearsUiDesignEditor::get_screen_long_help(const String &p_screen_id, const String &p_screen_name) {
+	static const struct {
+		const char *id;
+		const char *help;
+	} k_helps[] = {
+		{ "title", "Menú principal\nPantalla de título al iniciar el juego: configura el logotipo, fondo animado o imagen y los botones principales como Continuar o Nueva partida." },
+		{ "game_menu_options", "Menú Opciones\nPantalla de ajustes donde el jugador regula el volumen, la resolución, pantalla completa y controles." },
+		{ "game_menu_save", "Guardar / Cargar\nVentana con la lista de ranuras de partida para guardar el progreso actual o cargar un archivo existente." },
+		{ "game_menu_main", "Menú del juego\nMenú general al abrir la pausa durante la partida, con resumen del grupo, dinero y accesos al resto de submenús." },
+		{ "game_menu_items", "Inventario\nPantalla de objetos divididos por categorías para usar consumibles o inspeccionar objetos clave." },
+		{ "game_menu_equip", "Equipo\nInterfaz para equipar armas, armaduras y accesorios comparando cambios de estadísticas en el personaje." },
+		{ "game_menu_status", "Estado\nFicha de atributos detallados del personaje, experiencia, habilidades aprendidas y resistencias." },
+		{ "game_over", "Game Over\nPantalla mostrada al caer derrotado en batalla, con opciones para reintentar, cargar o volver al título." },
+		{ "credits", "Créditos\nSecuencia desplazable con agradecimientos, reparto del proyecto, logotipos y música de cierre." },
+		{ "hud", "HUD (Juego)\nBarras, medidores y contadores flotantes visibles durante el mapa o el combate en tiempo real." },
+		{ "messages", "Cuadro de diálogo\nVentana principal inferior donde se muestran las líneas de diálogo, nombre del hablante y retrato." },
+		{ "messages_choices", "Lista de elecciones\nVentana emergente con opciones múltiples para que el jugador decida respuestas o acciones en eventos." },
+		{ "messages_number", "Entrada de número\nSelector numérico dígito a dígito utilizado para introducir códigos, precios o cantidades." },
+		{ "messages_history", "Historial de texto\nRegistro desplazable que permite releer conversaciones y avisos recientes de la partida." },
+		{ "messages_gold", "Ventana de dinero\nRecuadro auxiliar en esquina superior que muestra el dinero actual durante tiendas o pagos." },
+		{ "battle", "Comandos de batalla\nPanel de acciones del personaje activo en su turno: Atacar, Habilidades, Objetos, Defender o Huir." },
+		{ "battle_party", "Panel del grupo\nBarra inferior con los héroes del equipo activo, sus puntos de vida (PV), maná (PM) y estado en combate." },
+		{ "battle_enemies", "Zona de enemigos\nÁrea visual de referencia donde el motor coloca libremente los sprites de los enemigos sin marco de ventana." },
+		{ "battle_notice", "Avisos de batalla\nVentana empleada para mensajes rápidos de combate, turnos especiales y resumen de victoria o botín." },
+		{ "battle_submenu", "Submenú de habilidades / objetos\nLista desplegada al escoger Habilidades u Objetos para elegir la técnica o consumible a usar." },
+		{ "battle_target", "Selector de objetivo\nGuía visual sobre el enemigo o aliado seleccionado como blanco antes de ejecutar la acción." }
+	};
+	for (const auto &entry : k_helps) {
+		if (p_screen_id == entry.id) {
+			return String::utf8(entry.help);
+		}
+	}
+	if (!p_screen_id.is_empty() && ClockGearsDataManager::get_singleton()) {
+		Dictionary scr = ClockGearsDataManager::get_singleton()->get_ui_screen_design(p_screen_id);
+		String desc = String(scr.get("description", "")).strip_edges();
+		String nm = p_screen_name.is_empty() ? String(scr.get("name", p_screen_id)) : p_screen_name;
+		if (!desc.is_empty()) {
+			return nm + "\n" + desc;
+		}
+		if (String(scr.get("screen_type", "")) == "submenu") {
+			return nm + String::utf8("\nSubmenú personalizado anidado bajo la pantalla padre para mostrar vistas o comandos propios.");
+		}
+	}
+	String label = p_screen_name.is_empty() ? p_screen_id : p_screen_name;
+	return label + String::utf8("\nDiseño de pantalla seleccionable en el lienzo. Elige una opción para editar sus paneles, botones y estilo.");
+}
+
+String ClockGearsUiDesignEditor::get_section_long_help(const String &p_section_title) {
+	static const struct {
+		const char *title;
+		const char *help;
+	} k_secs[] = {
+		{ "Diseños", "Panel de elementos de esta pantalla\nLista todos los paneles, botones, textos y carpetas ordenados por capa para seleccionar, ocultar o reorganizar." },
+		{ "Elementos", "Panel de elementos\nLista los paneles, botones, imágenes, textos y carpetas de esta pantalla; haz clic para editar o arrastra para reordenar capas." },
+		{ "Elementos (arrastrar)", "Paleta de componentes\nArrastra cualquier botón, caja, texto o imagen directamente hacia el lienzo para añadirlo en la posición exacta." },
+		{ "Propiedades", "Inspector de propiedades\nEdita las medidas, posición, texto, imagen, estilo de ventana y acción del elemento o pantalla seleccionados." },
+		{ "Ajustes de la pantalla", "Ajustes generales de la pantalla\nConfigura el nombre, dimensiones base, estilo global por defecto y comportamiento general de este diseño." },
+		{ "Fondo y transición del menú", "Fondo y transición\nDefine la imagen o color de fondo, desenfoque opcional y animación al abrir o cerrar esta pantalla." },
+		{ "Apertura y distribución (3B/3E)", "Apertura y atajos del menú\nConfigura cómo se distribuyen automáticamente los elementos y con qué teclas o botones se abre o cierra." },
+		{ "Sonidos del menú", "Efectos de sonido del menú\nAsigna clips de audio al mover el cursor, confirmar una opción o cancelar en esta pantalla." },
+		{ "Identidad y jerarquía", "Identidad y jerarquía\nCambia el nombre visible, la carpeta contenedora y el orden de profundidad de este elemento." },
+		{ "Posición y tamaño", "Posición y tamaño\nAjusta con precisión numérica las coordenadas X/Y, el anclaje y el ancho/alto sobre el lienzo." },
+		{ "Estilo y Apariencia", "Estilo y apariencia\nPersonaliza el marco 9-slice, bordes, radios, opacidades y colores de fondo del elemento." },
+		{ "Imagen", "Propiedades de imagen\nSelecciona la textura, el modo de ajuste o recorte manual y la nitidez píxel a píxel." },
+		{ "Texto y fuente", "Texto y tipografía\nEdita el texto mostrado, la fuente tipográfica, el tamaño de letra, color y alineación." },
+		{ "Acción al pulsar", "Acción del botón\nDefine qué ocurre cuando el jugador pulsa este control: abrir otro menú, iniciar escena o ejecutar acción." }
+	};
+	for (const auto &s : k_secs) {
+		if (p_section_title == String::utf8(s.title)) {
+			return String::utf8(s.help);
+		}
+	}
+	return p_section_title + String::utf8("\nSección desplegable de configuración del diseño actual; haz clic en la cabecera para expandirla o contraerla.");
+}
+
+bool ClockGearsUiDesignEditor::resolve_long_help_target(Window *p_host_parent, const Vector2 &p_pointer_in_host, ClockGearsLongHelpController::Target &r_target) const {
+	// 1. Prioridad máxima: desplegable "Pantalla" abierto (no cerrarlo ni tapar las opciones).
+	if (screen_opt && screen_opt->get_popup() && screen_opt->get_popup()->is_visible()) {
+		PopupMenu *pop = screen_opt->get_popup();
+		const Rect2 pop_rect = ClockGearsLongHelpController::get_popup_global_rect_in_host(pop, p_host_parent);
+		const int cnt = pop->get_item_count();
+		int idx = -1;
+		if (cnt > 0 && pop_rect.has_point(p_pointer_in_host)) {
+			const float rel_y = CLAMP((p_pointer_in_host.y - pop_rect.position.y) / MAX(1.0f, pop_rect.size.y), 0.0f, 0.9999f);
+			idx = CLAMP(int(rel_y * float(cnt)), 0, cnt - 1);
+		} else {
+			idx = pop->get_focused_item();
+		}
+		if (idx >= 0 && idx < cnt && !pop->is_item_separator(idx)) {
+			const String sid = String(pop->get_item_metadata(idx));
+			const String sname = pop->get_item_text(idx).trim_prefix(String::utf8("  ↳ "));
+			const float row_h = pop_rect.size.y / MAX(1.0f, float(cnt));
+			r_target.key = "screen_popup:" + sid + ":" + itos(idx);
+			r_target.text = get_screen_long_help(sid, sname);
+			r_target.anchor_global_rect = Rect2(pop_rect.position.x, pop_rect.position.y + float(idx) * row_h, pop_rect.size.x, row_h);
+			r_target.avoid_global_rect = pop_rect;
+			r_target.prefer_beside = true;
+		}
+		return true;
+	}
+
+	// 2. Diálogo de plantillas visible.
+	if (template_gallery_dialog && template_gallery_dialog->is_visible()) {
+		const Vector2 local_pt = ClockGearsLongHelpController::host_point_to_window_local(template_gallery_dialog, p_host_parent, p_pointer_in_host);
+		if (Control *hit = ClockGearsLongHelpController::find_long_help_control_in_window(template_gallery_dialog, local_pt)) {
+			const String txt = ClockGearsTheme::get_control_long_help(hit);
+			if (!txt.is_empty()) {
+				r_target.key = "tpl_ctrl:" + itos(hit->get_instance_id());
+				r_target.text = txt;
+				r_target.anchor_global_rect = ClockGearsLongHelpController::get_control_global_rect_in_host(hit, p_host_parent);
+				r_target.prefer_beside = false;
+				return true;
+			}
+		}
+		return true;
+	}
+
+	// 3. Editor propio dentro de su ventana.
+	Window *win = get_window();
+	if (win && win->is_visible()) {
+		const Vector2 local_pt = ClockGearsLongHelpController::host_point_to_window_local(win, p_host_parent, p_pointer_in_host);
+		if (Control *hit = ClockGearsLongHelpController::find_long_help_control_in_window(win, local_pt)) {
+			const String txt = ClockGearsTheme::get_control_long_help(hit);
+			if (!txt.is_empty()) {
+				r_target.key = "ui_ctrl:" + itos(hit->get_instance_id());
+				r_target.text = txt;
+				r_target.anchor_global_rect = ClockGearsLongHelpController::get_control_global_rect_in_host(hit, p_host_parent);
+				r_target.prefer_beside = false;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+Dictionary ClockGearsUiDesignEditor::debug_step_long_help(float p_delta_sec, const Vector2 &p_pointer_pos) {
+	Window *host_parent = get_window();
+	if (get_tree() && get_tree()->get_root()) {
+		host_parent = get_tree()->get_root();
+	}
+	Vector2 ptr = p_pointer_pos;
+	if (ptr.x < 0.0f && ptr.y < 0.0f) {
+		ptr = host_parent ? host_parent->get_mouse_position() : Vector2();
+	}
+	ClockGearsLongHelpController::Target tgt;
+	resolve_long_help_target(host_parent, ptr, tgt);
+	long_help_ctrl.step(this, p_delta_sec, ptr, tgt);
+	return long_help_ctrl.get_debug_state();
+}
+
+Dictionary ClockGearsUiDesignEditor::debug_get_long_help_state() const {
+	return long_help_ctrl.get_debug_state();
 }
 
 // ============================================================================

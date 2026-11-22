@@ -40,6 +40,7 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/tab_bar.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
@@ -508,6 +509,9 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_game_menu_test_popup"), &ClockGearsDatabaseDialog::get_game_menu_test_popup);
 	ClassDB::bind_method(D_METHOD("get_game_menu_editor_ui_handles"), &ClockGearsDatabaseDialog::get_game_menu_editor_ui_handles);
 	ClassDB::bind_method(D_METHOD("get_credits_draft_copy"), &ClockGearsDatabaseDialog::get_credits_draft_copy);
+	ClassDB::bind_method(D_METHOD("get_category_button", "category"), &ClockGearsDatabaseDialog::get_category_button);
+	ClassDB::bind_method(D_METHOD("debug_step_long_help", "delta_sec", "pointer_pos"), &ClockGearsDatabaseDialog::debug_step_long_help, DEFVAL(Vector2(-1, -1)));
+	ClassDB::bind_method(D_METHOD("debug_get_long_help_state"), &ClockGearsDatabaseDialog::debug_get_long_help_state);
 	ClassDB::bind_method(D_METHOD("add_credits_item", "type", "fields"), &ClockGearsDatabaseDialog::add_credits_item, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("remove_credits_item", "index"), &ClockGearsDatabaseDialog::remove_credits_item);
 	ClassDB::bind_method(D_METHOD("move_credits_item", "index", "delta"), &ClockGearsDatabaseDialog::move_credits_item);
@@ -567,6 +571,7 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 			_apply_db_container_styles();
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
+			db_long_help_ctrl.cleanup();
 #ifdef TOOLS_ENABLED
 			if (EditorFileSystem::get_singleton()) {
 				EditorFileSystem *efs = EditorFileSystem::get_singleton();
@@ -595,10 +600,22 @@ void ClockGearsDatabaseDialog::_notification(int p_what) {
 					_queue_troop_preview_redraw();
 				}
 			}
+			if (is_visible()) {
+				Window *host_parent = this;
+				if (get_tree() && get_tree()->get_root()) {
+					host_parent = get_tree()->get_root();
+				}
+				Vector2 ptr = host_parent ? host_parent->get_mouse_position() : Vector2(-10000, -10000);
+				if (host_parent && !host_parent->is_embedding_subwindows() && DisplayServer::get_singleton()) {
+					ptr = Vector2(DisplayServer::get_singleton()->mouse_get_position());
+				}
+				debug_step_long_help(get_process_delta_time(), ptr);
+			}
 		} break;
 		case NOTIFICATION_WM_CLOSE_REQUEST:
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			if (!is_visible()) {
+				db_long_help_ctrl.hide_help();
 				_restore_hud_preview_runtime_state();
 				_clear_troop_texture_cache();
 				_save_editor_ui_state();
@@ -5848,6 +5865,28 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 		}
 		if (s_is_arpg_category(i)) {
 			btn->set_tooltip_text(CG_DB_TR("Para combate en tiempo real"));
+		}
+		{
+			String cat_lh;
+			switch (i) {
+				case DB_CAT_MAIN_MENU: cat_lh = String::utf8("Menú principal\nDiseña la pantalla de título al iniciar el juego: logotipo, fondo y botones como Continuar o Nueva partida."); break;
+				case DB_CAT_MENU_OPTIONS: cat_lh = String::utf8("Opciones\nPersonaliza el menú de ajustes de audio, pantalla, resolución y controles para el jugador."); break;
+				case DB_CAT_MENU_SAVES: cat_lh = String::utf8("Guardar / Cargar\nConfigura las ranuras de guardado y carga, miniaturas y datos visibles de cada partida."); break;
+				case DB_CAT_GAME_MENU: cat_lh = String::utf8("Menú del juego\nDiseña el menú general de pausa en partida con accesos a inventario, equipo, estado y guardar."); break;
+				case DB_CAT_MENU_INVENTORY: cat_lh = String::utf8("Inventario\nOrganiza la pantalla de objetos consumibles, armas clave, categorías y descripción."); break;
+				case DB_CAT_MENU_EQUIP: cat_lh = String::utf8("Equipo\nDiseña las ranuras de equipamiento del personaje y la comparación de atributos."); break;
+				case DB_CAT_MENU_STATUS: cat_lh = String::utf8("Estado\nMaqueta la ficha completa del personaje con retrato, nivel, parámetros y habilidades."); break;
+				case DB_CAT_CREDITS: cat_lh = String::utf8("Créditos\nConfigura la secuencia desplazable de créditos, imágenes, música y estilos finales."); break;
+				case DB_CAT_GAME_OVER: cat_lh = String::utf8("Game Over\nPersonaliza la pantalla tras caer derrotado para reintentar, cargar o volver al título."); break;
+				case DB_CAT_HUD: cat_lh = String::utf8("HUD (Juego)\nColoca barras de vida, maná, monedas o minimapa visibles durante el juego y el combate real."); break;
+				case DB_CAT_MENU_MESSAGES: cat_lh = String::utf8("Mensajes\nDiseña el cuadro de diálogo narrativo junto a sus sub-pantallas de elecciones, número, historial y dinero."); break;
+				case DB_CAT_MENU_BATTLE: cat_lh = String::utf8("Batalla\nPersonaliza los paneles de comandos, grupo, submenús, objetivo y avisos en el combate por turnos."); break;
+				case DB_CAT_WINDOW_STYLES: cat_lh = String::utf8("Estilo ventanas\nDefine los marcos 9-slice, colores, opacidades y fuentes base compartidos por las ventanas del juego."); break;
+				default: break;
+			}
+			if (!cat_lh.is_empty()) {
+				ClockGearsTheme::set_control_long_help(btn, cat_lh);
+			}
 		}
 		btn->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_category_selected).bind(i));
 		cats_bar->add_child(btn);
@@ -22421,6 +22460,46 @@ Dictionary ClockGearsDatabaseDialog::get_game_over_editor_ui_handles() {
 	out["window_style_opt"] = go_window_style_opt;
 	out["live_preview"] = go_live_preview;
 	return out;
+}
+
+Button *ClockGearsDatabaseDialog::get_category_button(int p_category) const {
+	if (p_category >= 0 && p_category < category_buttons.size()) {
+		return category_buttons[p_category];
+	}
+	return nullptr;
+}
+
+Dictionary ClockGearsDatabaseDialog::debug_step_long_help(float p_delta_sec, const Vector2 &p_pointer_pos) {
+	Window *host_parent = this;
+	if (get_tree() && get_tree()->get_root()) {
+		host_parent = get_tree()->get_root();
+	}
+	Vector2 ptr = p_pointer_pos;
+	if (ptr.x < 0.0f && ptr.y < 0.0f) {
+		ptr = host_parent ? host_parent->get_mouse_position() : Vector2(-10000, -10000);
+	}
+	ClockGearsLongHelpController::Target tgt;
+	bool resolved = false;
+	if (ui_design_editor_panel && ui_design_editor_panel->is_visible_in_tree()) {
+		resolved = ui_design_editor_panel->resolve_long_help_target(host_parent, ptr, tgt);
+	}
+	if (!resolved) {
+		const Vector2 local_pt = ClockGearsLongHelpController::host_point_to_window_local(this, host_parent, ptr);
+		if (Control *hit = ClockGearsLongHelpController::find_long_help_control_in_window(this, local_pt)) {
+			const String txt = ClockGearsTheme::get_control_long_help(hit);
+			if (!txt.is_empty()) {
+				tgt.key = "db_ctrl:" + itos(hit->get_instance_id());
+				tgt.text = txt;
+				tgt.anchor_global_rect = ClockGearsLongHelpController::get_control_global_rect_in_host(hit, host_parent);
+			}
+		}
+	}
+	db_long_help_ctrl.step(this, p_delta_sec, ptr, tgt);
+	return db_long_help_ctrl.get_debug_state();
+}
+
+Dictionary ClockGearsDatabaseDialog::debug_get_long_help_state() const {
+	return db_long_help_ctrl.get_debug_state();
 }
 
 
