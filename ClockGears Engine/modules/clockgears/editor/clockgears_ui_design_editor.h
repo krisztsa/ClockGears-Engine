@@ -682,6 +682,17 @@ private:
 
 	void _build_ui();
 	void _trace_log(const String &p_event, const String &p_detail = "") const;
+	static float persisted_left_split_w;
+	static float persisted_right_split_w;
+	static bool persisted_split_loaded;
+	bool updating_splits = false;
+	void _load_saved_split_widths();
+	void _save_split_widths();
+	void _apply_wide_split_widths(float p_avail_w);
+	void _on_wide_split_dragged(int p_offset, int p_split_idx);
+	void _capture_dragged_split_widths(int p_split_idx);
+	void _on_split_dragger_gui_input(const Ref<InputEvent> &p_ev, int p_split_idx);
+	void _reset_wide_split(int p_split_idx);
 	void _rebalance_responsive_layout(int p_avail_w);
 	void _update_canvas_fit_scale();
 	void _apply_canvas_zoom_layout(bool p_recalc_fit);

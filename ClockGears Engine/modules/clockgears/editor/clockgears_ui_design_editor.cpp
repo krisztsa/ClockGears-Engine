@@ -18,6 +18,7 @@
 #include "core/object/callable_mp.h"
 #include "core/os/keyboard.h"
 #include "core/os/time.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/aspect_ratio_container.h"
 #include "scene/gui/label.h"
@@ -63,54 +64,38 @@ static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
 		return;
 	}
 	if (OptionButton *opt = Object::cast_to<OptionButton>(p_ctrl)) {
-		opt->set_fit_to_longest_item(false);
-		opt->set_clip_text(true);
-		opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		Size2 ms = opt->get_custom_minimum_size();
-		opt->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 44.0f * p_scale, 48.0f * p_scale), ms.y));
+		opt->set_fit_to_longest_item(true);
+		opt->set_clip_text(false);
+		opt->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	} else if (CheckBox *cb = Object::cast_to<CheckBox>(p_ctrl)) {
-		cb->set_clip_text(true);
-		cb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-		Size2 ms = cb->get_custom_minimum_size();
-		cb->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 54.0f * p_scale, 56.0f * p_scale), ms.y));
+		cb->set_clip_text(false);
+		cb->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	} else if (Label *lb = Object::cast_to<Label>(p_ctrl)) {
 		if (lb->get_autowrap_mode() == TextServer::AUTOWRAP_OFF) {
-			lb->set_clip_text(true);
-			lb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-		}
-		Size2 ms = lb->get_custom_minimum_size();
-		if (ms.x > 64.0f * p_scale) {
-			lb->set_custom_minimum_size(Size2(64.0f * p_scale, ms.y));
+			lb->set_clip_text(false);
+			lb->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		}
 	} else if (LineEdit *le = Object::cast_to<LineEdit>(p_ctrl)) {
-		le->add_theme_constant_override("minimum_character_width", 2);
+		le->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		Size2 ms = le->get_custom_minimum_size();
-		if (ms.x > 46.0f * p_scale || ms.x <= 0.0f) {
-			le->set_custom_minimum_size(Size2(40.0f * p_scale, ms.y));
-		}
+		le->set_custom_minimum_size(Size2(MAX(ms.x, 100.0f * p_scale), MAX(ms.y, 32.0f * p_scale)));
 	} else if (SpinBox *sp = Object::cast_to<SpinBox>(p_ctrl)) {
-		if (LineEdit *sle = sp->get_line_edit()) {
-			sle->add_theme_constant_override("minimum_character_width", 2);
-		}
+		sp->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		Size2 ms = sp->get_custom_minimum_size();
-		sp->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 44.0f * p_scale, 46.0f * p_scale), ms.y));
+		sp->set_custom_minimum_size(Size2(MAX(ms.x, 120.0f * p_scale), MAX(ms.y, 32.0f * p_scale)));
 	} else if (HSlider *sl = Object::cast_to<HSlider>(p_ctrl)) {
+		sl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		Size2 ms = sl->get_custom_minimum_size();
-		sl->set_custom_minimum_size(Size2(MIN(ms.x > 0.0f ? ms.x : 36.0f * p_scale, 36.0f * p_scale), ms.y));
+		sl->set_custom_minimum_size(Size2(MAX(ms.x, 80.0f * p_scale), MAX(ms.y, 24.0f * p_scale)));
 	} else if (Button *bt = Object::cast_to<Button>(p_ctrl)) {
 		if (!Object::cast_to<ColorPickerButton>(bt)) {
-			bt->set_clip_text(true);
-			bt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-			Size2 ms = bt->get_custom_minimum_size();
-			if (ms.x > 44.0f * p_scale) {
-				bt->set_custom_minimum_size(Size2(44.0f * p_scale, ms.y));
-			}
-		} else {
-			Size2 ms = bt->get_custom_minimum_size();
-			if (ms.x > 42.0f * p_scale) {
-				bt->set_custom_minimum_size(Size2(42.0f * p_scale, ms.y));
-			}
+			bt->set_clip_text(false);
+			bt->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+		}
+		Size2 ms = bt->get_custom_minimum_size();
+		if (ms.y < 30.0f * p_scale) {
+			bt->set_custom_minimum_size(Size2(ms.x, 30.0f * p_scale));
 		}
 	}
 	for (int i = 0; i < p_ctrl->get_child_count(); i++) {
@@ -1846,6 +1831,132 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_canvas_draw_stats"), &ClockGearsUiDesignEditor::get_canvas_draw_stats);
 	ClassDB::bind_method(D_METHOD("get_ui_handles"), &ClockGearsUiDesignEditor::get_ui_handles);
 	ClassDB::bind_method(D_METHOD("get_test_popup_info"), &ClockGearsUiDesignEditor::get_test_popup_info);
+	ClassDB::bind_method(D_METHOD("reset_split_layout", "split_idx"), &ClockGearsUiDesignEditor::_reset_wide_split, DEFVAL(-1));
+}
+
+float ClockGearsUiDesignEditor::persisted_left_split_w = -1.0f;
+float ClockGearsUiDesignEditor::persisted_right_split_w = -1.0f;
+bool ClockGearsUiDesignEditor::persisted_split_loaded = false;
+
+void ClockGearsUiDesignEditor::_load_saved_split_widths() {
+	if (persisted_split_loaded) {
+		return;
+	}
+	persisted_split_loaded = true;
+#ifdef TOOLS_ENABLED
+	if (EditorSettings *es = EditorSettings::get_singleton()) {
+		if (es->has_setting("clockgears/ui_editor/left_split_width")) {
+			persisted_left_split_w = float(es->get("clockgears/ui_editor/left_split_width"));
+		}
+		if (es->has_setting("clockgears/ui_editor/right_split_width")) {
+			persisted_right_split_w = float(es->get("clockgears/ui_editor/right_split_width"));
+		}
+	}
+#endif
+}
+
+void ClockGearsUiDesignEditor::_save_split_widths() {
+#ifdef TOOLS_ENABLED
+	if (EditorSettings *es = EditorSettings::get_singleton()) {
+		es->set("clockgears/ui_editor/left_split_width", persisted_left_split_w);
+		es->set("clockgears/ui_editor/right_split_width", persisted_right_split_w);
+	}
+#endif
+}
+
+void ClockGearsUiDesignEditor::_apply_wide_split_widths(float p_avail_w) {
+	if (!wide_hbox || !wide_right_split || !left_col_scroll || !wide_right_col || compact_two_row_layout) {
+		return;
+	}
+	_load_saved_split_widths();
+	float scale = MAX(0.5f, float(EDSCALE));
+	float eff_w = p_avail_w > 200.0f ? p_avail_w : (get_size().x > 200.0f ? get_size().x : 1280.0f * scale);
+	float panel_w = get_size().x > 200.0f ? get_size().x : eff_w;
+
+	const float left_min_drag = 200.0f * scale;
+	const float right_min_drag = 280.0f * scale;
+	const float center_min = 180.0f * scale;
+
+	float default_left = CLAMP(eff_w * 0.21f, 260.0f * scale, 320.0f * scale);
+	float default_right = CLAMP(eff_w * 0.34f, 440.0f * scale, 560.0f * scale);
+
+	float target_left = (persisted_left_split_w > 0.0f) ? (persisted_left_split_w * scale) : default_left;
+	float target_right = (persisted_right_split_w > 0.0f) ? (persisted_right_split_w * scale) : default_right;
+
+	target_left = CLAMP(target_left, left_min_drag, MAX(left_min_drag, panel_w * 0.45f));
+	target_right = CLAMP(target_right, right_min_drag, MAX(right_min_drag, panel_w * 0.60f));
+	float max_pair = MAX(left_min_drag + right_min_drag, panel_w - center_min - 24.0f * scale);
+	if (target_left + target_right > max_pair) {
+		float excess = target_left + target_right - max_pair;
+		float take_r = MIN(excess, MAX(0.0f, target_right - right_min_drag));
+		target_right -= take_r;
+		excess -= take_r;
+		if (excess > 0.0f) {
+			target_left = MAX(left_min_drag, target_left - excess);
+		}
+	}
+
+	left_col_scroll->set_custom_minimum_size(Size2(left_min_drag, 0));
+	wide_right_col->set_custom_minimum_size(Size2(right_min_drag, 0));
+
+	updating_splits = true;
+	// SplitContainer: con child0 sin EXPAND, default_dragger_pos = 0 -> split_offset = ancho deseado de izq.
+	// Con child0 EXPAND y child1 sin EXPAND, default_dragger_pos = size - sep -> split_offset = -ancho deseado de der.
+	wide_hbox->set_split_offset(int(Math::round(target_left)));
+	wide_right_split->set_split_offset(-int(Math::round(target_right)));
+	updating_splits = false;
+
+	if (palette_grid) {
+		palette_grid->set_columns(target_left >= 290.0f * scale ? 2 : 1);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_wide_split_dragged(int /*p_offset*/, int p_split_idx) {
+	if (updating_splits) {
+		return;
+	}
+	callable_mp(this, &ClockGearsUiDesignEditor::_capture_dragged_split_widths).call_deferred(p_split_idx);
+}
+
+void ClockGearsUiDesignEditor::_capture_dragged_split_widths(int p_split_idx) {
+	if (compact_two_row_layout || updating_splits) {
+		return;
+	}
+	float scale = MAX(0.5f, float(EDSCALE));
+	if (p_split_idx == 0 && left_col_scroll && left_col_scroll->get_size().x > 10.0f) {
+		persisted_left_split_w = left_col_scroll->get_size().x / scale;
+	} else if (p_split_idx == 1 && wide_right_col && wide_right_col->get_size().x > 10.0f) {
+		persisted_right_split_w = wide_right_col->get_size().x / scale;
+	}
+	_save_split_widths();
+	if (palette_grid && left_col_scroll) {
+		palette_grid->set_columns(left_col_scroll->get_size().x >= 290.0f * scale ? 2 : 1);
+	}
+	_update_canvas_fit_scale();
+}
+
+void ClockGearsUiDesignEditor::_reset_wide_split(int p_split_idx) {
+	if (p_split_idx == 0 || p_split_idx < 0) {
+		persisted_left_split_w = -1.0f;
+	}
+	if (p_split_idx == 1 || p_split_idx < 0) {
+		persisted_right_split_w = -1.0f;
+	}
+	_save_split_widths();
+	float avail = last_adapt_width > 200 ? float(last_adapt_width) : (get_size().x > 200.0f ? get_size().x : 1280.0f * float(EDSCALE));
+	_apply_wide_split_widths(avail);
+	callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
+}
+
+void ClockGearsUiDesignEditor::_on_split_dragger_gui_input(const Ref<InputEvent> &p_ev, int p_split_idx) {
+	Ref<InputEventMouseButton> mb = p_ev;
+	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && mb->is_double_click() && mb->is_pressed()) {
+		_reset_wide_split(p_split_idx);
+		Control *dr = (p_split_idx == 0 && wide_hbox) ? wide_hbox->get_drag_area_control() : ((p_split_idx == 1 && wide_right_split) ? wide_right_split->get_drag_area_control() : nullptr);
+		if (dr) {
+			dr->accept_event();
+		}
+	}
 }
 
 void ClockGearsUiDesignEditor::_refresh_theme_icons() {
@@ -1942,13 +2053,13 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 		close_all_floating_element_windows();
 	} else if (p_what == NOTIFICATION_RESIZED) {
 		int w = int(get_size().x);
-		if (get_window() && get_window()->get_size().x > 0) {
+		if (w <= 200 && get_window() && get_window()->get_size().x > 0) {
 			w = int(get_window()->get_size().x);
 		}
 		if (w > 200) {
 			_rebalance_responsive_layout(w);
 		}
-		_apply_canvas_zoom_layout(true);
+		callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 	}
 }
 
@@ -2254,13 +2365,16 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 		return;
 	}
 	if (canvas_zoom_mode == 0) {
+		Size2 fit_box = holder_sz;
 		if (sc_sz.x >= 16.0f && sc_sz.y >= 16.0f) {
-			holder_sz = Vector2(MIN(holder_sz.x, sc_sz.x), MIN(holder_sz.y, sc_sz.y));
+			fit_box = Vector2(MIN(holder_sz.x, sc_sz.x), MIN(holder_sz.y, sc_sz.y));
 		}
-		float s = MIN(holder_sz.x / MAX(1.0f, stage_sz.x), holder_sz.y / MAX(1.0f, stage_sz.y));
+		float margin = MIN(16.0f * EDSCALE, MIN(fit_box.x, fit_box.y) * 0.06f);
+		Size2 avail(MAX(32.0f, fit_box.x - margin * 2.0f), MAX(18.0f, fit_box.y - margin * 2.0f));
+		float s = MIN(avail.x / MAX(1.0f, stage_sz.x), avail.y / MAX(1.0f, stage_sz.y));
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(s, s));
-		canvas_stage->set_position((canvas_fit_holder->get_size() - stage_sz * s) * 0.5f);
+		canvas_stage->set_position((fit_box - stage_sz * s) * 0.5f);
 	} else {
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(1.0f, 1.0f));
@@ -2292,7 +2406,7 @@ void ClockGearsUiDesignEditor::_register_prop_filter_row(Control *p_row, const S
 }
 
 void ClockGearsUiDesignEditor::_build_ui() {
-	const float row_h = 30.0f * EDSCALE;
+	const float row_h = 32.0f * EDSCALE;
 
 	// --- Barra superior ÚNICA y FIJA agrupada por separadores ---
 	PanelContainer *top_card = memnew(PanelContainer);
@@ -2558,11 +2672,16 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_hbox = memnew(HSplitContainer);
 	wide_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	wide_hbox->add_theme_constant_override("separation", int(6 * EDSCALE));
+	wide_hbox->add_theme_constant_override("separation", int(8 * EDSCALE));
+	wide_hbox->connect("dragged", callable_mp(this, &ClockGearsUiDesignEditor::_on_wide_split_dragged).bind(0));
+	if (Control *dr0 = wide_hbox->get_drag_area_control()) {
+		dr0->set_tooltip_text(String::utf8("Arrastra para ajustar · Doble clic para restablecer"));
+		dr0->connect("gui_input", callable_mp(this, &ClockGearsUiDesignEditor::_on_split_dragger_gui_input).bind(0));
+	}
 	layout_root->add_child(wide_hbox);
 
 	left_col_scroll = memnew(ScrollContainer);
-	left_col_scroll->set_custom_minimum_size(Size2(280 * EDSCALE, 0));
+	left_col_scroll->set_custom_minimum_size(Size2(200 * EDSCALE, 0));
 	left_col_scroll->set_h_size_flags(Control::SIZE_FILL);
 	left_col_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	left_col_scroll->set_stretch_ratio(0.0f);
@@ -2579,17 +2698,23 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_right_split = memnew(HSplitContainer);
 	wide_right_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_right_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	wide_right_split->add_theme_constant_override("separation", int(6 * EDSCALE));
+	wide_right_split->add_theme_constant_override("separation", int(8 * EDSCALE));
+	wide_right_split->connect("dragged", callable_mp(this, &ClockGearsUiDesignEditor::_on_wide_split_dragged).bind(1));
+	if (Control *dr1 = wide_right_split->get_drag_area_control()) {
+		dr1->set_tooltip_text(String::utf8("Arrastra para ajustar · Doble clic para restablecer"));
+		dr1->connect("gui_input", callable_mp(this, &ClockGearsUiDesignEditor::_on_split_dragger_gui_input).bind(1));
+	}
 	wide_hbox->add_child(wide_right_split);
 
 	wide_center_col = memnew(VBoxContainer);
+	wide_center_col->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
 	wide_center_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_center_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_center_col->set_stretch_ratio(1.0f);
 	wide_right_split->add_child(wide_center_col);
 
 	wide_right_col = memnew(VBoxContainer);
-	wide_right_col->set_custom_minimum_size(Size2(204 * EDSCALE, 0));
+	wide_right_col->set_custom_minimum_size(Size2(280 * EDSCALE, 0));
 	wide_right_col->set_h_size_flags(Control::SIZE_FILL);
 	wide_right_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_right_col->set_stretch_ratio(0.0f);
@@ -2850,6 +2975,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_card->set_theme_type_variation("ClockGearsPreviewFrame");
 	canvas_card->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_card->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	canvas_card->set_clip_contents(true);
 	wide_center_col->add_child(canvas_card);
 
 	VBoxContainer *can_vb = memnew(VBoxContainer);
@@ -2862,6 +2988,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_scroll->set_custom_minimum_size(Size2(160 * EDSCALE, 90 * EDSCALE));
+	canvas_scroll->set_clip_contents(true);
 	canvas_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	canvas_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	can_vb->add_child(canvas_scroll);
@@ -2872,6 +2999,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	canvas_aspect->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_aspect->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	canvas_aspect->set_custom_minimum_size(Size2(160 * EDSCALE, 90 * EDSCALE));
+	canvas_aspect->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized), CONNECT_DEFERRED);
 	canvas_scroll->add_child(canvas_aspect);
 	canvas_scroll->connect("resized", callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_scroll_resized), CONNECT_DEFERRED);
 
@@ -2883,7 +3011,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	canvas_stage = memnew(Control);
 	canvas_stage->set_name("UiDesignerCanvasStage");
-	canvas_stage->set_custom_minimum_size(Size2(BASE_W, BASE_H));
+	canvas_stage->set_custom_minimum_size(Size2(0, 0));
 	canvas_stage->set_size(Size2(BASE_W, BASE_H));
 	canvas_stage->set_clip_contents(true);
 	canvas_fit_holder->add_child(canvas_stage);
@@ -3029,16 +3157,21 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	auto make_prop_row = [&](VBoxContainer *p_parent, const String &p_lbl, const String &p_tip, const String &p_kw, bool p_adv, Control *p_ctrl, const String &p_elem_types = String()) {
 		HBoxContainer *hb = memnew(HBoxContainer);
 		hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		hb->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
+		hb->add_theme_constant_override("separation", int(8 * EDSCALE));
 		Label *l = memnew(Label(p_lbl));
-		l->set_custom_minimum_size(Size2(58 * EDSCALE, 0));
-		l->set_clip_text(true);
-		l->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		l->set_custom_minimum_size(Size2(122 * EDSCALE, 32 * EDSCALE));
+		l->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+		l->set_clip_text(false);
+		l->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		l->set_tooltip_text(p_tip);
 		hb->add_child(l);
 		p_ctrl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		p_ctrl->set_tooltip_text(p_tip);
-		s_clamp_narrow_controls(p_ctrl, EDSCALE);
+		Size2 cms = p_ctrl->get_custom_minimum_size();
+		if (cms.y < 32.0f * EDSCALE) {
+			p_ctrl->set_custom_minimum_size(Size2(cms.x, 32.0f * EDSCALE));
+		}
 		hb->add_child(p_ctrl);
 		p_parent->add_child(hb);
 		_register_prop_filter_row(hb, p_lbl + " " + p_kw, p_adv, p_elem_types);
@@ -3058,7 +3191,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	};
 
 	prop_name_edit = memnew(LineEdit);
-	prop_name_edit->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
+	prop_name_edit->set_custom_minimum_size(Size2(120 * EDSCALE, 32 * EDSCALE));
 	prop_name_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(props_fields_box, "Nombre:", String::utf8("Nombre visible del elemento en capas y diseño."), "nombre texto", false, prop_name_edit);
 
@@ -3068,14 +3201,16 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	HBoxContainer *anc_row = memnew(HBoxContainer);
 	anc_row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	anc_row->add_theme_constant_override("separation", int(8 * EDSCALE));
 	Label *anc_lbl = memnew(Label("Anclaje:"));
-	anc_lbl->set_custom_minimum_size(Size2(56 * EDSCALE, 0));
-	anc_lbl->set_clip_text(true);
+	anc_lbl->set_custom_minimum_size(Size2(122 * EDSCALE, 32 * EDSCALE));
+	anc_lbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	anc_lbl->set_clip_text(false);
 	anc_row->add_child(anc_lbl);
 	GridContainer *anc_grid = memnew(GridContainer);
 	anc_grid->set_columns(3);
-	anc_grid->add_theme_constant_override("h_separation", int(3 * EDSCALE));
-	anc_grid->add_theme_constant_override("v_separation", int(3 * EDSCALE));
+	anc_grid->add_theme_constant_override("h_separation", int(4 * EDSCALE));
+	anc_grid->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	anc_row->add_child(anc_grid);
 	sec_pos_body->add_child(anc_row);
 	_register_prop_filter_row(anc_row, "anclaje posicion esquina centro", false);
@@ -3089,7 +3224,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	for (int i = 0; i < 9; i++) {
 		Button *ab = memnew(Button(k_anc_glyphs[i]));
 		ab->set_toggle_mode(true);
-		ab->set_custom_minimum_size(Size2(24 * EDSCALE, 24 * EDSCALE));
+		ab->set_custom_minimum_size(Size2(32 * EDSCALE, 30 * EDSCALE));
 		ab->set_tooltip_text(String::utf8(k_anc_tips[i]));
 		s_make_rounded_action_btn(ab);
 		ab->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_anchor_btn_pressed).bind(i));
@@ -3102,7 +3237,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		r_sp->set_min(p_min);
 		r_sp->set_max(p_max);
 		r_sp->set_step(1);
-		r_sp->set_custom_minimum_size(Size2(64 * EDSCALE, row_h));
+		r_sp->set_custom_minimum_size(Size2(120 * EDSCALE, 32 * EDSCALE));
 		r_sp->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 		make_prop_row(p_parent, p_lbl, p_tip, p_kw, p_adv, r_sp);
 	};
@@ -4211,13 +4346,8 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		if (compact_scroll) compact_scroll->hide();
 		compact_vbox->hide();
 		wide_hbox->show();
-		float eff_w = float(p_avail_w > 0 ? p_avail_w : 1280);
-		float left_w = MAX(280.0f * EDSCALE, MIN(360.0f * EDSCALE, eff_w * 0.22f));
-		float right_w = (eff_w < 1400.0f * EDSCALE)
-				? CLAMP(eff_w * 0.145f, 178.0f * EDSCALE, 184.0f * EDSCALE)
-				: CLAMP(eff_w * 0.16f, 224.0f * EDSCALE, 286.0f * EDSCALE);
+		float eff_w = float(p_avail_w > 0 ? p_avail_w : (get_size().x > 200.0f ? int(get_size().x) : 1280));
 		if (left_col_scroll) {
-			left_col_scroll->set_custom_minimum_size(Size2(left_w, 0));
 			left_col_scroll->set_h_size_flags(Control::SIZE_FILL);
 			left_col_scroll->set_stretch_ratio(0.0f);
 			left_col_scroll->set_clip_contents(true);
@@ -4228,12 +4358,12 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 			wide_right_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 		}
 		if (wide_center_col) {
+			wide_center_col->set_custom_minimum_size(Size2(180 * EDSCALE, 0));
 			wide_center_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			wide_center_col->set_stretch_ratio(1.0f);
 			wide_center_col->set_clip_contents(true);
 		}
 		if (wide_right_col) {
-			wide_right_col->set_custom_minimum_size(Size2(right_w, 0));
 			wide_right_col->set_h_size_flags(Control::SIZE_FILL);
 			wide_right_col->set_stretch_ratio(0.0f);
 			wide_right_col->set_clip_contents(true);
@@ -4248,9 +4378,8 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		props_card->set_custom_minimum_size(Size2(0, 0));
 		props_card->set_clip_contents(true);
 		canvas_card->set_custom_minimum_size(Size2(0, 0));
-		if (palette_grid) {
-			palette_grid->set_columns(left_w >= 300.0f * EDSCALE ? 2 : 1);
-		}
+		_apply_wide_split_widths(eff_w);
+		callable_mp(this, &ClockGearsUiDesignEditor::_apply_wide_split_widths).bind(eff_w).call_deferred();
 	}
 	callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 }
@@ -9270,8 +9399,12 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["wide_left_col"] = wide_left_col;
 	out["left_col_scroll"] = left_col_scroll;
 	out["wide_hbox"] = wide_hbox;
+	out["wide_right_split"] = wide_right_split;
 	out["wide_center_col"] = wide_center_col;
 	out["wide_right_col"] = wide_right_col;
+	out["props_card"] = props_card;
+	out["props_fields_box"] = props_fields_box;
+	out["canvas_aspect"] = canvas_aspect;
 	out["canvas_scroll"] = canvas_scroll;
 	out["canvas_fit_holder"] = canvas_fit_holder;
 	out["canvas_stage"] = canvas_stage;
