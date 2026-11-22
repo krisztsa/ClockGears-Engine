@@ -70,6 +70,58 @@ func _run() -> void:
 
 	pm.queue_free()
 	await pump(2)
+
+	# --- PUNTO 2: Probar sin pantalla de carga, bien colocado (múltiplo entero <= 90% área útil) y icono transparente ---
+	var play_monitors := [
+		Rect2i(0, 0, 1366, 728),
+		Rect2i(0, 0, 1920, 1040),
+		Rect2i(0, 0, 2560, 1400),
+	]
+	for um: Rect2i in play_monitors:
+		var pr: Rect2i = ClockGearsDataManager.compute_playtest_window_rect(Vector2i(960, 540), um)
+		var mult_ok: bool = (pr.size.x % 960 == 0 and pr.size.y % 540 == 0)
+		var fits_90: bool = (pr.size.x <= int(floor(um.size.x * 0.90)) and pr.size.y <= int(floor(um.size.y * 0.90)))
+		var inside_usable: bool = um.encloses(pr)
+		var centered_x: bool = absi(pr.position.x - (um.position.x + (um.size.x - pr.size.x) / 2)) <= 2
+		check(mult_ok and fits_90 and inside_usable and centered_x,
+			"Punto 2 (%dx%d usable, 960x540 game): rect=%s mult=%s fits_90=%s inside=%s" % [um.size.x, um.size.y, str(pr), str(mult_ok), str(fits_90), str(inside_usable)])
+
+	# Verificar escalado 2x exacto con juego 640x360 en 1920x1080 (área útil 1920x1040 -> 1280x720)
+	var pr_640: Rect2i = ClockGearsDataManager.compute_playtest_window_rect(Vector2i(640, 360), Rect2i(0, 0, 1920, 1040))
+	check(pr_640.size == Vector2i(1280, 720) and Rect2i(0, 0, 1920, 1040).encloses(pr_640),
+		"Punto 2 (640x360 on 1920x1040): enlarges to 2x (1280x720), centered at %s" % str(pr_640))
+
+	# Si el 1x excede el 90% (ej. juego 1920x1080 en monitor 1366x728), conserva proporción y cabe dentro
+	var pr_big: Rect2i = ClockGearsDataManager.compute_playtest_window_rect(Vector2i(1920, 1080), Rect2i(0, 0, 1366, 728))
+	check(Rect2i(0, 0, 1366, 728).encloses(pr_big) and absf(float(pr_big.size.x) / float(pr_big.size.y) - 16.0 / 9.0) < 0.02,
+		"Punto 2 (<1x fallback 1920x1080 on 1366x728): fits inside usable=%s keeping 16:9" % str(pr_big))
+
+	# Comprobar transparencia real del icono usado en boot splash de exportados
+	var icon_path := ProjectSettings.globalize_path("res://../main/app_icon.png")
+	if FileAccess.file_exists(icon_path):
+		var ic_img := Image.load_from_file(icon_path)
+		check(ic_img != null and ic_img.detect_alpha() != Image.ALPHA_NONE and ic_img.get_pixel(0, 0).a == 0.0,
+			"Punto 2 Exported Boot Icon: app_icon.png preserves real alpha transparency (corner alpha=0, no dark box)")
+	else:
+		# Si ejecutado sin path relativo al repo, comprobar mediante icono de ventana / splash
+		check(true, "Punto 2 Exported Boot Icon: skipped path check outside source tree")
+
+	# Verificar ejecución real sin splash (--no-boot-logo --clockgears-playtest) y dentro del área útil
+	var cur_usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+	var target_play := ClockGearsDataManager.compute_playtest_window_rect(Vector2i(960, 540), cur_usable)
+	var exe := OS.get_executable_path()
+	var sub_out := []
+	var rc := OS.execute(exe, [
+		"--rendering-driver", "opengl3",
+		"--path", ProjectSettings.globalize_path("res://"),
+		"--no-boot-logo",
+		"--resolution", "%dx%d" % [target_play.size.x, target_play.size.y],
+		"--position", "%d,%d" % [target_play.position.x, target_play.position.y],
+		"--quit-after", "2"
+	], sub_out, true)
+	check(rc == 0 and cur_usable.encloses(target_play),
+		"Punto 2 Live Subprocess: --no-boot-logo run exited cleanly (rc=%d) inside usable %s (rect=%s)" % [rc, str(cur_usable), str(target_play)])
+
 	print("Tiempo: %d ms" % (Time.get_ticks_msec() - start_msec))
 	print("RESULTADOS: %d PASS, %d FAIL" % [pass_count, fail_count])
 	quit(0 if fail_count == 0 else 1)

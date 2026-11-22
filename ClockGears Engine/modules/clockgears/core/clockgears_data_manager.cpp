@@ -445,6 +445,29 @@ String ClockGearsDataManager::truncate_with_ellipsis(const String &p_text, int p
 	return p_text.substr(0, p_max_chars) + String::utf8("…");
 }
 
+Rect2i ClockGearsDataManager::compute_playtest_window_rect(const Vector2i &p_game_res, const Rect2i &p_usable_rect) {
+	const int gw = MAX(1, p_game_res.x);
+	const int gh = MAX(1, p_game_res.y);
+	if (p_usable_rect.size.x <= 0 || p_usable_rect.size.y <= 0) {
+		return Rect2i(0, 0, gw, gh);
+	}
+	const int max_w = MAX(1, int(Math::floor(double(p_usable_rect.size.x) * 0.90)));
+	const int max_h = MAX(1, MIN(int(Math::floor(double(p_usable_rect.size.y) * 0.90)), MAX(1, p_usable_rect.size.y - 36)));
+	const int mult = MIN(max_w / gw, max_h / gh);
+	Vector2i win_sz;
+	if (mult >= 1) {
+		win_sz = Vector2i(gw * mult, gh * mult);
+	} else {
+		const double factor = MIN(double(max_w) / double(gw), double(max_h) / double(gh));
+		win_sz = Vector2i(MAX(1, int(Math::floor(double(gw) * factor))), MAX(1, int(Math::floor(double(gh) * factor))));
+	}
+	const int min_top_bar = (win_sz.y + 32 <= p_usable_rect.size.y) ? 32 : 0;
+	Vector2i win_pos = p_usable_rect.position + (p_usable_rect.size - win_sz) / 2;
+	win_pos.x = CLAMP(win_pos.x, p_usable_rect.position.x, MAX(p_usable_rect.position.x, p_usable_rect.position.x + p_usable_rect.size.x - win_sz.x));
+	win_pos.y = CLAMP(win_pos.y, p_usable_rect.position.y + min_top_bar, MAX(p_usable_rect.position.y + min_top_bar, p_usable_rect.position.y + p_usable_rect.size.y - win_sz.y));
+	return Rect2i(win_pos, win_sz);
+}
+
 PackedStringArray ClockGearsDataManager::get_last_repaired_json_files() const {
 	PackedStringArray out;
 	for (int i = 0; i < last_repaired_json_files.size(); i++) {
@@ -11947,6 +11970,7 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("format_text", "text"), &ClockGearsDataManager::format_text);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("repair_mojibake_text", "text"), &ClockGearsDataManager::repair_mojibake_text);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("truncate_with_ellipsis", "text", "max_chars"), &ClockGearsDataManager::truncate_with_ellipsis);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("compute_playtest_window_rect", "game_res", "usable_rect"), &ClockGearsDataManager::compute_playtest_window_rect);
 	ClassDB::bind_method(D_METHOD("get_last_repaired_json_files"), &ClockGearsDataManager::get_last_repaired_json_files);
 
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("sanitize_custom_layer_node_name", "id"), &ClockGearsDataManager::sanitize_custom_layer_node_name);

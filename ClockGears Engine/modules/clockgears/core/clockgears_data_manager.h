@@ -442,6 +442,7 @@ public:
 	static String repair_mojibake_text(const String &p_text) { return repair_mojibake_string(p_text, nullptr); }
 	static Variant repair_mojibake_variant(const Variant &p_val, int &r_repaired_strings);
 	static String truncate_with_ellipsis(const String &p_text, int p_max_chars);
+	static Rect2i compute_playtest_window_rect(const Vector2i &p_game_res, const Rect2i &p_usable_rect);
 	PackedStringArray get_last_repaired_json_files() const;
 	void clear_last_repaired_json_files() { last_repaired_json_files.clear(); }
 

@@ -2084,12 +2084,20 @@ void Window::_window_input(const Ref<InputEvent> &p_ev) {
 		emit_signal(SceneStringName(window_input), p_ev);
 	}
 
-	if (fullscreen_shortcut_enabled && p_ev->is_action_pressed("ui_toggle_fullscreen")) {
+	const Ref<InputEventKey> k_ev = p_ev;
+	const bool is_game_alt_enter = k_ev.is_valid() && k_ev->is_pressed() && !k_ev->is_echo() && k_ev->is_alt_pressed() &&
+			(k_ev->get_keycode() == Key::ENTER || k_ev->get_keycode() == Key::KP_ENTER) &&
+			window_id == DisplayServerEnums::MAIN_WINDOW_ID &&
+			!(Engine::get_singleton() && (Engine::get_singleton()->is_editor_hint() || Engine::get_singleton()->is_project_manager_hint()));
+	if (is_game_alt_enter || (fullscreen_shortcut_enabled && p_ev->is_action_pressed("ui_toggle_fullscreen"))) {
 		if (mode == MODE_FULLSCREEN || mode == MODE_EXCLUSIVE_FULLSCREEN) {
 			set_mode(toggle_fullscreen_previous_mode);
 		} else {
 			toggle_fullscreen_previous_mode = mode;
 			set_mode(MODE_FULLSCREEN);
+		}
+		if (is_game_alt_enter) {
+			return;
 		}
 	}
 

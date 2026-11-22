@@ -295,6 +295,7 @@ static bool init_windowed = false;
 static bool init_always_on_top = false;
 static bool init_use_custom_pos = false;
 static bool init_use_custom_screen = false;
+static bool init_no_boot_logo = false;
 static Vector2 init_custom_pos;
 static int64_t init_embed_parent_window_id = 0;
 #ifdef TOOLS_ENABLED
@@ -1993,6 +1994,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			}
 		} else if (arg == "--disable-vsync") {
 			disable_vsync = true;
+		} else if (arg == "--no-boot-logo") {
+			init_no_boot_logo = true;
+		} else if (arg == "--clockgears-playtest") {
+			init_no_boot_logo = true;
+			main_args.push_back(arg);
 		} else if (arg == "--print-fps") {
 			print_fps = true;
 #ifdef TOOLS_ENABLED
@@ -3530,32 +3536,6 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 #ifdef TOOLS_ENABLED
 		if (project_manager) {
-			float ui_scale = init_custom_scale;
-			switch (init_display_scale) {
-				case 0:
-					ui_scale = EditorSettings::get_auto_display_scale();
-					break;
-				case 1:
-					ui_scale = 0.75;
-					break;
-				case 2:
-					ui_scale = 1.0;
-					break;
-				case 3:
-					ui_scale = 1.25;
-					break;
-				case 4:
-					ui_scale = 1.5;
-					break;
-				case 5:
-					ui_scale = 1.75;
-					break;
-				case 6:
-					ui_scale = 2.0;
-					break;
-				default:
-					break;
-			}
 			if (!(force_res || use_custom_res)) {
 				Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
 				Rect2i pm_rect = ProjectManager::compute_16_9_usable_window_rect(scr_rect);
@@ -3598,22 +3578,24 @@ Error Main::setup2(bool p_show_boot_logo) {
 #ifdef TOOLS_ENABLED
 	// If the editor is running in windowed mode, ensure the window rect fits
 	// the screen in case screen count or position has changed.
-	if (editor && init_windowed) {
-		// We still need to check we are actually in windowed mode, because
-		// certain platform might only support one fullscreen window.
+	if ((editor && init_windowed) || (!editor && !project_manager && !cmdline_tool && !init_embed_parent_window_id && DisplayServer::get_singleton()->get_name() != "headless")) {
 		if (DisplayServer::get_singleton()->window_get_mode() == DisplayServerEnums::WINDOW_MODE_WINDOWED) {
 			Vector2i current_size = DisplayServer::get_singleton()->window_get_size();
 			Vector2i current_pos = DisplayServer::get_singleton()->window_get_position();
 			int screen = DisplayServer::get_singleton()->window_get_current_screen();
 			Rect2i screen_rect = DisplayServer::get_singleton()->screen_get_usable_rect(screen);
+			if (screen_rect.size.x > 0 && screen_rect.size.y > 0) {
+				const int top_reserve = (!editor && !project_manager && (window_flags & DisplayServerEnums::WINDOW_FLAG_BORDERLESS_BIT) == 0 && (current_size.y + 32 <= screen_rect.size.y)) ? 32 : 0;
+				Vector2i clamped_size = current_size.min(Vector2i(screen_rect.size.x, MAX(1, screen_rect.size.y - top_reserve)));
+				Vector2i adjusted_end = screen_rect.get_end().min(current_pos + clamped_size);
+				Vector2i min_tl(screen_rect.position.x, screen_rect.position.y + top_reserve);
+				Vector2i adjusted_pos = min_tl.max(adjusted_end - clamped_size);
+				Vector2i adjusted_size = DisplayServer::get_singleton()->window_get_min_size().max(adjusted_end - adjusted_pos);
 
-			Vector2i adjusted_end = screen_rect.get_end().min(current_pos + current_size);
-			Vector2i adjusted_pos = screen_rect.get_position().max(adjusted_end - current_size);
-			Vector2i adjusted_size = DisplayServer::get_singleton()->window_get_min_size().max(adjusted_end - adjusted_pos);
-
-			if (current_pos != adjusted_end || current_size != adjusted_size) {
-				DisplayServer::get_singleton()->window_set_position(adjusted_pos);
-				DisplayServer::get_singleton()->window_set_size(adjusted_size);
+				if (current_pos != adjusted_pos || current_size != adjusted_size) {
+					DisplayServer::get_singleton()->window_set_position(adjusted_pos);
+					DisplayServer::get_singleton()->window_set_size(adjusted_size);
+				}
 			}
 		}
 	}
@@ -3763,7 +3745,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		Color clear = GLOBAL_DEF_BASIC("rendering/environment/defaults/default_clear_color", Color(0.3, 0.3, 0.3));
 		RenderingServer::get_singleton()->set_default_clear_color(cg_splash_active ? ClockGearsBootSplash::get_active_clear_color() : clear);
 
-		if (p_show_boot_logo) {
+		if (p_show_boot_logo && !(init_no_boot_logo && !editor && !project_manager)) {
 			setup_boot_logo();
 		}
 
@@ -4069,7 +4051,7 @@ void Main::setup_boot_logo() {
 #if !defined(TOOLS_ENABLED) && defined(WEB_ENABLED)
 	bool show_logo = false;
 #else
-	bool show_logo = true;
+	bool show_logo = !(init_no_boot_logo && !editor && !project_manager);
 #endif
 
 	if (show_logo) { //boot logo!
@@ -4120,16 +4102,36 @@ void Main::setup_boot_logo() {
 		} else {
 #ifndef NO_DEFAULT_BOOT_LOGO
 			MAIN_PRINT("Main: Create bootsplash");
+			bool use_nearest_boot = false;
+			Ref<Image> splash;
 #if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
-			Ref<Image> splash = (editor || project_manager) ? memnew(Image(boot_splash_editor_png)) : memnew(Image(boot_splash_png));
-#else
-			Ref<Image> splash = memnew(Image(boot_splash_png));
+			if (editor || project_manager) {
+				splash = memnew(Image(boot_splash_editor_png));
+			} else
 #endif
+			{
+				// Juegos exportados: usar el icono con su canal alfa real sin ningún recuadro oscuro detrás.
+				splash = memnew(Image(app_icon_png));
+				if (splash.is_valid() && !splash->is_empty()) {
+					if (splash->get_format() != Image::FORMAT_RGBA8) {
+						splash->convert(Image::FORMAT_RGBA8);
+					}
+					const int base_w = MAX(1, splash->get_width());
+					const int mult = CLAMP(192 / base_w, 1, 8);
+					const int target_px = base_w * mult;
+					if (splash->get_width() != target_px || splash->get_height() != target_px) {
+						splash->resize(target_px, target_px, Image::INTERPOLATE_NEAREST);
+					}
+					use_nearest_boot = true;
+				} else {
+					splash = memnew(Image(boot_splash_png));
+				}
+			}
 
 			MAIN_PRINT("Main: ClearColor");
 			RenderingServer::get_singleton()->set_default_clear_color(boot_bg_color);
 			MAIN_PRINT("Main: Image");
-			RenderingServer::get_singleton()->set_boot_image_with_stretch(splash, boot_bg_color, RSE::SPLASH_STRETCH_MODE_DISABLED);
+			RenderingServer::get_singleton()->set_boot_image_with_stretch(splash, boot_bg_color, RSE::SPLASH_STRETCH_MODE_DISABLED, !use_nearest_boot);
 #endif
 		}
 

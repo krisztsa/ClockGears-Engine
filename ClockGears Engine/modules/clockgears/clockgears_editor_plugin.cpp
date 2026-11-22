@@ -2543,15 +2543,36 @@ bool ClockGearsEditorPlugin::start_playtest() {
 		playtest_pid = 0;
 	}
 
-	// Lanzar ventana independiente de juego arrancando siempre por la pantalla de título
+	// Lanzar ventana independiente de juego directa (sin splash ni pantalla de carga) y centrada en el área útil
 	List<String> args;
 	String resource_path = ProjectSettings::get_singleton()->get_resource_path();
 	if (!resource_path.is_empty()) {
 		args.push_back("--path");
 		args.push_back(resource_path);
 	}
-	args.push_back("--position");
-	args.push_back("120,80");
+	Vector2i game_res(960, 540);
+	if (ProjectSettings::get_singleton()) {
+		int vw = int(ProjectSettings::get_singleton()->get_setting("display/window/size/viewport_width", 960));
+		int vh = int(ProjectSettings::get_singleton()->get_setting("display/window/size/viewport_height", 540));
+		int ow = int(ProjectSettings::get_singleton()->get_setting("display/window/size/window_width_override", 0));
+		int oh = int(ProjectSettings::get_singleton()->get_setting("display/window/size/window_height_override", 0));
+		if (vw > 0 && vh > 0) {
+			game_res = Vector2i(vw, vh);
+		}
+		if (ow > 0 && oh > 0) {
+			game_res = Vector2i(ow, oh);
+		}
+	}
+	int cur_scr = DisplayServer::get_singleton() ? DisplayServer::get_singleton()->window_get_current_screen() : 0;
+	Rect2i usable_rect = DisplayServer::get_singleton() ? DisplayServer::get_singleton()->screen_get_usable_rect(cur_scr) : Rect2i();
+	Rect2i play_rect = ClockGearsDataManager::compute_playtest_window_rect(game_res, usable_rect);
+	args.push_back("--no-boot-logo");
+	args.push_back("--resolution");
+	args.push_back(itos(play_rect.size.x) + "x" + itos(play_rect.size.y));
+	if (usable_rect.size.x > 0 && usable_rect.size.y > 0) {
+		args.push_back("--position");
+		args.push_back(itos(play_rect.position.x) + "," + itos(play_rect.position.y));
+	}
 	args.push_back("--clockgears-playtest");
 	args.push_back(title_scene_path);
 

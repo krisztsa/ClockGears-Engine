@@ -38,6 +38,10 @@
 #include "editor/run/run_instances_dialog.h"
 #include "editor/settings/editor_settings.h"
 #include "main/main.h"
+#include "modules/modules_enabled.gen.h"
+#ifdef MODULE_CLOCKGEARS_ENABLED
+#include "modules/clockgears/core/clockgears_data_manager.h"
+#endif
 #include "servers/display/display_server.h"
 
 EditorRun::Status EditorRun::get_status() const {
@@ -111,8 +115,14 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 		}
 	}
 
+	args.push_back("--no-boot-logo");
+
 #ifndef ANDROID_ENABLED
 	WindowPlacement window_placement = get_window_placement();
+	if (window_placement.size.x > 0 && window_placement.size.y > 0 && !window_placement.force_maximized && !window_placement.force_fullscreen) {
+		args.push_back("--resolution");
+		args.push_back(itos(window_placement.size.x) + "x" + itos(window_placement.size.y));
+	}
 	if (window_placement.position != Point2i(INT_MAX, INT_MAX)) {
 		args.push_back("--position");
 		args.push_back(itos(window_placement.position.x) + "," + itos(window_placement.position.y));
@@ -298,19 +308,19 @@ EditorRun::WindowPlacement EditorRun::get_window_placement() {
 	if (screen_rect != Rect2()) {
 		if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_HIDPI)) {
 			bool hidpi_proj = GET_CONFIG_WITH_OVERRIDE("display", "window/dpi/allow_hidpi");
-			int display_scale = 1;
+			float display_scale = 1.0f;
 
 			if (OS::get_singleton()->is_hidpi_allowed()) {
 				if (hidpi_proj) {
-					display_scale = 1; // Both editor and project runs in hiDPI mode, do not scale.
+					display_scale = 1.0f; // Both editor and project runs in hiDPI mode, do not scale.
 				} else {
 					display_scale = DisplayServer::get_singleton()->screen_get_max_scale(); // Editor is in hiDPI mode, project is not, scale down.
 				}
 			} else {
 				if (hidpi_proj) {
-					display_scale = (1.f / DisplayServer::get_singleton()->screen_get_max_scale()); // Editor is not in hiDPI mode, project is, scale up.
+					display_scale = (1.0f / MAX(0.5f, DisplayServer::get_singleton()->screen_get_max_scale())); // Editor is not in hiDPI mode, project is, scale up.
 				} else {
-					display_scale = 1; // Both editor and project runs in lowDPI mode, do not scale.
+					display_scale = 1.0f; // Both editor and project runs in lowDPI mode, do not scale.
 				}
 			}
 			screen_rect.position /= display_scale;
@@ -322,7 +332,13 @@ EditorRun::WindowPlacement EditorRun::get_window_placement() {
 				placement.position = screen_rect.position;
 			} break;
 			case 1: { // centered
+#ifdef MODULE_CLOCKGEARS_ENABLED
+				Rect2i fit = ClockGearsDataManager::compute_playtest_window_rect(placement.size, Rect2i(screen_rect));
+				placement.size = fit.size;
+				placement.position = fit.position;
+#else
 				placement.position = (screen_rect.position) + ((screen_rect.size - placement.size) / 2).floor();
+#endif
 			} break;
 			case 2: { // custom pos
 				Vector2 pos = EDITOR_GET("run/window_placement/rect_custom_position");
