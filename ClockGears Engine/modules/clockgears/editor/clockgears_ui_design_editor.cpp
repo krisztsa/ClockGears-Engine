@@ -9107,8 +9107,15 @@ void ClockGearsUiDesignEditor::_on_wizard_finish_pressed() {
 
 void ClockGearsUiDesignEditor::_populate_template_gallery() {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	Array sys_tpls = ClockGearsDataManager::get_ui_templates_for_system(current_screen_id);
-	if (selected_gallery_template_id.is_empty() && !sys_tpls.is_empty() && sys_tpls[0].get_type() == Variant::DICTIONARY) {
+	Array sys_tpls = ClockGearsDataManager::get_ui_templates_for_system(current_screen_id, true);
+	bool sel_in_sys = false;
+	for (int i = 0; i < sys_tpls.size(); i++) {
+		if (String(Dictionary(sys_tpls[i]).get("id", "")) == selected_gallery_template_id) {
+			sel_in_sys = true;
+			break;
+		}
+	}
+	if ((selected_gallery_template_id.is_empty() || !sel_in_sys) && !sys_tpls.is_empty() && sys_tpls[0].get_type() == Variant::DICTIONARY) {
 		selected_gallery_template_id = String(Dictionary(sys_tpls[0]).get("id", ""));
 	}
 	auto fill_grid = [&](GridContainer *p_grid, const Array &p_list) {
@@ -9142,12 +9149,31 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			s_make_rounded_action_btn(sb);
 			sb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_card_selected).bind(tid));
 			vb->add_child(sb);
+			if (!tdesc.is_empty()) {
+				Label *dl = memnew(Label(tdesc));
+				dl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+				dl->set_max_lines_visible(2);
+				dl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+				dl->add_theme_font_size_override("font_size", MAX(10, int(Math::round(11.0f * EDSCALE))));
+				dl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
+				vb->add_child(dl);
+			}
 			p_grid->add_child(card);
 		}
 	};
+	Array comp_tpls = ClockGearsDataManager::get_builtin_component_templates(current_screen_id);
+	Array raw_user = dm ? dm->get_user_menu_templates() : Array();
+	Array compat_user;
+	for (int i = 0; i < raw_user.size(); i++) {
+		if (raw_user[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary ut = raw_user[i];
+		if (ClockGearsDataManager::is_ui_template_compatible_with_screen(ut, current_screen_id)) {
+			compat_user.push_back(ut);
+		}
+	}
 	fill_grid(tpl_screen_grid, sys_tpls);
-	fill_grid(tpl_comp_grid, ClockGearsDataManager::get_builtin_component_templates());
-	fill_grid(tpl_user_grid, dm ? dm->get_user_menu_templates() : Array());
+	fill_grid(tpl_comp_grid, comp_tpls);
+	fill_grid(tpl_user_grid, compat_user);
 }
 
 void ClockGearsUiDesignEditor::_on_tpl_close_requested() {

@@ -321,8 +321,10 @@ public:
 	static Dictionary normalize_ui_background(const Dictionary &p_bg);
 	static Dictionary normalize_ui_transition(const Dictionary &p_tr);
 	static Array get_builtin_menu_templates();
-	static Array get_ui_templates_for_system(const String &p_screen_id);
-	static Array get_builtin_component_templates();
+	static Array get_ui_templates_for_system(const String &p_screen_id, bool p_compatible_only = true);
+	static Array get_builtin_component_templates(const String &p_screen_id = String());
+	static bool is_ui_template_compatible_with_screen(const Dictionary &p_tpl, const String &p_screen_id);
+	static String get_contextual_data_source_for_screen(const String &p_screen_id, const Dictionary &p_tpl_defaults = Dictionary());
 	static Dictionary get_builtin_template_by_id(const String &p_template_id);
 	Array get_user_menu_templates() const;
 	String save_screen_as_user_template(const String &p_screen_id, const String &p_name);

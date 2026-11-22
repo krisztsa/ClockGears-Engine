@@ -2036,9 +2036,49 @@ bool ClockGearsDataManager::load_all(const String &p_dir_path) {
 		int raw_ui_schema = int(raw_uid.get("schema_version", 1));
 		Dictionary raw_scr_map = (raw_uid.has("screens") && raw_uid["screens"].get_type() == Variant::DICTIONARY) ? Dictionary(raw_uid["screens"]) : Dictionary();
 		bool has_legacy_mb = raw_scr_map.has("messages_battle") || raw_scr_map.has("mensajes_batalla") || raw_scr_map.has("mensajes y batalla") || raw_scr_map.has("battle_messages");
+		bool has_legacy_static_slots = false;
+		{
+			static const char *k_mig_sids[4] = { "game_menu_items", "game_menu_equip", "game_menu_status", "game_menu_save" };
+			for (int mi = 0; mi < 4 && !has_legacy_static_slots; mi++) {
+				String msid = k_mig_sids[mi];
+				if (!raw_scr_map.has(msid) || raw_scr_map[msid].get_type() != Variant::DICTIONARY) continue;
+				Dictionary scd = raw_scr_map[msid];
+				Array els = scd.get("elements", Array());
+				int ranura_cnt = 0;
+				bool has_data_cont = false;
+				for (int ei = 0; ei < els.size(); ei++) {
+					if (els[ei].get_type() != Variant::DICTIONARY) continue;
+					Dictionary ed = els[ei];
+					String et = String(ed.get("type", "")).to_lower();
+					if (et == "container" && normalize_ui_data_source(ed.get("data_source", "manual")) != "manual") {
+						has_data_cont = true;
+						break;
+					}
+					String eid = String(ed.get("id", "")).to_lower();
+					String nm = String(ed.get("name", ed.get("text", ""))).strip_edges();
+					if (et == "button" && (eid.begins_with("inv_slot_") || nm.begins_with("Ranura "))) {
+						ranura_cnt++;
+					}
+				}
+				if (!has_data_cont && ranura_cnt >= 2) {
+					has_legacy_static_slots = true;
+				}
+			}
+		}
 		ui_designs_config = normalize_ui_designs_config(raw_uid);
-		if ((raw_ui_schema < CURRENT_UI_DESIGNS_SCHEMA_VERSION || has_legacy_mb) && FileAccess::exists(ui_designs_path)) {
-			String orig_bak = ui_designs_path + (raw_ui_schema < 2 ? String(".pre_menu_v2.bak") : (raw_ui_schema < 3 ? String(".pre_hierarchy_v3.bak") : (raw_ui_schema < 4 ? String(".pre_messages_battle_split.bak") : String(".pre_subscreens_v5.bak"))));
+		if ((raw_ui_schema < CURRENT_UI_DESIGNS_SCHEMA_VERSION || has_legacy_mb || has_legacy_static_slots) && FileAccess::exists(ui_designs_path)) {
+			String orig_bak = ui_designs_path + (has_legacy_static_slots && raw_ui_schema >= CURRENT_UI_DESIGNS_SCHEMA_VERSION ? String(".pre_data_containers.bak") : (raw_ui_schema < 2 ? String(".pre_menu_v2.bak") : (raw_ui_schema < 3 ? String(".pre_hierarchy_v3.bak") : (raw_ui_schema < 4 ? String(".pre_messages_battle_split.bak") : String(".pre_subscreens_v5.bak")))));
+			if (has_legacy_static_slots) {
+				String cont_bak = ui_designs_path + ".pre_data_containers.bak";
+				if (!FileAccess::exists(cont_bak)) {
+					PackedByteArray raw_bytes = FileAccess::get_file_as_bytes(ui_designs_path);
+					Ref<FileAccess> fb2 = FileAccess::open(cont_bak, FileAccess::WRITE);
+					if (fb2.is_valid()) {
+						fb2->store_buffer(raw_bytes);
+						fb2->flush();
+					}
+				}
+			}
 			if (!FileAccess::exists(orig_bak)) {
 				PackedByteArray raw_bytes = FileAccess::get_file_as_bytes(ui_designs_path);
 				Ref<FileAccess> fb = FileAccess::open(orig_bak, FileAccess::WRITE);
@@ -7093,6 +7133,146 @@ Dictionary ClockGearsDataManager::normalize_ui_designs_config(const Dictionary &
 		split_parent_subscreens("battle", bat_subs, true);
 	}
 
+	// Migración de botones estáticos "Ranura 1..N" heredados a un contenedor con fuente de datos real
+	{
+		static const struct {
+			const char *screen_id;
+			const char *data_source;
+			const char *slot_action;
+		} k_mig_cont_targets[4] = {
+			{ "game_menu_items", "inventory_all", "item_use" },
+			{ "game_menu_equip", "equip_compatible", "equip_apply" },
+			{ "game_menu_status", "actor_states", "show_detail" },
+			{ "game_menu_save", "save_slots", "save_game" }
+		};
+		Array mig_conts;
+		for (int ti = 0; ti < 4; ti++) {
+			String msid = k_mig_cont_targets[ti].screen_id;
+			if (!raw_screens.has(msid) || raw_screens[msid].get_type() != Variant::DICTIONARY) {
+				continue;
+			}
+			Dictionary scd = Dictionary(raw_screens[msid]).duplicate(true);
+			Array els = scd.get("elements", Array());
+			bool has_data_cont = false;
+			Vector<int> ranura_indices;
+			for (int ei = 0; ei < els.size(); ei++) {
+				if (els[ei].get_type() != Variant::DICTIONARY) continue;
+				Dictionary ed = els[ei];
+				String et = String(ed.get("type", "")).to_lower();
+				if (et == "container" && normalize_ui_data_source(ed.get("data_source", "manual")) != "manual") {
+					has_data_cont = true;
+					break;
+				}
+				String eid = String(ed.get("id", "")).to_lower();
+				String ename = String(ed.get("name", ed.get("text", ""))).strip_edges();
+				if (et == "button" && (eid.begins_with("inv_slot_") || ename.begins_with("Ranura "))) {
+					ranura_indices.push_back(ei);
+				}
+			}
+			if (has_data_cont || ranura_indices.size() < 2) {
+				continue;
+			}
+			int min_x = 99999, min_y = 99999, max_r = -99999, max_b = -99999;
+			int max_col_candidates = 0;
+			int first_y = -99999;
+			int min_layer = 999;
+			for (int k = 0; k < ranura_indices.size(); k++) {
+				Dictionary bd = els[ranura_indices[k]];
+				int bx = int(bd.get("offset_x", 0));
+				int by = int(bd.get("offset_y", 0));
+				int bw = MAX(32, int(bd.get("width", 120)));
+				int bh = MAX(24, int(bd.get("height", 80)));
+				min_x = MIN(min_x, bx);
+				min_y = MIN(min_y, by);
+				max_r = MAX(max_r, bx + bw);
+				max_b = MAX(max_b, by + bh);
+				min_layer = MIN(min_layer, int(bd.get("layer_order", 1)));
+				if (k == 0) first_y = by;
+				if (Math::abs(by - first_y) <= 12) max_col_candidates++;
+			}
+			HashSet<int> rem_set;
+			for (int k = 0; k < ranura_indices.size(); k++) {
+				rem_set.insert(ranura_indices[k]);
+			}
+			Array next_els;
+			for (int ei = 0; ei < els.size(); ei++) {
+				if (!rem_set.has(ei)) {
+					next_els.push_back(els[ei]);
+				}
+			}
+			String cont_id = msid + "_data_grid";
+			String tpl_id = cont_id + "_tpl";
+			Dictionary cont = make_default_ui_element("container", msid);
+			cont["id"] = cont_id;
+			cont["name"] = String::utf8("Lista / Cuadrícula de datos");
+			cont["anchor"] = "top_left";
+			cont["offset_x"] = CLAMP(min_x, 0, 900);
+			cont["offset_y"] = CLAMP(min_y, 0, 480);
+			cont["width"] = CLAMP(max_r - min_x, 220, 920);
+			cont["height"] = CLAMP(max_b - min_y, 120, 480);
+			cont["layer_order"] = (min_layer < 999) ? min_layer : 1;
+			cont["layout_mode"] = (max_col_candidates <= 1) ? "vertical_list" : "grid";
+			cont["layout_columns"] = CLAMP(max_col_candidates, 1, 8);
+			cont["layout_rows"] = 0;
+			cont["layout_scroll"] = true;
+			cont["data_source"] = String(k_mig_cont_targets[ti].data_source);
+			cont["data_show_empty"] = true;
+			cont["data_empty_count"] = ranura_indices.size();
+			cont["slot_action"] = String(k_mig_cont_targets[ti].slot_action);
+			cont["item_template_folder_id"] = tpl_id;
+			next_els.push_back(cont);
+
+			Dictionary tpl = make_default_ui_element("folder", msid);
+			tpl["id"] = tpl_id;
+			tpl["parent_id"] = cont_id;
+			tpl["name"] = "Plantilla del elemento";
+			tpl["role"] = "item_template";
+			tpl["is_item_template"] = true;
+			tpl["width"] = 140;
+			tpl["height"] = 56;
+			next_els.push_back(tpl);
+
+			Dictionary tic = make_default_ui_element("image", msid);
+			tic["id"] = tpl_id + "_icon";
+			tic["parent_id"] = tpl_id;
+			tic["name"] = "Icono objeto";
+			tic["data_binding"] = "item_icon";
+			tic["offset_x"] = 4; tic["offset_y"] = 8; tic["width"] = 36; tic["height"] = 36;
+			next_els.push_back(tic);
+
+			Dictionary tnm = make_default_ui_element("text", msid);
+			tnm["id"] = tpl_id + "_name";
+			tnm["parent_id"] = tpl_id;
+			tnm["name"] = "Nombre objeto";
+			tnm["data_binding"] = "item_name";
+			tnm["offset_x"] = 44; tnm["offset_y"] = 6; tnm["width"] = 90; tnm["height"] = 22; tnm["font_size"] = 13;
+			next_els.push_back(tnm);
+
+			Dictionary tqt = make_default_ui_element("text", msid);
+			tqt["id"] = tpl_id + "_qty";
+			tqt["parent_id"] = tpl_id;
+			tqt["name"] = "Cantidad objeto";
+			tqt["data_binding"] = "item_qty";
+			tqt["offset_x"] = 44; tqt["offset_y"] = 30; tqt["width"] = 90; tqt["height"] = 18; tqt["font_size"] = 11;
+			next_els.push_back(tqt);
+
+			scd["elements"] = next_els;
+			raw_screens[msid] = scd;
+
+			Dictionary mrec;
+			mrec["screen_id"] = msid;
+			mrec["legacy_slot_count"] = ranura_indices.size();
+			mrec["container_id"] = cont_id;
+			mrec["data_source"] = String(k_mig_cont_targets[ti].data_source);
+			mig_conts.push_back(mrec);
+			print_line(vformat(String::utf8("MIG_CONTAINER: %s (%d botones estáticos -> contenedor '%s' data_source=%s)"), msid, ranura_indices.size(), cont_id, String(k_mig_cont_targets[ti].data_source)));
+		}
+		if (!mig_conts.is_empty()) {
+			s_last_ui_migration_report["migrated"] = true;
+			s_last_ui_migration_report["migrated_containers"] = mig_conts;
+		}
+	}
+
 	PackedStringArray sys_sids = get_system_menu_ids();
 	HashSet<String> seen_keys;
 	for (int i = 0; i < sys_sids.size(); i++) {
@@ -9121,7 +9301,13 @@ void ClockGearsDataManager::set_ui_designs_config(const Dictionary &p_cfg) {
 	emit_signal("runtime_state_changed", "ui_design", String());
 }
 
-static Dictionary _cg_make_tpl_meta(const String &p_id, const String &p_name, const String &p_cat, const String &p_desc, const Dictionary &p_design) {
+static Dictionary _cg_make_tpl_meta(
+		const String &p_id,
+		const String &p_name,
+		const String &p_cat,
+		const String &p_desc,
+		const Dictionary &p_design,
+		const String &p_compat_csv = "game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,custom") {
 	Dictionary d;
 	d["id"] = p_id;
 	d["name"] = p_name;
@@ -9129,6 +9315,21 @@ static Dictionary _cg_make_tpl_meta(const String &p_id, const String &p_name, co
 	d["description"] = p_desc;
 	d["is_component"] = false;
 	d["is_builtin"] = true;
+	Array compat;
+	PackedStringArray parts = p_compat_csv.split(",", false);
+	for (int i = 0; i < parts.size(); i++) {
+		String s = parts[i].strip_edges().to_lower();
+		if (!s.is_empty()) compat.push_back(s);
+	}
+	d["compatible_systems"] = compat;
+	Dictionary ds_map;
+	ds_map["game_menu_items"] = "inventory_all";
+	ds_map["game_menu_equip"] = "equip_compatible";
+	ds_map["game_menu_status"] = "actor_states";
+	ds_map["game_menu_save"] = "save_slots";
+	ds_map["battle"] = "battle_commands";
+	ds_map["battle_submenu"] = "actor_skills";
+	d["default_data_sources"] = ds_map;
 	d["design"] = p_design;
 	return d;
 }
@@ -9274,7 +9475,7 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 		lay["radial_slots"] = slots;
 		d["layout"] = lay;
 		d["elements"] = Array();
-		out.push_back(_cg_make_tpl_meta("radial_ring", "Anillo radial", "radial", String::utf8("Círculo de 8 ranuras dibujado sin nodos y descripción central."), d));
+		out.push_back(_cg_make_tpl_meta("radial_ring", "Anillo radial", "radial", String::utf8("Círculo de 8 ranuras dibujado sin nodos y descripción central."), d, "game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,battle,battle_submenu,custom"));
 	}
 
 	// 3. Rueda de objetos rápida (medio círculo)
@@ -9313,33 +9514,117 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 		lay["radial_slots"] = slots;
 		d["layout"] = lay;
 		d["elements"] = Array();
-		out.push_back(_cg_make_tpl_meta("quick_item_wheel", String::utf8("Rueda de objetos rápida"), "radial", String::utf8("Semicírculo inferior superior con 5 ranuras rápidas."), d));
+		out.push_back(_cg_make_tpl_meta("quick_item_wheel", String::utf8("Rueda de objetos rápida"), "radial", String::utf8("Semicírculo inferior superior con 5 ranuras rápidas."), d, "game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,battle,battle_submenu,custom"));
 	}
 
-	// 4. Cuadrícula de inventario (ARPG)
+	// 4. Cuadrícula de inventario / datos reales (ARPG) con plantilla repetible de elemento
 	{
 		Dictionary d;
 		d["custom_enabled"] = true;
-		Dictionary lay;
-		lay["mode"] = "grid";
-		lay["origin_anchor"] = "center";
-		lay["offset_x"] = 0;
-		lay["offset_y"] = -20;
-		lay["width"] = 640;
-		lay["height"] = 300;
-		lay["columns"] = 4;
-		lay["rows"] = 2;
-		lay["spacing_x"] = 14;
-		lay["spacing_y"] = 14;
-		d["layout"] = lay;
 		Array els;
-		for (int i = 0; i < 8; i++) {
-			Dictionary b = _cg_make_tpl_btn(vformat("inv_slot_%d", i + 1), vformat("Ranura %d", i + 1), (i == 7) ? "close" : "items", 160 + (i % 4) * 160, 120 + (i / 4) * 140, 140, 120, "top_left", "rounded", 10);
-			b["focus_order"] = i;
-			els.push_back(b);
-		}
+
+		Dictionary pf = make_default_ui_element("frame", "game_menu_items");
+		pf["id"] = "inv_grid_bg";
+		pf["name"] = String::utf8("Marco Cuadrícula");
+		pf["anchor"] = "top_left";
+		pf["offset_x"] = 32; pf["offset_y"] = 44; pf["width"] = 590; pf["height"] = 420;
+		pf["layer_order"] = 0;
+		els.push_back(pf);
+
+		Dictionary df = make_default_ui_element("frame", "game_menu_items");
+		df["id"] = "inv_detail_bg";
+		df["name"] = "Panel Detalle";
+		df["anchor"] = "top_left";
+		df["offset_x"] = 638; df["offset_y"] = 44; df["width"] = 290; df["height"] = 420;
+		df["layer_order"] = 0;
+		els.push_back(df);
+
+		Dictionary cont = make_default_ui_element("container", "game_menu_items");
+		cont["id"] = "inv_data_grid";
+		cont["name"] = String::utf8("Cuadrícula con datos");
+		cont["anchor"] = "top_left";
+		cont["offset_x"] = 48; cont["offset_y"] = 64; cont["width"] = 558; cont["height"] = 380;
+		cont["layer_order"] = 2;
+		cont["layout_mode"] = "grid";
+		cont["layout_columns"] = 4;
+		cont["layout_rows"] = 2;
+		cont["layout_spacing"] = 12;
+		cont["layout_spacing_y"] = 12;
+		cont["layout_scroll"] = true;
+		cont["data_source"] = "inventory_all";
+		cont["data_show_empty"] = true;
+		cont["data_empty_count"] = 8;
+		cont["slot_action"] = "show_detail";
+		cont["item_template_folder_id"] = "inv_item_tpl";
+		els.push_back(cont);
+
+		Dictionary tpl = make_default_ui_element("folder", "game_menu_items");
+		tpl["id"] = "inv_item_tpl";
+		tpl["parent_id"] = "inv_data_grid";
+		tpl["name"] = "Plantilla del elemento";
+		tpl["role"] = "item_template";
+		tpl["is_item_template"] = true;
+		tpl["width"] = 130; tpl["height"] = 170;
+		els.push_back(tpl);
+
+		Dictionary ic = make_default_ui_element("image", "game_menu_items");
+		ic["id"] = "inv_tpl_icon";
+		ic["parent_id"] = "inv_item_tpl";
+		ic["name"] = "Icono objeto";
+		ic["data_binding"] = "item_icon";
+		ic["offset_x"] = 35; ic["offset_y"] = 18; ic["width"] = 60; ic["height"] = 60;
+		els.push_back(ic);
+
+		Dictionary nm = make_default_ui_element("text", "game_menu_items");
+		nm["id"] = "inv_tpl_name";
+		nm["parent_id"] = "inv_item_tpl";
+		nm["name"] = "Nombre objeto";
+		nm["data_binding"] = "item_name";
+		nm["align"] = "center";
+		nm["offset_x"] = 6; nm["offset_y"] = 92; nm["width"] = 118; nm["height"] = 34; nm["font_size"] = 13;
+		els.push_back(nm);
+
+		Dictionary qt = make_default_ui_element("text", "game_menu_items");
+		qt["id"] = "inv_tpl_qty";
+		qt["parent_id"] = "inv_item_tpl";
+		qt["name"] = "Cantidad";
+		qt["data_binding"] = "item_qty";
+		qt["align"] = "right";
+		qt["offset_x"] = 10; nm["font_size"] = 13; qt["offset_y"] = 134; qt["width"] = 110; qt["height"] = 22; qt["font_size"] = 12;
+		els.push_back(qt);
+
+		Dictionary pic = make_default_ui_element("image", "game_menu_items");
+		pic["id"] = "inv_preview_icon";
+		pic["name"] = "Vista previa objeto";
+		pic["data_binding"] = "item_icon";
+		pic["rotatable"] = true;
+		pic["anchor"] = "top_left";
+		pic["offset_x"] = 720; pic["offset_y"] = 70; pic["width"] = 128; pic["height"] = 128; pic["layer_order"] = 2;
+		els.push_back(pic);
+
+		Dictionary pnm = make_default_ui_element("text", "game_menu_items");
+		pnm["id"] = "inv_preview_name";
+		pnm["name"] = "Nombre detalle";
+		pnm["data_binding"] = "item_name";
+		pnm["align"] = "center";
+		pnm["anchor"] = "top_left";
+		pnm["offset_x"] = 656; pnm["offset_y"] = 212; pnm["width"] = 254; pnm["height"] = 34; pnm["font_size"] = 18; pnm["layer_order"] = 2;
+		els.push_back(pnm);
+
+		Dictionary pdsc = make_default_ui_element("text", "game_menu_items");
+		pdsc["id"] = "inv_preview_desc";
+		pdsc["name"] = String::utf8("Descripción detalle");
+		pdsc["data_binding"] = "item_desc";
+		pdsc["anchor"] = "top_left";
+		pdsc["offset_x"] = 656; pdsc["offset_y"] = 254; pdsc["width"] = 254; pdsc["height"] = 140; pdsc["font_size"] = 13; pdsc["layer_order"] = 2;
+		els.push_back(pdsc);
+
+		Dictionary bback = _cg_make_tpl_btn("inv_back_btn", "Volver", "back", 788, 412, 120, 38);
+		bback["layer_order"] = 3;
+		els.push_back(bback);
+
 		d["elements"] = els;
-		out.push_back(_cg_make_tpl_meta("arpg_inventory_grid", String::utf8("Cuadrícula de inventario (ARPG)"), "grid", String::utf8("Rejilla 4x2 con navegación direccional para inventario o habilidades."), d));
+		out.push_back(_cg_make_tpl_meta("arpg_inventory_grid", String::utf8("Cuadrícula con datos reales (4x2)"), "grid", String::utf8("Rejilla 4x2 con fuente de datos automática, scroll y detalle."), d, "game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,battle_submenu,custom"));
 	}
 
 	// 5. Pestañas a pantalla completa
@@ -9489,7 +9774,7 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 			els.push_back(b);
 		}
 		d["elements"] = els;
-		out.push_back(_cg_make_tpl_meta("quick_pause", String::utf8("Pausa rápida"), "menu", String::utf8("Ventana compacta centrada que pausa el juego con velo oscuro."), d));
+		out.push_back(_cg_make_tpl_meta("quick_pause", String::utf8("Pausa rápida"), "menu", String::utf8("Ventana compacta centrada que pausa el juego con velo oscuro."), d, "game_menu_main,game_over,custom"));
 	}
 
 	// 10. Título clásico
@@ -9523,7 +9808,7 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 			els.push_back(b);
 		}
 		d["elements"] = els;
-		out.push_back(_cg_make_tpl_meta("classic_title", String::utf8("Título clásico"), "title", String::utf8("Título superior y columna inferior de acciones principales."), d));
+		out.push_back(_cg_make_tpl_meta("classic_title", String::utf8("Título clásico"), "title", String::utf8("Título superior y columna inferior de acciones principales."), d, "title"));
 	}
 
 	// 11. Título con logo grande y botones centrados
@@ -9562,7 +9847,7 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 			els.push_back(b);
 		}
 		d["elements"] = els;
-		out.push_back(_cg_make_tpl_meta("hero_logo_title", String::utf8("Título con logo grande y botones centrados"), "title", String::utf8("Gran emblema centrado arriba y botones en píldora debajo."), d));
+		out.push_back(_cg_make_tpl_meta("hero_logo_title", String::utf8("Título con logo grande y botones centrados"), "title", String::utf8("Gran emblema centrado arriba y botones en píldora debajo."), d, "title"));
 	}
 
 	// 12. HUD de esquina
@@ -9616,7 +9901,7 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 		gold["layer_order"] = 2;
 		els.push_back(gold);
 		d["elements"] = els;
-		out.push_back(_cg_make_tpl_meta("corner_hud", "HUD de esquina", "hud", String::utf8("Barra de salud, corazones y monedas agrupados en esquina superior izquierda."), d));
+		out.push_back(_cg_make_tpl_meta("corner_hud", "HUD de esquina", "hud", String::utf8("Barra de salud, corazones y monedas agrupados en esquina superior izquierda."), d, "hud"));
 	}
 
 	// 13. Rueda radial (alias claro de rueda/anillo radial para menú rápido o inventario)
@@ -9662,21 +9947,81 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 		lay["radial_slots"] = slots;
 		d["layout"] = lay;
 		d["elements"] = Array();
-		out.push_back(_cg_make_tpl_meta("rueda_radial", "Rueda radial", "radial", String::utf8("Rueda radial interactiva de 6 ranuras con escalado de selección."), d));
+		out.push_back(_cg_make_tpl_meta("rueda_radial", "Rueda radial", "radial", String::utf8("Rueda radial interactiva de 6 ranuras con escalado de selección."), d, "game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,battle,battle_submenu,custom"));
 	}
 
 	// 14. Mensajes clásico y Batalla clásico
 	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
 		Dictionary msg_tpl = dm->get_default_ui_screen_template("messages");
-		out.push_back(_cg_make_tpl_meta("messages_classic", String::utf8("Mensajes clásico"), "messages", String::utf8("Cuadro de diálogo, caja de nombre, retrato, elecciones, número e historial."), msg_tpl));
+		out.push_back(_cg_make_tpl_meta("messages_classic", String::utf8("Mensajes clásico"), "messages", String::utf8("Cuadro de diálogo, caja de nombre, retrato, elecciones, número e historial."), msg_tpl, "messages,messages_choices,messages_number,messages_history,messages_gold"));
 		Dictionary bat_tpl = dm->get_default_ui_screen_template("battle");
-		out.push_back(_cg_make_tpl_meta("battle_classic", String::utf8("Batalla clásico"), "battle", String::utf8("Comandos tácticos, panel del grupo, enemigos y aviso de batalla."), bat_tpl));
+		out.push_back(_cg_make_tpl_meta("battle_classic", String::utf8("Batalla clásico"), "battle", String::utf8("Comandos tácticos, panel del grupo, enemigos y aviso de batalla."), bat_tpl, "battle,battle_party,battle_enemies,battle_notice,battle_submenu,battle_target"));
 	}
 
 	return out;
 }
 
-Array ClockGearsDataManager::get_ui_templates_for_system(const String &p_screen_id) {
+String ClockGearsDataManager::get_contextual_data_source_for_screen(const String &p_screen_id, const Dictionary &p_tpl_defaults) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (p_tpl_defaults.has(sid)) {
+		return normalize_ui_data_source(p_tpl_defaults[sid]);
+	}
+	if (sid == "game_menu_items") return "inventory_all";
+	if (sid == "game_menu_equip") return "equip_compatible";
+	if (sid == "game_menu_status") return "actor_states";
+	if (sid == "game_menu_save") return "save_slots";
+	if (sid == "battle_submenu") return "actor_skills";
+	if (sid == "battle") return "battle_commands";
+	if (sid == "battle_party") return "party_members";
+	return String();
+}
+
+static String _cg_slot_action_for_screen(const String &p_screen_id) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (sid == "game_menu_items") return "item_use";
+	if (sid == "game_menu_equip") return "equip_apply";
+	if (sid == "game_menu_save") return "save_game";
+	return "show_detail";
+}
+
+bool ClockGearsDataManager::is_ui_template_compatible_with_screen(const Dictionary &p_tpl, const String &p_screen_id) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	if (sid.is_empty()) {
+		return true;
+	}
+	if (!p_tpl.has("compatible_systems") || p_tpl["compatible_systems"].get_type() != Variant::ARRAY) {
+		return true;
+	}
+	Array compat = p_tpl["compatible_systems"];
+	if (compat.is_empty()) {
+		return true;
+	}
+	bool is_sys = _cg_is_system_menu_id(sid);
+	String grp;
+	if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+		grp = dm->get_menu_system_group(sid);
+	}
+	if (grp.is_empty()) {
+		if (sid.begins_with("messages")) grp = "messages";
+		else if (sid.begins_with("battle")) grp = "battle";
+		else if (sid.begins_with("game_menu")) grp = "game_menu_main";
+	}
+	for (int i = 0; i < compat.size(); i++) {
+		String c = String(compat[i]).strip_edges().to_lower();
+		if (c == sid || (!grp.is_empty() && c == grp)) {
+			return true;
+		}
+		if (!is_sys && c == "custom") {
+			return true;
+		}
+		if (c.ends_with("*") && sid.begins_with(c.substr(0, c.length() - 1))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Array ClockGearsDataManager::get_ui_templates_for_system(const String &p_screen_id, bool p_compatible_only) {
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
 	Array all = get_builtin_menu_templates();
 	String pref_cat = "menu";
@@ -9684,7 +10029,7 @@ Array ClockGearsDataManager::get_ui_templates_for_system(const String &p_screen_
 		pref_cat = "title";
 	} else if (sid == "hud") {
 		pref_cat = "hud";
-	} else if (sid == "game_menu_items" || sid == "game_menu_equip") {
+	} else if (sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save") {
 		pref_cat = "grid";
 	} else if (sid == "messages" || sid.begins_with("messages_")) {
 		pref_cat = "messages";
@@ -9696,6 +10041,9 @@ Array ClockGearsDataManager::get_ui_templates_for_system(const String &p_screen_
 	Array others;
 	for (int i = 0; i < all.size(); i++) {
 		Dictionary t = all[i];
+		if (p_compatible_only && !is_ui_template_compatible_with_screen(t, sid)) {
+			continue;
+		}
 		String cat = String(t.get("category", "")).to_lower();
 		if (cat == pref_cat) {
 			prioritized.push_back(t);
@@ -9714,9 +10062,10 @@ Array ClockGearsDataManager::get_ui_templates_for_system(const String &p_screen_
 	return prioritized;
 }
 
-Array ClockGearsDataManager::get_builtin_component_templates() {
+Array ClockGearsDataManager::get_builtin_component_templates(const String &p_screen_id) {
 	Array out;
-	auto push_comp = [&](const String &p_id, const String &p_name, const String &p_desc, const Dictionary &p_el) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	auto push_comp = [&](const String &p_id, const String &p_name, const String &p_desc, const Dictionary &p_el, const String &p_compat_csv = "title,hud,game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,game_over,messages,battle,custom") {
 		Dictionary d;
 		d["id"] = p_id;
 		d["name"] = p_name;
@@ -9724,8 +10073,17 @@ Array ClockGearsDataManager::get_builtin_component_templates() {
 		d["description"] = p_desc;
 		d["is_component"] = true;
 		d["is_builtin"] = true;
+		Array compat;
+		PackedStringArray parts = p_compat_csv.split(",", false);
+		for (int i = 0; i < parts.size(); i++) {
+			String s = parts[i].strip_edges().to_lower();
+			if (!s.is_empty()) compat.push_back(s);
+		}
+		d["compatible_systems"] = compat;
 		d["element"] = p_el;
-		out.push_back(d);
+		if (sid.is_empty() || is_ui_template_compatible_with_screen(d, sid)) {
+			out.push_back(d);
+		}
 	};
 
 	push_comp("comp_round_btn", String::utf8("Botón redondo"), String::utf8("Botón circular ideal para accesos rápidos."),
@@ -9768,18 +10126,24 @@ Array ClockGearsDataManager::get_builtin_component_templates() {
 
 	Dictionary clist;
 	clist["id"] = "comp_item_list";
-	clist["name"] = "Lista de objetos";
+	clist["name"] = "Lista de datos";
 	clist["type"] = "container";
 	clist["anchor"] = "top_left";
 	clist["offset_x"] = 40;
 	clist["offset_y"] = 40;
-	clist["width"] = 260;
+	clist["width"] = 280;
 	clist["height"] = 300;
+	clist["layout_mode"] = "vertical_list";
+	clist["layout_columns"] = 1;
+	clist["layout_scroll"] = true;
+	clist["data_source"] = "inventory_all";
+	clist["data_show_empty"] = true;
+	clist["data_empty_count"] = 6;
 	Dictionary clay;
 	clay["mode"] = "vertical_list";
 	clay["spacing_y"] = 8;
 	clist["layout"] = normalize_menu_layout(clay);
-	push_comp("comp_item_list", "Lista de objetos", String::utf8("Contenedor vertical para organizar botones en lista."), clist);
+	push_comp("comp_item_list", "Lista de datos", String::utf8("Lista vertical conectada automáticamente a los datos de la pantalla."), clist, "game_menu_main,game_menu_items,game_menu_equip,game_menu_status,game_menu_save,battle_submenu,custom");
 
 	Dictionary slot;
 	slot = _cg_make_tpl_btn("comp_slot", "", "items", 80, 80, 68, 68, "top_left", "rounded", 12);
@@ -9840,7 +10204,7 @@ String ClockGearsDataManager::save_screen_as_user_template(const String &p_scree
 	while (ut.has(tid)) {
 		tid = "user_" + base + "_" + itos(sfx++);
 	}
-	Dictionary src = get_ui_screen_design(p_screen_id);
+	Dictionary src = get_ui_screen_design(p_screen_id).duplicate(true);
 	Dictionary tpl;
 	tpl["id"] = tid;
 	tpl["name"] = nm;
@@ -9848,7 +10212,21 @@ String ClockGearsDataManager::save_screen_as_user_template(const String &p_scree
 	tpl["description"] = String::utf8("Plantilla guardada desde ") + String(src.get("name", p_screen_id));
 	tpl["is_component"] = false;
 	tpl["is_builtin"] = false;
-	tpl["design"] = src;
+	Array compat;
+	String sid_norm = _cg_norm_ui_screen_id(p_screen_id);
+	String sgrp = get_menu_system_group(sid_norm);
+	compat.push_back(sid_norm);
+	if (!sgrp.is_empty() && sgrp != sid_norm) compat.push_back(sgrp);
+	if (sid_norm == "game_menu_main" || sid_norm == "game_menu_items" || sid_norm == "game_menu_equip" || sid_norm == "game_menu_status" || sid_norm == "game_menu_save" || !_cg_is_system_menu_id(sid_norm)) {
+		if (!compat.has("game_menu_main")) compat.push_back("game_menu_main");
+		if (!compat.has("game_menu_items")) compat.push_back("game_menu_items");
+		if (!compat.has("game_menu_equip")) compat.push_back("game_menu_equip");
+		if (!compat.has("game_menu_status")) compat.push_back("game_menu_status");
+		if (!compat.has("game_menu_save")) compat.push_back("game_menu_save");
+		if (!compat.has("custom")) compat.push_back("custom");
+	}
+	tpl["compatible_systems"] = compat;
+	tpl["design"] = src.duplicate(true);
 	ut[tid] = tpl;
 	ui_designs_config["user_templates"] = ut;
 	dirty = true;
@@ -9989,6 +10367,39 @@ bool ClockGearsDataManager::apply_menu_template(const String &p_screen_id, const
 		}
 	}
 
+	// Adaptar contenedores de datos y radiales de forma independiente según la pantalla destino
+	Dictionary tpl_defaults = (tpl.has("default_data_sources") && tpl["default_data_sources"].get_type() == Variant::DICTIONARY)
+			? Dictionary(tpl["default_data_sources"])
+			: Dictionary();
+	String ctx_ds = get_contextual_data_source_for_screen(sid, tpl_defaults);
+	String ctx_act = _cg_slot_action_for_screen(sid);
+	if (!ctx_ds.is_empty()) {
+		Array n_elems = next.has("elements") && next["elements"].get_type() == Variant::ARRAY
+				? Array(next["elements"]).duplicate(true)
+				: Array();
+		for (int i = 0; i < n_elems.size(); i++) {
+			if (n_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ne = n_elems[i];
+			String net = String(ne.get("type", "")).to_lower();
+			if (net == "container" || net == "widget") {
+				ne["data_source"] = ctx_ds;
+				ne["slot_action"] = ctx_act;
+				n_elems[i] = ne;
+			}
+		}
+		next["elements"] = n_elems;
+		if (next.has("layout") && next["layout"].get_type() == Variant::DICTIONARY) {
+			Dictionary nlay = Dictionary(next["layout"]).duplicate(true);
+			if (String(nlay.get("mode", "")).to_lower() == "radial" &&
+					(sid == "game_menu_items" || sid == "game_menu_equip" || sid == "game_menu_status" || sid == "game_menu_save" || sid == "battle_submenu")) {
+				nlay["data_source"] = ctx_ds;
+				nlay["slot_action"] = ctx_act;
+				nlay["radial_slots"] = Array();
+				next["layout"] = nlay;
+			}
+		}
+	}
+
 	set_ui_screen_design(sid, next, p_record_undo);
 	return true;
 }
@@ -10008,6 +10419,14 @@ String ClockGearsDataManager::instantiate_component_template(const String &p_scr
 	}
 	Dictionary el = Dictionary(tpl.get("element", Dictionary())).duplicate(true);
 	el.erase("id");
+	String et = String(el.get("type", "")).to_lower();
+	if (et == "container") {
+		String ctx_ds = get_contextual_data_source_for_screen(sid);
+		if (!ctx_ds.is_empty()) {
+			el["data_source"] = ctx_ds;
+			el["slot_action"] = _cg_slot_action_for_screen(sid);
+		}
+	}
 	if (p_pos.x >= 0 && p_pos.y >= 0) {
 		el["anchor"] = "top_left";
 		int w = int(el.get("width", 120));
@@ -12509,8 +12928,10 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_background", "bg"), &ClockGearsDataManager::normalize_ui_background);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_transition", "tr"), &ClockGearsDataManager::normalize_ui_transition);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_menu_templates"), &ClockGearsDataManager::get_builtin_menu_templates);
-	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_templates_for_system", "screen_id"), &ClockGearsDataManager::get_ui_templates_for_system);
-	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_component_templates"), &ClockGearsDataManager::get_builtin_component_templates);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_templates_for_system", "screen_id", "compatible_only"), &ClockGearsDataManager::get_ui_templates_for_system, DEFVAL(true));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_component_templates", "screen_id"), &ClockGearsDataManager::get_builtin_component_templates, DEFVAL(String()));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("is_ui_template_compatible_with_screen", "tpl", "screen_id"), &ClockGearsDataManager::is_ui_template_compatible_with_screen);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_contextual_data_source_for_screen", "screen_id", "tpl_defaults"), &ClockGearsDataManager::get_contextual_data_source_for_screen, DEFVAL(Dictionary()));
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_builtin_template_by_id", "template_id"), &ClockGearsDataManager::get_builtin_template_by_id);
 	ClassDB::bind_method(D_METHOD("get_user_menu_templates"), &ClockGearsDataManager::get_user_menu_templates);
 	ClassDB::bind_method(D_METHOD("save_screen_as_user_template", "screen_id", "name"), &ClockGearsDataManager::save_screen_as_user_template);

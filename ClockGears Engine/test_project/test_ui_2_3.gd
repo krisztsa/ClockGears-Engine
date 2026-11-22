@@ -25,6 +25,12 @@ func _run() -> void:
 
 	var had_custom_items: bool = dm.has_custom_ui_design("game_menu_items")
 	var orig_items_design: Dictionary = dm.get_ui_screen_design("game_menu_items")
+	var had_custom_equip: bool = dm.has_custom_ui_design("game_menu_equip")
+	var orig_equip_design: Dictionary = dm.get_ui_screen_design("game_menu_equip")
+	var had_custom_status: bool = dm.has_custom_ui_design("game_menu_status")
+	var orig_status_design: Dictionary = dm.get_ui_screen_design("game_menu_status")
+	var had_custom_save: bool = dm.has_custom_ui_design("game_menu_save")
+	var orig_save_design: Dictionary = dm.get_ui_screen_design("game_menu_save")
 	var orig_rt = dm.export_runtime_state()
 	var orig_cat_items: Array = dm.get_category_array(3).duplicate(true)
 	var orig_cat_weapons: Array = dm.get_category_array(4).duplicate(true)
@@ -38,6 +44,7 @@ func _run() -> void:
 	])
 
 	await _test_punto_1()
+	await _test_punto_2()
 
 	# Restaurar estado original del proyecto de pruebas para no ensuciarlo
 	dm.set_category_array(3, orig_cat_items)
@@ -48,6 +55,18 @@ func _run() -> void:
 		dm.set_ui_screen_design("game_menu_items", orig_items_design, false)
 	else:
 		dm.reset_ui_screen_design_to_default("game_menu_items", false)
+	if had_custom_equip:
+		dm.set_ui_screen_design("game_menu_equip", orig_equip_design, false)
+	else:
+		dm.reset_ui_screen_design_to_default("game_menu_equip", false)
+	if had_custom_status:
+		dm.set_ui_screen_design("game_menu_status", orig_status_design, false)
+	else:
+		dm.reset_ui_screen_design_to_default("game_menu_status", false)
+	if had_custom_save:
+		dm.set_ui_screen_design("game_menu_save", orig_save_design, false)
+	else:
+		dm.reset_ui_screen_design_to_default("game_menu_save", false)
 
 	_finish()
 
@@ -276,6 +295,117 @@ func _get_qty(k: String) -> int:
 		if str(row.get("key", "")) == k:
 			return int(row.get("qty", 0))
 	return 0
+
+func _tpl_ids(list: Array) -> Array:
+	var ids := []
+	for t in list:
+		ids.append(str(t.get("id", "")))
+	return ids
+
+func _test_punto_2() -> void:
+	print("--- Punto 2: Plantillas independientes y migración ---")
+	var title_ids := _tpl_ids(dm.get_ui_templates_for_system("title", true))
+	var items_ids := _tpl_ids(dm.get_ui_templates_for_system("game_menu_items", true))
+	var msg_ids := _tpl_ids(dm.get_ui_templates_for_system("messages", true))
+	check(title_ids.has("classic_title") and not title_ids.has("corner_hud") and not title_ids.has("arpg_inventory_grid"), "Galería Título muestra solo compatibles (%s)" % str(title_ids))
+	check(items_ids.has("arpg_inventory_grid") and not items_ids.has("classic_title") and not items_ids.has("corner_hud") and not items_ids.has("messages_classic"), "Galería Inventario excluye Título/HUD/Mensajes")
+	check(msg_ids.has("messages_classic") and not msg_ids.has("arpg_inventory_grid") and not msg_ids.has("classic_title"), "Galería Mensajes muestra solo compatibles")
+
+	# Aplicar cuadrícula a Inventario, Equipo, Estado y Guardado -> fuente de datos contextual + independencia
+	check(dm.apply_menu_template("game_menu_items", "arpg_inventory_grid", false, false), "Plantilla arpg_inventory_grid aplicada a Inventario")
+	check(dm.apply_menu_template("game_menu_equip", "arpg_inventory_grid", false, false), "Plantilla arpg_inventory_grid aplicada a Equipo")
+	check(dm.apply_menu_template("game_menu_status", "arpg_inventory_grid", false, false), "Plantilla arpg_inventory_grid aplicada a Estado")
+	check(dm.apply_menu_template("game_menu_save", "arpg_inventory_grid", false, false), "Plantilla arpg_inventory_grid aplicada a Guardado")
+
+	var el_items: Dictionary = dm.get_ui_element("game_menu_items", "inv_data_grid")
+	var el_equip: Dictionary = dm.get_ui_element("game_menu_equip", "inv_data_grid")
+	var el_status: Dictionary = dm.get_ui_element("game_menu_status", "inv_data_grid")
+	var el_save: Dictionary = dm.get_ui_element("game_menu_save", "inv_data_grid")
+	check(str(el_items.get("data_source", "")) == "inventory_all", "Inventario enlaza inventory_all")
+	check(str(el_equip.get("data_source", "")) == "equip_compatible", "Equipo enlaza equip_compatible")
+	check(str(el_status.get("data_source", "")) == "actor_states", "Estado enlaza actor_states")
+	check(str(el_save.get("data_source", "")) == "save_slots", "Guardado enlaza save_slots")
+
+	# Sin texto literal "Ranura 1" como botones estáticos en arpg_inventory_grid
+	var has_static_ranura := false
+	for e in dm.get_ui_screen_elements("game_menu_items"):
+		if str(e.get("type", "")) == "button" and str(e.get("text", "")).begins_with("Ranura "):
+			has_static_ranura = true
+	check(not has_static_ranura, "Plantilla arpg_inventory_grid no crea botones estáticos 'Ranura 1..8'")
+
+	# Editar Inventario NO afecta a Equipo
+	el_items["width"] = 777
+	dm.update_ui_element("game_menu_items", "inv_data_grid", el_items, false)
+	var el_equip_after: Dictionary = dm.get_ui_element("game_menu_equip", "inv_data_grid")
+	check(int(el_equip_after.get("width", 0)) != 777, "Editar Inventario tras aplicar plantilla no cambia Equipo (%d != 777)" % int(el_equip_after.get("width", 0)))
+
+	# Mis plantillas: guardar y aplicar en otra pantalla es copia independiente
+	var user_tid: String = dm.save_screen_as_user_template("game_menu_items", "MiRejillaAislada")
+	check(not user_tid.is_empty(), "Guardada plantilla en 'Mis plantillas': " + user_tid)
+	dm.apply_menu_template("game_menu_equip", user_tid, false, false)
+	var eq_mod: Dictionary = dm.get_ui_element("game_menu_equip", "inv_data_grid")
+	eq_mod["width"] = 333
+	dm.update_ui_element("game_menu_equip", "inv_data_grid", eq_mod, false)
+	check(int(dm.get_ui_element("game_menu_items", "inv_data_grid").get("width", 0)) == 777, "Editar pantalla desde Mis plantillas no muta la pantalla de origen")
+	dm.delete_user_template(user_tid)
+
+	# Migración con copia de seguridad (.pre_data_containers.bak) de botones estáticos 'Ranura 1..8'
+	var tmp_dir := ProjectSettings.globalize_path("user://test_p2_mig")
+	DirAccess.make_dir_recursive_absolute(tmp_dir)
+	var fdb := FileAccess.open(tmp_dir.path_join("database.json"), FileAccess.WRITE)
+	fdb.store_string("{\"schema_version\": 3}")
+	fdb.close()
+	var legacy_doc := {
+		"schema_version": 5,
+		"screens": {
+			"game_menu_items": {
+				"screen_id": "game_menu_items",
+				"custom_enabled": true,
+				"elements": []
+			},
+			"mi_pantalla_ambigua": {
+				"screen_id": "mi_pantalla_ambigua",
+				"name": "Personalizada",
+				"custom_enabled": true,
+				"elements": [
+					{"id": "inv_slot_1", "name": "Ranura 1", "type": "button", "text": "Ranura 1", "offset_x": 40, "offset_y": 40, "width": 100, "height": 80},
+					{"id": "inv_slot_2", "name": "Ranura 2", "type": "button", "text": "Ranura 2", "offset_x": 160, "offset_y": 40, "width": 100, "height": 80}
+				]
+			}
+		}
+	}
+	for i in range(8):
+		legacy_doc["screens"]["game_menu_items"]["elements"].append({
+			"id": "inv_slot_%d" % (i + 1),
+			"name": "Ranura %d" % (i + 1),
+			"type": "button",
+			"text": "Ranura %d" % (i + 1),
+			"offset_x": 160 + (i % 4) * 160,
+			"offset_y": 120 + int(i / 4) * 140,
+			"width": 140,
+			"height": 120
+		})
+	var ui_file := tmp_dir.path_join("ui_designs.json")
+	var bak_file := ui_file + ".pre_data_containers.bak"
+	if FileAccess.file_exists(bak_file):
+		DirAccess.remove_absolute(bak_file)
+	var fa := FileAccess.open(ui_file, FileAccess.WRITE)
+	fa.store_string(JSON.stringify(legacy_doc, "\t"))
+	fa.close()
+
+	var mig_dm = ClassDB.instantiate("ClockGearsDataManager")
+	mig_dm.load_all(tmp_dir)
+	var rep: Dictionary = mig_dm.get_last_ui_migration_report()
+	check(FileAccess.file_exists(bak_file), "Migración crea copia de seguridad .pre_data_containers.bak")
+	var mig_conts: Array = rep.get("migrated_containers", [])
+	check(mig_conts.size() == 1 and str(mig_conts[0].get("data_source", "")) == "inventory_all", "Migración convierte Inventario 'Ranura 1..8' en contenedor inventory_all (report=%s)" % str(mig_conts))
+	var amb_elems: Array = mig_dm.get_ui_screen_elements("mi_pantalla_ambigua")
+	var amb_kept := false
+	for ae in amb_elems:
+		if str(ae.get("id", "")) == "inv_slot_1":
+			amb_kept = true
+	check(amb_kept, "Pantalla personalizada ambigua queda sin tocar durante la migración")
+	mig_dm.free()
 
 func _finish() -> void:
 	print("RESULTADOS: %d PASS, %d FAIL" % [passes, fails])
