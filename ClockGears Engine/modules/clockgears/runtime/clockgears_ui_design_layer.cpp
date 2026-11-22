@@ -1492,6 +1492,14 @@ HashMap<String, Rect2> ClockGearsUiDesignLayer::compute_all_element_rects(const 
 				}
 			}
 			float my_acc = p_scales.has(p_id) ? p_scales[p_id] : _cg_layer_elem_self_scale(e);
+			if (etype == "folder" && String(e.get("role", "")) == "pager_page" && !cpid.is_empty() && p_by_id.has(cpid) && String(p_by_id[cpid].get("type", "")).to_lower() == "pager") {
+				Dictionary pg_cfg = p_by_id[cpid].has("pager") && p_by_id[cpid]["pager"].get_type() == Variant::DICTIONARY
+						? Dictionary(p_by_id[cpid]["pager"])
+						: ClockGearsDataManager::make_default_pager_config();
+				Rect2 out = ClockGearsDataManager::compute_pager_body_rect(pr, pg_cfg, p_acc);
+				r_cache[p_id] = out;
+				return out;
+			}
 			float ref_w = (pr.size.x > 0.5f) ? pr.size.x : LOGICAL_WIDTH;
 			float ref_h = (pr.size.y > 0.5f) ? pr.size.y : LOGICAL_HEIGHT;
 			float ew = (etype == "folder") ? (float(CLAMP(int(e.get("width", 0)), 0, 960)) * my_acc) : (float(CLAMP(int(e.get("width", 120)), 16, 960)) * my_acc);
@@ -2074,9 +2082,12 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 	elements.clear();
 	for (int r = 0; r < reusable.size(); r++) {
 		Control *rr = reusable[r].root;
-		if (rr && rr->get_parent() && rr->get_parent() != this) {
-			rr->get_parent()->remove_child(rr);
-			add_child(rr);
+		if (rr) {
+			rr->set_name(vformat("_cg_old_%d", r));
+			if (rr->get_parent() && rr->get_parent() != this) {
+				rr->get_parent()->remove_child(rr);
+				add_child(rr);
+			}
 		}
 	}
 	Vector<bool> used;
@@ -2191,7 +2202,7 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		if (etype == "button" && !pid_low.is_empty() && radial_parent_ids_low.has(pid_low)) {
 			continue;
 		}
-		if (etype == "folder") {
+		if (etype == "folder" && String(cfg.get("role", "")) != "pager_page") {
 			continue;
 		}
 		if (tpl_skip_ids.has(String(cfg.get("id", "")))) {
@@ -2204,8 +2215,8 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.anchor = String(cfg.get("anchor", "top_left"));
 		entry.offset_x = int(cfg.get("offset_x", 0));
 		entry.offset_y = int(cfg.get("offset_y", 0));
-		entry.width = CLAMP(int(cfg.get("width", 120)), 16, 960);
-		entry.height = CLAMP(int(cfg.get("height", 36)), 16, 540);
+		entry.width = (etype == "folder") ? CLAMP(int(cfg.get("width", 0)), 0, 960) : CLAMP(int(cfg.get("width", 120)), 16, 960);
+		entry.height = (etype == "folder") ? CLAMP(int(cfg.get("height", 0)), 0, 540) : CLAMP(int(cfg.get("height", 36)), 16, 540);
 		entry.layer_order = int(cfg.get("layer_order", 0));
 		entry.visible = is_element_effectively_visible(entry.id, raw);
 		entry.parent_id = String(cfg.get("parent_id", "")).strip_edges();
@@ -2289,9 +2300,11 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		}
 	}
 
-	// Resolver recorte opcional al padre ("clip_children"): emparentar visualmente bajo el ancestro recortador manteniendo z absoluto
+	// Resolver recorte opcional al padre ("clip_children") y páginas de paginador ("pager_page"):
+	// Cada pager_page se emparenta dentro de pager_pages_clip; sus hijos dentro de la página.
 	HashMap<String, Dictionary> raw_by_id;
 	HashMap<String, Control *> entry_root_by_id;
+	HashMap<String, Control *> pager_clip_by_id;
 	for (int i = 0; i < raw.size(); i++) {
 		if (raw[i].get_type() == Variant::DICTIONARY) {
 			Dictionary d = raw[i];
@@ -2304,17 +2317,45 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 			e.root->set_clip_contents(e.clip_children);
 			entry_root_by_id[e.id] = e.root;
 		}
+		if (e.type == "pager" && e.pager_pages_clip) {
+			pager_clip_by_id[e.id] = e.pager_pages_clip;
+			for (int r = 0; r < reusable.size(); r++) {
+				if (reusable[r].type == "pager" && reusable[r].id == e.id) {
+					if (!preview_mode) {
+						e.pager_active_idx = CLAMP(reusable[r].pager_active_idx, 0, MAX(0, e.pager_page_ids.size() - 1));
+					}
+					e.pager_page_focus_elem = reusable[r].pager_page_focus_elem;
+					e.pager_page_scroll = reusable[r].pager_page_scroll;
+					break;
+				}
+			}
+		}
 	}
 	for (int i = 0; i < elements.size(); i++) {
 		ElementEntry &e = elements.write[i];
 		if (!e.root) continue;
+		if (e.type == "folder" && String(e.config.get("role", "")) == "pager_page" && !e.parent_id.is_empty() && pager_clip_by_id.has(e.parent_id)) {
+			e.clip_ancestor_id = e.parent_id;
+			Control *want_parent = pager_clip_by_id[e.parent_id];
+			if (e.root->get_parent() != want_parent) {
+				if (Node *op = e.root->get_parent()) {
+					op->remove_child(e.root);
+				}
+				want_parent->add_child(e.root);
+			}
+			e.root->set_z_as_relative(true);
+			e.root->set_z_index(0);
+			continue;
+		}
 		String clip_anc;
 		String cur = e.parent_id;
 		HashSet<String> vis;
 		while (!cur.is_empty() && raw_by_id.has(cur) && !vis.has(cur)) {
 			vis.insert(cur);
 			const Dictionary &ad = raw_by_id[cur];
-			if (bool(ad.get("clip_children", false)) && String(ad.get("type", "")) != "folder" && entry_root_by_id.has(cur)) {
+			String at = String(ad.get("type", ""));
+			bool is_pg_page = (at == "folder" && String(ad.get("role", "")) == "pager_page");
+			if ((is_pg_page || (bool(ad.get("clip_children", false)) && at != "folder")) && entry_root_by_id.has(cur)) {
 				clip_anc = cur;
 				break;
 			}
@@ -2753,6 +2794,44 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		if (!radial_canvas) {
 			radial_canvas = rc;
 		}
+	} else if (r_entry.type == "folder") {
+		if (r_entry.bg_panel) {
+			r_entry.bg_panel->set_visible(false);
+		}
+	} else if (r_entry.type == "pager") {
+		content->set_mouse_filter(MOUSE_FILTER_PASS);
+		content->connect("gui_input", callable_mp(this, &ClockGearsUiDesignLayer::_on_pager_root_gui_input).bind(r_entry.id));
+
+		Control *ind_host = memnew(Control);
+		ind_host->set_name("PagerIndicatorHost");
+		ind_host->set_mouse_filter(MOUSE_FILTER_PASS);
+		ind_host->set_clip_contents(true);
+		content->add_child(ind_host);
+		r_entry.pager_indicator_host = ind_host;
+
+		Control *clip_pages = memnew(Control);
+		clip_pages->set_name("PagerPagesClip");
+		clip_pages->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		clip_pages->set_clip_contents(true);
+		content->add_child(clip_pages);
+		r_entry.pager_pages_clip = clip_pages;
+
+		r_entry.pager_page_ids.clear();
+		Array all_raw = active_design.get("elements", Array());
+		String pid_low = r_entry.id.to_lower();
+		for (int pi = 0; pi < all_raw.size(); pi++) {
+			if (all_raw[pi].get_type() != Variant::DICTIONARY) continue;
+			Dictionary pd = all_raw[pi];
+			if (String(pd.get("parent_id", "")).strip_edges().to_lower() == pid_low &&
+					String(pd.get("role", "")) == "pager_page") {
+				r_entry.pager_page_ids.push_back(String(pd.get("id", "")));
+			}
+		}
+		Dictionary pg_cfg = r_entry.config.has("pager") && r_entry.config["pager"].get_type() == Variant::DICTIONARY
+				? Dictionary(r_entry.config["pager"])
+				: ClockGearsDataManager::make_default_pager_config();
+		int init_idx = preview_mode ? int(pg_cfg.get("active_editor_page", 0)) : int(pg_cfg.get("default_page", 0));
+		r_entry.pager_active_idx = r_entry.pager_page_ids.is_empty() ? 0 : CLAMP(init_idx, 0, r_entry.pager_page_ids.size() - 1);
 	} else {
 		Label *lbl = memnew(Label);
 		lbl->set_name("TextLabel");
@@ -3162,11 +3241,23 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 		float e_acc = acc_scales.has(e.id) ? acc_scales[e.id] : _cg_layer_elem_self_scale(e.config);
 		float eff_scale = current_ui_scale * e_acc;
 		Rect2 er = all_rects.has(e.id) ? all_rects[e.id] : compute_element_rect(e.config, current_stage_rect, current_ui_scale);
+		bool is_pager_page = (e.type == "folder" && String(e.config.get("role", "")) == "pager_page");
 		Vector2 local_pos = er.position;
-		if (!e.clip_ancestor_id.is_empty() && all_rects.has(e.clip_ancestor_id)) {
+		if (is_pager_page) {
+			local_pos = Vector2();
+		} else if (!e.clip_ancestor_id.is_empty() && all_rects.has(e.clip_ancestor_id)) {
 			local_pos = er.position - all_rects[e.clip_ancestor_id].position;
 		}
-		if (e.root->get_position() != local_pos) {
+		bool hold_page_pose = false;
+		if (is_pager_page) {
+			for (int pi = 0; pi < elements.size(); pi++) {
+				if (elements[pi].type == "pager" && elements[pi].id == e.parent_id && elements[pi].pager_trans_active) {
+					hold_page_pose = true;
+					break;
+				}
+			}
+		}
+		if (!hold_page_pose && e.root->get_position() != local_pos) {
 			e.root->set_position(local_pos);
 		}
 		if (e.root->get_size() != er.size) {
@@ -3174,7 +3265,7 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 		}
 		bool eff_vis = is_element_effectively_visible(e.id, raw);
 		e.visible = eff_vis;
-		if (e.root->is_visible() != eff_vis) {
+		if (!is_pager_page && e.root->is_visible() != eff_vis) {
 			e.root->set_visible(eff_vis);
 		}
 		if (e.root->get_z_index() != e.layer_order) {
@@ -3264,6 +3355,41 @@ void ClockGearsUiDesignLayer::_relayout_elements(bool p_refresh_styles) {
 				rc->set_data_context(runtime_actor_id, runtime_equip_slot_idx, use_editor_test_data);
 				rc->configure(rlay, cbtns, MAX(0.20f, eff_scale), !preview_mode);
 			}
+		} else if (e.type == "pager" && e.content_root) {
+			Dictionary pg_cfg = e.config.has("pager") && e.config["pager"].get_type() == Variant::DICTIONARY
+					? Dictionary(e.config["pager"])
+					: ClockGearsDataManager::make_default_pager_config();
+			Rect2 local_full(Vector2(), e.content_root->get_size());
+			Rect2 body_r = ClockGearsDataManager::compute_pager_body_rect(local_full, pg_cfg, eff_scale);
+			if (e.pager_pages_clip) {
+				e.pager_pages_clip->set_position(body_r.position);
+				e.pager_pages_clip->set_size(body_r.size);
+			}
+			String im = String(pg_cfg.get("indicator_mode", "tabs")).strip_edges().to_lower();
+			String ip = String(pg_cfg.get("indicator_pos", "top")).strip_edges().to_lower();
+			if (e.pager_indicator_host) {
+				if (im == "none") {
+					e.pager_indicator_host->set_visible(false);
+				} else {
+					e.pager_indicator_host->set_visible(true);
+					Rect2 ir;
+					if (ip == "top") {
+						ir = Rect2(0, 0, local_full.size.x, MAX(0.0f, body_r.position.y));
+					} else if (ip == "bottom") {
+						float by = body_r.position.y + body_r.size.y;
+						ir = Rect2(0, by, local_full.size.x, MAX(0.0f, local_full.size.y - by));
+					} else if (ip == "left") {
+						ir = Rect2(0, 0, MAX(0.0f, body_r.position.x), local_full.size.y);
+					} else {
+						float bx = body_r.position.x + body_r.size.x;
+						ir = Rect2(bx, 0, MAX(0.0f, local_full.size.x - bx), local_full.size.y);
+					}
+					e.pager_indicator_host->set_position(ir.position);
+					e.pager_indicator_host->set_size(ir.size);
+					_rebuild_pager_indicator(e, eff_scale);
+				}
+			}
+			_sync_pager_pages_layout_and_vis(e);
 		}
 	}
 
@@ -3327,17 +3453,24 @@ bool ClockGearsUiDesignLayer::update_element_geometry_fast(const String &p_elem_
 			}
 		}
 		if (e.root && all_rects.has(e.id)) {
+			bool is_pager_page = (e.type == "folder" && String(e.config.get("role", "")) == "pager_page");
 			Rect2 er = all_rects[e.id];
 			Vector2 lpos = er.position;
-			if (!e.clip_ancestor_id.is_empty() && all_rects.has(e.clip_ancestor_id)) {
+			if (is_pager_page) {
+				lpos = Vector2();
+			} else if (!e.clip_ancestor_id.is_empty() && all_rects.has(e.clip_ancestor_id)) {
 				lpos = er.position - all_rects[e.clip_ancestor_id].position;
 			}
-			e.root->set_position(lpos);
+			if (!is_pager_page) {
+				e.root->set_position(lpos);
+			}
 			e.root->set_size(er.size);
 			e.root->set_z_index(e.layer_order);
 			bool eff_vis = is_element_effectively_visible(e.id, raw);
 			e.visible = eff_vis;
-			e.root->set_visible(eff_vis);
+			if (!is_pager_page) {
+				e.root->set_visible(eff_vis);
+			}
 			if (is_target && e.type == "radial" && e.content_root) {
 				if (ClockGearsRadialCanvas *rc = Object::cast_to<ClockGearsRadialCanvas>(e.content_root->find_child("ElemRadialCanvas", false, false))) {
 					Dictionary rlay = (e.config.has("layout") && e.config["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(e.config["layout"]).duplicate(true) : Dictionary();
@@ -3573,7 +3706,10 @@ void ClockGearsUiDesignLayer::refresh_live_values() {
 			}
 		}
 
-		e.root->set_visible(vis);
+		bool is_pager_page = (e.type == "folder" && String(e.config.get("role", "")) == "pager_page");
+		if (!is_pager_page) {
+			e.root->set_visible(vis);
+		}
 	}
 }
 
@@ -4650,6 +4786,21 @@ void ClockGearsUiDesignLayer::_notification(int p_what) {
 			}
 			_apply_transition_pose(t);
 		}
+		for (int i = 0; i < elements.size(); i++) {
+			ElementEntry &pe = elements.write[i];
+			if (pe.type != "pager" || !pe.pager_trans_active) continue;
+			pe.pager_trans_elapsed += dt;
+			float pt = (pe.pager_trans_duration > 0.0001) ? float(pe.pager_trans_elapsed / pe.pager_trans_duration) : 1.0f;
+			if (pt >= 1.0f) {
+				pt = 1.0f;
+				pe.pager_trans_active = false;
+			}
+			_apply_pager_transition_pose(pe, pt);
+			if (!pe.pager_trans_active) {
+				pe.pager_trans_from_idx = -1;
+				_sync_pager_pages_layout_and_vis(pe);
+			}
+		}
 		Dictionary bg = (active_design.has("background") && active_design["background"].get_type() == Variant::DICTIONARY)
 				? Dictionary(active_design["background"])
 				: Dictionary();
@@ -4710,12 +4861,18 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_radial_mode"), &ClockGearsUiDesignLayer::is_radial_mode);
 	ClassDB::bind_method(D_METHOD("get_layout_state_info"), &ClockGearsUiDesignLayer::get_layout_state_info);
 	ClassDB::bind_method(D_METHOD("trigger_action", "action"), &ClockGearsUiDesignLayer::trigger_action);
+	ClassDB::bind_method(D_METHOD("handle_runtime_input_event", "event"), &ClockGearsUiDesignLayer::handle_runtime_input_event);
+	ClassDB::bind_method(D_METHOD("set_pager_active_page", "pager_id", "page_idx", "animate", "play_sound"), &ClockGearsUiDesignLayer::set_pager_active_page, DEFVAL(true), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("step_pager_page", "pager_id", "delta", "animate"), &ClockGearsUiDesignLayer::step_pager_page, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("get_pager_active_page", "pager_id"), &ClockGearsUiDesignLayer::get_pager_active_page);
+	ClassDB::bind_method(D_METHOD("get_pager_info", "pager_id"), &ClockGearsUiDesignLayer::get_pager_info);
 	ClassDB::bind_method(D_METHOD("get_layout_bounds_info", "viewport_size"), &ClockGearsUiDesignLayer::get_layout_bounds_info, DEFVAL(Vector2()));
 
 	ADD_SIGNAL(MethodInfo("action_triggered", PropertyInfo(Variant::STRING, "action"), PropertyInfo(Variant::STRING, "element_id")));
 	ADD_SIGNAL(MethodInfo("radial_selection_changed", PropertyInfo(Variant::INT, "slot_index")));
 	ADD_SIGNAL(MethodInfo("data_entry_focused", PropertyInfo(Variant::STRING, "container_id"), PropertyInfo(Variant::DICTIONARY, "entry")));
 	ADD_SIGNAL(MethodInfo("data_entry_activated", PropertyInfo(Variant::STRING, "container_id"), PropertyInfo(Variant::INT, "slot_index"), PropertyInfo(Variant::DICTIONARY, "entry")));
+	ADD_SIGNAL(MethodInfo("pager_page_changed", PropertyInfo(Variant::STRING, "pager_id"), PropertyInfo(Variant::INT, "page_index"), PropertyInfo(Variant::STRING, "page_id")));
 }
 
 ClockGearsUiDesignLayer::ClockGearsUiDesignLayer() {
@@ -4786,6 +4943,12 @@ void ClockGearsUiDesignLayer::input(const Ref<InputEvent> &p_event) {
 
 void ClockGearsUiDesignLayer::unhandled_input(const Ref<InputEvent> &p_event) {
 	if (preview_mode || !is_visible_in_tree() || p_event.is_null() || !p_event->is_pressed() || p_event->is_echo()) {
+		return;
+	}
+	if (handle_runtime_input_event(p_event)) {
+		if (get_viewport()) {
+			get_viewport()->set_input_as_handled();
+		}
 		return;
 	}
 	Ref<InputEventKey> ek = p_event;
@@ -4920,6 +5083,557 @@ bool ClockGearsUiDesignLayer::execute_common_action_step(const Dictionary &p_ste
 			return true;
 		}
 		return false;
+	}
+	return false;
+}
+
+bool ClockGearsUiDesignLayer::does_input_match_trigger(const Ref<InputEvent> &p_event, const Dictionary &p_trig) {
+	if (p_event.is_null() || !p_event->is_pressed() || p_event->is_echo() || p_trig.is_empty()) {
+		return false;
+	}
+	String kind = String(p_trig.get("kind", "key")).strip_edges().to_lower();
+	if (kind == "key") {
+		Ref<InputEventKey> ek = p_event;
+		if (ek.is_null()) return false;
+		int64_t kc = int64_t(p_trig.get("keycode", 0));
+		if (kc > 0 && ((int64_t)ek->get_keycode() == kc || (int64_t)ek->get_physical_keycode() == kc)) {
+			return true;
+		}
+		String kn = String(p_trig.get("key_name", p_trig.get("key", ""))).strip_edges();
+		if (!kn.is_empty()) {
+			Key pk = find_keycode(kn);
+			if (pk != Key::NONE && (ek->get_keycode() == pk || ek->get_physical_keycode() == pk)) {
+				return true;
+			}
+		}
+		return false;
+	}
+	if (kind == "joy_button") {
+		Ref<InputEventJoypadButton> ej = p_event;
+		if (ej.is_null()) return false;
+		int jb = int(p_trig.get("joy_button", -1));
+		return jb >= 0 && ej->get_button_index() == (JoyButton)jb;
+	}
+	if (kind == "mouse_button") {
+		Ref<InputEventMouseButton> em = p_event;
+		if (em.is_null() || em->is_double_click()) return false;
+		int mb = int(p_trig.get("mouse_button", 0));
+		return mb > 0 && (int)em->get_button_index() == mb;
+	}
+	if (kind == "action") {
+		String an = String(p_trig.get("action_name", "")).strip_edges();
+		return !an.is_empty() && p_event->is_action_pressed(an, false);
+	}
+	return false;
+}
+
+bool ClockGearsUiDesignLayer::does_input_match_any_trigger(const Ref<InputEvent> &p_event, const Array &p_trigs) {
+	for (int i = 0; i < p_trigs.size(); i++) {
+		if (p_trigs[i].get_type() == Variant::DICTIONARY && does_input_match_trigger(p_event, Dictionary(p_trigs[i]))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void ClockGearsUiDesignLayer::_execute_action_list(const Array &p_actions, const String &p_src_id) {
+	for (int i = 0; i < p_actions.size(); i++) {
+		if (p_actions[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary st = p_actions[i];
+		if (!execute_common_action_step(st, this)) {
+			String stype = String(st.get("type", st.get("action", ""))).strip_edges().to_lower();
+			if (!stype.is_empty()) {
+				emit_signal("action_triggered", stype, p_src_id);
+			}
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_save_pager_page_state(ElementEntry &r_entry, const String &p_page_id) {
+	if (p_page_id.is_empty()) return;
+	Dictionary pg_cfg = r_entry.config.has("pager") && r_entry.config["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(r_entry.config["pager"])
+			: Dictionary();
+	bool rem_scroll = pg_cfg.has("remember_scroll") ? bool(pg_cfg["remember_scroll"]) : true;
+	bool rem_focus = pg_cfg.has("remember_focus") ? bool(pg_cfg["remember_focus"]) : true;
+	Viewport *vp = get_viewport();
+	Control *focus_owner = vp ? vp->gui_get_focus_owner() : nullptr;
+
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &ce = elements[i];
+		if (ce.clip_ancestor_id != p_page_id && ce.parent_id != p_page_id) continue;
+		if (rem_scroll && ce.data_scroll) {
+			r_entry.pager_page_scroll[p_page_id] = Vector2(float(ce.data_scroll->get_h_scroll()), float(ce.data_scroll->get_v_scroll()));
+		}
+		if (rem_focus && focus_owner) {
+			if (ce.button == focus_owner) {
+				r_entry.pager_page_focus_elem[p_page_id] = ce.id;
+			} else if (ce.data_items_canvas) {
+				for (int bi = 0; bi < ce.data_cell_buttons.size(); bi++) {
+					if (ce.data_cell_buttons[bi] == focus_owner) {
+						r_entry.pager_page_focus_elem[p_page_id] = ce.id + "#" + itos(bi);
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_restore_pager_page_state(ElementEntry &r_entry, const String &p_page_id) {
+	if (p_page_id.is_empty()) return;
+	Dictionary pg_cfg = r_entry.config.has("pager") && r_entry.config["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(r_entry.config["pager"])
+			: Dictionary();
+	bool rem_scroll = pg_cfg.has("remember_scroll") ? bool(pg_cfg["remember_scroll"]) : true;
+	bool rem_focus = pg_cfg.has("remember_focus") ? bool(pg_cfg["remember_focus"]) : true;
+	if (rem_scroll && r_entry.pager_page_scroll.has(p_page_id)) {
+		Vector2 sv = r_entry.pager_page_scroll[p_page_id];
+		for (int i = 0; i < elements.size(); i++) {
+			ElementEntry &ce = elements.write[i];
+			if ((ce.clip_ancestor_id == p_page_id || ce.parent_id == p_page_id) && ce.data_scroll) {
+				ce.data_scroll->set_h_scroll(int(Math::round(sv.x)));
+				ce.data_scroll->set_v_scroll(int(Math::round(sv.y)));
+				break;
+			}
+		}
+	}
+	if (rem_focus && r_entry.pager_page_focus_elem.has(p_page_id)) {
+		String tok = r_entry.pager_page_focus_elem[p_page_id];
+		int hash_pos = tok.find("#");
+		String eid = (hash_pos >= 0) ? tok.substr(0, hash_pos) : tok;
+		int slot_i = (hash_pos >= 0) ? tok.substr(hash_pos + 1).to_int() : -1;
+		for (int i = 0; i < elements.size(); i++) {
+			const ElementEntry &ce = elements[i];
+			if (ce.id != eid) continue;
+			if (slot_i >= 0 && slot_i < ce.data_cell_buttons.size() && ce.data_cell_buttons[slot_i] && ce.data_cell_buttons[slot_i]->is_visible_in_tree()) {
+				ce.data_cell_buttons[slot_i]->grab_focus();
+				return;
+			}
+			if (ce.button && ce.button->is_visible_in_tree()) {
+				ce.button->grab_focus();
+				return;
+			}
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_sync_pager_pages_layout_and_vis(ElementEntry &r_entry) {
+	if (r_entry.type != "pager") return;
+	int cnt = r_entry.pager_page_ids.size();
+	if (cnt == 0) return;
+	r_entry.pager_active_idx = CLAMP(r_entry.pager_active_idx, 0, cnt - 1);
+	String active_pid = r_entry.pager_page_ids[r_entry.pager_active_idx];
+	String trans_pid = (r_entry.pager_trans_active && r_entry.pager_trans_from_idx >= 0 && r_entry.pager_trans_from_idx < cnt)
+			? r_entry.pager_page_ids[r_entry.pager_trans_from_idx]
+			: String();
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &pe = elements.write[i];
+		if (pe.type != "folder" || String(pe.config.get("role", "")) != "pager_page" || pe.parent_id != r_entry.id || !pe.root) {
+			continue;
+		}
+		bool show_page = (pe.id == active_pid) || (!trans_pid.is_empty() && pe.id == trans_pid);
+		pe.root->set_visible(show_page);
+		if (!r_entry.pager_trans_active) {
+			pe.root->set_position(Vector2());
+			pe.root->set_scale(Vector2(1.0f, 1.0f));
+			pe.root->set_modulate(Color(1, 1, 1, 1));
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_apply_pager_transition_pose(ElementEntry &r_entry, float p_t) {
+	if (r_entry.type != "pager" || !r_entry.pager_pages_clip) return;
+	int cnt = r_entry.pager_page_ids.size();
+	if (r_entry.pager_active_idx < 0 || r_entry.pager_active_idx >= cnt) return;
+	String to_id = r_entry.pager_page_ids[r_entry.pager_active_idx];
+	String from_id = (r_entry.pager_trans_from_idx >= 0 && r_entry.pager_trans_from_idx < cnt)
+			? r_entry.pager_page_ids[r_entry.pager_trans_from_idx]
+			: String();
+
+	Dictionary pg_cfg = r_entry.config.has("pager") && r_entry.config["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(r_entry.config["pager"])
+			: ClockGearsDataManager::make_default_pager_config();
+	String tt = String(pg_cfg.get("transition_type", "slide")).strip_edges().to_lower();
+	String tc = String(pg_cfg.get("transition_curve", "ease_out")).strip_edges().to_lower();
+	float t = CLAMP(p_t, 0.0f, 1.0f);
+	float e = t;
+	if (tc == "ease_out") {
+		float inv = 1.0f - t;
+		e = 1.0f - inv * inv * inv;
+	} else if (tc == "ease_in_out") {
+		e = (t < 0.5f) ? (4.0f * t * t * t) : (1.0f - Math::pow(-2.0f * t + 2.0f, 3.0f) * 0.5f);
+	} else if (tc == "back") {
+		float c1 = 1.70158f;
+		float c3 = c1 + 1.0f;
+		float tm1 = t - 1.0f;
+		e = 1.0f + c3 * tm1 * tm1 * tm1 + c1 * tm1 * tm1;
+	}
+
+	Control *from_root = nullptr;
+	Control *to_root = nullptr;
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == from_id) from_root = elements[i].root;
+		if (elements[i].id == to_id) to_root = elements[i].root;
+	}
+	float w = MAX(32.0f, r_entry.pager_pages_clip->get_size().x);
+	float dir = float(r_entry.pager_trans_dir >= 0 ? 1 : -1);
+	if (tt == "slide") {
+		if (from_root) {
+			from_root->set_visible(t < 1.0f);
+			from_root->set_position(Vector2(-dir * w * e, 0.0f));
+			from_root->set_modulate(Color(1, 1, 1, 1));
+			from_root->set_scale(Vector2(1, 1));
+		}
+		if (to_root) {
+			to_root->set_visible(true);
+			to_root->set_position(Vector2(dir * w * (1.0f - e), 0.0f));
+			to_root->set_modulate(Color(1, 1, 1, 1));
+			to_root->set_scale(Vector2(1, 1));
+		}
+	} else if (tt == "fade") {
+		if (from_root) {
+			from_root->set_visible(t < 1.0f);
+			from_root->set_position(Vector2());
+			from_root->set_modulate(Color(1, 1, 1, CLAMP(1.0f - e, 0.0f, 1.0f)));
+		}
+		if (to_root) {
+			to_root->set_visible(true);
+			to_root->set_position(Vector2());
+			to_root->set_modulate(Color(1, 1, 1, CLAMP(e, 0.0f, 1.0f)));
+		}
+	} else if (tt == "scale") {
+		if (from_root) {
+			from_root->set_visible(t < 1.0f);
+			from_root->set_pivot_offset(from_root->get_size() * 0.5f);
+			float sc = Math::lerp(1.0f, 0.88f, CLAMP(e, 0.0f, 1.0f));
+			from_root->set_scale(Vector2(sc, sc));
+			from_root->set_modulate(Color(1, 1, 1, CLAMP(1.0f - e, 0.0f, 1.0f)));
+		}
+		if (to_root) {
+			to_root->set_visible(true);
+			to_root->set_pivot_offset(to_root->get_size() * 0.5f);
+			float sc = Math::lerp(0.88f, 1.0f, CLAMP(e, 0.0f, 1.0f));
+			to_root->set_scale(Vector2(sc, sc));
+			to_root->set_modulate(Color(1, 1, 1, CLAMP(e, 0.0f, 1.0f)));
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_rebuild_pager_indicator(ElementEntry &r_entry, float p_scale) {
+	if (r_entry.type != "pager" || !r_entry.pager_indicator_host) return;
+	Control *host = r_entry.pager_indicator_host;
+	for (int ci = host->get_child_count() - 1; ci >= 0; ci--) {
+		Node *ch = host->get_child(ci);
+		ch->set_name(vformat("_cg_old_ind_%d", ci));
+		host->remove_child(ch);
+		ch->queue_free();
+	}
+	Dictionary pg_cfg = r_entry.config.has("pager") && r_entry.config["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(r_entry.config["pager"])
+			: ClockGearsDataManager::make_default_pager_config();
+	String im = String(pg_cfg.get("indicator_mode", "tabs")).strip_edges().to_lower();
+	if (im == "none") return;
+	String ip = String(pg_cfg.get("indicator_pos", "top")).strip_edges().to_lower();
+	bool vertical = (ip == "left" || ip == "right");
+	bool clickable = pg_cfg.has("click_indicator_switches") ? bool(pg_cfg["click_indicator_switches"]) : true;
+
+	BoxContainer *box = vertical ? static_cast<BoxContainer *>(memnew(VBoxContainer)) : static_cast<BoxContainer *>(memnew(HBoxContainer));
+	box->set_name("PagerIndBox");
+	box->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	box->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	box->add_theme_constant_override("separation", MAX(2, int(Math::round(6.0f * p_scale))));
+	host->add_child(box);
+
+	Array raw_els = active_design.get("elements", Array());
+	HashMap<String, Dictionary> page_by_id;
+	for (int i = 0; i < raw_els.size(); i++) {
+		if (raw_els[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary ed = raw_els[i];
+		page_by_id[String(ed.get("id", ""))] = ed;
+	}
+	bool int_sc = bool(r_entry.config.get("integer_scale", false));
+
+	auto style_ind_btn = [&](Button *p_b, bool p_active) {
+		ClockGearsWindowStyleManager::apply_button_style(p_b, window_type_fallback, Dictionary());
+		Ref<StyleBoxFlat> sb;
+		sb.instantiate();
+		sb->set_bg_color(p_active ? Color(0.24f, 0.17f, 0.08f, 0.94f) : Color(0.08f, 0.10f, 0.14f, 0.80f));
+		sb->set_border_color(p_active ? Color(0.96f, 0.74f, 0.32f, 1.0f) : Color(0.45f, 0.48f, 0.56f, 0.55f));
+		sb->set_border_width_all(MAX(1, int(Math::round((p_active ? 2.0f : 1.0f) * p_scale))));
+		sb->set_corner_radius_all(MAX(4, int(Math::round(6.0f * p_scale))));
+		sb->set_content_margin(SIDE_LEFT, 8.0f * p_scale);
+		sb->set_content_margin(SIDE_RIGHT, 8.0f * p_scale);
+		sb->set_content_margin(SIDE_TOP, 3.0f * p_scale);
+		sb->set_content_margin(SIDE_BOTTOM, 3.0f * p_scale);
+		p_b->add_theme_style_override("normal", sb);
+		p_b->add_theme_style_override("hover", sb);
+		p_b->add_theme_style_override("pressed", sb);
+		p_b->add_theme_color_override("font_color", p_active ? Color(1.0f, 0.90f, 0.62f, 1.0f) : Color(0.78f, 0.82f, 0.90f, 0.9f));
+		p_b->add_theme_font_size_override("font_size", MAX(10, int(Math::round(13.0f * p_scale))));
+	};
+
+	if (im == "arrows") {
+		Button *b_prev = memnew(Button("<"));
+		b_prev->set_name("PagerPrevBtn");
+		b_prev->set_focus_mode(FOCUS_NONE);
+		style_ind_btn(b_prev, false);
+		if (clickable) b_prev->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_pager_arrow_pressed).bind(r_entry.id, -1));
+		box->add_child(b_prev);
+
+		String cur_name = "-";
+		String cur_icon;
+		if (r_entry.pager_active_idx >= 0 && r_entry.pager_active_idx < r_entry.pager_page_ids.size()) {
+			String pid = r_entry.pager_page_ids[r_entry.pager_active_idx];
+			if (page_by_id.has(pid)) {
+				cur_name = String(page_by_id[pid].get("name", pid));
+				cur_icon = String(page_by_id[pid].get("page_icon", ""));
+			}
+		}
+		Button *b_mid = memnew(Button(cur_name));
+		b_mid->set_focus_mode(FOCUS_NONE);
+		b_mid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		if (!cur_icon.is_empty()) {
+			Ref<Texture2D> ic = ClockGearsWindowStyleManager::load_texture_safe(cur_icon);
+			if (ic.is_valid()) {
+				b_mid->set_button_icon(ic);
+				b_mid->set_expand_icon(true);
+				if (int_sc) b_mid->set_texture_filter(TEXTURE_FILTER_NEAREST);
+			}
+		}
+		style_ind_btn(b_mid, true);
+		box->add_child(b_mid);
+
+		Button *b_next = memnew(Button(">"));
+		b_next->set_name("PagerNextBtn");
+		b_next->set_focus_mode(FOCUS_NONE);
+		style_ind_btn(b_next, false);
+		if (clickable) b_next->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_pager_arrow_pressed).bind(r_entry.id, 1));
+		box->add_child(b_next);
+		return;
+	}
+
+	for (int i = 0; i < r_entry.pager_page_ids.size(); i++) {
+		String pid = r_entry.pager_page_ids[i];
+		Dictionary pd = page_by_id.has(pid) ? page_by_id[pid] : Dictionary();
+		String pname = String(pd.get("name", String::utf8("Página ") + itos(i + 1)));
+		String picon = String(pd.get("page_icon", "")).strip_edges();
+		bool is_act = (i == r_entry.pager_active_idx);
+		Button *tb = memnew(Button);
+		tb->set_name(vformat("PagerInd_%d", i));
+		tb->set_focus_mode(FOCUS_NONE);
+		tb->set_meta("pager_id", r_entry.id);
+		tb->set_meta("page_idx", i);
+		if (im == "dots") {
+			tb->set_text(is_act ? String::utf8("●") : String::utf8("○"));
+			tb->set_custom_minimum_size(Size2(24 * p_scale, 24 * p_scale));
+			tb->set_tooltip_text(pname);
+		} else {
+			tb->set_text(pname);
+			tb->set_clip_text(true);
+			tb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			if (!vertical) tb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			if (!picon.is_empty()) {
+				Ref<Texture2D> ic = ClockGearsWindowStyleManager::load_texture_safe(picon);
+				if (ic.is_valid()) {
+					tb->set_button_icon(ic);
+					tb->set_expand_icon(true);
+					if (int_sc) tb->set_texture_filter(TEXTURE_FILTER_NEAREST);
+				}
+			}
+		}
+		style_ind_btn(tb, is_act);
+		if (clickable) {
+			tb->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_pager_tab_pressed).bind(r_entry.id, i));
+		}
+		box->add_child(tb);
+	}
+}
+
+void ClockGearsUiDesignLayer::_on_pager_tab_pressed(const String &p_pager_id, int p_page_idx) {
+	set_pager_active_page(p_pager_id, p_page_idx, !preview_mode, !preview_mode);
+}
+
+void ClockGearsUiDesignLayer::_on_pager_arrow_pressed(const String &p_pager_id, int p_delta) {
+	step_pager_page(p_pager_id, p_delta, !preview_mode);
+}
+
+void ClockGearsUiDesignLayer::_on_pager_root_gui_input(const Ref<InputEvent> &p_event, const String &p_pager_id) {
+	if (preview_mode || p_event.is_null() || !p_event->is_pressed()) return;
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_null()) return;
+	MouseButton bi = mb->get_button_index();
+	if (bi != MouseButton::WHEEL_UP && bi != MouseButton::WHEEL_DOWN) return;
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == p_pager_id && elements[i].type == "pager") {
+			Dictionary pg_cfg = elements[i].config.has("pager") && elements[i].config["pager"].get_type() == Variant::DICTIONARY
+					? Dictionary(elements[i].config["pager"])
+					: Dictionary();
+			if (bool(pg_cfg.get("mouse_wheel_switches", false))) {
+				step_pager_page(p_pager_id, (bi == MouseButton::WHEEL_DOWN) ? 1 : -1, true);
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+			}
+			break;
+		}
+	}
+}
+
+bool ClockGearsUiDesignLayer::set_pager_active_page(const String &p_pager_id, int p_page_idx, bool p_animate, bool p_play_sound) {
+	String low = p_pager_id.strip_edges().to_lower();
+	int pe_idx = -1;
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].type == "pager" && (low.is_empty() || elements[i].id.to_lower() == low)) {
+			pe_idx = i;
+			break;
+		}
+	}
+	if (pe_idx < 0) return false;
+	ElementEntry &pe = elements.write[pe_idx];
+	int cnt = pe.pager_page_ids.size();
+	if (cnt <= 0) return false;
+	Dictionary pg_cfg = pe.config.has("pager") && pe.config["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(pe.config["pager"])
+			: ClockGearsDataManager::make_default_pager_config();
+	bool wrap = pg_cfg.has("wrap_around") ? bool(pg_cfg["wrap_around"]) : true;
+	int target = p_page_idx;
+	bool wrapped = false;
+	if (target < 0) {
+		if (!wrap) return false;
+		target = cnt - 1;
+		wrapped = true;
+	} else if (target >= cnt) {
+		if (!wrap) return false;
+		target = 0;
+		wrapped = true;
+	}
+	int prev = pe.pager_active_idx;
+	if (target == prev && !pe.pager_trans_active) {
+		return false;
+	}
+	String prev_pid = (prev >= 0 && prev < cnt) ? pe.pager_page_ids[prev] : String();
+	if (!preview_mode && !prev_pid.is_empty()) {
+		_save_pager_page_state(pe, prev_pid);
+	}
+	int dir = 1;
+	if (wrapped) {
+		dir = (p_page_idx >= cnt) ? 1 : -1;
+	} else {
+		dir = (target >= prev) ? 1 : -1;
+	}
+	pe.pager_active_idx = target;
+	String next_pid = pe.pager_page_ids[target];
+	if (p_play_sound && !preview_mode) {
+		String s_wrap = String(pg_cfg.get("sound_wrap", "")).strip_edges();
+		String s_chg = String(pg_cfg.get("sound_change", "")).strip_edges();
+		String spath = (wrapped && !s_wrap.is_empty()) ? s_wrap : s_chg;
+		if (!spath.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_se(spath, 1.0f, 1.0f);
+			}
+		}
+	}
+
+	String tt = String(pg_cfg.get("transition_type", "slide")).strip_edges().to_lower();
+	double dur = CLAMP(double(pg_cfg.get("transition_duration", 0.22)), 0.05, 1.5);
+	if (p_animate && !preview_mode && tt != "none" && dur > 0.01 && prev != target) {
+		pe.pager_trans_active = true;
+		pe.pager_trans_from_idx = prev;
+		pe.pager_trans_dir = dir;
+		pe.pager_trans_elapsed = 0.0;
+		pe.pager_trans_duration = dur;
+		_sync_pager_pages_layout_and_vis(pe);
+		_apply_pager_transition_pose(pe, 0.0f);
+	} else {
+		pe.pager_trans_active = false;
+		pe.pager_trans_from_idx = -1;
+		_sync_pager_pages_layout_and_vis(pe);
+	}
+
+	float p_acc = 1.0f;
+	HashMap<String, float> scales = compute_all_element_scales(active_design.get("elements", Array()));
+	if (scales.has(pe.id)) p_acc = scales[pe.id];
+	_rebuild_pager_indicator(pe, current_ui_scale * p_acc);
+
+	if (!preview_mode) {
+		Array raw_els = active_design.get("elements", Array());
+		for (int i = 0; i < raw_els.size(); i++) {
+			if (raw_els[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary pd = raw_els[i];
+			if (String(pd.get("id", "")) == next_pid && pd.has("enter_actions") && pd["enter_actions"].get_type() == Variant::ARRAY) {
+				_execute_action_list(Array(pd["enter_actions"]), next_pid);
+				break;
+			}
+		}
+		_restore_pager_page_state(pe, next_pid);
+	}
+	emit_signal("pager_page_changed", pe.id, target, next_pid);
+	return true;
+}
+
+bool ClockGearsUiDesignLayer::step_pager_page(const String &p_pager_id, int p_delta, bool p_animate) {
+	if (p_delta == 0) return false;
+	String low = p_pager_id.strip_edges().to_lower();
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].type == "pager" && (low.is_empty() || elements[i].id.to_lower() == low)) {
+			return set_pager_active_page(elements[i].id, elements[i].pager_active_idx + p_delta, p_animate, true);
+		}
+	}
+	return false;
+}
+
+int ClockGearsUiDesignLayer::get_pager_active_page(const String &p_pager_id) const {
+	String low = p_pager_id.strip_edges().to_lower();
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].type == "pager" && (low.is_empty() || elements[i].id.to_lower() == low)) {
+			return elements[i].pager_active_idx;
+		}
+	}
+	return -1;
+}
+
+Dictionary ClockGearsUiDesignLayer::get_pager_info(const String &p_pager_id) const {
+	Dictionary out;
+	String low = p_pager_id.strip_edges().to_lower();
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].type == "pager" && (low.is_empty() || elements[i].id.to_lower() == low)) {
+			const ElementEntry &pe = elements[i];
+			out["id"] = pe.id;
+			out["active_index"] = pe.pager_active_idx;
+			out["page_count"] = pe.pager_page_ids.size();
+			out["transition_active"] = pe.pager_trans_active;
+			Array pids;
+			for (int k = 0; k < pe.pager_page_ids.size(); k++) pids.push_back(pe.pager_page_ids[k]);
+			out["page_ids"] = pids;
+			out["active_page_id"] = (pe.pager_active_idx >= 0 && pe.pager_active_idx < pe.pager_page_ids.size()) ? pe.pager_page_ids[pe.pager_active_idx] : String();
+			return out;
+		}
+	}
+	return out;
+}
+
+bool ClockGearsUiDesignLayer::handle_runtime_input_event(const Ref<InputEvent> &p_event) {
+	if (preview_mode || !is_visible_in_tree() || p_event.is_null() || !p_event->is_pressed() || p_event->is_echo()) {
+		return false;
+	}
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &pe = elements[i];
+		if (pe.type != "pager" || !pe.visible || !pe.root || !pe.root->is_visible_in_tree()) {
+			continue;
+		}
+		Dictionary pg_cfg = pe.config.has("pager") && pe.config["pager"].get_type() == Variant::DICTIONARY
+				? Dictionary(pe.config["pager"])
+				: ClockGearsDataManager::make_default_pager_config();
+		Array prev_tr = pg_cfg.has("prev_triggers") && pg_cfg["prev_triggers"].get_type() == Variant::ARRAY ? Array(pg_cfg["prev_triggers"]) : Array();
+		Array next_tr = pg_cfg.has("next_triggers") && pg_cfg["next_triggers"].get_type() == Variant::ARRAY ? Array(pg_cfg["next_triggers"]) : Array();
+		if (does_input_match_any_trigger(p_event, prev_tr)) {
+			if (step_pager_page(pe.id, -1, true)) {
+				return true;
+			}
+		} else if (does_input_match_any_trigger(p_event, next_tr)) {
+			if (step_pager_page(pe.id, 1, true)) {
+				return true;
+			}
+		}
 	}
 	return false;
 }

@@ -1640,6 +1640,12 @@ void ClockGearsGameMenu::unhandled_input(const Ref<InputEvent> &p_event) {
 
 	// Stick analógico / D-pad / botones del mando mientras el menú está abierto
 	if (menu_open) {
+		if (custom_ui_layer && custom_ui_layer->is_visible() && custom_ui_layer->handle_runtime_input_event(p_event)) {
+			if (active_vp) {
+				active_vp->set_input_as_handled();
+			}
+			return;
+		}
 		if (custom_ui_layer && custom_ui_layer->is_visible() && custom_ui_layer->is_radial_mode()) {
 			Ref<InputEventJoypadMotion> jm = p_event;
 			if (jm.is_valid()) {

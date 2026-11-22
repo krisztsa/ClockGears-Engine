@@ -4831,8 +4831,11 @@ static String _cg_norm_ui_elem_type(const Variant &p_val) {
 	String t = String(p_val).strip_edges().to_lower();
 	if (t == "image" || t == "text" || t == "button" || t == "frame" ||
 			t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "variable" ||
-			t == "container" || t == "radial" || t == "widget" || t == "folder") {
+			t == "container" || t == "radial" || t == "widget" || t == "folder" || t == "pager") {
 		return t;
+	}
+	if (t == "paginador" || t == "paginas" || t == String::utf8("páginas")) {
+		return "pager";
 	}
 	if (t == "carpeta") {
 		return "folder";
@@ -6445,6 +6448,135 @@ static Array _cg_make_radial_container_with_children(ClockGearsDataManager *p_dm
 	return out;
 }
 
+Dictionary ClockGearsDataManager::make_default_pager_config() {
+	Dictionary pg;
+	Array prev_tr;
+	{
+		Dictionary tk;
+		tk["kind"] = "key";
+		tk["keycode"] = int64_t(Key::Q);
+		tk["key_name"] = "Q";
+		prev_tr.push_back(normalize_menu_trigger(tk));
+		Dictionary tj;
+		tj["kind"] = "joy_button";
+		tj["joy_button"] = int(JoyButton::LEFT_SHOULDER);
+		prev_tr.push_back(normalize_menu_trigger(tj));
+	}
+	Array next_tr;
+	{
+		Dictionary tk;
+		tk["kind"] = "key";
+		tk["keycode"] = int64_t(Key::E);
+		tk["key_name"] = "E";
+		next_tr.push_back(normalize_menu_trigger(tk));
+		Dictionary tj;
+		tj["kind"] = "joy_button";
+		tj["joy_button"] = int(JoyButton::RIGHT_SHOULDER);
+		next_tr.push_back(normalize_menu_trigger(tj));
+	}
+	pg["prev_triggers"] = prev_tr;
+	pg["next_triggers"] = next_tr;
+	pg["wrap_around"] = true;
+	pg["transition_type"] = "slide";
+	pg["transition_duration"] = 0.22;
+	pg["transition_curve"] = "ease_out";
+	pg["indicator_mode"] = "tabs";
+	pg["indicator_pos"] = "top";
+	pg["indicator_size"] = 40;
+	pg["click_indicator_switches"] = true;
+	pg["mouse_wheel_switches"] = false;
+	pg["remember_focus"] = true;
+	pg["remember_scroll"] = true;
+	pg["sound_change"] = "";
+	pg["sound_wrap"] = "";
+	pg["default_page"] = 0;
+	pg["active_editor_page"] = 0;
+	return pg;
+}
+
+Dictionary ClockGearsDataManager::normalize_pager_config(const Dictionary &p_cfg) {
+	Dictionary def = make_default_pager_config();
+	Dictionary out;
+	auto norm_trigs = [&](const Variant &p_raw, const Array &p_fallback) -> Array {
+		if (p_raw.get_type() != Variant::ARRAY) {
+			return p_fallback.duplicate(true);
+		}
+		Array arr = p_raw;
+		Array res;
+		for (int i = 0; i < arr.size(); i++) {
+			if (arr[i].get_type() == Variant::DICTIONARY) {
+				Dictionary nt = normalize_menu_trigger(Dictionary(arr[i]));
+				if (!nt.is_empty()) {
+					res.push_back(nt);
+				}
+			}
+		}
+		return res;
+	};
+	out["prev_triggers"] = norm_trigs(p_cfg.get("prev_triggers", def["prev_triggers"]), Array(def["prev_triggers"]));
+	out["next_triggers"] = norm_trigs(p_cfg.get("next_triggers", def["next_triggers"]), Array(def["next_triggers"]));
+	out["wrap_around"] = p_cfg.has("wrap_around") ? bool(p_cfg["wrap_around"]) : true;
+	String tt = String(p_cfg.get("transition_type", "slide")).strip_edges().to_lower();
+	if (tt != "none" && tt != "slide" && tt != "fade" && tt != "scale") {
+		tt = "slide";
+	}
+	out["transition_type"] = tt;
+	out["transition_duration"] = CLAMP(double(p_cfg.get("transition_duration", 0.22)), 0.05, 1.5);
+	String tc = String(p_cfg.get("transition_curve", "ease_out")).strip_edges().to_lower();
+	if (tc != "ease_out" && tc != "ease_in_out" && tc != "linear" && tc != "back") {
+		tc = "ease_out";
+	}
+	out["transition_curve"] = tc;
+	String im = String(p_cfg.get("indicator_mode", "tabs")).strip_edges().to_lower();
+	if (im != "tabs" && im != "dots" && im != "arrows" && im != "none") {
+		im = "tabs";
+	}
+	out["indicator_mode"] = im;
+	String ip = String(p_cfg.get("indicator_pos", "top")).strip_edges().to_lower();
+	if (ip != "top" && ip != "bottom" && ip != "left" && ip != "right") {
+		ip = "top";
+	}
+	out["indicator_pos"] = ip;
+	out["indicator_size"] = CLAMP(int(p_cfg.get("indicator_size", 40)), 24, 140);
+	out["click_indicator_switches"] = p_cfg.has("click_indicator_switches") ? bool(p_cfg["click_indicator_switches"]) : true;
+	out["mouse_wheel_switches"] = p_cfg.has("mouse_wheel_switches") ? bool(p_cfg["mouse_wheel_switches"]) : false;
+	out["remember_focus"] = p_cfg.has("remember_focus") ? bool(p_cfg["remember_focus"]) : true;
+	out["remember_scroll"] = p_cfg.has("remember_scroll") ? bool(p_cfg["remember_scroll"]) : true;
+	out["sound_change"] = String(p_cfg.get("sound_change", "")).strip_edges();
+	out["sound_wrap"] = String(p_cfg.get("sound_wrap", "")).strip_edges();
+	out["default_page"] = MAX(0, int(p_cfg.get("default_page", 0)));
+	out["active_editor_page"] = MAX(0, int(p_cfg.get("active_editor_page", 0)));
+	return out;
+}
+
+Rect2 ClockGearsDataManager::compute_pager_body_rect(const Rect2 &p_pager_rect, const Dictionary &p_pager_cfg, float p_scale) {
+	String im = String(p_pager_cfg.get("indicator_mode", "tabs")).strip_edges().to_lower();
+	if (im == "none") {
+		return p_pager_rect;
+	}
+	String ip = String(p_pager_cfg.get("indicator_pos", "top")).strip_edges().to_lower();
+	float ind = float(CLAMP(int(p_pager_cfg.get("indicator_size", 40)), 24, 140)) * MAX(0.1f, p_scale);
+	Rect2 r = p_pager_rect;
+	if (ip == "top") {
+		ind = MIN(ind, MAX(0.0f, r.size.y - 24.0f * p_scale));
+		r.position.y += ind;
+		r.size.y -= ind;
+	} else if (ip == "bottom") {
+		ind = MIN(ind, MAX(0.0f, r.size.y - 24.0f * p_scale));
+		r.size.y -= ind;
+	} else if (ip == "left") {
+		ind = MIN(ind, MAX(0.0f, r.size.x - 24.0f * p_scale));
+		r.position.x += ind;
+		r.size.x -= ind;
+	} else if (ip == "right") {
+		ind = MIN(ind, MAX(0.0f, r.size.x - 24.0f * p_scale));
+		r.size.x -= ind;
+	}
+	r.size.x = MAX(16.0f, r.size.x);
+	r.size.y = MAX(16.0f, r.size.y);
+	return r;
+}
+
 Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, const String &p_screen_id) {
 	String etype = _cg_norm_ui_elem_type(p_type);
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
@@ -6524,6 +6656,16 @@ Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, 
 		el["offset_y"] = 0;
 		el["width"] = 0;
 		el["height"] = 0;
+	} else if (etype == "pager") {
+		el["name"] = "Paginador";
+		el["anchor"] = "top_left";
+		el["offset_x"] = 48;
+		el["offset_y"] = 56;
+		el["width"] = 600;
+		el["height"] = 400;
+		el["layer_order"] = 2;
+		el["window_style_id"] = "";
+		el["pager"] = make_default_pager_config();
 	}
 	el["parent_id"] = "";
 	el["locked"] = false;
@@ -6749,6 +6891,23 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	}
 	if (p_elem.has("role")) {
 		out["role"] = String(p_elem["role"]).strip_edges();
+	}
+	if (p_elem.has("page_icon")) {
+		out["page_icon"] = String(p_elem["page_icon"]).strip_edges();
+	}
+	if (p_elem.has("enter_actions") && p_elem["enter_actions"].get_type() == Variant::ARRAY) {
+		Array eacts_in = p_elem["enter_actions"];
+		Array eacts_out;
+		for (int ai = 0; ai < eacts_in.size(); ai++) {
+			if (eacts_in[ai].get_type() == Variant::DICTIONARY) {
+				eacts_out.push_back(_cg_norm_button_action_step(Dictionary(eacts_in[ai])));
+			}
+		}
+		out["enter_actions"] = eacts_out;
+	}
+	if (etype == "pager") {
+		Dictionary raw_pg = (p_elem.has("pager") && p_elem["pager"].get_type() == Variant::DICTIONARY) ? Dictionary(p_elem["pager"]) : Dictionary();
+		out["pager"] = normalize_pager_config(raw_pg);
 	}
 	if (p_elem.has("slot_index")) {
 		out["slot_index"] = MAX(0, int(p_elem["slot_index"]));
@@ -8986,6 +9145,12 @@ String ClockGearsDataManager::add_ui_element(const String &p_screen_id, const Di
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
 	Dictionary d = get_ui_screen_design(sid);
 	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	if (!bool(d.get("custom_enabled", false)) && elems.is_empty()) {
+		Dictionary def_tpl = get_default_ui_screen_template(sid);
+		if (def_tpl.has("elements") && def_tpl["elements"].get_type() == Variant::ARRAY) {
+			elems = Array(def_tpl["elements"]).duplicate(true);
+		}
+	}
 	Dictionary ne = normalize_ui_element(p_elem, elems.size() + 1, sid);
 
 	ne.erase("_skip_auto_radial_slots");
@@ -9043,10 +9208,231 @@ String ClockGearsDataManager::add_ui_element(const String &p_screen_id, const Di
 		}
 	}
 
+	if (!p_elem.has("_no_default_pages") && String(ne.get("type", "")).to_lower() == "pager") {
+		bool has_pg = false;
+		for (int i = 0; i < elems.size(); i++) {
+			if (elems[i].get_type() == Variant::DICTIONARY && String(Dictionary(elems[i]).get("parent_id", "")).to_lower() == uid.to_lower()) {
+				has_pg = true;
+				break;
+			}
+		}
+		if (!has_pg) {
+			Dictionary pcfg = ne.has("pager") && ne["pager"].get_type() == Variant::DICTIONARY ? Dictionary(ne["pager"]) : make_default_pager_config();
+			Rect2 body_r = compute_pager_body_rect(Rect2(0, 0, float(ne.get("width", 600)), float(ne.get("height", 400))), pcfg, 1.0f);
+			int base_l = int(ne.get("layer_order", 2)) + 1;
+			for (int pi = 1; pi <= 2; pi++) {
+				Dictionary pf = make_default_ui_element("folder", sid);
+				String pid_base = uid + "_pag_" + itos(pi);
+				String pf_id = pid_base;
+				int psuf = 2;
+				while (existing.has(pf_id)) {
+					pf_id = pid_base + "_" + itos(psuf++);
+				}
+				existing.insert(pf_id);
+				pf["id"] = pf_id;
+				pf["name"] = String::utf8("Página ") + itos(pi);
+				pf["parent_id"] = uid;
+				pf["role"] = "pager_page";
+				pf["anchor"] = "top_left";
+				pf["offset_x"] = 0;
+				pf["offset_y"] = 0;
+				pf["width"] = int(Math::round(body_r.size.x));
+				pf["height"] = int(Math::round(body_r.size.y));
+				pf["layer_order"] = MIN(1000, base_l);
+				pf["page_icon"] = "";
+				pf["enter_actions"] = Array();
+				elems.push_back(normalize_ui_element(pf, elems.size() + 1, sid));
+			}
+		}
+	}
+
 	d["elements"] = elems;
 	d["custom_enabled"] = true;
 	set_ui_screen_design(sid, d, p_record_undo);
 	return uid;
+}
+
+String ClockGearsDataManager::add_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_name, const String &p_icon, const String &p_dup_from_page_id, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String pager_low = p_pager_id.strip_edges().to_lower();
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	Dictionary pager_el;
+	String pager_exact_id;
+	HashSet<String> used;
+	int page_cnt = 0;
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = elems[i];
+		String eid = String(e.get("id", ""));
+		used.insert(eid.to_lower());
+		if (eid.to_lower() == pager_low) {
+			pager_el = e;
+			pager_exact_id = eid;
+		} else if (String(e.get("parent_id", "")).to_lower() == pager_low && String(e.get("role", "")) == "pager_page") {
+			page_cnt++;
+		}
+	}
+	if (pager_exact_id.is_empty() || String(pager_el.get("type", "")).to_lower() != "pager") {
+		return String();
+	}
+	auto alloc_uid = [&](const String &p_hint) -> String {
+		String base = _cg_slugify_hud_id(p_hint);
+		if (base.is_empty()) base = pager_exact_id + "_pag";
+		String cand = base;
+		int k = 2;
+		while (used.has(cand.to_lower())) {
+			cand = base + "_" + itos(k++);
+		}
+		used.insert(cand.to_lower());
+		return cand;
+	};
+	String pname = p_name.strip_edges();
+	if (pname.is_empty()) {
+		pname = String::utf8("Página ") + itos(page_cnt + 1);
+	}
+	Dictionary pcfg = pager_el.has("pager") && pager_el["pager"].get_type() == Variant::DICTIONARY ? Dictionary(pager_el["pager"]) : make_default_pager_config();
+	Rect2 body_r = compute_pager_body_rect(Rect2(0, 0, float(pager_el.get("width", 600)), float(pager_el.get("height", 400))), pcfg, 1.0f);
+	String new_page_id = alloc_uid(pager_exact_id + "_pag_" + itos(page_cnt + 1));
+	Dictionary pf = make_default_ui_element("folder", sid);
+	pf["id"] = new_page_id;
+	pf["name"] = pname;
+	pf["parent_id"] = pager_exact_id;
+	pf["role"] = "pager_page";
+	pf["anchor"] = "top_left";
+	pf["offset_x"] = 0;
+	pf["offset_y"] = 0;
+	pf["width"] = int(Math::round(body_r.size.x));
+	pf["height"] = int(Math::round(body_r.size.y));
+	pf["layer_order"] = MIN(1000, int(pager_el.get("layer_order", 2)) + 1);
+	pf["page_icon"] = p_icon.strip_edges();
+	pf["enter_actions"] = Array();
+
+	String dup_low = p_dup_from_page_id.strip_edges().to_lower();
+	if (!dup_low.is_empty()) {
+		for (int i = 0; i < elems.size(); i++) {
+			Dictionary src = elems[i];
+			if (String(src.get("id", "")).to_lower() == dup_low) {
+				if (p_name.strip_edges().is_empty()) {
+					pf["name"] = String(src.get("name", pname)) + " (copia)";
+				}
+				if (p_icon.strip_edges().is_empty()) {
+					pf["page_icon"] = String(src.get("page_icon", ""));
+				}
+				if (src.has("enter_actions") && src["enter_actions"].get_type() == Variant::ARRAY) {
+					pf["enter_actions"] = Array(src["enter_actions"]).duplicate(true);
+				}
+				break;
+			}
+		}
+	}
+	elems.push_back(normalize_ui_element(pf, elems.size() + 1, sid));
+
+	if (!dup_low.is_empty()) {
+		HashSet<String> desc;
+		desc.insert(dup_low);
+		bool added = true;
+		while (added) {
+			added = false;
+			for (int i = 0; i < elems.size(); i++) {
+				Dictionary e = elems[i];
+				String cid = String(e.get("id", "")).to_lower();
+				String cpid = String(e.get("parent_id", "")).to_lower();
+				if (desc.has(cpid) && !desc.has(cid)) {
+					desc.insert(cid);
+					added = true;
+				}
+			}
+		}
+		HashMap<String, String> id_map;
+		id_map[dup_low] = new_page_id;
+		Vector<Dictionary> clones;
+		for (int i = 0; i < elems.size(); i++) {
+			Dictionary e = elems[i];
+			String eid_l = String(e.get("id", "")).to_lower();
+			if (eid_l != dup_low && desc.has(eid_l)) {
+				Dictionary c = e.duplicate(true);
+				String nid = alloc_uid(String(c.get("id", "elem")));
+				id_map[eid_l] = nid;
+				c["id"] = nid;
+				clones.push_back(c);
+			}
+		}
+		for (int i = 0; i < clones.size(); i++) {
+			Dictionary c = clones[i];
+			String opid = String(c.get("parent_id", "")).to_lower();
+			if (id_map.has(opid)) {
+				c["parent_id"] = id_map[opid];
+			}
+			elems.push_back(normalize_ui_element(c, elems.size() + 1, sid));
+		}
+	}
+
+	d["elements"] = elems;
+	d["custom_enabled"] = true;
+	set_ui_screen_design(sid, d, p_record_undo);
+	return new_page_id;
+}
+
+bool ClockGearsDataManager::duplicate_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_page_id, bool p_record_undo) {
+	return !add_pager_page(p_screen_id, p_pager_id, String(), String(), p_page_id, p_record_undo).is_empty();
+}
+
+bool ClockGearsDataManager::delete_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_page_id, bool p_record_undo) {
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String pager_low = p_pager_id.strip_edges().to_lower();
+	String page_low = p_page_id.strip_edges().to_lower();
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array()));
+	int page_cnt = 0;
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = elems[i];
+		if (String(e.get("parent_id", "")).to_lower() == pager_low && String(e.get("role", "")) == "pager_page") {
+			page_cnt++;
+		}
+	}
+	if (page_cnt <= 1) {
+		return false;
+	}
+	return delete_ui_element_with_mode(sid, page_low, true, p_record_undo);
+}
+
+bool ClockGearsDataManager::move_pager_page(const String &p_screen_id, const String &p_pager_id, const String &p_page_id, int p_delta, bool p_record_undo) {
+	if (p_delta == 0) {
+		return false;
+	}
+	String sid = _cg_norm_ui_screen_id(p_screen_id);
+	String pager_low = p_pager_id.strip_edges().to_lower();
+	String page_low = p_page_id.strip_edges().to_lower();
+	Dictionary d = get_ui_screen_design(sid);
+	Array elems = Array(d.get("elements", Array())).duplicate(true);
+	Vector<int> page_indices;
+	int cur_pos = -1;
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary e = elems[i];
+		if (String(e.get("parent_id", "")).to_lower() == pager_low && String(e.get("role", "")) == "pager_page") {
+			if (String(e.get("id", "")).to_lower() == page_low) {
+				cur_pos = page_indices.size();
+			}
+			page_indices.push_back(i);
+		}
+	}
+	if (cur_pos < 0) {
+		return false;
+	}
+	int tgt_pos = CLAMP(cur_pos + p_delta, 0, page_indices.size() - 1);
+	if (tgt_pos == cur_pos) {
+		return false;
+	}
+	Variant tmp = elems[page_indices[cur_pos]];
+	elems[page_indices[cur_pos]] = elems[page_indices[tgt_pos]];
+	elems[page_indices[tgt_pos]] = tmp;
+	d["elements"] = elems;
+	d["custom_enabled"] = true;
+	set_ui_screen_design(sid, d, p_record_undo);
+	return true;
 }
 
 bool ClockGearsDataManager::update_ui_element(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem, bool p_record_undo) {
@@ -9180,6 +9566,14 @@ static HashMap<String, Rect2> _cg_resolve_all_logical_rects(const HashMap<String
 			float ref_w = (pr.size.x > 0.5f) ? pr.size.x : 960.0f;
 			float ref_h = (pr.size.y > 0.5f) ? pr.size.y : 540.0f;
 			String etype = String(e.get("type", "text")).strip_edges().to_lower();
+			if (etype == "folder" && String(e.get("role", "")) == "pager_page" && !pid.is_empty() && p_by_id.has(pid) && String(p_by_id[pid].get("type", "")).to_lower() == "pager") {
+				Dictionary pg_cfg = p_by_id[pid].has("pager") && p_by_id[pid]["pager"].get_type() == Variant::DICTIONARY
+						? Dictionary(p_by_id[pid]["pager"])
+						: ClockGearsDataManager::make_default_pager_config();
+				Rect2 out = ClockGearsDataManager::compute_pager_body_rect(pr, pg_cfg, p_acc);
+				r_cache[p_id] = out;
+				return out;
+			}
 			float ew = (etype == "folder") ? (float(CLAMP(int(e.get("width", 0)), 0, 960)) * my_acc) : (float(CLAMP(int(e.get("width", 120)), 16, 960)) * my_acc);
 			float eh = (etype == "folder") ? (float(CLAMP(int(e.get("height", 0)), 0, 540)) * my_acc) : (float(CLAMP(int(e.get("height", 36)), 16, 540)) * my_acc);
 			Vector2 af = _cg_ui_anchor_factors(String(e.get("anchor", "top_left")));
@@ -11010,6 +11404,55 @@ Array ClockGearsDataManager::get_builtin_component_templates(const String &p_scr
 		if (!out.is_empty()) {
 			Dictionary last_d = out[out.size() - 1];
 			last_d["elements"] = bels;
+			out[out.size() - 1] = last_d;
+		}
+	}
+
+	{
+		Dictionary pgr = make_default_ui_element("pager", sid);
+		pgr["id"] = "comp_pager_root";
+		pgr["name"] = "Paginador (Q/E)";
+		pgr["anchor"] = "top_left";
+		pgr["offset_x"] = 36;
+		pgr["offset_y"] = 48;
+		pgr["width"] = 580;
+		pgr["height"] = 410;
+		pgr["layer_order"] = 2;
+		Dictionary pg_cfg = make_default_pager_config();
+		Rect2 body_r = compute_pager_body_rect(Rect2(0, 0, 580, 410), pg_cfg, 1.0f);
+		Array pels;
+		pels.push_back(pgr);
+		for (int pi = 1; pi <= 2; pi++) {
+			Dictionary pf = make_default_ui_element("folder", sid);
+			pf["id"] = vformat("comp_pager_p%d", pi);
+			pf["parent_id"] = "comp_pager_root";
+			pf["role"] = "pager_page";
+			pf["name"] = String::utf8("Página ") + itos(pi);
+			pf["anchor"] = "top_left";
+			pf["offset_x"] = 0;
+			pf["offset_y"] = 0;
+			pf["width"] = int(Math::round(body_r.size.x));
+			pf["height"] = int(Math::round(body_r.size.y));
+			pf["layer_order"] = 3;
+			pels.push_back(pf);
+
+			Dictionary pl = make_default_ui_element("text", sid);
+			pl["id"] = vformat("comp_pager_p%d_lbl", pi);
+			pl["parent_id"] = pf["id"];
+			pl["name"] = String::utf8("Título Pág. ") + itos(pi);
+			pl["text"] = String::utf8("Contenido de Página ") + itos(pi);
+			pl["anchor"] = "top_left";
+			pl["offset_x"] = 18;
+			pl["offset_y"] = 16;
+			pl["width"] = 320;
+			pl["height"] = 32;
+			pl["layer_order"] = 4;
+			pels.push_back(pl);
+		}
+		push_comp("comp_pager", "Paginador (Q/E)", String::utf8("Contenedor multipágina con pestañas, puntos o flechas, transiciones y atajos Q/E."), pgr);
+		if (!out.is_empty()) {
+			Dictionary last_d = out[out.size() - 1];
+			last_d["elements"] = pels;
 			out[out.size() - 1] = last_d;
 		}
 	}
@@ -14006,6 +14449,12 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("apply_menu_template", "screen_id", "template_id", "preserve_buttons", "record_undo"), &ClockGearsDataManager::apply_menu_template, DEFVAL(true), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("instantiate_component_template", "screen_id", "template_id", "pos", "parent_id"), &ClockGearsDataManager::instantiate_component_template, DEFVAL(Vector2i(-1, -1)), DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("instantiate_screen_template_as_component", "screen_id", "template_id", "pos", "parent_id"), &ClockGearsDataManager::instantiate_screen_template_as_component, DEFVAL(Vector2i(-1, -1)), DEFVAL(String()));
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("make_default_pager_config"), &ClockGearsDataManager::make_default_pager_config);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_pager_config", "cfg"), &ClockGearsDataManager::normalize_pager_config);
+	ClassDB::bind_method(D_METHOD("add_pager_page", "screen_id", "pager_id", "name", "icon", "dup_from_page_id", "record_undo"), &ClockGearsDataManager::add_pager_page, DEFVAL(String()), DEFVAL(String()), DEFVAL(String()), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("duplicate_pager_page", "screen_id", "pager_id", "page_id", "record_undo"), &ClockGearsDataManager::duplicate_pager_page, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("delete_pager_page", "screen_id", "pager_id", "page_id", "record_undo"), &ClockGearsDataManager::delete_pager_page, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("move_pager_page", "screen_id", "pager_id", "page_id", "delta", "record_undo"), &ClockGearsDataManager::move_pager_page, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("create_menu_from_wizard", "opts"), &ClockGearsDataManager::create_menu_from_wizard);
 	ClassDB::bind_method(D_METHOD("export_template_package", "id", "dst_path", "is_screen"), &ClockGearsDataManager::export_template_package, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("import_template_package", "src_path", "import_as_custom_menu", "assets_subdir"), &ClockGearsDataManager::import_template_package, DEFVAL(false), DEFVAL("res://img/ui/imported"));

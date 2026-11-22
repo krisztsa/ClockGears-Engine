@@ -698,6 +698,40 @@ private:
 	Button *prop_rad_slot_add_act_btn = nullptr;
 	VBoxContainer *prop_rad_slot_actions_vbox = nullptr;
 
+	// Inspector completo de Paginador (BotW 2/2 Punto 2)
+	VBoxContainer *prop_pager_box = nullptr;
+	OptionButton *prop_pager_page_opt = nullptr;
+	Button *prop_pager_add_page_btn = nullptr;
+	Button *prop_pager_dup_page_btn = nullptr;
+	Button *prop_pager_up_page_btn = nullptr;
+	Button *prop_pager_down_page_btn = nullptr;
+	Button *prop_pager_del_page_btn = nullptr;
+	LineEdit *prop_pager_page_name_edit = nullptr;
+	LineEdit *prop_pager_page_icon_edit = nullptr;
+	Button *prop_pager_page_icon_btn = nullptr;
+	OptionButton *prop_pager_enter_add_act_opt = nullptr;
+	Button *prop_pager_enter_add_act_btn = nullptr;
+	VBoxContainer *prop_pager_enter_actions_vbox = nullptr;
+	Label *prop_pager_prev_lbl = nullptr;
+	Button *prop_pager_prev_cap_btn = nullptr;
+	Button *prop_pager_prev_clr_btn = nullptr;
+	Label *prop_pager_next_lbl = nullptr;
+	Button *prop_pager_next_cap_btn = nullptr;
+	Button *prop_pager_next_clr_btn = nullptr;
+	CheckBox *prop_pager_wrap_chk = nullptr;
+	CheckBox *prop_pager_click_ind_chk = nullptr;
+	CheckBox *prop_pager_wheel_chk = nullptr;
+	OptionButton *prop_pager_ind_mode_opt = nullptr;
+	OptionButton *prop_pager_ind_pos_opt = nullptr;
+	SpinBox *prop_pager_ind_size_spin = nullptr;
+	OptionButton *prop_pager_trans_type_opt = nullptr;
+	SpinBox *prop_pager_trans_dur_spin = nullptr;
+	OptionButton *prop_pager_trans_curve_opt = nullptr;
+	CheckBox *prop_pager_rem_focus_chk = nullptr;
+	CheckBox *prop_pager_rem_scroll_chk = nullptr;
+	LineEdit *prop_pager_sound_edit = nullptr;
+	int capturing_key_for_pager_mode = 0; // 0=none, 1=prev, 2=next
+
 	// Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B)
 	FileDialog *import_image_dialog = nullptr;
 	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF, 10..13=estados boton
@@ -969,6 +1003,19 @@ private:
 	void _on_prop_slot_style_edited();
 	void _on_prop_create_item_tpl_pressed();
 	void _refresh_container_inspector(const Dictionary &p_el);
+	String _resolve_active_pager_id(const Dictionary &p_el) const;
+	void _refresh_pager_inspector(const Dictionary &p_el);
+	void _on_prop_pager_changed();
+	void _on_prop_pager_page_selected(int p_idx);
+	void _on_prop_pager_add_page_pressed();
+	void _on_prop_pager_dup_page_pressed();
+	void _on_prop_pager_move_page_pressed(int p_delta);
+	void _on_prop_pager_del_page_pressed();
+	void _on_prop_pager_page_edited();
+	void _on_prop_pager_page_icon_import_pressed();
+	void _on_prop_pager_enter_add_action_pressed();
+	void _on_prop_pager_cap_trigger_pressed(int p_mode);
+	void _on_prop_pager_clr_trigger_pressed(int p_mode);
 	void _on_prop_binding_changed(int p_idx);
 	void _on_prop_var_opt_selected(int p_idx);
 	void _on_prop_item_opt_selected(int p_idx);
@@ -1024,6 +1071,7 @@ public:
 	PackedStringArray paste_from_clipboard();
 	void set_radial_layout_live(int p_radius, float p_start_deg);
 	bool add_radial_slot_from_editor();
+	bool set_editor_pager_page(const String &p_pager_id, int p_page_idx);
 
 	void set_canvas_zoom(int p_zoom);
 	int get_canvas_zoom() const { return canvas_zoom; }

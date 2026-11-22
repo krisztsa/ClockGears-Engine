@@ -837,6 +837,19 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					accept_event();
 					return;
 				}
+				if (hh == HANDLE_NONE && !mb->is_shift_pressed() && owner_editor->get_canvas_design_layer()) {
+					TypedArray<Node> ind_btns = owner_editor->get_canvas_design_layer()->find_children("PagerInd_*", "Button", true, false);
+					for (int ib = 0; ib < ind_btns.size(); ib++) {
+						Button *b = Object::cast_to<Button>(ind_btns[ib]);
+						if (b && b->is_visible_in_tree() && b->has_meta("pager_id") && b->has_meta("page_idx")) {
+							if (b->get_global_rect().has_point(mb->get_global_position())) {
+								owner_editor->set_editor_pager_page(String(b->get_meta("pager_id")), int(b->get_meta("page_idx")));
+								accept_event();
+								return;
+							}
+						}
+					}
+				}
 				String hit_id = (hh != HANDLE_NONE) ? owner_editor->get_selected_element_id() : _hit_test_element(pt);
 				if (hit_id.is_empty()) {
 					owner_editor->log_trace_action("canvas_click_miss", vformat("screen=%s pt=(%.1f,%.1f) scale=%.3f ov_sz=(%.1f,%.1f)", owner_editor->get_current_screen(), pt.x, pt.y, owner_editor->get_canvas_stage_scale(), get_size().x, get_size().y));
@@ -2045,6 +2058,7 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("paste_from_clipboard"), &ClockGearsUiDesignEditor::paste_from_clipboard);
 	ClassDB::bind_method(D_METHOD("set_radial_layout_live", "radius", "start_deg"), &ClockGearsUiDesignEditor::set_radial_layout_live);
 	ClassDB::bind_method(D_METHOD("add_radial_slot_from_editor"), &ClockGearsUiDesignEditor::add_radial_slot_from_editor);
+	ClassDB::bind_method(D_METHOD("set_editor_pager_page", "pager_id", "page_idx"), &ClockGearsUiDesignEditor::set_editor_pager_page);
 	ClassDB::bind_method(D_METHOD("update_dragged_element_fast", "elem_id", "elem"), &ClockGearsUiDesignEditor::update_dragged_element_fast);
 
 	ClassDB::bind_method(D_METHOD("set_canvas_zoom", "zoom"), &ClockGearsUiDesignEditor::set_canvas_zoom);
@@ -2394,13 +2408,14 @@ static Dictionary s_input_event_to_trigger(const Ref<InputEvent> &p_ev) {
 }
 
 void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
-	if (!capturing_key_for_screen && !capturing_key_for_wizard && !capturing_key_for_btn_shortcut) {
+	if (!capturing_key_for_screen && !capturing_key_for_wizard && !capturing_key_for_btn_shortcut && capturing_key_for_pager_mode == 0) {
 		return;
 	}
 	if (!is_visible_in_tree()) {
 		capturing_key_for_screen = false;
 		capturing_key_for_wizard = false;
 		capturing_key_for_btn_shortcut = false;
+		capturing_key_for_pager_mode = 0;
 		return;
 	}
 	Dictionary tr = s_input_event_to_trigger(p_event);
@@ -2434,6 +2449,32 @@ void ClockGearsUiDesignEditor::input(const Ref<InputEvent> &p_event) {
 				dm->push_ui_design_undo_state(current_screen_id, snap);
 			}
 			_notify_data_mutated(true);
+		}
+	} else if (capturing_key_for_pager_mode != 0) {
+		int pmode = capturing_key_for_pager_mode;
+		capturing_key_for_pager_mode = 0;
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		Dictionary el = _get_selected_element_copy();
+		String pager_id = _resolve_active_pager_id(el);
+		if (dm && !pager_id.is_empty()) {
+			Dictionary pager_el = dm->get_ui_element(current_screen_id, pager_id);
+			if (pager_el.is_empty()) pager_el = get_effective_element(pager_id);
+			if (!pager_el.is_empty()) {
+				Dictionary pcfg = pager_el.has("pager") && pager_el["pager"].get_type() == Variant::DICTIONARY
+						? Dictionary(pager_el["pager"]).duplicate(true)
+						: ClockGearsDataManager::make_default_pager_config();
+				String tkey = (pmode == 1) ? "prev_triggers" : "next_triggers";
+				Array trs = pcfg.has(tkey) && pcfg[tkey].get_type() == Variant::ARRAY ? Array(pcfg[tkey]).duplicate(true) : Array();
+				Dictionary norm_tr = ClockGearsDataManager::normalize_menu_trigger(tr);
+				if (!norm_tr.is_empty() && !trs.has(norm_tr)) {
+					trs.push_back(norm_tr);
+				}
+				pcfg[tkey] = trs;
+				pager_el["pager"] = ClockGearsDataManager::normalize_pager_config(pcfg);
+				ensure_screen_customizable_for_edit(false);
+				dm->update_ui_element(current_screen_id, pager_id, pager_el, true);
+				_notify_data_mutated(true);
+			}
 		}
 	} else if (capturing_key_for_screen) {
 		capturing_key_for_screen = false;
@@ -3510,13 +3551,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		const char *type;
 		const char *label_utf8;
 	};
-	static const PaletteDef k_palette[13] = {
+	static const PaletteDef k_palette[14] = {
 		{ "folder", "Carpeta" },
 		{ "image", "Imagen" },
 		{ "text", "Texto" },
 		{ "button", "+ Bot\xC3\xB3n" },
 		{ "frame", "Marco" },
 		{ "container", "Contenedor datos" },
+		{ "pager", "Paginador" },
 		{ "bar", "Barra" },
 		{ "hearts", "Corazones" },
 		{ "currency", "Monedas" },
@@ -3525,7 +3567,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		{ "widget", "Lista / Widget" },
 		{ "radial", "+ Rueda radial" }
 	};
-	for (int i = 0; i < 13; i++) {
+	for (int i = 0; i < 14; i++) {
 		ClockGearsUiPaletteButton *pb = memnew(ClockGearsUiPaletteButton);
 		pb->setup(this, String(k_palette[i].type), String::utf8(k_palette[i].label_utf8));
 		palette_grid->add_child(pb);
@@ -4622,6 +4664,202 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	ract_wrap->add_child(prop_rad_slot_actions_vbox);
 	make_prop_row(prop_radial_box, "Acciones ran.:", String::utf8("Acciones ejecutadas en orden al activar esta ranura."), "radial acciones ranura", false, ract_wrap, "radial");
 
+	// Sección 7: Paginador (BotW 2/2 Punto 2)
+	add_prop_section(props_fields_box, "Paginador", false, prop_pager_box);
+
+	prop_pager_page_opt = memnew(OptionButton);
+	prop_pager_page_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_page_opt, EDSCALE);
+	prop_pager_page_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_page_selected));
+	make_prop_row(prop_pager_box, String::utf8("Página activa:"), String::utf8("Elige qué página se edita y previsualiza en el lienzo."), "paginador pagina activa editar", false, prop_pager_page_opt, "pager,pager_page");
+
+	HFlowContainer *pg_btns = memnew(HFlowContainer);
+	pg_btns->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pg_btns->set_custom_minimum_size(Size2(0, 0));
+	pg_btns->add_theme_constant_override("h_separation", int(4 * EDSCALE));
+	pg_btns->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	prop_pager_add_page_btn = memnew(Button(String::utf8("+ Pág.")));
+	prop_pager_add_page_btn->set_tooltip_text(String::utf8("Añadir una página nueva al paginador."));
+	s_make_rounded_action_btn(prop_pager_add_page_btn);
+	prop_pager_add_page_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_add_page_pressed));
+	pg_btns->add_child(prop_pager_add_page_btn);
+
+	prop_pager_dup_page_btn = memnew(Button("Dup."));
+	prop_pager_dup_page_btn->set_tooltip_text(String::utf8("Duplicar la página actual con sus hijos."));
+	s_make_rounded_action_btn(prop_pager_dup_page_btn);
+	prop_pager_dup_page_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_dup_page_pressed));
+	pg_btns->add_child(prop_pager_dup_page_btn);
+
+	prop_pager_up_page_btn = memnew(Button(String::utf8("▲")));
+	s_make_rounded_action_btn(prop_pager_up_page_btn);
+	prop_pager_up_page_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_move_page_pressed).bind(-1));
+	pg_btns->add_child(prop_pager_up_page_btn);
+
+	prop_pager_down_page_btn = memnew(Button(String::utf8("▼")));
+	s_make_rounded_action_btn(prop_pager_down_page_btn);
+	prop_pager_down_page_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_move_page_pressed).bind(1));
+	pg_btns->add_child(prop_pager_down_page_btn);
+
+	prop_pager_del_page_btn = memnew(Button("Borrar"));
+	s_make_rounded_action_btn(prop_pager_del_page_btn);
+	prop_pager_del_page_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_del_page_pressed));
+	pg_btns->add_child(prop_pager_del_page_btn);
+	make_prop_row(prop_pager_box, String::utf8("Páginas:"), String::utf8("Añade, duplica, reordena o elimina páginas del paginador."), "paginador anadir duplicar reordenar borrar pagina", false, pg_btns, "pager,pager_page");
+
+	prop_pager_page_name_edit = memnew(LineEdit);
+	prop_pager_page_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_page_name_edit, EDSCALE);
+	prop_pager_page_name_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_page_edited).unbind(1));
+	make_prop_row(prop_pager_box, String::utf8("Nombre pág.:"), String::utf8("Texto de la pestaña y título de esta página."), "paginador nombre titulo pestana pagina", false, prop_pager_page_name_edit, "pager,pager_page");
+
+	HBoxContainer *pg_ic_hb = memnew(HBoxContainer);
+	pg_ic_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pg_ic_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_pager_page_icon_edit = memnew(LineEdit);
+	prop_pager_page_icon_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_page_icon_edit, EDSCALE);
+	prop_pager_page_icon_edit->set_placeholder("res://img/...");
+	prop_pager_page_icon_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_page_edited).unbind(1));
+	pg_ic_hb->add_child(prop_pager_page_icon_edit);
+	prop_pager_page_icon_btn = memnew(Button(String::utf8("Elegir…")));
+	s_make_rounded_action_btn(prop_pager_page_icon_btn);
+	prop_pager_page_icon_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_page_icon_import_pressed));
+	pg_ic_hb->add_child(prop_pager_page_icon_btn);
+	make_prop_row(prop_pager_box, String::utf8("Icono pág.:"), String::utf8("Icono mostrado junto al nombre en las pestañas."), "paginador icono pestana imagen", false, pg_ic_hb, "pager,pager_page");
+
+	VBoxContainer *pg_ent_wrap = memnew(VBoxContainer);
+	pg_ent_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pg_ent_wrap->add_theme_constant_override("separation", int(4 * EDSCALE));
+	HBoxContainer *pg_ent_hb = memnew(HBoxContainer);
+	pg_ent_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pg_ent_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_pager_enter_add_act_opt = memnew(OptionButton);
+	prop_pager_enter_add_act_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_enter_add_act_opt, EDSCALE);
+	{
+		Array atypes = ClockGearsDataManager::get_all_ui_button_action_types();
+		for (int ai = 0; ai < atypes.size(); ai++) {
+			Dictionary ad = atypes[ai];
+			prop_pager_enter_add_act_opt->add_item(String(ad.get("label", ad.get("id", ""))), ai);
+			prop_pager_enter_add_act_opt->set_item_metadata(ai, String(ad.get("id", "")));
+		}
+	}
+	pg_ent_hb->add_child(prop_pager_enter_add_act_opt);
+	prop_pager_enter_add_act_btn = memnew(Button("+"));
+	s_make_rounded_action_btn(prop_pager_enter_add_act_btn);
+	prop_pager_enter_add_act_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_enter_add_action_pressed));
+	pg_ent_hb->add_child(prop_pager_enter_add_act_btn);
+	pg_ent_wrap->add_child(pg_ent_hb);
+	prop_pager_enter_actions_vbox = memnew(VBoxContainer);
+	prop_pager_enter_actions_vbox->add_theme_constant_override("separation", int(3 * EDSCALE));
+	pg_ent_wrap->add_child(prop_pager_enter_actions_vbox);
+	make_prop_row(prop_pager_box, String::utf8("Al entrar pág.:"), String::utf8("Lista ordenada de acciones ejecutadas al entrar en esta página."), "paginador al entrar accion evento", false, pg_ent_wrap, "pager,pager_page");
+
+	auto make_trig_row = [&](const String &p_lbl, const String &p_tip, int p_mode, Label *&r_lbl, Button *&r_cap, Button *&r_clr) {
+		HBoxContainer *hb = memnew(HBoxContainer);
+		hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+		r_lbl = memnew(Label("-"));
+		r_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		r_lbl->set_clip_text(true);
+		hb->add_child(r_lbl);
+		r_cap = memnew(Button("+"));
+		r_cap->set_tooltip_text(String::utf8("Capturar tecla, botón de mando o ratón."));
+		s_make_rounded_action_btn(r_cap);
+		r_cap->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_cap_trigger_pressed).bind(p_mode));
+		hb->add_child(r_cap);
+		r_clr = memnew(Button("x"));
+		r_clr->set_tooltip_text(String::utf8("Limpiar entradas."));
+		s_make_rounded_action_btn(r_clr);
+		r_clr->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_clr_trigger_pressed).bind(p_mode));
+		hb->add_child(r_clr);
+		make_prop_row(prop_pager_box, p_lbl, p_tip, "paginador tecla mando entrada atajo", false, hb, "pager,pager_page");
+	};
+	make_trig_row(String::utf8("Entrada ant.:"), String::utf8("Teclas o botones para ir a la página anterior (por defecto Q / L1)."), 1, prop_pager_prev_lbl, prop_pager_prev_cap_btn, prop_pager_prev_clr_btn);
+	make_trig_row(String::utf8("Entrada sig.:"), String::utf8("Teclas o botones para ir a la página siguiente (por defecto E / R1)."), 2, prop_pager_next_lbl, prop_pager_next_cap_btn, prop_pager_next_clr_btn);
+
+	prop_pager_ind_mode_opt = memnew(OptionButton);
+	prop_pager_ind_mode_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_ind_mode_opt, EDSCALE);
+	prop_pager_ind_mode_opt->add_item(String::utf8("Pestañas (icono + texto)"), 0); prop_pager_ind_mode_opt->set_item_metadata(0, "tabs");
+	prop_pager_ind_mode_opt->add_item("Puntos", 1); prop_pager_ind_mode_opt->set_item_metadata(1, "dots");
+	prop_pager_ind_mode_opt->add_item("Flechas", 2); prop_pager_ind_mode_opt->set_item_metadata(2, "arrows");
+	prop_pager_ind_mode_opt->add_item("Ninguno", 3); prop_pager_ind_mode_opt->set_item_metadata(3, "none");
+	prop_pager_ind_mode_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	make_prop_row(prop_pager_box, "Indicador:", String::utf8("Estilo de cabecera del paginador."), "paginador indicador pestanas puntos flechas", false, prop_pager_ind_mode_opt, "pager,pager_page");
+
+	prop_pager_ind_pos_opt = memnew(OptionButton);
+	prop_pager_ind_pos_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_ind_pos_opt, EDSCALE);
+	prop_pager_ind_pos_opt->add_item("Arriba", 0); prop_pager_ind_pos_opt->set_item_metadata(0, "top");
+	prop_pager_ind_pos_opt->add_item("Abajo", 1); prop_pager_ind_pos_opt->set_item_metadata(1, "bottom");
+	prop_pager_ind_pos_opt->add_item("Izquierda", 2); prop_pager_ind_pos_opt->set_item_metadata(2, "left");
+	prop_pager_ind_pos_opt->add_item("Derecha", 3); prop_pager_ind_pos_opt->set_item_metadata(3, "right");
+	prop_pager_ind_pos_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	make_prop_row(prop_pager_box, String::utf8("Pos. indicador:"), String::utf8("Lado donde aparece el indicador."), "paginador posicion arriba abajo izquierda derecha", false, prop_pager_ind_pos_opt, "pager,pager_page");
+
+	prop_pager_ind_size_spin = memnew(SpinBox);
+	prop_pager_ind_size_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_ind_size_spin, EDSCALE);
+	prop_pager_ind_size_spin->set_min(24); prop_pager_ind_size_spin->set_max(140); prop_pager_ind_size_spin->set_suffix(" px");
+	prop_pager_ind_size_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	make_prop_row(prop_pager_box, String::utf8("Tamaño ind.:"), String::utf8("Grosor de la barra de indicador (px)."), "paginador tamano indicador", true, prop_pager_ind_size_spin, "pager,pager_page");
+
+	prop_pager_trans_type_opt = memnew(OptionButton);
+	prop_pager_trans_type_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_trans_type_opt, EDSCALE);
+	prop_pager_trans_type_opt->add_item("Deslizamiento", 0); prop_pager_trans_type_opt->set_item_metadata(0, "slide");
+	prop_pager_trans_type_opt->add_item("Desvanecimiento", 1); prop_pager_trans_type_opt->set_item_metadata(1, "fade");
+	prop_pager_trans_type_opt->add_item("Escala", 2); prop_pager_trans_type_opt->set_item_metadata(2, "scale");
+	prop_pager_trans_type_opt->add_item("Ninguna", 3); prop_pager_trans_type_opt->set_item_metadata(3, "none");
+	prop_pager_trans_type_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	make_prop_row(prop_pager_box, String::utf8("Transición:"), String::utf8("Animación al pasar de una página a otra."), "paginador transicion animacion slide fade", false, prop_pager_trans_type_opt, "pager,pager_page");
+
+	HBoxContainer *pg_tr_hb = memnew(HBoxContainer);
+	pg_tr_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pg_tr_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_pager_trans_dur_spin = memnew(SpinBox);
+	s_clamp_narrow_controls(prop_pager_trans_dur_spin, EDSCALE);
+	prop_pager_trans_dur_spin->set_min(0.05); prop_pager_trans_dur_spin->set_max(1.50); prop_pager_trans_dur_spin->set_step(0.05); prop_pager_trans_dur_spin->set_suffix(" s");
+	prop_pager_trans_dur_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_tr_hb->add_child(prop_pager_trans_dur_spin);
+	prop_pager_trans_curve_opt = memnew(OptionButton);
+	prop_pager_trans_curve_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_trans_curve_opt, EDSCALE);
+	prop_pager_trans_curve_opt->add_item("Suave al final", 0); prop_pager_trans_curve_opt->set_item_metadata(0, "ease_out");
+	prop_pager_trans_curve_opt->add_item("Suave ambos", 1); prop_pager_trans_curve_opt->set_item_metadata(1, "ease_in_out");
+	prop_pager_trans_curve_opt->add_item("Lineal", 2); prop_pager_trans_curve_opt->set_item_metadata(2, "linear");
+	prop_pager_trans_curve_opt->add_item("Rebote", 3); prop_pager_trans_curve_opt->set_item_metadata(3, "back");
+	prop_pager_trans_curve_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_tr_hb->add_child(prop_pager_trans_curve_opt);
+	make_prop_row(prop_pager_box, String::utf8("Duración/Curva:"), String::utf8("Duración en segundos y curva de aceleración."), "paginador duracion curva easing", true, pg_tr_hb, "pager,pager_page");
+
+	HFlowContainer *pg_opts = memnew(HFlowContainer);
+	pg_opts->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	pg_opts->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	prop_pager_wrap_chk = memnew(CheckBox("Dar la vuelta"));
+	prop_pager_wrap_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_opts->add_child(prop_pager_wrap_chk);
+	prop_pager_click_ind_chk = memnew(CheckBox("Clic indicador"));
+	prop_pager_click_ind_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_opts->add_child(prop_pager_click_ind_chk);
+	prop_pager_wheel_chk = memnew(CheckBox(String::utf8("Rueda ratón")));
+	prop_pager_wheel_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_opts->add_child(prop_pager_wheel_chk);
+	prop_pager_rem_focus_chk = memnew(CheckBox("Recordar foco"));
+	prop_pager_rem_focus_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_opts->add_child(prop_pager_rem_focus_chk);
+	prop_pager_rem_scroll_chk = memnew(CheckBox("Recordar scroll"));
+	prop_pager_rem_scroll_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	pg_opts->add_child(prop_pager_rem_scroll_chk);
+	make_prop_row(prop_pager_box, "Comportamiento:", String::utf8("Opciones de navegación circular, clics y memoria por página."), "paginador vuelta wrap foco scroll", false, pg_opts, "pager,pager_page");
+
+	prop_pager_sound_edit = memnew(LineEdit);
+	prop_pager_sound_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_pager_sound_edit, EDSCALE);
+	prop_pager_sound_edit->set_placeholder("res://audio/...");
+	prop_pager_sound_edit->connect("text_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_pager_changed).unbind(1));
+	make_prop_row(prop_pager_box, "Sonido cambio:", String::utf8("Efecto de sonido al cambiar de página."), "paginador sonido sfx", true, prop_pager_sound_edit, "pager,pager_page");
+
 	// --- Sección contextual consolidada: Ajustes de la pantalla (9B Corr Punto 5) ---
 	screen_settings_box = memnew(VBoxContainer);
 	screen_settings_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -4873,6 +5111,19 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	// Mantener Label "Tipo: ... | ID: ..." con ajuste seguro sin empujar columna
 	if (props_sel_lbl) {
 		props_sel_lbl->set_custom_minimum_size(Size2(0, 0));
+	}
+	for (OptionButton *pg_opt : { prop_pager_page_opt, prop_pager_enter_add_act_opt, prop_pager_ind_mode_opt, prop_pager_ind_pos_opt, prop_pager_trans_type_opt, prop_pager_trans_curve_opt }) {
+		if (pg_opt) {
+			pg_opt->set_fit_to_longest_item(false);
+			pg_opt->set_clip_text(true);
+			pg_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			pg_opt->set_custom_minimum_size(Size2(72.0f * EDSCALE, 30.0f * EDSCALE));
+		}
+	}
+	for (Control *pg_ed : { static_cast<Control *>(prop_pager_page_name_edit), static_cast<Control *>(prop_pager_page_icon_edit), static_cast<Control *>(prop_pager_sound_edit), static_cast<Control *>(prop_pager_ind_size_spin), static_cast<Control *>(prop_pager_trans_dur_spin) }) {
+		if (pg_ed) {
+			pg_ed->set_custom_minimum_size(Size2(72.0f * EDSCALE, 32.0f * EDSCALE));
+		}
 	}
 
 	// --- Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B) ---
@@ -7460,6 +7711,12 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	if (etype == "container" || etype == "widget" || etype == "radial") {
 		_refresh_container_inspector(el);
 	}
+	if (etype == "pager" || (etype == "folder" && String(el.get("role", "")) == "pager_page")) {
+		if (etype == "folder") {
+			current_selected_elem_type = "pager_page";
+		}
+		_refresh_pager_inspector(el);
+	}
 
 	updating_ui = prev_upd;
 	_apply_properties_filter();
@@ -8070,6 +8327,42 @@ bool ClockGearsUiDesignEditor::select_element(const String &p_elem_id) {
 	selected_elem_id = String(el.get("id", p_elem_id));
 	selected_elem_ids.clear();
 	selected_elem_ids.push_back(selected_elem_id);
+	{
+		String anc_pager = _resolve_active_pager_id(el);
+		if (!anc_pager.is_empty() && anc_pager != selected_elem_id) {
+			Array all_e = get_effective_screen_elements();
+			String cur_id = selected_elem_id;
+			for (int hop = 0; hop < 16 && !cur_id.is_empty(); hop++) {
+				bool found = false;
+				for (int ei = 0; ei < all_e.size(); ei++) {
+					if (all_e[ei].get_type() != Variant::DICTIONARY) continue;
+					Dictionary ed = all_e[ei];
+					if (String(ed.get("id", "")) == cur_id) {
+						if (String(ed.get("role", "")) == "pager_page" && String(ed.get("parent_id", "")) == anc_pager) {
+							int p_idx = 0;
+							for (int pj = 0; pj < all_e.size(); pj++) {
+								if (all_e[pj].get_type() != Variant::DICTIONARY) continue;
+								Dictionary pd = all_e[pj];
+								if (String(pd.get("parent_id", "")) == anc_pager && String(pd.get("role", "")) == "pager_page") {
+									if (String(pd.get("id", "")) == cur_id) {
+										set_editor_pager_page(anc_pager, p_idx);
+										break;
+									}
+									p_idx++;
+								}
+							}
+							cur_id = "";
+							break;
+						}
+						cur_id = String(ed.get("parent_id", "")).strip_edges();
+						found = true;
+						break;
+					}
+				}
+				if (!found) break;
+			}
+		}
+	}
 	_trace_log("element_select", "screen=" + current_screen_id + " elem=" + selected_elem_id);
 	_sync_selection_from_layers_tree();
 	_refresh_properties_panel();
@@ -9888,8 +10181,25 @@ String ClockGearsUiDesignEditor::insert_component_by_id(const String &p_tpl_id, 
 	String pid = p_parent_id.strip_edges();
 	if (pid.is_empty() && !selected_elem_id.is_empty()) {
 		Dictionary sel = dm->get_ui_element(current_screen_id, selected_elem_id);
-		if (String(sel.get("type", "")).to_lower() == "folder") {
+		if (sel.is_empty()) sel = get_effective_element(selected_elem_id);
+		String stp = String(sel.get("type", "")).to_lower();
+		if (stp == "folder") {
 			pid = selected_elem_id;
+		} else if (stp == "pager") {
+			Dictionary pg_cfg = sel.has("pager") && sel["pager"].get_type() == Variant::DICTIONARY ? Dictionary(sel["pager"]) : Dictionary();
+			int ap = MAX(0, int(pg_cfg.get("active_editor_page", 0)));
+			Array all_e = get_effective_screen_elements();
+			Vector<String> page_ids;
+			for (int i = 0; i < all_e.size(); i++) {
+				if (all_e[i].get_type() != Variant::DICTIONARY) continue;
+				Dictionary ed = all_e[i];
+				if (String(ed.get("parent_id", "")) == selected_elem_id && String(ed.get("role", "")) == "pager_page") {
+					page_ids.push_back(String(ed.get("id", "")));
+				}
+			}
+			if (!page_ids.is_empty()) {
+				pid = page_ids[CLAMP(ap, 0, page_ids.size() - 1)];
+			}
 		}
 	}
 	Dictionary t = ClockGearsDataManager::get_builtin_template_by_id(p_tpl_id);
@@ -10455,6 +10765,21 @@ void ClockGearsUiDesignEditor::_on_prop_remove_multi_action_pressed(int p_idx) {
 		}
 		return;
 	}
+	String pager_id = _resolve_active_pager_id(el);
+	if (!pager_id.is_empty() && prop_pager_page_opt && prop_pager_page_opt->get_selected() >= 0) {
+		String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
+		Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
+		if (pg.is_empty()) pg = get_effective_element(page_id);
+		Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
+		if (p_idx >= 0 && p_idx < acts.size()) {
+			acts.remove_at(p_idx);
+			pg["enter_actions"] = acts;
+			ensure_screen_customizable_for_edit(false);
+			dm->update_ui_element(current_screen_id, page_id, pg, true);
+			_notify_data_mutated(true);
+		}
+		return;
+	}
 	Array acts = el.get("actions", Array()).duplicate(true);
 	if (p_idx >= 0 && p_idx < acts.size()) {
 		acts.remove_at(p_idx);
@@ -10491,6 +10816,24 @@ void ClockGearsUiDesignEditor::_on_prop_move_multi_action_pressed(int p_idx, int
 		slots[prop_rad_selected_slot] = rs;
 		lay["radial_slots"] = slots;
 		_commit_active_radial_layout(lay, true);
+		return;
+	}
+	String pager_id = _resolve_active_pager_id(el);
+	if (!pager_id.is_empty() && prop_pager_page_opt && prop_pager_page_opt->get_selected() >= 0) {
+		String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
+		Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
+		if (pg.is_empty()) pg = get_effective_element(page_id);
+		Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
+		int target = p_idx + p_delta;
+		if (p_idx >= 0 && p_idx < acts.size() && target >= 0 && target < acts.size() && target != p_idx) {
+			Variant moved = acts[p_idx];
+			acts.remove_at(p_idx);
+			acts.insert(target, moved);
+			pg["enter_actions"] = acts;
+			ensure_screen_customizable_for_edit(false);
+			dm->update_ui_element(current_screen_id, page_id, pg, true);
+			_notify_data_mutated(true);
+		}
 		return;
 	}
 	Array acts = el.get("actions", Array()).duplicate(true);
@@ -10536,6 +10879,23 @@ void ClockGearsUiDesignEditor::_on_prop_edit_multi_action_step(const Variant &p_
 		slots[prop_rad_selected_slot] = rs;
 		lay["radial_slots"] = slots;
 		_commit_active_radial_layout(lay, false, false);
+		return;
+	}
+	String pager_id = _resolve_active_pager_id(el);
+	if (!pager_id.is_empty() && prop_pager_page_opt && prop_pager_page_opt->get_selected() >= 0) {
+		String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
+		Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
+		if (pg.is_empty()) pg = get_effective_element(page_id);
+		Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
+		if (p_idx < 0 || p_idx >= acts.size() || acts[p_idx].get_type() != Variant::DICTIONARY) return;
+		Dictionary step = Dictionary(acts[p_idx]).duplicate(true);
+		step[p_key] = p_val;
+		if (p_key == "menu_id") step["target"] = p_val;
+		acts[p_idx] = step;
+		pg["enter_actions"] = acts;
+		ensure_screen_customizable_for_edit(false);
+		dm->update_ui_element(current_screen_id, page_id, pg, true);
+		emit_signal("design_modified");
 		return;
 	}
 	Array acts = el.get("actions", Array()).duplicate(true);
@@ -11032,6 +11392,330 @@ void ClockGearsUiDesignEditor::_on_prop_container_changed() {
 	_notify_data_mutated(true);
 }
 
+String ClockGearsUiDesignEditor::_resolve_active_pager_id(const Dictionary &p_el) const {
+	if (p_el.is_empty()) return String();
+	String et = String(p_el.get("type", "")).strip_edges().to_lower();
+	if (et == "pager") return String(p_el.get("id", ""));
+	Array all_e = get_effective_screen_elements();
+	String cur_id = String(p_el.get("id", ""));
+	for (int hop = 0; hop < 16 && !cur_id.is_empty(); hop++) {
+		bool found = false;
+		for (int i = 0; i < all_e.size(); i++) {
+			if (all_e[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ed = all_e[i];
+			if (String(ed.get("id", "")) == cur_id) {
+				if (String(ed.get("type", "")).strip_edges().to_lower() == "pager") {
+					return String(ed.get("id", ""));
+				}
+				cur_id = String(ed.get("parent_id", "")).strip_edges();
+				found = true;
+				break;
+			}
+		}
+		if (!found) break;
+	}
+	return String();
+}
+
+void ClockGearsUiDesignEditor::_refresh_pager_inspector(const Dictionary &p_el) {
+	if (!prop_pager_box) return;
+	String pager_id = _resolve_active_pager_id(p_el);
+	if (pager_id.is_empty()) return;
+	Dictionary pager_el = get_effective_element(pager_id);
+	if (pager_el.is_empty()) return;
+
+	Dictionary pg_cfg = pager_el.has("pager") && pager_el["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(pager_el["pager"])
+			: ClockGearsDataManager::make_default_pager_config();
+
+	Array all_e = get_effective_screen_elements();
+	Vector<Dictionary> pages;
+	for (int i = 0; i < all_e.size(); i++) {
+		if (all_e[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary ed = all_e[i];
+		if (String(ed.get("parent_id", "")) == pager_id && String(ed.get("role", "")) == "pager_page") {
+			pages.push_back(ed);
+		}
+	}
+
+	int act_idx = CLAMP(int(pg_cfg.get("active_editor_page", 0)), 0, MAX(0, pages.size() - 1));
+	if (String(p_el.get("type", "")).to_lower() == "folder" && String(p_el.get("role", "")) == "pager_page") {
+		String sel_pid = String(p_el.get("id", ""));
+		for (int i = 0; i < pages.size(); i++) {
+			if (String(pages[i].get("id", "")) == sel_pid) {
+				act_idx = i;
+				break;
+			}
+		}
+	}
+
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	if (prop_pager_page_opt) {
+		prop_pager_page_opt->clear();
+		for (int i = 0; i < pages.size(); i++) {
+			String pid = String(pages[i].get("id", ""));
+			String pnm = String(pages[i].get("name", pid));
+			prop_pager_page_opt->add_item(itos(i + 1) + ". " + pnm, i);
+			prop_pager_page_opt->set_item_metadata(i, pid);
+		}
+		if (!pages.is_empty()) {
+			prop_pager_page_opt->select(act_idx);
+		}
+	}
+	if (prop_pager_up_page_btn) prop_pager_up_page_btn->set_disabled(act_idx <= 0);
+	if (prop_pager_down_page_btn) prop_pager_down_page_btn->set_disabled(act_idx + 1 >= pages.size());
+	if (prop_pager_del_page_btn) prop_pager_del_page_btn->set_disabled(pages.size() <= 1);
+	if (prop_pager_dup_page_btn) prop_pager_dup_page_btn->set_disabled(pages.is_empty());
+
+	Dictionary cur_page = (act_idx >= 0 && act_idx < pages.size()) ? pages[act_idx] : Dictionary();
+	if (prop_pager_page_name_edit) {
+		prop_pager_page_name_edit->set_text(String(cur_page.get("name", "")));
+	}
+	if (prop_pager_page_icon_edit) {
+		prop_pager_page_icon_edit->set_text(String(cur_page.get("page_icon", "")));
+	}
+	_populate_multi_actions_list(prop_pager_enter_actions_vbox, cur_page.get("enter_actions", Array()));
+
+	auto fmt_trigs = [](const Variant &p_arr) -> String {
+		if (p_arr.get_type() != Variant::ARRAY || Array(p_arr).is_empty()) return "Ninguna";
+		Array a = p_arr;
+		PackedStringArray parts;
+		for (int i = 0; i < a.size(); i++) {
+			if (a[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary td = a[i];
+			String k = String(td.get("kind", "key"));
+			if (k == "key") {
+				String kn = String(td.get("key_name", ""));
+				int64_t kc = int64_t(td.get("keycode", 0));
+				if (kn.is_empty() && kc > 0) kn = keycode_get_string((Key)kc);
+				if (!kn.is_empty()) parts.push_back(kn);
+			} else if (k == "joy_button") {
+				int jb = int(td.get("joy_button", 0));
+				if (jb == int(JoyButton::LEFT_SHOULDER)) parts.push_back("L1");
+				else if (jb == int(JoyButton::RIGHT_SHOULDER)) parts.push_back("R1");
+				else parts.push_back(vformat("M%d", jb));
+			} else if (k == "mouse_button") {
+				parts.push_back(vformat("MB%d", int(td.get("mouse_button", 1))));
+			}
+		}
+		return parts.is_empty() ? String("Ninguna") : String(", ").join(parts);
+	};
+	if (prop_pager_prev_lbl) prop_pager_prev_lbl->set_text(fmt_trigs(pg_cfg.get("prev_triggers", Array())));
+	if (prop_pager_next_lbl) prop_pager_next_lbl->set_text(fmt_trigs(pg_cfg.get("next_triggers", Array())));
+	if (prop_pager_ind_mode_opt) s_select_option_meta(prop_pager_ind_mode_opt, String(pg_cfg.get("indicator_mode", "tabs")));
+	if (prop_pager_ind_pos_opt) s_select_option_meta(prop_pager_ind_pos_opt, String(pg_cfg.get("indicator_pos", "top")));
+	if (prop_pager_ind_size_spin) prop_pager_ind_size_spin->set_value(int(pg_cfg.get("indicator_size", 40)));
+	if (prop_pager_trans_type_opt) s_select_option_meta(prop_pager_trans_type_opt, String(pg_cfg.get("transition_type", "slide")));
+	if (prop_pager_trans_dur_spin) prop_pager_trans_dur_spin->set_value(double(pg_cfg.get("transition_duration", 0.22)));
+	if (prop_pager_trans_curve_opt) s_select_option_meta(prop_pager_trans_curve_opt, String(pg_cfg.get("transition_curve", "ease_out")));
+	if (prop_pager_wrap_chk) prop_pager_wrap_chk->set_pressed(bool(pg_cfg.get("wrap_around", true)));
+	if (prop_pager_click_ind_chk) prop_pager_click_ind_chk->set_pressed(bool(pg_cfg.get("click_indicator_switches", true)));
+	if (prop_pager_wheel_chk) prop_pager_wheel_chk->set_pressed(bool(pg_cfg.get("mouse_wheel_switches", false)));
+	if (prop_pager_rem_focus_chk) prop_pager_rem_focus_chk->set_pressed(bool(pg_cfg.get("remember_focus", true)));
+	if (prop_pager_rem_scroll_chk) prop_pager_rem_scroll_chk->set_pressed(bool(pg_cfg.get("remember_scroll", true)));
+	if (prop_pager_sound_edit) prop_pager_sound_edit->set_text(String(pg_cfg.get("sound_change", "")));
+	updating_ui = prev_upd;
+}
+
+bool ClockGearsUiDesignEditor::set_editor_pager_page(const String &p_pager_id, int p_page_idx) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || p_pager_id.is_empty()) return false;
+	Dictionary pager_el = dm->get_ui_element(current_screen_id, p_pager_id);
+	if (pager_el.is_empty()) pager_el = get_effective_element(p_pager_id);
+	if (pager_el.is_empty() || String(pager_el.get("type", "")).to_lower() != "pager") return false;
+	Dictionary pg_cfg = pager_el.has("pager") && pager_el["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(pager_el["pager"]).duplicate(true)
+			: ClockGearsDataManager::make_default_pager_config();
+	int next_idx = MAX(0, p_page_idx);
+	if (int(pg_cfg.get("active_editor_page", -1)) == next_idx) {
+		if (design_layer) {
+			design_layer->set_pager_active_page(p_pager_id, next_idx, false, false);
+		}
+		return true;
+	}
+	pg_cfg["active_editor_page"] = next_idx;
+	pager_el["pager"] = ClockGearsDataManager::normalize_pager_config(pg_cfg);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, p_pager_id, pager_el, false);
+	if (design_layer) {
+		design_layer->set_pager_active_page(p_pager_id, next_idx, false, false);
+	}
+	Dictionary cur_sel = _get_selected_element_copy();
+	if (!cur_sel.is_empty() && _resolve_active_pager_id(cur_sel) == p_pager_id) {
+		_refresh_pager_inspector(cur_sel);
+	}
+	return true;
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_page_selected(int p_idx) {
+	if (updating_ui || p_idx < 0) return;
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!pager_id.is_empty()) {
+		set_editor_pager_page(pager_id, p_idx);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_changed() {
+	if (updating_ui) return;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!dm || pager_id.is_empty()) return;
+	Dictionary pager_el = dm->get_ui_element(current_screen_id, pager_id);
+	if (pager_el.is_empty()) pager_el = get_effective_element(pager_id);
+	if (pager_el.is_empty()) return;
+	Dictionary pg_cfg = pager_el.has("pager") && pager_el["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(pager_el["pager"]).duplicate(true)
+			: ClockGearsDataManager::make_default_pager_config();
+	if (prop_pager_ind_mode_opt && prop_pager_ind_mode_opt->get_selected() >= 0) {
+		pg_cfg["indicator_mode"] = String(prop_pager_ind_mode_opt->get_item_metadata(prop_pager_ind_mode_opt->get_selected()));
+	}
+	if (prop_pager_ind_pos_opt && prop_pager_ind_pos_opt->get_selected() >= 0) {
+		pg_cfg["indicator_pos"] = String(prop_pager_ind_pos_opt->get_item_metadata(prop_pager_ind_pos_opt->get_selected()));
+	}
+	if (prop_pager_ind_size_spin) {
+		pg_cfg["indicator_size"] = int(Math::round(prop_pager_ind_size_spin->get_value()));
+	}
+	if (prop_pager_trans_type_opt && prop_pager_trans_type_opt->get_selected() >= 0) {
+		pg_cfg["transition_type"] = String(prop_pager_trans_type_opt->get_item_metadata(prop_pager_trans_type_opt->get_selected()));
+	}
+	if (prop_pager_trans_dur_spin) {
+		pg_cfg["transition_duration"] = prop_pager_trans_dur_spin->get_value();
+	}
+	if (prop_pager_trans_curve_opt && prop_pager_trans_curve_opt->get_selected() >= 0) {
+		pg_cfg["transition_curve"] = String(prop_pager_trans_curve_opt->get_item_metadata(prop_pager_trans_curve_opt->get_selected()));
+	}
+	if (prop_pager_wrap_chk) pg_cfg["wrap_around"] = prop_pager_wrap_chk->is_pressed();
+	if (prop_pager_click_ind_chk) pg_cfg["click_indicator_switches"] = prop_pager_click_ind_chk->is_pressed();
+	if (prop_pager_wheel_chk) pg_cfg["mouse_wheel_switches"] = prop_pager_wheel_chk->is_pressed();
+	if (prop_pager_rem_focus_chk) pg_cfg["remember_focus"] = prop_pager_rem_focus_chk->is_pressed();
+	if (prop_pager_rem_scroll_chk) pg_cfg["remember_scroll"] = prop_pager_rem_scroll_chk->is_pressed();
+	if (prop_pager_sound_edit) pg_cfg["sound_change"] = prop_pager_sound_edit->get_text().strip_edges();
+
+	pager_el["pager"] = ClockGearsDataManager::normalize_pager_config(pg_cfg);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, pager_id, pager_el, true);
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_add_page_pressed() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!dm || pager_id.is_empty()) return;
+	ensure_screen_customizable_for_edit(false);
+	String new_pid = dm->add_pager_page(current_screen_id, pager_id);
+	if (!new_pid.is_empty()) {
+		int last_idx = prop_pager_page_opt ? prop_pager_page_opt->get_item_count() : 0;
+		set_editor_pager_page(pager_id, last_idx);
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_dup_page_pressed() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!dm || pager_id.is_empty() || !prop_pager_page_opt || prop_pager_page_opt->get_selected() < 0) return;
+	String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
+	ensure_screen_customizable_for_edit(false);
+	if (dm->duplicate_pager_page(current_screen_id, pager_id, page_id)) {
+		set_editor_pager_page(pager_id, prop_pager_page_opt->get_item_count());
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_move_page_pressed(int p_delta) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!dm || pager_id.is_empty() || !prop_pager_page_opt || prop_pager_page_opt->get_selected() < 0) return;
+	int cur_idx = prop_pager_page_opt->get_selected();
+	String page_id = String(prop_pager_page_opt->get_item_metadata(cur_idx));
+	ensure_screen_customizable_for_edit(false);
+	if (dm->move_pager_page(current_screen_id, pager_id, page_id, p_delta)) {
+		set_editor_pager_page(pager_id, CLAMP(cur_idx + p_delta, 0, MAX(0, prop_pager_page_opt->get_item_count() - 1)));
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_del_page_pressed() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!dm || pager_id.is_empty() || !prop_pager_page_opt || prop_pager_page_opt->get_selected() < 0) return;
+	int cur_idx = prop_pager_page_opt->get_selected();
+	String page_id = String(prop_pager_page_opt->get_item_metadata(cur_idx));
+	ensure_screen_customizable_for_edit(false);
+	if (dm->delete_pager_page(current_screen_id, pager_id, page_id)) {
+		if (selected_elem_id == page_id) {
+			selected_elem_id = pager_id;
+		}
+		set_editor_pager_page(pager_id, MAX(0, cur_idx - 1));
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_page_edited() {
+	if (updating_ui) return;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !prop_pager_page_opt || prop_pager_page_opt->get_selected() < 0) return;
+	String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
+	Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
+	if (pg.is_empty()) pg = get_effective_element(page_id);
+	if (pg.is_empty()) return;
+	if (prop_pager_page_name_edit) pg["name"] = prop_pager_page_name_edit->get_text();
+	if (prop_pager_page_icon_edit) pg["page_icon"] = prop_pager_page_icon_edit->get_text().strip_edges();
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, page_id, pg, false);
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_page_icon_import_pressed() {
+	image_import_target = 25;
+	_on_prop_import_image_pressed();
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_enter_add_action_pressed() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !prop_pager_page_opt || prop_pager_page_opt->get_selected() < 0 || !prop_pager_enter_add_act_opt) return;
+	int ai = prop_pager_enter_add_act_opt->get_selected();
+	if (ai < 0) return;
+	String atype = String(prop_pager_enter_add_act_opt->get_item_metadata(ai));
+	String page_id = String(prop_pager_page_opt->get_item_metadata(prop_pager_page_opt->get_selected()));
+	Dictionary pg = dm->get_ui_element(current_screen_id, page_id);
+	if (pg.is_empty()) pg = get_effective_element(page_id);
+	if (pg.is_empty()) return;
+	Array acts = pg.has("enter_actions") && pg["enter_actions"].get_type() == Variant::ARRAY ? Array(pg["enter_actions"]).duplicate(true) : Array();
+	Dictionary step;
+	step["type"] = atype;
+	acts.push_back(step);
+	pg["enter_actions"] = acts;
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, page_id, pg, true);
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_cap_trigger_pressed(int p_mode) {
+	capturing_key_for_pager_mode = p_mode;
+	if (p_mode == 1 && prop_pager_prev_lbl) prop_pager_prev_lbl->set_text("Pulsa tecla/mando...");
+	if (p_mode == 2 && prop_pager_next_lbl) prop_pager_next_lbl->set_text("Pulsa tecla/mando...");
+}
+
+void ClockGearsUiDesignEditor::_on_prop_pager_clr_trigger_pressed(int p_mode) {
+	capturing_key_for_pager_mode = 0;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String pager_id = _resolve_active_pager_id(_get_selected_element_copy());
+	if (!dm || pager_id.is_empty()) return;
+	Dictionary pager_el = dm->get_ui_element(current_screen_id, pager_id);
+	if (pager_el.is_empty()) pager_el = get_effective_element(pager_id);
+	if (pager_el.is_empty()) return;
+	Dictionary pcfg = pager_el.has("pager") && pager_el["pager"].get_type() == Variant::DICTIONARY
+			? Dictionary(pager_el["pager"]).duplicate(true)
+			: ClockGearsDataManager::make_default_pager_config();
+	pcfg[(p_mode == 1) ? "prev_triggers" : "next_triggers"] = Array();
+	pager_el["pager"] = ClockGearsDataManager::normalize_pager_config(pcfg);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, pager_id, pager_el, true);
+	_notify_data_mutated(true);
+}
+
 void ClockGearsUiDesignEditor::_on_prop_slot_style_state_selected(int p_idx) {
 	if (!prop_slot_style_state_opt || p_idx < 0) {
 		return;
@@ -11244,6 +11928,9 @@ void ClockGearsUiDesignEditor::_on_image_file_selected(const String &p_path) {
 		} else if (image_import_target == 20 && prop_rad_slot_icon_edit) {
 			prop_rad_slot_icon_edit->set_text(final_path);
 			_on_prop_radial_slot_edited();
+		} else if (image_import_target == 25 && prop_pager_page_icon_edit) {
+			prop_pager_page_icon_edit->set_text(final_path);
+			_on_prop_pager_page_edited();
 		} else if (image_import_target >= 10 && image_import_target <= 13) {
 			int si = image_import_target - 10;
 			if (prop_btn_state_img_edits[si]) {
@@ -11935,6 +12622,29 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["prop_slot_action_opt"] = prop_slot_action_opt;
 	out["prop_create_item_tpl_btn"] = prop_create_item_tpl_btn;
 	out["prop_slot_style_state_opt"] = prop_slot_style_state_opt;
+	out["prop_pager_box"] = prop_pager_box;
+	out["prop_pager_page_opt"] = prop_pager_page_opt;
+	out["prop_pager_add_page_btn"] = prop_pager_add_page_btn;
+	out["prop_pager_dup_page_btn"] = prop_pager_dup_page_btn;
+	out["prop_pager_up_page_btn"] = prop_pager_up_page_btn;
+	out["prop_pager_down_page_btn"] = prop_pager_down_page_btn;
+	out["prop_pager_del_page_btn"] = prop_pager_del_page_btn;
+	out["prop_pager_page_name_edit"] = prop_pager_page_name_edit;
+	out["prop_pager_page_icon_edit"] = prop_pager_page_icon_edit;
+	out["prop_pager_enter_add_act_opt"] = prop_pager_enter_add_act_opt;
+	out["prop_pager_enter_add_act_btn"] = prop_pager_enter_add_act_btn;
+	out["prop_pager_enter_actions_vbox"] = prop_pager_enter_actions_vbox;
+	out["prop_pager_prev_lbl"] = prop_pager_prev_lbl;
+	out["prop_pager_next_lbl"] = prop_pager_next_lbl;
+	out["prop_pager_wrap_chk"] = prop_pager_wrap_chk;
+	out["prop_pager_ind_mode_opt"] = prop_pager_ind_mode_opt;
+	out["prop_pager_ind_pos_opt"] = prop_pager_ind_pos_opt;
+	out["prop_pager_trans_type_opt"] = prop_pager_trans_type_opt;
+	out["prop_pager_trans_dur_spin"] = prop_pager_trans_dur_spin;
+	out["prop_pager_trans_curve_opt"] = prop_pager_trans_curve_opt;
+	out["prop_pager_rem_focus_chk"] = prop_pager_rem_focus_chk;
+	out["prop_pager_rem_scroll_chk"] = prop_pager_rem_scroll_chk;
+	out["prop_pager_sound_edit"] = prop_pager_sound_edit;
 	return out;
 }
 

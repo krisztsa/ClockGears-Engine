@@ -259,6 +259,19 @@ private:
 		// Standalone rotatable item preview support
 		bool rotatable_dragging = false;
 		float rotatable_angle_deg = 0.0f;
+
+		// Pager container subnodes & transition state (Punto 2)
+		Control *pager_indicator_host = nullptr;
+		Control *pager_pages_clip = nullptr;
+		Vector<String> pager_page_ids;
+		int pager_active_idx = 0;
+		bool pager_trans_active = false;
+		int pager_trans_from_idx = -1;
+		int pager_trans_dir = 1;
+		double pager_trans_elapsed = 0.0;
+		double pager_trans_duration = 0.22;
+		HashMap<String, String> pager_page_focus_elem;
+		HashMap<String, Vector2> pager_page_scroll;
 	};
 
 	Vector<ElementEntry> elements;
@@ -337,6 +350,15 @@ private:
 	void _on_data_cell_pressed(const String &p_container_id, int p_slot_idx);
 	void _on_data_container_carousel_delta(const String &p_container_id, int p_delta);
 	void _on_rotatable_preview_gui_input(const Ref<InputEvent> &p_event, const String &p_elem_id);
+	void _rebuild_pager_indicator(ElementEntry &r_entry, float p_scale);
+	void _sync_pager_pages_layout_and_vis(ElementEntry &r_entry);
+	void _apply_pager_transition_pose(ElementEntry &r_entry, float p_t);
+	void _on_pager_tab_pressed(const String &p_pager_id, int p_page_idx);
+	void _on_pager_arrow_pressed(const String &p_pager_id, int p_delta);
+	void _on_pager_root_gui_input(const Ref<InputEvent> &p_event, const String &p_pager_id);
+	void _save_pager_page_state(ElementEntry &r_entry, const String &p_page_id);
+	void _restore_pager_page_state(ElementEntry &r_entry, const String &p_page_id);
+	void _execute_action_list(const Array &p_actions, const String &p_src_id = String());
 
 protected:
 	static void _bind_methods();
@@ -405,6 +427,14 @@ public:
 	bool is_radial_mode() const { return radial_canvas != nullptr && radial_canvas->is_visible(); }
 	Dictionary get_active_design_copy() const { return active_design.duplicate(true); }
 	Dictionary get_layout_state_info() const;
+
+	static bool does_input_match_trigger(const Ref<InputEvent> &p_event, const Dictionary &p_trig);
+	static bool does_input_match_any_trigger(const Ref<InputEvent> &p_event, const Array &p_trigs);
+	bool handle_runtime_input_event(const Ref<InputEvent> &p_event);
+	bool set_pager_active_page(const String &p_pager_id, int p_page_idx, bool p_animate = true, bool p_play_sound = true);
+	bool step_pager_page(const String &p_pager_id, int p_delta, bool p_animate = true);
+	int get_pager_active_page(const String &p_pager_id) const;
+	Dictionary get_pager_info(const String &p_pager_id) const;
 
 	bool trigger_action(const String &p_action);
 	bool owns_control(const Control *p_ctrl) const;
