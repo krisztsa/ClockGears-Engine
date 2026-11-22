@@ -2037,8 +2037,8 @@ void ClockGearsUiDesignEditor::_apply_wide_split_widths(float p_avail_w) {
 	}
 	_load_saved_split_widths();
 	float scale = MAX(0.5f, float(EDSCALE));
-	float eff_w = p_avail_w > 200.0f ? p_avail_w : (get_size().x > 200.0f ? get_size().x : 1280.0f * scale);
-	float panel_w = get_size().x > 200.0f ? get_size().x : eff_w;
+	float panel_w = get_size().x > 200.0f ? get_size().x : (p_avail_w > 200.0f ? p_avail_w : 1280.0f * scale);
+	float eff_w = panel_w;
 
 	const float left_min_drag = 200.0f * scale;
 	const float right_min_drag = 280.0f * scale;
@@ -2099,6 +2099,7 @@ void ClockGearsUiDesignEditor::_capture_dragged_split_widths(int p_split_idx) {
 	if (palette_grid && left_col_scroll) {
 		palette_grid->set_columns(left_col_scroll->get_size().x >= 290.0f * scale ? 2 : 1);
 	}
+	fit_recalc_dirty = true;
 	_update_canvas_fit_scale();
 }
 
@@ -2112,6 +2113,7 @@ void ClockGearsUiDesignEditor::_reset_wide_split(int p_split_idx) {
 	_save_split_widths();
 	float avail = last_adapt_width > 200 ? float(last_adapt_width) : (get_size().x > 200.0f ? get_size().x : 1280.0f * float(EDSCALE));
 	_apply_wide_split_widths(avail);
+	fit_recalc_dirty = true;
 	callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 }
 
@@ -2214,7 +2216,10 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 	} else if (p_what == NOTIFICATION_READY || p_what == NOTIFICATION_VISIBILITY_CHANGED) {
 		if (is_visible()) {
 			refresh_from_data_manager();
-			callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
+			if (last_canvas_viewport_sz.x < 16.0f) {
+				fit_recalc_dirty = true;
+			}
+			callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(fit_recalc_dirty).call_deferred();
 		} else {
 			long_help_ctrl.hide_help();
 			close_test_popup();
@@ -2243,6 +2248,7 @@ void ClockGearsUiDesignEditor::_notification(int p_what) {
 		if (w <= 200 && get_window() && get_window()->get_size().x > 0) {
 			w = int(get_window()->get_size().x);
 		}
+		fit_recalc_dirty = true;
 		if (w > 200) {
 			_rebalance_responsive_layout(w);
 		}
@@ -2518,13 +2524,21 @@ void ClockGearsUiDesignEditor::_on_canvas_scroll_resized() {
 	if (sc_sz.x < 16.0f || sc_sz.y < 16.0f) {
 		return;
 	}
+	if (!fit_recalc_dirty && last_canvas_viewport_sz.x >= 16.0f && sc_sz.distance_to(last_canvas_viewport_sz) <= 0.5f) {
+		return;
+	}
 	last_canvas_viewport_sz = sc_sz;
+	fit_recalc_dirty = true;
 	_update_canvas_fit_scale();
 	callable_mp(this, &ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized).call_deferred();
 }
 
 void ClockGearsUiDesignEditor::_on_canvas_fit_holder_resized() {
 	if (canvas_zoom_mode != 0) {
+		return;
+	}
+	Size2 sc_sz = canvas_scroll ? canvas_scroll->get_size() : Size2();
+	if (!fit_recalc_dirty && last_canvas_viewport_sz.x >= 16.0f && sc_sz.distance_to(last_canvas_viewport_sz) <= 0.5f) {
 		return;
 	}
 	_update_canvas_fit_scale();
@@ -2558,6 +2572,9 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 		return;
 	}
 	if (canvas_zoom_mode == 0) {
+		if (!fit_recalc_dirty && last_canvas_viewport_sz.x >= 16.0f && sc_sz.distance_to(last_canvas_viewport_sz) <= 0.5f) {
+			return;
+		}
 		Size2 fit_box = (sc_sz.x >= 16.0f && sc_sz.y >= 16.0f) ? sc_sz : holder_sz;
 		float margin = 8.0f * EDSCALE;
 		Size2 avail(MAX(32.0f, fit_box.x - margin * 2.0f), MAX(18.0f, fit_box.y - margin * 2.0f));
@@ -2565,6 +2582,10 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(s, s));
 		canvas_stage->set_position((holder_sz - stage_sz * s) * 0.5f);
+		if (sc_sz.x >= 16.0f && sc_sz.y >= 16.0f) {
+			last_canvas_viewport_sz = sc_sz;
+			fit_recalc_dirty = false;
+		}
 	} else {
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(1.0f, 1.0f));
@@ -3038,13 +3059,15 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	left_col_scroll->set_h_size_flags(Control::SIZE_FILL);
 	left_col_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	left_col_scroll->set_stretch_ratio(0.0f);
-	left_col_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	left_col_scroll->set_clip_contents(true);
+	left_col_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	left_col_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	wide_hbox->add_child(left_col_scroll);
 
 	wide_left_col = memnew(VBoxContainer);
 	wide_left_col->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wide_left_col->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	wide_left_col->set_clip_contents(true);
 	wide_left_col->add_theme_constant_override("separation", int(8 * EDSCALE));
 	left_col_scroll->add_child(wide_left_col);
 
@@ -3209,7 +3232,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	design_cards_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	design_cards_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	design_cards_scroll->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
-	design_cards_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	design_cards_scroll->set_clip_contents(true);
+	design_cards_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	design_cards_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	design_cards_scroll->set_tooltip_text(String::utf8("Lista de elementos (arriba = al frente). Haz clic para seleccionar, doble clic para editar en ventana, clic derecho para acciones, o arrastra para reordenar / anidar."));
 	menus_body->add_child(design_cards_scroll);
@@ -3535,12 +3559,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	VBoxContainer *props_outer = memnew(VBoxContainer);
 	props_outer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_outer->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	props_outer->set_clip_contents(true);
 	props_outer->add_theme_constant_override("separation", int(6 * EDSCALE));
 	props_card->add_child(props_outer);
 
 	VBoxContainer *props_body = memnew(VBoxContainer);
 	props_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_body->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	props_body->set_clip_contents(true);
 	props_body->add_theme_constant_override("separation", int(6 * EDSCALE));
 	_attach_collapsible_header(props_outer, "Propiedades", props_body, true);
 	props_outer->add_child(props_body);
@@ -3584,7 +3610,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	props_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	props_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	props_scroll->set_custom_minimum_size(Size2(150 * EDSCALE, 140 * EDSCALE));
-	props_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	props_scroll->set_clip_contents(true);
+	props_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	props_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_SHOW_ALWAYS);
 	props_body->add_child(props_scroll);
 
@@ -5137,9 +5164,10 @@ void ClockGearsUiDesignEditor::_relayout_top_toolbar(int p_avail_w) {
 }
 
 void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
-	last_adapt_width = p_avail_w;
-	_relayout_top_toolbar(p_avail_w);
-	bool want_compact = (p_avail_w > 0 && p_avail_w < int(780 * EDSCALE));
+	int actual_w = (get_size().x > 200.0f) ? int(Math::round(get_size().x)) : p_avail_w;
+	last_adapt_width = actual_w;
+	_relayout_top_toolbar(actual_w);
+	bool want_compact = (actual_w > 0 && actual_w < int(780 * EDSCALE));
 	compact_two_row_layout = want_compact;
 
 	if (want_compact) {
@@ -5162,7 +5190,7 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		if (compact_scroll) compact_scroll->hide();
 		compact_vbox->hide();
 		wide_hbox->show();
-		float eff_w = float(p_avail_w > 0 ? p_avail_w : (get_size().x > 200.0f ? int(get_size().x) : 1280));
+		float eff_w = float(actual_w > 0 ? actual_w : 1280);
 		if (left_col_scroll) {
 			left_col_scroll->set_h_size_flags(Control::SIZE_FILL);
 			left_col_scroll->set_stretch_ratio(0.0f);
@@ -5197,6 +5225,7 @@ void ClockGearsUiDesignEditor::_rebalance_responsive_layout(int p_avail_w) {
 		_apply_wide_split_widths(eff_w);
 		callable_mp(this, &ClockGearsUiDesignEditor::_apply_wide_split_widths).bind(eff_w).call_deferred();
 	}
+	fit_recalc_dirty = true;
 	callable_mp(this, &ClockGearsUiDesignEditor::_apply_canvas_zoom_layout).bind(true).call_deferred();
 }
 
@@ -5218,6 +5247,7 @@ void ClockGearsUiDesignEditor::set_preview_resolution(int p_width, int p_height,
 		}
 		updating_ui = prev;
 	}
+	fit_recalc_dirty = true;
 	_apply_canvas_zoom_layout(true);
 	_refresh_canvas_stage();
 	if (p_sync_owner_db && owner_db && owner_db->get_menus_preview_resolution() != preview_resolution) {
@@ -7507,6 +7537,7 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 	if (per_screen_zoom_state.has(current_screen_id)) {
 		target_zs = per_screen_zoom_state[current_screen_id];
 	}
+	int prev_mode = canvas_zoom_mode;
 	canvas_zoom_mode = CLAMP(target_zs.zoom_mode, 0, 4);
 	canvas_zoom = (canvas_zoom_mode == 2) ? 2 : ((canvas_zoom_mode == 4) ? 3 : 1);
 	for (int i = 0; i < 5; i++) {
@@ -7514,7 +7545,11 @@ void ClockGearsUiDesignEditor::select_screen(const String &p_screen_id) {
 			zoom_btns[i]->set_pressed(i == canvas_zoom_mode);
 		}
 	}
-	_apply_canvas_zoom_layout(true);
+	bool need_fit = (canvas_zoom_mode == 0) && (prev_mode != 0 || last_canvas_viewport_sz.x < 16.0f);
+	if (need_fit) {
+		fit_recalc_dirty = true;
+	}
+	_apply_canvas_zoom_layout(need_fit);
 	refresh_from_data_manager();
 	if (canvas_zoom_mode != 0) {
 		callable_mp(this, &ClockGearsUiDesignEditor::_restore_canvas_scroll_pos).bind(target_zs.scroll_pos).call_deferred();
@@ -7616,7 +7651,10 @@ void ClockGearsUiDesignEditor::set_canvas_zoom_mode(int p_mode) {
 		st.scroll_pos = Vector2i(canvas_scroll->get_h_scroll(), canvas_scroll->get_v_scroll());
 	}
 	per_screen_zoom_state[current_screen_id] = st;
-	_apply_canvas_zoom_layout(true);
+	if (canvas_zoom_mode == 0) {
+		fit_recalc_dirty = true;
+	}
+	_apply_canvas_zoom_layout(canvas_zoom_mode == 0);
 	_refresh_canvas_stage();
 }
 

@@ -306,6 +306,7 @@ private:
 	};
 	HashMap<String, ScreenZoomState> per_screen_zoom_state;
 	Size2 last_canvas_viewport_sz = Size2(-1, -1);
+	bool fit_recalc_dirty = true;
 	bool compact_two_row_layout = false;
 	int last_adapt_width = 1920;
 
