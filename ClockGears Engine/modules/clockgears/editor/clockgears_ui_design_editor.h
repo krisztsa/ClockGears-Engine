@@ -401,12 +401,17 @@ private:
 	Vector<String> reparent_candidate_ids;
 	VBoxContainer *layers_list_vbox = nullptr;
 	ClockGearsLayersCanvas *layers_long_canvas = nullptr;
+	Button *layer_add_button_btn = nullptr;
 	Button *layer_add_folder_btn = nullptr;
 	Button *layer_group_btn = nullptr;
 	Button *layer_ungroup_btn = nullptr;
 	Button *layer_up_btn = nullptr;
 	Button *layer_down_btn = nullptr;
 	Button *layer_del_btn = nullptr;
+	HBoxContainer *folder_prompt_box = nullptr;
+	LineEdit *folder_name_edit = nullptr;
+	Button *folder_confirm_btn = nullptr;
+	Button *folder_cancel_btn = nullptr;
 
 	// Panel de propiedades (4C: Simple/Avanzado, Buscador, Secciones plegables, Sliders, Selectores)
 	bool props_advanced_mode = false;
@@ -676,13 +681,21 @@ private:
 
 	// Ventanas flotantes no modales por elemento (9B Capas P4)
 	HashMap<String, ClockGearsUiElementFloatingWindow *> open_floating_windows;
+	ClockGearsUiElementFloatingWindow *create_floating_window = nullptr;
+	bool ghost_preview_active = false;
+	Dictionary ghost_preview_elem;
 	Vector2i last_floating_window_pos = Vector2i(-1, -1);
 	Size2i last_floating_window_size = Size2i(0, 0);
 
 	void _sync_open_floating_windows();
 	void _on_floating_window_closed(const String &p_key, ClockGearsUiElementFloatingWindow *p_win);
+	void _on_create_floating_window_closed();
 	void _on_layers_tree_item_activated();
 	void _on_float_window_elem_edited(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_next_elem);
+	void _on_layer_add_button_pressed();
+	void _on_folder_prompt_confirm(const String &p_text = "");
+	void _on_folder_prompt_cancel();
+	void _on_folder_name_gui_input(const Ref<InputEvent> &p_ev);
 
 	void _build_ui();
 	void _trace_log(const String &p_event, const String &p_detail = "") const;
@@ -972,6 +985,17 @@ public:
 	int get_open_floating_window_count() const;
 	void apply_floating_window_element_update(const String &p_screen_id, const String &p_elem_id, const Dictionary &p_next_elem);
 
+	Window *open_create_button_window();
+	Window *get_create_button_window() const;
+	bool confirm_create_button_from_draft(const Dictionary &p_draft);
+	void cancel_create_button_window();
+	void set_ghost_preview_element(const Dictionary &p_elem, bool p_enabled);
+	bool has_ghost_preview_element() const { return ghost_preview_active; }
+	Dictionary get_ghost_preview_element() const { return ghost_preview_elem; }
+	void begin_inline_folder_create();
+	String confirm_inline_folder_create(const String &p_name_override = "");
+	void cancel_inline_folder_create();
+
 	ClockGearsUiDesignLayer *get_canvas_design_layer() const { return design_layer; }
 	Control *get_canvas_stage() const { return canvas_stage; }
 	ClockGearsUiCanvasOverlay *get_canvas_overlay() const { return canvas_overlay; }
@@ -999,13 +1023,19 @@ private:
 	String target_elem_id;
 	Dictionary working_elem;
 	bool updating = false;
+	bool creation_mode = false;
 
 	PanelContainer *bg_root = nullptr;
 	TabContainer *tabs = nullptr;
+	HBoxContainer *create_footer = nullptr;
+	Button *create_confirm_btn = nullptr;
+	Button *create_cancel_btn = nullptr;
 
 	// General
 	LineEdit *name_edit = nullptr;
 	Label *type_lbl = nullptr;
+	HBoxContainer *quick_shape_row = nullptr;
+	OptionButton *quick_shape_opt = nullptr;
 	CheckBox *visible_chk = nullptr;
 	CheckBox *locked_chk = nullptr;
 	CheckBox *clip_children_chk = nullptr;
@@ -1070,6 +1100,10 @@ private:
 	void _on_font_file_selected(const String &p_path);
 	void _on_adjust_manual_pressed();
 	void _on_adjust_manual_confirmed(const Dictionary &p_vals);
+	void _on_quick_shape_selected(int p_idx);
+	void _on_create_confirm_pressed();
+	void _on_create_cancel_pressed();
+	void _on_win_unhandled_key(const Ref<InputEvent> &p_ev);
 	void _on_theme_changed();
 
 protected:
@@ -1078,6 +1112,10 @@ protected:
 
 public:
 	void configure(ClockGearsUiDesignEditor *p_owner, const String &p_screen_id, const String &p_elem_id, const Dictionary &p_elem);
+	void open_for_create_button(ClockGearsUiDesignEditor *p_owner, const String &p_screen_id, const Dictionary &p_draft_elem);
+	bool is_creation_mode() const { return creation_mode; }
+	void confirm_creation();
+	void cancel_creation();
 	void sync_from_element(const Dictionary &p_elem);
 	void refresh_theme();
 	String get_target_screen_id() const { return target_screen_id; }

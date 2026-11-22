@@ -4719,7 +4719,7 @@ static String _cg_norm_hud_anchor(const Variant &p_val) {
 static String _cg_norm_hud_type(const Variant &p_val) {
 	String t = String(p_val).strip_edges().to_lower();
 	if (t == "bar" || t == "hearts" || t == "currency" || t == "item" || t == "text" || t == "image" ||
-			t == "variable" || t == "frame" || t == "button") {
+			t == "variable" || t == "frame" || t == "button" || t == "folder") {
 		return t;
 	}
 	if (t == "marco") {
@@ -5277,6 +5277,16 @@ Dictionary ClockGearsDataManager::make_default_hud_widget(const String &p_type) 
 		w["width"] = 260;
 		w["height"] = 180;
 		w["opacity"] = 1.0;
+	} else if (wtype == "folder") {
+		w["name"] = "Carpeta";
+		w["anchor"] = "top_left";
+		w["offset_x"] = 0;
+		w["offset_y"] = 0;
+		w["width"] = 0;
+		w["height"] = 0;
+		w["parent_id"] = "";
+		w["locked"] = false;
+		w["collapsed"] = false;
 	} else {
 		w["name"] = "Imagen";
 		w["width"] = 96;
@@ -5312,8 +5322,21 @@ Dictionary ClockGearsDataManager::normalize_hud_widget(const Dictionary &p_widge
 	out["anchor"] = (raw_anchor == "free") ? String("free") : _cg_norm_hud_anchor(raw_anchor);
 	out["offset_x"] = CLAMP(int(p_widget.get("offset_x", def["offset_x"])), -960, 960);
 	out["offset_y"] = CLAMP(int(p_widget.get("offset_y", def["offset_y"])), -540, 540);
-	out["width"] = CLAMP(int(p_widget.get("width", def["width"])), 16, 960);
-	out["height"] = CLAMP(int(p_widget.get("height", def["height"])), 16, 540);
+	out["width"] = (wtype == "folder") ? CLAMP(int(p_widget.get("width", 0)), 0, 960) : CLAMP(int(p_widget.get("width", def["width"])), 16, 960);
+	out["height"] = (wtype == "folder") ? CLAMP(int(p_widget.get("height", 0)), 0, 540) : CLAMP(int(p_widget.get("height", def["height"])), 16, 540);
+	String pid_hud = String(p_widget.get("parent_id", "")).strip_edges();
+	if (wtype == "folder" || !pid_hud.is_empty()) {
+		out["parent_id"] = pid_hud;
+	}
+	if (p_widget.has("locked") && bool(p_widget["locked"])) {
+		out["locked"] = true;
+	}
+	if (p_widget.has("collapsed") && bool(p_widget["collapsed"])) {
+		out["collapsed"] = true;
+	}
+	if (p_widget.has("clip_children") && bool(p_widget["clip_children"])) {
+		out["clip_children"] = true;
+	}
 	if (raw_anchor == "free") {
 		// Modo libre: posición absoluta en píxeles enteros sobre 960x540, sin salirse de la pantalla.
 		out["offset_x"] = CLAMP(int(out["offset_x"]), 0, 960 - int(out["width"]));
