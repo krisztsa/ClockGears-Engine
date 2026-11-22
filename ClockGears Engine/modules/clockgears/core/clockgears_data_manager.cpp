@@ -5093,6 +5093,8 @@ static Dictionary _cg_norm_button_action_step(const Dictionary &p_step) {
 static String _cg_norm_ui_data_binding(const Variant &p_val) {
 	String b = String(p_val).strip_edges().to_lower();
 	if (b == "project_title" || b == "currency_name" || b == "gold" || b == "item_qty" ||
+			b == "item_name" || b == "item_desc" || b == "item_icon" || b == "item_price" ||
+			b == "item_type" || b == "item_params" ||
 			b == "variable" || b == "player_hp" || b == "player_mp" ||
 			b == "actor_name" || b == "actor_level" || b == "playtime") {
 		return b;
@@ -5808,6 +5810,7 @@ Array ClockGearsDataManager::get_all_ui_button_action_types() {
 	push_t("play_sound", "Reproducir sonido");
 	push_t("play_music", String::utf8("Reproducir música"));
 	push_t("hud_visibility", "Mostrar u ocultar HUD");
+	push_t("show_detail", "Mostrar detalle del elemento");
 	push_t("item_use", "Usar objeto seleccionado");
 	push_t("item_discard", "Tirar objeto seleccionado");
 	push_t("equip_apply", "Equipar pieza seleccionada");
@@ -6019,6 +6022,57 @@ Dictionary ClockGearsDataManager::normalize_ui_shape(const Dictionary &p_shape) 
 	return out;
 }
 
+String ClockGearsDataManager::normalize_ui_data_source(const Variant &p_val) {
+	String s = String(p_val).strip_edges().to_lower();
+	if (s == "inventory_all" || s == "inventory_consumables" || s == "inventory_key_materials" ||
+			s == "inventory_weapons" || s == "inventory_armors" || s == "inventory_shields" ||
+			s == "inventory_accessories" || s == "equip_compatible" || s == "equip_slots" ||
+			s == "party_members" || s == "actor_skills" || s == "actor_states" ||
+			s == "save_slots" || s == "battle_commands") {
+		return s;
+	}
+	if (s == "items" || s == "inventory") return "inventory_all";
+	if (s == "consumables") return "inventory_consumables";
+	if (s == "key_items" || s == "materials") return "inventory_key_materials";
+	if (s == "weapons") return "inventory_weapons";
+	if (s == "armors") return "inventory_armors";
+	if (s == "shields") return "inventory_shields";
+	if (s == "accessories") return "inventory_accessories";
+	if (s == "equip_candidates" || s == "compatible_equip") return "equip_compatible";
+	if (s == "party") return "party_members";
+	if (s == "skills") return "actor_skills";
+	if (s == "states") return "actor_states";
+	if (s == "saves") return "save_slots";
+	return "manual";
+}
+
+Array ClockGearsDataManager::get_ui_container_data_sources() {
+	Array out;
+	auto push_ds = [&](const String &p_id, const String &p_label, bool p_existed_before) {
+		Dictionary d;
+		d["id"] = p_id;
+		d["label"] = p_label;
+		d["existed_before"] = p_existed_before;
+		out.push_back(d);
+	};
+	push_ds("manual", "Lista manual", true);
+	push_ds("inventory_all", "Inventario completo", true);
+	push_ds("inventory_consumables", "Consumibles", false);
+	push_ds("inventory_key_materials", "Objetos clave y materiales", false);
+	push_ds("inventory_weapons", "Armas", false);
+	push_ds("inventory_armors", "Armaduras", false);
+	push_ds("inventory_shields", "Escudos", false);
+	push_ds("inventory_accessories", "Accesorios", false);
+	push_ds("equip_compatible", "Equipo compatible (ranura elegida)", true);
+	push_ds("equip_slots", "Ranuras de equipo", true);
+	push_ds("party_members", "Miembros del grupo", true);
+	push_ds("actor_skills", "Habilidades del actor", false);
+	push_ds("actor_states", "Estados del actor", true);
+	push_ds("save_slots", "Partidas guardadas", true);
+	push_ds("battle_commands", "Comandos de batalla", false);
+	return out;
+}
+
 Array ClockGearsDataManager::get_ui_data_bindings() {
 	Array out;
 	auto push_b = [&](const String &p_id, const String &p_label) {
@@ -6028,10 +6082,16 @@ Array ClockGearsDataManager::get_ui_data_bindings() {
 		out.push_back(d);
 	};
 	push_b("none", "Ninguno (texto fijo)");
+	push_b("item_name", "Nombre del objeto / entrada");
+	push_b("item_desc", String::utf8("Descripción del objeto"));
+	push_b("item_icon", "Icono / celda del objeto");
+	push_b("item_qty", "Cantidad del objeto");
+	push_b("item_price", "Precio del objeto");
+	push_b("item_type", String::utf8("Tipo / categoría"));
+	push_b("item_params", String::utf8("Parámetros del objeto"));
 	push_b("project_title", String::utf8("Título del proyecto"));
 	push_b("currency_name", "Nombre de la moneda");
 	push_b("gold", "Dinero");
-	push_b("item_qty", "Cantidad de un objeto");
 	push_b("variable", "Variable");
 	push_b("player_hp", "HP del jugador");
 	push_b("player_mp", "MP del jugador");
@@ -6192,7 +6252,24 @@ Dictionary ClockGearsDataManager::make_default_ui_element(const String &p_type, 
 			lay["radial_show_center_info"] = true;
 			lay["radial_open_anim"] = "radial_spin";
 			lay["radial_slots"] = make_default_radial_slots(6, sid);
+			el["layout_mode"] = "radial";
+		} else {
+			lay["mode"] = "grid";
+			el["layout_mode"] = "grid";
+			el["layout_columns"] = 4;
+			el["layout_rows"] = 2;
+			el["layout_spacing"] = 8;
+			el["layout_spacing_y"] = 8;
+			el["layout_scroll"] = true;
 		}
+		el["data_source"] = "manual";
+		el["data_filter_category"] = "";
+		el["data_only_usable"] = false;
+		el["data_sort_by"] = "id";
+		el["data_equip_slot"] = 0;
+		el["data_show_empty"] = true;
+		el["data_empty_count"] = 8;
+		el["slot_action"] = "";
 		el["layout"] = normalize_menu_layout(lay);
 	} else if (etype == "widget") {
 		el["name"] = "Panel / Lista";
@@ -6249,18 +6326,27 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	out["locked"] = p_elem.has("locked") ? bool(p_elem["locked"]) : false;
 	out["collapsed"] = p_elem.has("collapsed") ? bool(p_elem["collapsed"]) : false;
 	out["clip_children"] = p_elem.has("clip_children") ? bool(p_elem["clip_children"]) : false;
-	String lm = String(p_elem.get("layout_mode", "free")).strip_edges().to_lower();
-	if (lm != "vertical_list" && lm != "horizontal_list" && lm != "grid") {
+	String lm = _cg_norm_layout_mode(p_elem.get("layout_mode", (etype == "radial") ? Variant("radial") : Variant("free")));
+	if (etype != "container" && etype != "radial" && lm != "vertical_list" && lm != "horizontal_list" && lm != "grid") {
 		lm = "free";
 	}
-	if (lm != "free" || p_elem.has("layout_mode")) {
+	if (lm != "free" || p_elem.has("layout_mode") || etype == "container" || etype == "radial") {
 		out["layout_mode"] = lm;
 	}
-	if (lm != "free" || p_elem.has("layout_columns")) {
-		out["layout_columns"] = CLAMP(int(p_elem.get("layout_columns", 2)), 1, 12);
+	if (lm != "free" || p_elem.has("layout_columns") || etype == "container") {
+		out["layout_columns"] = CLAMP(int(p_elem.get("layout_columns", 4)), 1, 20);
 	}
-	if (lm != "free" || p_elem.has("layout_spacing")) {
+	if (lm != "free" || p_elem.has("layout_rows") || etype == "container") {
+		out["layout_rows"] = CLAMP(int(p_elem.get("layout_rows", 0)), 0, 20);
+	}
+	if (lm != "free" || p_elem.has("layout_spacing") || etype == "container") {
 		out["layout_spacing"] = CLAMP(int(p_elem.get("layout_spacing", 8)), 0, 64);
+	}
+	if (lm != "free" || p_elem.has("layout_spacing_y") || etype == "container") {
+		out["layout_spacing_y"] = CLAMP(int(p_elem.get("layout_spacing_y", p_elem.get("layout_spacing", 8))), 0, 64);
+	}
+	if (lm != "free" || p_elem.has("layout_scroll") || etype == "container") {
+		out["layout_scroll"] = p_elem.has("layout_scroll") ? bool(p_elem["layout_scroll"]) : true;
 	}
 
 	String ws = String(p_elem.get("window_style_id", def.get("window_style_id", ""))).strip_edges().to_lower();
@@ -6361,12 +6447,63 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 	if (p_elem.has("shape") && p_elem["shape"].get_type() == Variant::DICTIONARY) {
 		out["shape"] = normalize_ui_shape(Dictionary(p_elem["shape"]));
 	}
-	if (etype == "container" || etype == "radial") {
+	if (etype == "container" || etype == "radial" || lm != "free") {
 		Dictionary raw_lay = (p_elem.has("layout") && p_elem["layout"].get_type() == Variant::DICTIONARY) ? Dictionary(p_elem["layout"]) : Dictionary();
 		if (etype == "radial" && !raw_lay.has("mode")) {
 			raw_lay["mode"] = "radial";
+		} else if (!raw_lay.has("mode") && lm != "free") {
+			raw_lay["mode"] = lm;
 		}
 		out["layout"] = normalize_menu_layout(raw_lay);
+
+		String ds = normalize_ui_data_source(p_elem.get("data_source", "manual"));
+		out["data_source"] = ds;
+		out["data_filter_category"] = String(p_elem.get("data_filter_category", "")).strip_edges().to_lower();
+		out["data_only_usable"] = bool(p_elem.get("data_only_usable", false));
+		String sby = String(p_elem.get("data_sort_by", "id")).strip_edges().to_lower();
+		if (sby != "id" && sby != "name" && sby != "qty") {
+			sby = "id";
+		}
+		out["data_sort_by"] = sby;
+		out["data_equip_slot"] = CLAMP(int(p_elem.get("data_equip_slot", 0)), 0, 15);
+		out["data_show_empty"] = p_elem.has("data_show_empty") ? bool(p_elem["data_show_empty"]) : true;
+		out["data_empty_count"] = CLAMP(int(p_elem.get("data_empty_count", 8)), 0, 64);
+		out["item_template_folder_id"] = String(p_elem.get("item_template_folder_id", "")).strip_edges();
+
+		String s_act = String(p_elem.get("slot_action", "")).strip_edges().to_lower();
+		if (s_act == "use") s_act = "item_use";
+		else if (s_act == "discard") s_act = "item_discard";
+		else if (s_act == "equip") s_act = "equip_apply";
+		out["slot_action"] = s_act;
+		if (p_elem.has("slot_actions") && p_elem["slot_actions"].get_type() == Variant::ARRAY) {
+			Array sacts_in = p_elem["slot_actions"];
+			Array sacts_out;
+			for (int ai = 0; ai < sacts_in.size(); ai++) {
+				if (sacts_in[ai].get_type() == Variant::DICTIONARY) {
+					sacts_out.push_back(_cg_norm_button_action_step(Dictionary(sacts_in[ai])));
+				}
+			}
+			out["slot_actions"] = sacts_out;
+		}
+		if (p_elem.has("slot_styles") && p_elem["slot_styles"].get_type() == Variant::DICTIONARY) {
+			Dictionary raw_ss = p_elem["slot_styles"];
+			Dictionary norm_ss;
+			static const char *k_states[4] = { "normal", "selected", "disabled", "empty" };
+			for (int si = 0; si < 4; si++) {
+				if (raw_ss.has(k_states[si]) && raw_ss[k_states[si]].get_type() == Variant::DICTIONARY) {
+					norm_ss[k_states[si]] = Dictionary(raw_ss[k_states[si]]).duplicate(true);
+				}
+			}
+			if (!norm_ss.is_empty()) {
+				out["slot_styles"] = norm_ss;
+			}
+		}
+		if (p_elem.has("element_overrides") && p_elem["element_overrides"].get_type() == Variant::DICTIONARY) {
+			out["element_overrides"] = Dictionary(p_elem["element_overrides"]).duplicate(true);
+		}
+	}
+	if (p_elem.has("rotatable")) {
+		out["rotatable"] = bool(p_elem["rotatable"]);
 	}
 	if (etype == "button") {
 		String raw_action = String(p_elem.get("action", def.get("action", ""))).strip_edges().to_lower();
@@ -10391,6 +10528,482 @@ String ClockGearsDataManager::resolve_ui_data_binding(const String &p_binding, c
 	return String();
 }
 
+void ClockGearsDataManager::set_editor_test_data_count(int p_count) {
+	if (p_count < 0) {
+		editor_test_data_count = -1;
+	} else {
+		editor_test_data_count = CLAMP(p_count, 0, 200);
+	}
+}
+
+static String _cg_format_entry_params_text(const Dictionary &p_rec) {
+	if (p_rec.is_empty()) {
+		return String();
+	}
+	Vector<String> parts;
+	static const char *k_stat_keys[8] = { "atk", "def", "mat", "mdf", "agi", "luk", "hp", "mp" };
+	static const char *k_stat_lbls[8] = { "ATQ", "DEF", "MAT", "MDF", "AGI", "SUE", "HP", "MP" };
+	for (int i = 0; i < 8; i++) {
+		int v = int(p_rec.get(k_stat_keys[i], 0));
+		if (v != 0) {
+			parts.push_back(vformat("%s %s%d", k_stat_lbls[i], v > 0 ? "+" : "", v));
+		}
+	}
+	if (p_rec.has("stats") && p_rec["stats"].get_type() == Variant::DICTIONARY) {
+		Dictionary st = p_rec["stats"];
+		for (int i = 0; i < 8; i++) {
+			int v = int(st.get(k_stat_keys[i], 0));
+			if (v != 0) {
+				parts.push_back(vformat("%s %s%d", k_stat_lbls[i], v > 0 ? "+" : "", v));
+			}
+		}
+	}
+	if (parts.is_empty()) {
+		int pwr = int(p_rec.get("power", p_rec.get("heal_hp", 0)));
+		if (pwr != 0) {
+			parts.push_back(vformat("Efecto %+d", pwr));
+		}
+		int cost = int(p_rec.get("mp_cost", 0));
+		if (cost > 0) {
+			parts.push_back(vformat("PM %d", cost));
+		}
+	}
+	String joined;
+	for (int i = 0; i < parts.size(); i++) {
+		if (i > 0) joined += String::utf8(" · ");
+		joined += parts[i];
+	}
+	return joined;
+}
+
+String ClockGearsDataManager::resolve_ui_entry_field_binding(const String &p_binding, const Dictionary &p_entry, const Dictionary &p_element, bool p_preview_mode) const {
+	String b = _cg_norm_ui_data_binding(p_binding);
+	bool is_empty = p_entry.is_empty() || bool(p_entry.get("is_empty", false));
+	if (b == "item_name") {
+		if (is_empty) {
+			int slot_idx = int(p_entry.get("slot_index", 0));
+			if (p_preview_mode && !p_entry.is_empty() && slot_idx >= 0) {
+				return vformat(String::utf8("Ranura %d"), slot_idx + 1);
+			}
+			return String::utf8("Vacío");
+		}
+		return String(p_entry.get("name", ""));
+	}
+	if (b == "item_desc") {
+		return is_empty ? String() : String(p_entry.get("desc", p_entry.get("description", "")));
+	}
+	if (b == "item_qty") {
+		if (!p_entry.is_empty()) {
+			if (is_empty) {
+				return String();
+			}
+			if (p_entry.has("qty_text")) {
+				return String(p_entry["qty_text"]);
+			}
+			int q = int(p_entry.get("qty", 0));
+			return q > 0 ? vformat("x%d", q) : String();
+		}
+		return resolve_ui_data_binding(b, p_element);
+	}
+	if (b == "item_price") {
+		if (is_empty) {
+			return String();
+		}
+		int pr = int(p_entry.get("price", 0));
+		return pr > 0 ? vformat("%d %s", pr, get_currency_unit()) : String("-");
+	}
+	if (b == "item_type") {
+		return is_empty ? String() : String(p_entry.get("type_label", ""));
+	}
+	if (b == "item_params") {
+		return is_empty ? String() : String(p_entry.get("params_text", ""));
+	}
+	return resolve_ui_data_binding(b, p_element);
+}
+
+Array ClockGearsDataManager::resolve_ui_container_entries(const Dictionary &p_container_cfg, int p_actor_id, int p_equip_slot_idx, bool p_preview_mode) const {
+	Array out;
+	String ds = normalize_ui_data_source(p_container_cfg.get("data_source", "manual"));
+	if (ds == "manual") {
+		return out;
+	}
+
+	String filter_cat = String(p_container_cfg.get("data_filter_category", "")).strip_edges().to_lower();
+	bool only_usable = bool(p_container_cfg.get("data_only_usable", false));
+	String sort_by = String(p_container_cfg.get("data_sort_by", "id")).strip_edges().to_lower();
+	int equip_slot = p_container_cfg.has("data_equip_slot") ? MAX(0, int(p_container_cfg["data_equip_slot"])) : MAX(0, p_equip_slot_idx);
+	bool show_empty = p_container_cfg.has("data_show_empty") ? bool(p_container_cfg["data_show_empty"]) : true;
+	int empty_count = CLAMP(int(p_container_cfg.get("data_empty_count", 8)), 0, 64);
+
+	int actor_id = p_actor_id;
+	if (actor_id <= 0) {
+		actor_id = int(p_container_cfg.get("actor_id", 0));
+	}
+	if (actor_id <= 0) {
+		Array party = get_party_actor_ids();
+		if (!party.is_empty()) {
+			actor_id = int(party[0]);
+		} else if (!category_data[CAT_ACTORS].is_empty()) {
+			actor_id = int(Dictionary(category_data[CAT_ACTORS][0]).get("id", 1));
+		} else {
+			actor_id = 1;
+		}
+	}
+
+	ClockGearsDataManager *self_mut = const_cast<ClockGearsDataManager *>(this);
+	auto make_item_row = [&](int p_cat, const Dictionary &p_rec, const String &p_key, int p_qty, bool p_usable, const String &p_tlabel, const String &p_act) -> Dictionary {
+		Dictionary r;
+		r["is_empty"] = false;
+		r["key"] = p_key;
+		r["category"] = p_cat;
+		r["id"] = int(p_rec.get("id", 0));
+		r["name"] = String(p_rec.get("name", p_key));
+		r["desc"] = String(p_rec.get("desc", ""));
+		r["icon_path"] = String(p_rec.get("icon_path", p_rec.get("graphic_path", "")));
+		r["qty"] = p_qty;
+		r["price"] = int(p_rec.get("price", 0));
+		r["type_label"] = p_tlabel;
+		r["params_text"] = _cg_format_entry_params_text(p_rec);
+		r["usable"] = p_usable;
+		r["disabled"] = !p_usable;
+		r["is_key_item"] = (p_cat == CAT_ITEMS && int(p_rec.get("type", 0)) == 1);
+		r["record"] = p_rec;
+		r["slot_action"] = p_act;
+		return r;
+	};
+
+	const bool use_test_count = p_preview_mode && (editor_test_data_count >= 0);
+	if (use_test_count) {
+		if (editor_test_data_count > 0) {
+			Array base_pool;
+			if (ds == "party_members") {
+				Array party = get_party_actor_ids();
+				for (int i = 0; i < party.size(); i++) {
+					Dictionary sh = self_mut->get_actor_status_sheet(int(party[i]));
+					Dictionary r;
+					r["is_empty"] = false;
+					r["id"] = int(party[i]);
+					r["key"] = itos(int(party[i]));
+					r["name"] = String(sh.get("name", vformat(String::utf8("Héroe %d"), i + 1)));
+					r["desc"] = vformat(String::utf8("Nv.%d · HP %d/%d"), int(sh.get("level", 1)), int(sh.get("hp", 100)), int(sh.get("max_hp", 100)));
+					r["qty"] = int(sh.get("level", 1));
+					r["qty_text"] = vformat("Nv.%d", int(sh.get("level", 1)));
+					r["type_label"] = String(sh.get("class_name", "Grupo"));
+					r["params_text"] = vformat(String::utf8("HP %d/%d · MP %d/%d"), int(sh.get("hp", 100)), int(sh.get("max_hp", 100)), int(sh.get("mp", 20)), int(sh.get("max_mp", 20)));
+					r["usable"] = true;
+					r["disabled"] = false;
+					base_pool.push_back(r);
+				}
+			} else if (ds == "save_slots") {
+				int cnt = MIN(editor_test_data_count, MAX(4, get_save_slot_count()));
+				for (int i = 0; i < cnt; i++) {
+					Dictionary r;
+					r["is_empty"] = (i >= 2);
+					r["id"] = i + 1;
+					r["key"] = itos(i + 1);
+					r["slot"] = i + 1;
+					r["name"] = (i < 2) ? vformat(String::utf8("Partida %02d — Mapa Central"), i + 1) : vformat(String::utf8("Ranura %02d (Vacía)"), i + 1);
+					r["desc"] = (i < 2) ? String::utf8("Nivel 5 · 00:18:40") : String::utf8("Espacio disponible");
+					r["qty"] = i + 1;
+					r["qty_text"] = (i < 2) ? String("00:18") : String("-");
+					r["type_label"] = "Guardado";
+					r["usable"] = true;
+					r["disabled"] = false;
+					base_pool.push_back(r);
+				}
+			} else {
+				// Extraer primero los reales de DB si existen y completar hasta editor_test_data_count
+				int cats[6] = { CAT_ITEMS, CAT_WEAPONS, CAT_ARMORS, CAT_ARPG_SHIELDS, CAT_ACCESSORIES, CAT_SKILLS };
+				for (int ci = 0; ci < 6; ci++) {
+					const Array &arr = category_data[cats[ci]];
+					for (int i = 0; i < arr.size() && base_pool.size() < editor_test_data_count; i++) {
+						if (arr[i].get_type() != Variant::DICTIONARY) continue;
+						Dictionary rec = arr[i];
+						int rid = int(rec.get("id", i + 1));
+						String tlbl = (cats[ci] == CAT_WEAPONS) ? "Arma" : ((cats[ci] == CAT_ARMORS) ? "Armadura" : ((cats[ci] == CAT_ARPG_SHIELDS) ? "Escudo" : ((cats[ci] == CAT_ACCESSORIES) ? "Accesorio" : ((cats[ci] == CAT_SKILLS) ? "Habilidad" : (int(rec.get("type", 0)) == 1 ? "Clave" : "Consumible")))));
+						bool us = (cats[ci] != CAT_ITEMS || int(rec.get("type", 0)) != 1);
+						base_pool.push_back(make_item_row(cats[ci], rec, get_record_inventory_key(cats[ci], rid), 1 + (base_pool.size() % 9), us, tlbl, "item_use"));
+					}
+				}
+				static const char *k_sample_names[8] = {
+					"Poción menor", "Éter simple", "Llave de latón", "Espada corta",
+					"Cota de cuero", "Escudo rodelero", "Amuleto áureo", "Bomba de humo"
+				};
+				static const int k_sample_cats[8] = {
+					CAT_ITEMS, CAT_ITEMS, CAT_ITEMS, CAT_WEAPONS,
+					CAT_ARMORS, CAT_ARPG_SHIELDS, CAT_ACCESSORIES, CAT_ITEMS
+				};
+				static const char *k_sample_types[8] = {
+					"Consumible", "Consumible", "Clave", "Arma",
+					"Armadura", "Escudo", "Accesorio", "Consumible"
+				};
+				for (int i = 0; base_pool.size() < editor_test_data_count; i++) {
+					int k = i % 8;
+					Dictionary rec;
+					rec["id"] = 1000 + i + 1;
+					int dup = (i / 8);
+					rec["name"] = (dup > 0) ? vformat("%s +%d", String::utf8(k_sample_names[k]), dup) : String::utf8(k_sample_names[k]);
+					rec["desc"] = String::utf8("Objeto de ejemplo para probar la rejilla, filtros y desplazamiento.");
+					rec["price"] = 25 * (k + 1);
+					if (k_sample_cats[k] == CAT_WEAPONS) rec["atk"] = 8 + k * 2;
+					else if (k_sample_cats[k] == CAT_ARMORS || k_sample_cats[k] == CAT_ARPG_SHIELDS) rec["def"] = 6 + k * 2;
+					else if (k_sample_cats[k] == CAT_ITEMS && k != 2) rec["heal_hp"] = 35;
+					if (k == 2) {
+						rec["type"] = 1;
+					}
+					bool us = (k != 2);
+					base_pool.push_back(make_item_row(k_sample_cats[k], rec, vformat("%d:%d", k_sample_cats[k], 1000 + i + 1), 1 + ((i * 3) % 12), us, String::utf8(k_sample_types[k]), (k_sample_cats[k] == CAT_WEAPONS || k_sample_cats[k] == CAT_ARMORS) ? "equip_apply" : "item_use"));
+				}
+			}
+			for (int i = 0; i < base_pool.size() && out.size() < editor_test_data_count; i++) {
+				out.push_back(base_pool[i]);
+			}
+		}
+	} else if (ds == "inventory_all" || ds == "inventory_consumables" || ds == "inventory_key_materials" ||
+			ds == "inventory_weapons" || ds == "inventory_armors" || ds == "inventory_shields" || ds == "inventory_accessories") {
+		Array inv = get_inventory_entries();
+		for (int i = 0; i < inv.size(); i++) {
+			if (inv[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary row = inv[i];
+			int cat = int(row.get("category", -1));
+			int itype = int(row.get("item_type", 0));
+			if (ds == "inventory_consumables" && !(cat == CAT_ITEMS && itype == 0)) continue;
+			if (ds == "inventory_key_materials" && !(cat == CAT_ITEMS && (itype == 1 || itype == 2))) continue;
+			if (ds == "inventory_weapons" && cat != CAT_WEAPONS && cat != CAT_ARPG_WEAPONS) continue;
+			if (ds == "inventory_armors" && cat != CAT_ARMORS && cat != CAT_ARPG_ARMORS) continue;
+			if (ds == "inventory_shields" && cat != CAT_ARPG_SHIELDS) continue;
+			if (ds == "inventory_accessories" && cat != CAT_ACCESSORIES && cat != CAT_ARPG_ACCESSORIES) continue;
+
+			Dictionary rec = row.get("record", Dictionary());
+			String tlbl = (cat == CAT_WEAPONS || cat == CAT_ARPG_WEAPONS) ? "Arma" :
+					((cat == CAT_ARMORS || cat == CAT_ARPG_ARMORS) ? "Armadura" :
+					((cat == CAT_ARPG_SHIELDS) ? "Escudo" :
+					((cat == CAT_ACCESSORIES || cat == CAT_ARPG_ACCESSORIES) ? "Accesorio" :
+					(bool(row.get("is_key_item", false)) ? "Clave" : "Consumible"))));
+			bool us = (cat == CAT_ITEMS) ? bool(row.get("usable_in_menu", false)) : true;
+			String dact = (cat == CAT_ITEMS) ? "item_use" : "equip_apply";
+			Dictionary nr = make_item_row(cat, rec, String(row.get("key", "")), int(row.get("qty", 1)), us, tlbl, dact);
+			nr["name"] = String(row.get("name", nr.get("name", "")));
+			nr["desc"] = String(row.get("desc", nr.get("desc", "")));
+			nr["icon_path"] = String(row.get("icon_path", nr.get("icon_path", "")));
+			nr["is_key_item"] = bool(row.get("is_key_item", false));
+			out.push_back(nr);
+		}
+	} else if (ds == "equip_compatible") {
+		Array cands = get_equippable_pieces_for_slot(actor_id, equip_slot);
+		for (int i = 0; i < cands.size(); i++) {
+			Dictionary cd = cands[i];
+			int cat = int(cd.get("category", CAT_WEAPONS));
+			int pid = int(cd.get("id", 0));
+			Dictionary rec = cd.has("record") ? Dictionary(cd["record"]) : get_record_by_id(cat, pid);
+			out.push_back(make_item_row(cat, rec, String(cd.get("key", "")), int(cd.get("qty", 1)), true, "Equipo", "equip_apply"));
+		}
+	} else if (ds == "equip_slots") {
+		Array slots = get_actor_equip_slots(actor_id);
+		for (int i = 0; i < slots.size(); i++) {
+			Dictionary sd = slots[i];
+			int pid = int(sd.get("piece_id", 0));
+			int cat = get_category_from_key(String(sd.get("category", "")));
+			Dictionary piece = (pid > 0 && cat >= 0) ? get_record_by_id(cat, pid) : Dictionary();
+			Dictionary r;
+			r["is_empty"] = false;
+			r["id"] = i + 1;
+			r["slot_idx"] = i;
+			r["key"] = itos(i);
+			String sname = String(sd.get("name", vformat("Ranura %d", i + 1)));
+			String pname = piece.is_empty() ? String::utf8("--- Vacío ---") : String(piece.get("name", ""));
+			r["name"] = sname + ": " + pname;
+			r["desc"] = String(piece.get("desc", sname));
+			r["qty"] = 1;
+			r["qty_text"] = sname;
+			r["type_label"] = sname;
+			r["params_text"] = _cg_format_entry_params_text(piece);
+			bool usable = !is_actor_equip_slot_sealed(actor_id, i);
+			r["usable"] = usable;
+			r["disabled"] = !usable;
+			r["category"] = cat;
+			r["record"] = piece;
+			r["slot_action"] = "equip_clear";
+			out.push_back(r);
+		}
+	} else if (ds == "party_members") {
+		Array party = get_party_actor_ids();
+		for (int i = 0; i < party.size(); i++) {
+			int aid = int(party[i]);
+			Dictionary sh = self_mut->get_actor_status_sheet(aid);
+			Dictionary rec = get_record_by_id(CAT_ACTORS, aid);
+			Dictionary r;
+			r["is_empty"] = false;
+			r["id"] = aid;
+			r["key"] = itos(aid);
+			r["category"] = CAT_ACTORS;
+			r["name"] = String(sh.get("name", rec.get("name", vformat("Actor %d", aid))));
+			r["desc"] = vformat("Nv.%d %s", int(sh.get("level", 1)), String(sh.get("class_name", "")));
+			r["qty"] = int(sh.get("level", 1));
+			r["qty_text"] = vformat("Nv.%d", int(sh.get("level", 1)));
+			r["type_label"] = String(sh.get("class_name", "Grupo"));
+			r["params_text"] = vformat(String::utf8("HP %d/%d · MP %d/%d"), int(sh.get("hp", 0)), int(sh.get("max_hp", 1)), int(sh.get("mp", 0)), int(sh.get("max_mp", 0)));
+			r["usable"] = int(sh.get("hp", 1)) > 0;
+			r["disabled"] = int(sh.get("hp", 1)) <= 0;
+			r["record"] = rec;
+			r["slot_action"] = "status";
+			out.push_back(r);
+		}
+	} else if (ds == "actor_skills") {
+		const Array &skills = category_data[CAT_SKILLS];
+		Dictionary st = self_mut->get_actor_runtime_state(actor_id);
+		Array learned = st.get("learned_skills", Array());
+		int cur_mp = self_mut->get_actor_runtime_mp(actor_id);
+		for (int i = 0; i < skills.size(); i++) {
+			if (skills[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary sk = skills[i];
+			int sid = int(sk.get("id", i + 1));
+			if (!learned.is_empty() && !learned.has(sid)) {
+				continue;
+			}
+			int mp_cost = int(sk.get("mp_cost", 0));
+			bool us = (cur_mp >= mp_cost) || p_preview_mode;
+			Dictionary r = make_item_row(CAT_SKILLS, sk, itos(sid), mp_cost, us, "Habilidad", "show_detail");
+			r["qty_text"] = mp_cost > 0 ? vformat("%d PM", mp_cost) : String("-");
+			out.push_back(r);
+		}
+	} else if (ds == "actor_states") {
+		Array ast = self_mut->get_actor_runtime_states(actor_id);
+		for (int i = 0; i < ast.size(); i++) {
+			int st_id = (ast[i].get_type() == Variant::DICTIONARY) ? int(Dictionary(ast[i]).get("id", 0)) : int(ast[i]);
+			Dictionary rec = (ast[i].get_type() == Variant::DICTIONARY) ? Dictionary(ast[i]) : get_record_by_id(CAT_STATES, st_id);
+			if (rec.is_empty()) continue;
+			Dictionary r = make_item_row(CAT_STATES, rec, itos(st_id), 1, true, "Estado", "show_detail");
+			r["qty_text"] = String("Activo");
+			out.push_back(r);
+		}
+	} else if (ds == "save_slots") {
+		int cnt = MAX(1, get_save_slot_count());
+		for (int s = 1; s <= cnt; s++) {
+			Dictionary info = get_save_slot_info(s);
+			bool occ = bool(info.get("exists", false)) || bool(info.get("occupied", false));
+			Dictionary r;
+			r["is_empty"] = !occ;
+			r["id"] = s;
+			r["slot"] = s;
+			r["key"] = itos(s);
+			r["name"] = occ ? vformat(String::utf8("Ranura %02d — %s"), s, String(info.get("map_name", "Mapa"))) : vformat(String::utf8("Ranura %02d — Vacía"), s);
+			r["desc"] = occ ? vformat(String::utf8("%s · %s"), String(info.get("playtime_text", "00:00:00")), String(info.get("date_text", ""))) : String::utf8("Ranura disponible");
+			r["qty"] = s;
+			r["qty_text"] = occ ? String(info.get("playtime_text", "")) : String("-");
+			r["type_label"] = "Partida";
+			r["usable"] = true;
+			r["disabled"] = false;
+			r["slot_action"] = "save_game";
+			out.push_back(r);
+		}
+	} else if (ds == "battle_commands") {
+		static const char *k_bkeys[5] = { "attack", "skill", "item", "guard", "escape" };
+		static const char *k_bdefs[5] = { "Atacar", "Habilidad", "Objeto", "Defender", "Huir" };
+		static const char *k_bdescs[5] = {
+			"Ataque físico contra un enemigo",
+			"Usar una habilidad o magia",
+			"Usar un objeto de la mochila",
+			"Adoptar postura defensiva",
+			"Intentar escapar del combate"
+		};
+		for (int i = 0; i < 5; i++) {
+			Dictionary r;
+			r["is_empty"] = false;
+			r["id"] = i + 1;
+			r["key"] = String(k_bkeys[i]);
+			String lbl = String(vocabulary_config.get(k_bkeys[i], String::utf8(k_bdefs[i]))).strip_edges();
+			if (lbl.is_empty()) lbl = String::utf8(k_bdefs[i]);
+			r["name"] = lbl;
+			r["desc"] = String::utf8(k_bdescs[i]);
+			r["qty"] = 1;
+			r["qty_text"] = String();
+			r["type_label"] = "Comando";
+			r["usable"] = true;
+			r["disabled"] = false;
+			r["slot_action"] = String(k_bkeys[i]);
+			out.push_back(r);
+		}
+	}
+
+	// Filtro adicional opcional (categoría + solo usables)
+	if (!filter_cat.is_empty() || only_usable) {
+		Array filtered;
+		for (int i = 0; i < out.size(); i++) {
+			Dictionary r = out[i];
+			if (only_usable && !bool(r.get("usable", true))) {
+				continue;
+			}
+			if (!filter_cat.is_empty() && filter_cat != "all") {
+				int cat = int(r.get("category", -1));
+				bool is_key = bool(r.get("is_key_item", false));
+				if (filter_cat == "consumable" && !(cat == CAT_ITEMS && !is_key)) continue;
+				if (filter_cat == "key_material" && !is_key) continue;
+				if (filter_cat == "weapon" && cat != CAT_WEAPONS && cat != CAT_ARPG_WEAPONS) continue;
+				if (filter_cat == "armor" && cat != CAT_ARMORS && cat != CAT_ARPG_ARMORS) continue;
+				if (filter_cat == "shield" && cat != CAT_ARPG_SHIELDS) continue;
+				if (filter_cat == "accessory" && cat != CAT_ACCESSORIES && cat != CAT_ARPG_ACCESSORIES) continue;
+			}
+			filtered.push_back(r);
+		}
+		out = filtered;
+	}
+
+	// Ordenación
+	if (out.size() > 1 && (sort_by == "name" || sort_by == "qty" || sort_by == "id")) {
+		Vector<Dictionary> vec;
+		vec.resize(out.size());
+		for (int i = 0; i < out.size(); i++) {
+			vec.write[i] = out[i];
+		}
+		for (int a = 0; a < vec.size() - 1; a++) {
+			for (int b = a + 1; b < vec.size(); b++) {
+				bool swap_needed = false;
+				if (sort_by == "name") {
+					swap_needed = String(vec[b].get("name", "")).nocasecmp_to(String(vec[a].get("name", ""))) < 0;
+				} else if (sort_by == "qty") {
+					swap_needed = int(vec[b].get("qty", 0)) > int(vec[a].get("qty", 0));
+				} else {
+					swap_needed = int(vec[b].get("id", 0)) < int(vec[a].get("id", 0));
+				}
+				if (swap_needed) {
+					Dictionary tmp = vec[a];
+					vec.write[a] = vec[b];
+					vec.write[b] = tmp;
+				}
+			}
+		}
+		Array sorted;
+		for (int i = 0; i < vec.size(); i++) {
+			sorted.push_back(vec[i]);
+		}
+		out = sorted;
+	}
+
+	// "Mostrar casillas vacías" hasta empty_count (o completar rejilla visible)
+	if (show_empty && empty_count > out.size() && ds != "save_slots") {
+		while (out.size() < empty_count) {
+			Dictionary emp;
+			emp["is_empty"] = true;
+			emp["slot_index"] = out.size();
+			emp["id"] = 0;
+			emp["key"] = "";
+			emp["name"] = "";
+			emp["desc"] = "";
+			emp["qty"] = 0;
+			emp["usable"] = false;
+			emp["disabled"] = true;
+			out.push_back(emp);
+		}
+	}
+	for (int i = 0; i < out.size(); i++) {
+		Dictionary r = out[i];
+		r["slot_index"] = i;
+		out[i] = r;
+	}
+	return out;
+}
+
 void ClockGearsDataManager::push_ui_design_undo_state(const String &p_screen_id, const Dictionary &p_snapshot) {
 	String sid = _cg_norm_ui_screen_id(p_screen_id);
 	Dictionary snap = p_snapshot.is_empty() ? get_ui_screen_design(sid) : normalize_ui_screen_design(sid, p_snapshot);
@@ -11841,6 +12454,8 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_menu_id", "raw_id"), &ClockGearsDataManager::normalize_menu_id);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_element_types"), &ClockGearsDataManager::get_ui_element_types);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_data_bindings"), &ClockGearsDataManager::get_ui_data_bindings);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_container_data_sources"), &ClockGearsDataManager::get_ui_container_data_sources);
+	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("normalize_ui_data_source", "val"), &ClockGearsDataManager::normalize_ui_data_source);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_ui_button_actions", "screen_id"), &ClockGearsDataManager::get_ui_button_actions);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_all_ui_button_action_types"), &ClockGearsDataManager::get_all_ui_button_action_types);
 	ClassDB::bind_static_method("ClockGearsDataManager", D_METHOD("get_menu_layout_modes"), &ClockGearsDataManager::get_menu_layout_modes);
@@ -11913,6 +12528,10 @@ void ClockGearsDataManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_recent_ui_colors"), &ClockGearsDataManager::get_recent_ui_colors);
 	ClassDB::bind_method(D_METHOD("record_recent_ui_color", "hex_color"), &ClockGearsDataManager::record_recent_ui_color);
 	ClassDB::bind_method(D_METHOD("resolve_ui_data_binding", "binding", "element"), &ClockGearsDataManager::resolve_ui_data_binding, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("resolve_ui_entry_field_binding", "binding", "entry", "element", "preview_mode"), &ClockGearsDataManager::resolve_ui_entry_field_binding, DEFVAL(Dictionary()), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("resolve_ui_container_entries", "container_cfg", "actor_id", "equip_slot_idx", "preview_mode"), &ClockGearsDataManager::resolve_ui_container_entries, DEFVAL(-1), DEFVAL(0), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("set_editor_test_data_count", "count"), &ClockGearsDataManager::set_editor_test_data_count);
+	ClassDB::bind_method(D_METHOD("get_editor_test_data_count"), &ClockGearsDataManager::get_editor_test_data_count);
 	ClassDB::bind_method(D_METHOD("push_ui_design_undo_state", "screen_id", "snapshot"), &ClockGearsDataManager::push_ui_design_undo_state, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("can_undo_ui_design", "screen_id"), &ClockGearsDataManager::can_undo_ui_design);
 	ClassDB::bind_method(D_METHOD("can_redo_ui_design", "screen_id"), &ClockGearsDataManager::can_redo_ui_design);

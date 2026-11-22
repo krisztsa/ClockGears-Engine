@@ -212,6 +212,8 @@ private:
 
 	void _on_entry_pressed(const String &p_id);
 	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
+	void _on_custom_data_entry_focused(const String &p_container_id, const Dictionary &p_entry);
+	void _on_custom_data_entry_activated(const String &p_container_id, int p_slot_idx, const Dictionary &p_entry);
 	String _map_subscreen_to_ui_design_id(const String &p_subscreen) const;
 	String _map_menu_id_to_subscreen(const String &p_menu_id) const;
 	Dictionary _get_menu_design(const String &p_menu_id) const;

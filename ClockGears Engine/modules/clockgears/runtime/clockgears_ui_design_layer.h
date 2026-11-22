@@ -11,6 +11,7 @@
 
 class ClockGearsDataManager;
 class ClockGearsUiDesignLayer;
+class ScrollContainer;
 
 // ============================================================================
 // ClockGearsShapedClipControl — Contenedor con recorte real a forma geométrica
@@ -101,6 +102,9 @@ private:
 	String open_anim = "radial_spin";
 	float open_anim_progress = 1.0f;
 	bool open_anim_playing = false;
+	int runtime_actor_id = 0;
+	int runtime_equip_slot_idx = 0;
+	bool use_editor_test_data = false;
 
 	Vector2 _compute_center_local() const;
 	float _compute_radius_px() const;
@@ -114,6 +118,7 @@ protected:
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
+	void set_data_context(int p_actor_id, int p_equip_slot_idx, bool p_test_data);
 	void configure(const Dictionary &p_layout, const Array &p_fallback_elements, float p_scale, bool p_interactive);
 	void refresh_slot_states(const ClockGearsDataManager *p_dm);
 	void play_open_anim();
@@ -215,6 +220,20 @@ private:
 		// Hearts subnode
 		Control *hearts_container = nullptr;
 		int last_hearts_key = -1;
+
+		// Data-driven container subnodes (Editor de UI 2/3)
+		ScrollContainer *data_scroll = nullptr;
+		Control *data_items_canvas = nullptr;
+		Vector<Button *> data_cell_buttons;
+		Array data_resolved_entries;
+		Vector<Dictionary> data_tpl_children;
+		Size2 data_tpl_cell_base_size = Size2(140, 120);
+		int focused_data_slot_idx = 0;
+		int data_carousel_offset = 0;
+
+		// Standalone rotatable item preview support
+		bool rotatable_dragging = false;
+		float rotatable_angle_deg = 0.0f;
 	};
 
 	Vector<ElementEntry> elements;
@@ -255,6 +274,15 @@ private:
 	ClockGearsRadialCanvas *radial_canvas = nullptr;
 	ClockGearsMenuCursorOverlay *cursor_overlay = nullptr;
 
+	// Estado vivo de contenedores con datos y objeto enfocado
+	int runtime_actor_id = -1;
+	int runtime_equip_slot_idx = 0;
+	bool use_editor_test_data = false;
+	String last_focused_container_id;
+	Dictionary last_focused_data_entry;
+	Dictionary focused_entry_by_container;
+	Dictionary dynamic_slot_actions_by_id;
+
 	Size2 _resolve_effective_viewport_size() const;
 	void _clear_aux_layout_controls();
 	void _ensure_background_nodes();
@@ -277,6 +305,13 @@ private:
 	void _on_layout_page_delta(int p_delta);
 	void _on_layout_tab_selected(int p_tab_idx);
 	void _on_carousel_step(int p_delta);
+	void _build_or_refresh_data_container(ElementEntry &r_entry, float p_scale, bool p_rebuild_nodes);
+	void _apply_data_cell_state_styles(ElementEntry &r_entry, float p_scale);
+	void _refresh_focused_entry_elements();
+	void _on_data_cell_focused(const String &p_container_id, int p_slot_idx);
+	void _on_data_cell_pressed(const String &p_container_id, int p_slot_idx);
+	void _on_data_container_carousel_delta(const String &p_container_id, int p_delta);
+	void _on_rotatable_preview_gui_input(const Ref<InputEvent> &p_event, const String &p_elem_id);
 
 protected:
 	static void _bind_methods();
@@ -305,6 +340,13 @@ public:
 
 	void set_preview_mode(bool p_preview);
 	bool is_preview_mode() const { return preview_mode; }
+	void set_use_editor_test_data(bool p_use) { use_editor_test_data = p_use; }
+	bool is_using_editor_test_data() const { return use_editor_test_data; }
+	void set_runtime_actor_context(int p_actor_id, int p_equip_slot_idx = 0);
+	Dictionary get_focused_data_entry() const { return last_focused_data_entry.duplicate(true); }
+	bool focus_data_slot(const String &p_container_id, int p_slot_idx);
+	bool activate_data_slot(const String &p_container_id, int p_slot_idx);
+	Dictionary get_data_container_info(const String &p_container_id) const;
 
 	void set_viewport_size_override(const Vector2 &p_size);
 	Vector2 get_viewport_size_override() const { return viewport_size_override; }

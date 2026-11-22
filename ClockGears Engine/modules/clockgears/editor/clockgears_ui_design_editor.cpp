@@ -2719,6 +2719,25 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	test_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_pressed));
 	play_hb->add_child(test_btn);
 
+	test_data_opt = memnew(OptionButton);
+	test_data_opt->set_name("UiDesignerTestDataOpt");
+	test_data_opt->set_custom_minimum_size(Size2(118 * EDSCALE, row_h));
+	test_data_opt->set_fit_to_longest_item(false);
+	test_data_opt->set_clip_text(true);
+	test_data_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	test_data_opt->set_tooltip_text(String::utf8("Cantidad de objetos de prueba para contenedores con datos en el lienzo y Probar (F5 siempre usa los datos reales de la partida)."));
+	test_data_opt->add_item("Datos reales", 0);
+	test_data_opt->set_item_metadata(0, -1);
+	test_data_opt->add_item(String::utf8("Prueba: 0 objetos"), 1);
+	test_data_opt->set_item_metadata(1, 0);
+	test_data_opt->add_item(String::utf8("Prueba: 8 objetos"), 2);
+	test_data_opt->set_item_metadata(2, 8);
+	test_data_opt->add_item(String::utf8("Prueba: 40 objetos"), 3);
+	test_data_opt->set_item_metadata(3, 40);
+	test_data_opt->select(0);
+	test_data_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_data_count_selected));
+	play_hb->add_child(test_data_opt);
+
 	// Fila 2 - Grupo 4: Vista (tamaño) y Zoom (Ajustar, 50 %, 100 %, 200 %, 300 %)
 	wide_sep_rows = make_top_sep(top_row2_flow);
 	wide_sep_rows->hide();
@@ -3265,13 +3284,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	static const struct {
 		const char *type;
 		const char *label_utf8;
-	} k_child_types[13] = {
+	} k_child_types[14] = {
 		{ "button", "Bot\xC3\xB3n" },
 		{ "text", "Texto" },
 		{ "image", "Imagen" },
 		{ "frame", "Marco" },
 		{ "panel", "Panel" },
 		{ "folder", "Carpeta" },
+		{ "container", "Contenedor datos" },
 		{ "bar", "Barra" },
 		{ "hearts", "Corazones" },
 		{ "currency", "Monedas" },
@@ -3280,7 +3300,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		{ "widget", "Lista / Widget" },
 		{ "radial", "Rueda radial" }
 	};
-	for (int i = 0; i < 13; i++) {
+	for (int i = 0; i < 14; i++) {
 		add_child_submenu->add_item(String::utf8(k_child_types[i].label_utf8), i);
 		add_child_submenu->set_item_metadata(i, String(k_child_types[i].type));
 	}
@@ -3337,12 +3357,13 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		const char *type;
 		const char *label_utf8;
 	};
-	static const PaletteDef k_palette[12] = {
+	static const PaletteDef k_palette[13] = {
 		{ "folder", "Carpeta" },
 		{ "image", "Imagen" },
 		{ "text", "Texto" },
 		{ "button", "+ Bot\xC3\xB3n" },
 		{ "frame", "Marco" },
+		{ "container", "Contenedor datos" },
 		{ "bar", "Barra" },
 		{ "hearts", "Corazones" },
 		{ "currency", "Monedas" },
@@ -3351,7 +3372,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		{ "widget", "Lista / Widget" },
 		{ "radial", "+ Rueda radial" }
 	};
-	for (int i = 0; i < 12; i++) {
+	for (int i = 0; i < 13; i++) {
 		ClockGearsUiPaletteButton *pb = memnew(ClockGearsUiPaletteButton);
 		pb->setup(this, String(k_palette[i].type), String::utf8(k_palette[i].label_utf8));
 		palette_grid->add_child(pb);
@@ -3903,7 +3924,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_item_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_item_opt_selected));
 	s_clamp_narrow_controls(prop_item_opt, EDSCALE);
 	prop_item_row->add_child(prop_item_opt);
-	_register_prop_filter_row(prop_binding_row, "enlace datos vida mana oro nivel variable objeto", false, "text,button,variable,item,bar");
+	_register_prop_filter_row(prop_binding_row, "enlace datos vida mana oro nivel variable objeto", false, "text,button,variable,item,bar,image");
+
+	prop_rotatable_chk = memnew(CheckBox(String::utf8("Rotable con ratón")));
+	prop_rotatable_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	make_prop_row(sec_texto_body, String::utf8("Rotar vista previa:"), String::utf8("Permite girar la imagen con el ratón al inspeccionar un objeto."), "rotar vista previa icono objeto", false, prop_rotatable_chk, "image");
 
 	// Sección 4: Imagen
 	VBoxContainer *sec_imagen_body = nullptr;
@@ -4029,6 +4054,141 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_pixel_art_chk = memnew(CheckBox("Pixelado (Nearest)"));
 	prop_pixel_art_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	make_prop_row(sec_imagen_body, "Filtro imagen:", String::utf8("Pixelado (Nearest) o Suave interpolado (desactivado)."), "pixel art filtro imagen suave pixelado", false, prop_pixel_art_chk, "image,frame,button,currency,item,hearts");
+
+	// Sección 4B: Datos y distribución del contenedor (UI 2/3 Punto 1)
+	add_prop_section(props_fields_box, String::utf8("Datos y cuadrícula"), false, prop_container_box);
+
+	prop_data_source_opt = memnew(OptionButton);
+	prop_data_source_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	s_clamp_narrow_controls(prop_data_source_opt, EDSCALE);
+	Array dsrcs = ClockGearsDataManager::get_ui_container_data_sources();
+	for (int i = 0; i < dsrcs.size(); i++) {
+		Dictionary ds = dsrcs[i];
+		prop_data_source_opt->add_item(String(ds.get("label", ds.get("id", ""))), i);
+		prop_data_source_opt->set_item_metadata(i, String(ds.get("id", "manual")));
+	}
+	prop_data_source_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, "Fuente de datos:", String::utf8("Lista real que rellena las casillas de este contenedor."), "fuente datos inventario equipo habilidades ranuras", false, prop_data_source_opt, "container,widget,radial");
+
+	prop_data_filter_opt = memnew(OptionButton);
+	prop_data_filter_opt->add_item("Todas", 0); prop_data_filter_opt->set_item_metadata(0, "");
+	prop_data_filter_opt->add_item("Consumibles", 1); prop_data_filter_opt->set_item_metadata(1, "consumables");
+	prop_data_filter_opt->add_item("Clave / materiales", 2); prop_data_filter_opt->set_item_metadata(2, "key_materials");
+	prop_data_filter_opt->add_item("Armas", 3); prop_data_filter_opt->set_item_metadata(3, "weapons");
+	prop_data_filter_opt->add_item("Armaduras", 4); prop_data_filter_opt->set_item_metadata(4, "armors");
+	prop_data_filter_opt->add_item("Escudos", 5); prop_data_filter_opt->set_item_metadata(5, "shields");
+	prop_data_filter_opt->add_item("Accesorios", 6); prop_data_filter_opt->set_item_metadata(6, "accessories");
+	prop_data_filter_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, String::utf8("Filtrar cat.:"), String::utf8("Limita los objetos mostrados por categoría."), "filtrar categoria tipo", false, prop_data_filter_opt, "container,widget,radial");
+
+	prop_data_usable_chk = memnew(CheckBox("Solo usables"));
+	prop_data_usable_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, String::utf8("Uso en menú:"), String::utf8("Oculta objetos que no pueden usarse en el menú."), "usables filtro", false, prop_data_usable_chk, "container,widget,radial");
+
+	prop_data_sort_opt = memnew(OptionButton);
+	prop_data_sort_opt->add_item("Por ID", 0); prop_data_sort_opt->set_item_metadata(0, "id");
+	prop_data_sort_opt->add_item("Por nombre", 1); prop_data_sort_opt->set_item_metadata(1, "name");
+	prop_data_sort_opt->add_item("Por cantidad", 2); prop_data_sort_opt->set_item_metadata(2, "qty");
+	prop_data_sort_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, "Ordenar:", String::utf8("Criterio de ordenación de las entradas."), "ordenar id nombre cantidad", false, prop_data_sort_opt, "container,widget,radial");
+
+	prop_data_equip_slot_spin = memnew(SpinBox);
+	prop_data_equip_slot_spin->set_min(0); prop_data_equip_slot_spin->set_max(7); prop_data_equip_slot_spin->set_step(1);
+	prop_data_equip_slot_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, String::utf8("Ranura equipo:"), String::utf8("Índice de ranura de equipo (0=Arma, 1=Escudo/Armadura...)."), "ranura equipo compatible", true, prop_data_equip_slot_spin, "container,widget,radial");
+
+	prop_container_layout_opt = memnew(OptionButton);
+	prop_container_layout_opt->add_item(String::utf8("Cuadrícula"), 0); prop_container_layout_opt->set_item_metadata(0, "grid");
+	prop_container_layout_opt->add_item("Lista vertical", 1); prop_container_layout_opt->set_item_metadata(1, "vertical_list");
+	prop_container_layout_opt->add_item("Lista horizontal", 2); prop_container_layout_opt->set_item_metadata(2, "horizontal_list");
+	prop_container_layout_opt->add_item("Carrusel", 3); prop_container_layout_opt->set_item_metadata(3, "carousel");
+	prop_container_layout_opt->add_item(String::utf8("Pestañas"), 4); prop_container_layout_opt->set_item_metadata(4, "tabs");
+	prop_container_layout_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, String::utf8("Disposición:"), String::utf8("Forma de organizar las casillas dentro del contenedor."), "cuadricula lista carrusel pestanas layout", false, prop_container_layout_opt, "container,widget");
+
+	HBoxContainer *cr_hb = memnew(HBoxContainer);
+	cr_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_container_cols_spin = memnew(SpinBox);
+	prop_container_cols_spin->set_min(1); prop_container_cols_spin->set_max(20); prop_container_cols_spin->set_prefix("Col:");
+	prop_container_cols_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_container_cols_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	cr_hb->add_child(prop_container_cols_spin);
+	prop_container_rows_spin = memnew(SpinBox);
+	prop_container_rows_spin->set_min(0); prop_container_rows_spin->set_max(20); prop_container_rows_spin->set_prefix("Fil:");
+	prop_container_rows_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_container_rows_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	cr_hb->add_child(prop_container_rows_spin);
+	make_prop_row(prop_container_box, "Col. / Filas:", String::utf8("Columnas visibles y filas (0 = automático)."), "columnas filas", false, cr_hb, "container,widget");
+
+	HBoxContainer *sp_hb = memnew(HBoxContainer);
+	sp_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_container_spx_spin = memnew(SpinBox);
+	prop_container_spx_spin->set_min(0); prop_container_spx_spin->set_max(64); prop_container_spx_spin->set_prefix("X:");
+	prop_container_spx_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_container_spx_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	sp_hb->add_child(prop_container_spx_spin);
+	prop_container_spy_spin = memnew(SpinBox);
+	prop_container_spy_spin->set_min(0); prop_container_spy_spin->set_max(64); prop_container_spy_spin->set_prefix("Y:");
+	prop_container_spy_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_container_spy_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	sp_hb->add_child(prop_container_spy_spin);
+	make_prop_row(prop_container_box, String::utf8("Separación:"), String::utf8("Espacio en píxeles entre casillas."), "separacion espacio", false, sp_hb, "container,widget");
+
+	prop_container_scroll_chk = memnew(CheckBox("Permitir scroll"));
+	prop_container_scroll_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, "Scroll:", String::utf8("Permite desplazarse cuando hay más elementos que el área visible."), "scroll desplazamiento", false, prop_container_scroll_chk, "container,widget");
+
+	HBoxContainer *emp_hb = memnew(HBoxContainer);
+	emp_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_data_show_empty_chk = memnew(CheckBox(String::utf8("Vacías")));
+	prop_data_show_empty_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	emp_hb->add_child(prop_data_show_empty_chk);
+	prop_data_empty_cnt_spin = memnew(SpinBox);
+	prop_data_empty_cnt_spin->set_min(0); prop_data_empty_cnt_spin->set_max(64); prop_data_empty_cnt_spin->set_prefix(String::utf8("Mín:"));
+	prop_data_empty_cnt_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_data_empty_cnt_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	emp_hb->add_child(prop_data_empty_cnt_spin);
+	make_prop_row(prop_container_box, String::utf8("Casillas vacías:"), String::utf8("Muestra huecos vacíos hasta alcanzar el mínimo indicado."), "vacias huecos ranuras", false, emp_hb, "container,widget,radial");
+
+	prop_slot_action_opt = memnew(OptionButton);
+	prop_slot_action_opt->add_item("Mostrar detalle", 0); prop_slot_action_opt->set_item_metadata(0, "show_detail");
+	prop_slot_action_opt->add_item("Usar objeto", 1); prop_slot_action_opt->set_item_metadata(1, "item_use");
+	prop_slot_action_opt->add_item("Equipar pieza", 2); prop_slot_action_opt->set_item_metadata(2, "equip_apply");
+	prop_slot_action_opt->add_item("Tirar objeto", 3); prop_slot_action_opt->set_item_metadata(3, "item_discard");
+	prop_slot_action_opt->add_item("Ninguna", 4); prop_slot_action_opt->set_item_metadata(4, "none");
+	prop_slot_action_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_container_changed).unbind(1));
+	make_prop_row(prop_container_box, "Al aceptar:", String::utf8("Acción al pulsar o aceptar una casilla."), "aceptar usar equipar tirar detalle", false, prop_slot_action_opt, "container,widget,radial");
+
+	prop_create_item_tpl_btn = memnew(Button("Crear plantilla del elemento"));
+	s_make_rounded_action_btn(prop_create_item_tpl_btn);
+	prop_create_item_tpl_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_create_item_tpl_pressed));
+	make_prop_row(prop_container_box, "Plantilla celda:", String::utf8("Crea una subcarpeta repetible para diseñar cada casilla (icono, nombre, cantidad)."), "plantilla elemento celda repetible", false, prop_create_item_tpl_btn, "container,widget");
+
+	HBoxContainer *ss_hb = memnew(HBoxContainer);
+	ss_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	prop_slot_style_state_opt = memnew(OptionButton);
+	prop_slot_style_state_opt->add_item("Normal", 0); prop_slot_style_state_opt->set_item_metadata(0, "normal");
+	prop_slot_style_state_opt->add_item("Seleccionada", 1); prop_slot_style_state_opt->set_item_metadata(1, "selected");
+	prop_slot_style_state_opt->add_item("Desactivada", 2); prop_slot_style_state_opt->set_item_metadata(2, "disabled");
+	prop_slot_style_state_opt->add_item(String::utf8("Vacía"), 3); prop_slot_style_state_opt->set_item_metadata(3, "empty");
+	prop_slot_style_state_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	prop_slot_style_state_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_slot_style_state_selected));
+	ss_hb->add_child(prop_slot_style_state_opt);
+	prop_slot_style_fill_btn = memnew(ColorPickerButton);
+	prop_slot_style_fill_btn->set_edit_alpha(true);
+	prop_slot_style_fill_btn->set_custom_minimum_size(Size2(38 * EDSCALE, 28 * EDSCALE));
+	prop_slot_style_fill_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_slot_style_edited).unbind(1));
+	ss_hb->add_child(prop_slot_style_fill_btn);
+	prop_slot_style_border_btn = memnew(ColorPickerButton);
+	prop_slot_style_border_btn->set_edit_alpha(true);
+	prop_slot_style_border_btn->set_custom_minimum_size(Size2(38 * EDSCALE, 28 * EDSCALE));
+	prop_slot_style_border_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_slot_style_edited).unbind(1));
+	ss_hb->add_child(prop_slot_style_border_btn);
+	prop_slot_style_bw_spin = memnew(SpinBox);
+	prop_slot_style_bw_spin->set_min(0); prop_slot_style_bw_spin->set_max(8); prop_slot_style_bw_spin->set_prefix("B:");
+	prop_slot_style_bw_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_slot_style_edited).unbind(1));
+	ss_hb->add_child(prop_slot_style_bw_spin);
+	make_prop_row(prop_container_box, "Estilo casilla:", String::utf8("Colores y borde para los 4 estados de cada ranura."), "estado normal seleccionada desactivada vacia color", true, ss_hb, "container,widget");
 
 	// Sección 5: Acciones
 	VBoxContainer *sec_acciones_body = nullptr;
@@ -5079,9 +5239,10 @@ void ClockGearsUiDesignEditor::refresh_from_data_manager() {
 
 void ClockGearsUiDesignEditor::refresh_geometry_fast(bool p_refresh_props) {
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
-	if (!dm || !design_layer) {
+	if (!design_layer || !dm) {
 		return;
 	}
+	design_layer->set_use_editor_test_data(dm->get_editor_test_data_count() >= 0);
 	bool is_custom_menu = dm->has_menu(current_screen_id) && !ClockGearsDataManager::is_system_menu_id(current_screen_id);
 	bool has_custom = dm->has_custom_ui_design(current_screen_id) || is_custom_menu;
 	if (current_screen_id == "hud" && !has_custom) {
@@ -5316,6 +5477,7 @@ void ClockGearsUiDesignEditor::_refresh_canvas_stage() {
 			MAX(90.0f, float(int(Math::round(float(preview_resolution.y) * zf)))));
 	design_layer->set_viewport_size_override(stage_sz);
 	design_layer->set_size(stage_sz);
+	design_layer->set_use_editor_test_data(dm->get_editor_test_data_count() >= 0);
 	if (current_screen_id == "hud" && !has_custom) {
 		Dictionary hud_preview = dm->get_default_ui_screen_template("hud");
 		design_layer->apply_prebuilt_screen_design(current_screen_id, hud_preview);
@@ -6745,8 +6907,12 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 		}
 	}
 
-	bool has_binding = (etype == "text" || etype == "button" || etype == "variable");
+	bool has_binding = (etype == "text" || etype == "button" || etype == "variable" || etype == "image");
 	prop_binding_row->set_visible(has_binding || etype == "item" || etype == "bar");
+	if (prop_rotatable_chk) {
+		prop_rotatable_chk->set_visible(etype == "image");
+		prop_rotatable_chk->set_pressed(bool(el.get("rotatable", false)));
+	}
 	String db = String(el.get("data_binding", "none"));
 	s_select_option_meta(prop_binding_opt, db);
 	bool show_var = (db == "variable" || etype == "variable" || (etype == "bar" && String(el.get("value_source", "")) == "variable"));
@@ -6801,6 +6967,9 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	}
 	if (etype == "radial") {
 		_refresh_radial_inspector();
+	}
+	if (etype == "container" || etype == "widget" || etype == "radial") {
+		_refresh_container_inspector(el);
 	}
 
 	updating_ui = prev_upd;
@@ -10034,6 +10203,11 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 			el["text_mode"] = "variable";
 		}
 	}
+	if (etype == "image" && prop_rotatable_chk) {
+		bool nrot = prop_rotatable_chk->is_pressed();
+		if (bool(el.get("rotatable", false)) != nrot) only_geom = false;
+		el["rotatable"] = nrot;
+	}
 	if (etype == "button" && prop_action_row->is_visible()) {
 		int next_fo = int(Math::round(prop_focus_spin->get_value()));
 		if (int(el.get("focus_order", 0)) != next_fo) only_geom = false;
@@ -10079,6 +10253,196 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 	} else {
 		_notify_data_mutated(true);
 	}
+}
+
+void ClockGearsUiDesignEditor::_on_test_data_count_selected(int p_idx) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !test_data_opt || p_idx < 0) {
+		return;
+	}
+	int cnt = int(test_data_opt->get_item_metadata(p_idx));
+	dm->set_editor_test_data_count(cnt);
+	if (design_layer) {
+		design_layer->set_use_editor_test_data(cnt >= 0);
+	}
+	_refresh_canvas_stage();
+}
+
+void ClockGearsUiDesignEditor::_refresh_container_inspector(const Dictionary &p_el) {
+	if (!prop_container_box) {
+		return;
+	}
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	String ds = ClockGearsDataManager::normalize_ui_data_source(p_el.get("data_source", "manual"));
+	if (prop_data_source_opt) s_select_option_meta(prop_data_source_opt, ds);
+	if (prop_data_filter_opt) s_select_option_meta(prop_data_filter_opt, String(p_el.get("data_filter_category", "")));
+	if (prop_data_usable_chk) prop_data_usable_chk->set_pressed(bool(p_el.get("data_only_usable", false)));
+	if (prop_data_sort_opt) s_select_option_meta(prop_data_sort_opt, String(p_el.get("data_sort_by", "id")));
+	if (prop_data_equip_slot_spin) prop_data_equip_slot_spin->set_value(CLAMP(int(p_el.get("data_equip_slot", 0)), 0, 7));
+	if (prop_container_layout_opt) s_select_option_meta(prop_container_layout_opt, String(p_el.get("layout_mode", "grid")));
+	if (prop_container_cols_spin) prop_container_cols_spin->set_value(CLAMP(int(p_el.get("layout_columns", 4)), 1, 20));
+	if (prop_container_rows_spin) prop_container_rows_spin->set_value(CLAMP(int(p_el.get("layout_rows", 2)), 0, 20));
+	if (prop_container_spx_spin) prop_container_spx_spin->set_value(CLAMP(int(p_el.get("layout_spacing", 8)), 0, 64));
+	if (prop_container_spy_spin) prop_container_spy_spin->set_value(CLAMP(int(p_el.get("layout_spacing_y", p_el.get("layout_spacing", 8))), 0, 64));
+	if (prop_container_scroll_chk) prop_container_scroll_chk->set_pressed(p_el.has("layout_scroll") ? bool(p_el["layout_scroll"]) : true);
+	if (prop_data_show_empty_chk) prop_data_show_empty_chk->set_pressed(p_el.has("data_show_empty") ? bool(p_el["data_show_empty"]) : true);
+	if (prop_data_empty_cnt_spin) prop_data_empty_cnt_spin->set_value(CLAMP(int(p_el.get("data_empty_count", 8)), 0, 64));
+	if (prop_slot_action_opt) s_select_option_meta(prop_slot_action_opt, String(p_el.get("slot_action", "show_detail")));
+	updating_ui = prev_upd;
+	_on_prop_slot_style_state_selected(prop_slot_style_state_opt ? prop_slot_style_state_opt->get_selected() : 0);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_container_changed() {
+	if (updating_ui || selected_elem_id.is_empty()) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	if (prop_data_source_opt && prop_data_source_opt->get_selected() >= 0) {
+		el["data_source"] = String(prop_data_source_opt->get_item_metadata(prop_data_source_opt->get_selected()));
+	}
+	if (prop_data_filter_opt && prop_data_filter_opt->get_selected() >= 0) {
+		el["data_filter_category"] = String(prop_data_filter_opt->get_item_metadata(prop_data_filter_opt->get_selected()));
+	}
+	if (prop_data_usable_chk) el["data_only_usable"] = prop_data_usable_chk->is_pressed();
+	if (prop_data_sort_opt && prop_data_sort_opt->get_selected() >= 0) {
+		el["data_sort_by"] = String(prop_data_sort_opt->get_item_metadata(prop_data_sort_opt->get_selected()));
+	}
+	if (prop_data_equip_slot_spin) el["data_equip_slot"] = int(Math::round(prop_data_equip_slot_spin->get_value()));
+	if (prop_container_layout_opt && prop_container_layout_opt->get_selected() >= 0 && String(el.get("type", "")) != "radial") {
+		el["layout_mode"] = String(prop_container_layout_opt->get_item_metadata(prop_container_layout_opt->get_selected()));
+	}
+	if (prop_container_cols_spin) el["layout_columns"] = int(Math::round(prop_container_cols_spin->get_value()));
+	if (prop_container_rows_spin) el["layout_rows"] = int(Math::round(prop_container_rows_spin->get_value()));
+	if (prop_container_spx_spin) el["layout_spacing"] = int(Math::round(prop_container_spx_spin->get_value()));
+	if (prop_container_spy_spin) el["layout_spacing_y"] = int(Math::round(prop_container_spy_spin->get_value()));
+	if (prop_container_scroll_chk) el["layout_scroll"] = prop_container_scroll_chk->is_pressed();
+	if (prop_data_show_empty_chk) el["data_show_empty"] = prop_data_show_empty_chk->is_pressed();
+	if (prop_data_empty_cnt_spin) el["data_empty_count"] = int(Math::round(prop_data_empty_cnt_spin->get_value()));
+	if (prop_slot_action_opt && prop_slot_action_opt->get_selected() >= 0) {
+		el["slot_action"] = String(prop_slot_action_opt->get_item_metadata(prop_slot_action_opt->get_selected()));
+	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_slot_style_state_selected(int p_idx) {
+	if (!prop_slot_style_state_opt || p_idx < 0) {
+		return;
+	}
+	Dictionary el = _get_selected_element_copy();
+	String st = String(prop_slot_style_state_opt->get_item_metadata(p_idx));
+	Dictionary sstyles = (el.has("slot_styles") && el["slot_styles"].get_type() == Variant::DICTIONARY) ? Dictionary(el["slot_styles"]) : Dictionary();
+	Dictionary cfg = sstyles.has(st) && sstyles[st].get_type() == Variant::DICTIONARY ? Dictionary(sstyles[st]) : Dictionary();
+	bool prev_upd = updating_ui;
+	updating_ui = true;
+	String def_fill = (st == "selected") ? "#382e1ffa" : (st == "disabled" ? "#14171f8c" : (st == "empty" ? "#0f121a66" : "#1c212ee6"));
+	String def_bord = (st == "selected") ? "#f5bc54ff" : (st == "disabled" ? "#52576166" : (st == "empty" ? "#595c6b4d" : "#8c734da6"));
+	String fc = String(cfg.get("fill_color", def_fill));
+	String bc = String(cfg.get("border_color", def_bord));
+	if (prop_slot_style_fill_btn && Color::html_is_valid(fc)) prop_slot_style_fill_btn->set_pick_color(Color::html(fc));
+	if (prop_slot_style_border_btn && Color::html_is_valid(bc)) prop_slot_style_border_btn->set_pick_color(Color::html(bc));
+	if (prop_slot_style_bw_spin) prop_slot_style_bw_spin->set_value(int(cfg.get("border_width", st == "selected" ? 2 : 1)));
+	updating_ui = prev_upd;
+}
+
+void ClockGearsUiDesignEditor::_on_prop_slot_style_edited() {
+	if (updating_ui || selected_elem_id.is_empty() || !prop_slot_style_state_opt || prop_slot_style_state_opt->get_selected() < 0) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	String st = String(prop_slot_style_state_opt->get_item_metadata(prop_slot_style_state_opt->get_selected()));
+	Dictionary sstyles = (el.has("slot_styles") && el["slot_styles"].get_type() == Variant::DICTIONARY) ? Dictionary(el["slot_styles"]).duplicate(true) : Dictionary();
+	Dictionary cfg = sstyles.has(st) && sstyles[st].get_type() == Variant::DICTIONARY ? Dictionary(sstyles[st]).duplicate(true) : Dictionary();
+	if (prop_slot_style_fill_btn) cfg["fill_color"] = "#" + prop_slot_style_fill_btn->get_pick_color().to_html(true);
+	if (prop_slot_style_border_btn) cfg["border_color"] = "#" + prop_slot_style_border_btn->get_pick_color().to_html(true);
+	if (prop_slot_style_bw_spin) cfg["border_width"] = int(Math::round(prop_slot_style_bw_spin->get_value()));
+	sstyles[st] = cfg;
+	el["slot_styles"] = sstyles;
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	bool prev_custom = dm->has_custom_ui_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, prev_custom);
+	if (!prev_custom) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+	}
+	_notify_data_mutated(true);
+}
+
+void ClockGearsUiDesignEditor::_on_prop_create_item_tpl_pressed() {
+	if (selected_elem_id.is_empty()) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) {
+		return;
+	}
+	Array elems = get_effective_screen_elements();
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary d = elems[i];
+		if (String(d.get("parent_id", "")) == selected_elem_id && (bool(d.get("is_item_template", false)) || String(d.get("role", "")) == "item_template")) {
+			select_element(String(d.get("id", "")));
+			return;
+		}
+	}
+	String container_id = selected_elem_id;
+	String tpl_id = add_child_element_of_type(container_id, "folder");
+	if (tpl_id.is_empty()) {
+		return;
+	}
+	Dictionary tpl = dm->get_ui_element(current_screen_id, tpl_id);
+	tpl["name"] = "Plantilla del elemento";
+	tpl["role"] = "item_template";
+	tpl["is_item_template"] = true;
+	tpl["width"] = 160;
+	tpl["height"] = 56;
+	dm->update_ui_element(current_screen_id, tpl_id, tpl, false);
+
+	String ic_id = add_child_element_of_type(tpl_id, "image");
+	if (!ic_id.is_empty()) {
+		Dictionary ic = dm->get_ui_element(current_screen_id, ic_id);
+		ic["name"] = "Icono objeto";
+		ic["data_binding"] = "item_icon";
+		ic["offset_x"] = 4; ic["offset_y"] = 8; ic["width"] = 40; ic["height"] = 40;
+		dm->update_ui_element(current_screen_id, ic_id, ic, false);
+	}
+	String nm_id = add_child_element_of_type(tpl_id, "text");
+	if (!nm_id.is_empty()) {
+		Dictionary nm = dm->get_ui_element(current_screen_id, nm_id);
+		nm["name"] = "Nombre objeto";
+		nm["data_binding"] = "item_name";
+		nm["offset_x"] = 48; nm["offset_y"] = 6; nm["width"] = 104; nm["height"] = 22; nm["font_size"] = 13;
+		dm->update_ui_element(current_screen_id, nm_id, nm, false);
+	}
+	String qt_id = add_child_element_of_type(tpl_id, "text");
+	if (!qt_id.is_empty()) {
+		Dictionary qt = dm->get_ui_element(current_screen_id, qt_id);
+		qt["name"] = "Cantidad objeto";
+		qt["data_binding"] = "item_qty";
+		qt["offset_x"] = 48; qt["offset_y"] = 30; qt["width"] = 104; qt["height"] = 18; qt["font_size"] = 11;
+		dm->update_ui_element(current_screen_id, qt_id, qt, false);
+	}
+	Dictionary pel = dm->get_ui_element(current_screen_id, container_id);
+	pel["item_template_folder_id"] = tpl_id;
+	dm->update_ui_element(current_screen_id, container_id, pel, false);
+	select_element(tpl_id);
+	_notify_data_mutated(true);
 }
 
 void ClockGearsUiDesignEditor::_on_prop_binding_changed(int p_idx) {
@@ -10542,6 +10906,7 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 				layer->set_preview_mode(false);
 				layer->set_window_type_fallback(scope_id == "messages" ? "message" : "battle_commands");
 				layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+				layer->set_use_editor_test_data(dm->get_editor_test_data_count() >= 0);
 				Dictionary d = dm->has_custom_ui_design(msid) ? dm->get_ui_screen_design(msid) : dm->get_default_ui_screen_template(msid);
 				layer->apply_prebuilt_screen_design(msid, d);
 				layer->connect("action_triggered", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested).unbind(3), CONNECT_DEFERRED);
@@ -10553,6 +10918,7 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 			layer->set_preview_mode(false);
 			layer->set_window_type_fallback("game_menu");
 			layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+			layer->set_use_editor_test_data(dm->get_editor_test_data_count() >= 0);
 			Dictionary d = dm->has_custom_ui_design(current_screen_id)
 					? dm->get_ui_screen_design(current_screen_id)
 					: dm->get_default_ui_screen_template(current_screen_id);
@@ -10563,6 +10929,9 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 	} else {
 		test_gmenu = memnew(ClockGearsGameMenu);
 		test_gmenu->set_editor_test_popup_mode(true);
+		if (test_gmenu->get_custom_ui_layer()) {
+			test_gmenu->get_custom_ui_layer()->set_use_editor_test_data(dm->get_editor_test_data_count() >= 0);
+		}
 		test_window->add_child(test_gmenu);
 		test_gmenu->open_menu_by_id(current_screen_id, true, false, true);
 		test_gmenu->connect("menu_closed", callable_mp(this, &ClockGearsUiDesignEditor::_on_test_window_close_requested), CONNECT_DEFERRED);
@@ -10845,6 +11214,23 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["prop_rad_slot_add_act_opt"] = prop_rad_slot_add_act_opt;
 	out["prop_rad_slot_add_act_btn"] = prop_rad_slot_add_act_btn;
 	out["prop_rad_slot_actions_vbox"] = prop_rad_slot_actions_vbox;
+	out["test_data_opt"] = test_data_opt;
+	out["prop_rotatable_chk"] = prop_rotatable_chk;
+	out["prop_container_box"] = prop_container_box;
+	out["prop_data_source_opt"] = prop_data_source_opt;
+	out["prop_data_filter_opt"] = prop_data_filter_opt;
+	out["prop_data_usable_chk"] = prop_data_usable_chk;
+	out["prop_data_sort_opt"] = prop_data_sort_opt;
+	out["prop_data_equip_slot_spin"] = prop_data_equip_slot_spin;
+	out["prop_container_layout_opt"] = prop_container_layout_opt;
+	out["prop_container_cols_spin"] = prop_container_cols_spin;
+	out["prop_container_rows_spin"] = prop_container_rows_spin;
+	out["prop_container_scroll_chk"] = prop_container_scroll_chk;
+	out["prop_data_show_empty_chk"] = prop_data_show_empty_chk;
+	out["prop_data_empty_cnt_spin"] = prop_data_empty_cnt_spin;
+	out["prop_slot_action_opt"] = prop_slot_action_opt;
+	out["prop_create_item_tpl_btn"] = prop_create_item_tpl_btn;
+	out["prop_slot_style_state_opt"] = prop_slot_style_state_opt;
 	return out;
 }
 

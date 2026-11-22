@@ -181,7 +181,10 @@ void ClockGearsGameMenu::_build_ui() {
 	custom_ui_layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	custom_ui_layer->set_window_type_fallback("game_menu");
 	custom_ui_layer->set_visible(false);
+	custom_ui_layer->set_meta("_cg_external_item_handler", true);
 	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsGameMenu::_on_custom_ui_action));
+	custom_ui_layer->connect("data_entry_focused", callable_mp(this, &ClockGearsGameMenu::_on_custom_data_entry_focused));
+	custom_ui_layer->connect("data_entry_activated", callable_mp(this, &ClockGearsGameMenu::_on_custom_data_entry_activated));
 	root_control->add_child(custom_ui_layer);
 
 	// --- 1. Vista Principal ---
@@ -1285,6 +1288,7 @@ void ClockGearsGameMenu::_mount_custom_widgets(const String &p_ui_sid) {
 		_mount_widget_to_slot(party_scroll, "party_list");
 		_refresh_main_view();
 	} else if (p_ui_sid == "game_menu_items") {
+		custom_ui_layer->set_runtime_actor_context(selected_status_actor_id, 0);
 		_mount_widget_to_slot(items_member_selector, "items_target");
 		_mount_widget_to_slot(items_scroll, "items_list");
 		_mount_widget_to_slot(item_preview_box, "item_preview");
@@ -1298,6 +1302,7 @@ void ClockGearsGameMenu::_mount_custom_widgets(const String &p_ui_sid) {
 		}
 		_refresh_items_view();
 	} else if (p_ui_sid == "game_menu_equip") {
+		custom_ui_layer->set_runtime_actor_context(selected_equip_actor_id, selected_equip_slot_idx);
 		_mount_widget_to_slot(equip_member_selector, "equip_target");
 		_mount_widget_to_slot(equip_slots_wrap ? static_cast<Control *>(equip_slots_wrap) : static_cast<Control *>(equip_slots_scroll), "equip_slots");
 		_mount_widget_to_slot(equip_candidates_wrap ? static_cast<Control *>(equip_candidates_wrap) : static_cast<Control *>(equip_candidates_scroll), "equip_candidates");
@@ -1309,6 +1314,7 @@ void ClockGearsGameMenu::_mount_custom_widgets(const String &p_ui_sid) {
 		}
 		_refresh_equip_view();
 	} else if (p_ui_sid == "game_menu_status") {
+		custom_ui_layer->set_runtime_actor_context(selected_status_actor_id, 0);
 		_mount_widget_to_slot(status_member_selector, "status_target");
 		_mount_widget_to_slot(status_basic_box, "status_basic");
 		_mount_widget_to_slot(status_equips_scroll, "status_equips");
@@ -2922,6 +2928,12 @@ bool ClockGearsGameMenu::_execute_button_step(const Dictionary &p_step, const St
 		_on_equip_clear_pressed();
 		return true;
 	}
+	if (step_type == "show_detail") {
+		if (!selected_item_key.is_empty()) {
+			_update_item_preview_panel(selected_item_key, current_subscreen == "equip");
+		}
+		return true;
+	}
 	if (step_type == "save_game") {
 		int slot = int(p_step.get("slot", 0));
 		if (slot > 0) {
@@ -3126,6 +3138,65 @@ void ClockGearsGameMenu::_on_custom_ui_action(const String &p_action, const Stri
 	_execute_button_actions(multi, p_action, p_elem_id);
 }
 
+void ClockGearsGameMenu::_on_custom_data_entry_focused(const String &p_container_id, const Dictionary &p_entry) {
+	if (p_entry.is_empty() || bool(p_entry.get("is_empty", false))) {
+		return;
+	}
+	String ds = ClockGearsDataManager::normalize_ui_data_source(p_entry.get("data_source", ""));
+	if (ds == "equip_slots" && p_entry.has("slot")) {
+		selected_equip_slot_idx = MAX(0, int(p_entry["slot"]));
+		if (custom_ui_layer) {
+			custom_ui_layer->set_runtime_actor_context(selected_equip_actor_id, selected_equip_slot_idx);
+		}
+		_refresh_equip_preview_labels();
+		return;
+	}
+	if (ds == "equip_compatible") {
+		String key = String(p_entry.get("key", ""));
+		if (!key.is_empty()) {
+			selected_equip_candidate_key = key;
+			_refresh_equip_preview_labels();
+			_update_item_preview_panel(key, true);
+		}
+		return;
+	}
+	String key = String(p_entry.get("key", ""));
+	if (!key.is_empty()) {
+		if (selected_item_key != key) {
+			preview_rotation_deg = 0.0f;
+			_apply_preview_rotation(0.0f);
+		}
+		selected_item_key = key;
+		_update_item_preview_panel(key, current_subscreen == "equip");
+	}
+}
+
+void ClockGearsGameMenu::_on_custom_data_entry_activated(const String &p_container_id, int p_slot_idx, const Dictionary &p_entry) {
+	_on_custom_data_entry_focused(p_container_id, p_entry);
+	if (p_entry.is_empty() || bool(p_entry.get("is_empty", false))) {
+		return;
+	}
+	String ds = ClockGearsDataManager::normalize_ui_data_source(p_entry.get("data_source", ""));
+	if (ds == "equip_slots" && p_entry.has("slot")) {
+		select_equip_slot(int(p_entry["slot"]));
+	} else if (ds == "save_slots" && p_entry.has("slot")) {
+		_on_save_slot_pressed(int(p_entry["slot"]));
+	} else if (ds == "party_members" && p_entry.has("actor_id")) {
+		int aid = int(p_entry["actor_id"]);
+		if (current_subscreen == "equip") {
+			select_equip_actor(aid);
+		} else if (current_subscreen == "status") {
+			select_status_actor(aid);
+		} else {
+			selected_status_actor_id = aid;
+			if (custom_ui_layer) {
+				custom_ui_layer->set_runtime_actor_context(aid, selected_equip_slot_idx);
+				custom_ui_layer->refresh_live_values();
+			}
+		}
+	}
+}
+
 bool ClockGearsGameMenu::trigger_custom_element_by_id(const String &p_elem_id) {
 	if (!custom_ui_layer) {
 		return false;
@@ -3181,6 +3252,10 @@ void ClockGearsGameMenu::_on_item_row_pressed(const String &p_key) {
 void ClockGearsGameMenu::_on_items_target_selected(int p_idx) {
 	if (items_target_option && p_idx >= 0) {
 		selected_status_actor_id = int(items_target_option->get_item_id(p_idx));
+		if (custom_ui_layer && custom_ui_layer->is_visible()) {
+			custom_ui_layer->set_runtime_actor_context(selected_status_actor_id, 0);
+			custom_ui_layer->refresh_live_values();
+		}
 	}
 }
 
@@ -3291,6 +3366,9 @@ bool ClockGearsGameMenu::discard_selected_item(int p_amount) {
 bool ClockGearsGameMenu::select_equip_actor(int p_actor_id) {
 	selected_equip_actor_id = p_actor_id;
 	selected_equip_candidate_key = "";
+	if (custom_ui_layer && custom_ui_layer->is_visible()) {
+		custom_ui_layer->set_runtime_actor_context(selected_equip_actor_id, selected_equip_slot_idx);
+	}
 	_refresh_equip_view();
 	return true;
 }
@@ -3298,6 +3376,9 @@ bool ClockGearsGameMenu::select_equip_actor(int p_actor_id) {
 bool ClockGearsGameMenu::select_equip_slot(int p_slot_idx) {
 	selected_equip_slot_idx = MAX(0, p_slot_idx);
 	selected_equip_candidate_key = "";
+	if (custom_ui_layer && custom_ui_layer->is_visible()) {
+		custom_ui_layer->set_runtime_actor_context(selected_equip_actor_id, selected_equip_slot_idx);
+	}
 	_refresh_equip_view();
 	return true;
 }
@@ -3337,6 +3418,10 @@ bool ClockGearsGameMenu::unequip_selected_slot() {
 
 bool ClockGearsGameMenu::select_status_actor(int p_actor_id) {
 	selected_status_actor_id = p_actor_id;
+	if (custom_ui_layer && custom_ui_layer->is_visible()) {
+		custom_ui_layer->set_runtime_actor_context(selected_status_actor_id, 0);
+		custom_ui_layer->refresh_live_values();
+	}
 	_refresh_status_view();
 	return true;
 }

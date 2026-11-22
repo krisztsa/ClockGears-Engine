@@ -74,6 +74,7 @@ private:
 	Dictionary window_styles_config;
 	Dictionary hud_config;
 	Dictionary ui_designs_config;
+	int editor_test_data_count = -1; // -1 = datos en vivo, 0 = vacío, 8/40 = ejemplo para editor y Probar
 	HashMap<String, Vector<Dictionary>> ui_design_undo_stacks;
 	HashMap<String, Vector<Dictionary>> ui_design_redo_stacks;
 	void _push_ui_undo_snapshot_internal(const String &p_screen_id, const Dictionary &p_snapshot, bool p_clear_redo = true);
@@ -260,6 +261,8 @@ public:
 	static String normalize_menu_id(const String &p_raw_id);
 	static PackedStringArray get_ui_element_types();
 	static Array get_ui_data_bindings();
+	static Array get_ui_container_data_sources();
+	static String normalize_ui_data_source(const Variant &p_val);
 	static Array get_ui_button_actions(const String &p_screen_id);
 	static Array get_all_ui_button_action_types();
 	static Array get_menu_layout_modes();
@@ -338,6 +341,10 @@ public:
 	void record_recent_ui_color(const String &p_hex_color);
 
 	String resolve_ui_data_binding(const String &p_binding, const Dictionary &p_element = Dictionary()) const;
+	String resolve_ui_entry_field_binding(const String &p_binding, const Dictionary &p_entry, const Dictionary &p_element = Dictionary(), bool p_preview_mode = false) const;
+	Array resolve_ui_container_entries(const Dictionary &p_container_cfg, int p_actor_id = -1, int p_equip_slot_idx = 0, bool p_preview_mode = false) const;
+	void set_editor_test_data_count(int p_count);
+	int get_editor_test_data_count() const { return editor_test_data_count; }
 
 	void push_ui_design_undo_state(const String &p_screen_id, const Dictionary &p_snapshot = Dictionary());
 	bool can_undo_ui_design(const String &p_screen_id) const;

@@ -337,6 +337,7 @@ private:
 	Button *redo_btn = nullptr;
 	Button *reset_btn = nullptr;
 	Button *test_btn = nullptr;
+	OptionButton *test_data_opt = nullptr;
 	Button *new_menu_wizard_btn = nullptr;
 	Button *add_submenu_btn = nullptr;
 	Button *add_button_bar_btn = nullptr;
@@ -635,6 +636,29 @@ private:
 	LineEdit *prop_var_edit = nullptr;
 	HBoxContainer *prop_item_row = nullptr;
 	OptionButton *prop_item_opt = nullptr;
+	CheckBox *prop_rotatable_chk = nullptr;
+
+	// Contenedor con fuente de datos reales (UI 2/3 Punto 1)
+	VBoxContainer *prop_container_box = nullptr;
+	OptionButton *prop_data_source_opt = nullptr;
+	OptionButton *prop_data_filter_opt = nullptr;
+	CheckBox *prop_data_usable_chk = nullptr;
+	OptionButton *prop_data_sort_opt = nullptr;
+	SpinBox *prop_data_equip_slot_spin = nullptr;
+	OptionButton *prop_container_layout_opt = nullptr;
+	SpinBox *prop_container_cols_spin = nullptr;
+	SpinBox *prop_container_rows_spin = nullptr;
+	SpinBox *prop_container_spx_spin = nullptr;
+	SpinBox *prop_container_spy_spin = nullptr;
+	CheckBox *prop_container_scroll_chk = nullptr;
+	CheckBox *prop_data_show_empty_chk = nullptr;
+	SpinBox *prop_data_empty_cnt_spin = nullptr;
+	OptionButton *prop_slot_action_opt = nullptr;
+	Button *prop_create_item_tpl_btn = nullptr;
+	OptionButton *prop_slot_style_state_opt = nullptr;
+	ColorPickerButton *prop_slot_style_fill_btn = nullptr;
+	ColorPickerButton *prop_slot_style_border_btn = nullptr;
+	SpinBox *prop_slot_style_bw_spin = nullptr;
 	VBoxContainer *prop_action_row = nullptr;
 	OptionButton *prop_action_opt = nullptr;
 	SpinBox *prop_focus_spin = nullptr;
@@ -931,6 +955,12 @@ private:
 	void _on_layer_delete_pressed();
 	void _on_anchor_btn_pressed(int p_idx);
 	void _on_prop_field_changed();
+	void _on_test_data_count_selected(int p_idx);
+	void _on_prop_container_changed();
+	void _on_prop_slot_style_state_selected(int p_idx);
+	void _on_prop_slot_style_edited();
+	void _on_prop_create_item_tpl_pressed();
+	void _refresh_container_inspector(const Dictionary &p_el);
 	void _on_prop_binding_changed(int p_idx);
 	void _on_prop_var_opt_selected(int p_idx);
 	void _on_prop_item_opt_selected(int p_idx);

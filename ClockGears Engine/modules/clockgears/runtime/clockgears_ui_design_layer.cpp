@@ -13,6 +13,7 @@
 #include "core/object/callable_mp.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/nine_patch_rect.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
@@ -364,6 +365,12 @@ void ClockGearsRadialCanvas::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("selection_changed", PropertyInfo(Variant::INT, "slot_index")));
 }
 
+void ClockGearsRadialCanvas::set_data_context(int p_actor_id, int p_equip_slot_idx, bool p_test_data) {
+	runtime_actor_id = p_actor_id;
+	runtime_equip_slot_idx = p_equip_slot_idx;
+	use_editor_test_data = p_test_data;
+}
+
 void ClockGearsRadialCanvas::configure(const Dictionary &p_layout, const Array &p_fallback_elements, float p_scale, bool p_interactive) {
 	layout_cfg = p_layout.duplicate(true);
 	ui_scale = MAX(0.25f, p_scale);
@@ -371,8 +378,30 @@ void ClockGearsRadialCanvas::configure(const Dictionary &p_layout, const Array &
 	open_anim = String(layout_cfg.get("radial_open_anim", "radial_spin")).strip_edges().to_lower();
 	all_slots.clear();
 
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String ds = ClockGearsDataManager::normalize_ui_data_source(layout_cfg.get("data_source", "manual"));
 	Array raw_slots = layout_cfg.get("radial_slots", Array());
-	if (!raw_slots.is_empty()) {
+	if (ds != "manual" && raw_slots.is_empty() && dm) {
+		Array entries = dm->resolve_ui_container_entries(layout_cfg, runtime_actor_id, runtime_equip_slot_idx, (!interactive || use_editor_test_data));
+		for (int i = 0; i < entries.size(); i++) {
+			if (entries[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ed = entries[i];
+			RadialSlot rs;
+			rs.id = String(ed.get("key", vformat("data_%d", i + 1)));
+			rs.title = String(ed.get("name", ""));
+			rs.description = String(ed.get("description", ""));
+			rs.icon_path = String(ed.get("icon_path", "")).strip_edges();
+			rs.pixel_art = layout_cfg.has("pixel_art") ? bool(layout_cfg["pixel_art"]) : true;
+			rs.action = String(layout_cfg.get("slot_action", ed.get("slot_action", "show_detail"))).strip_edges().to_lower();
+			rs.actions = layout_cfg.has("slot_actions") && layout_cfg["slot_actions"].get_type() == Variant::ARRAY ? Array(layout_cfg["slot_actions"]).duplicate(true) : Array();
+			rs.disabled = bool(ed.get("disabled", false)) || bool(ed.get("is_empty", false));
+			rs.visible = true;
+			if (!bool(ed.get("is_empty", false))) {
+				rs.cached_icon = dm->get_entry_icon_texture(ed, MAX(24, int(layout_cfg.get("radial_slot_size", 56))));
+			}
+			all_slots.push_back(rs);
+		}
+	} else if (!raw_slots.is_empty()) {
 		for (int i = 0; i < raw_slots.size(); i++) {
 			if (raw_slots[i].get_type() != Variant::DICTIONARY) continue;
 			Dictionary d = raw_slots[i];
@@ -1256,7 +1285,25 @@ void ClockGearsUiDesignLayer::set_preview_mode(bool p_preview) {
 			elements[i].button->set_mouse_filter(p_preview ? MOUSE_FILTER_IGNORE : MOUSE_FILTER_STOP);
 			elements[i].button->set_focus_mode(p_preview ? FOCUS_NONE : FOCUS_ALL);
 		}
+		for (int c = 0; c < elements[i].data_cell_buttons.size(); c++) {
+			Button *cb = elements[i].data_cell_buttons[c];
+			if (cb) {
+				bool is_empty = bool(cb->get_meta("entry_empty", false));
+				bool is_dis = bool(cb->get_meta("entry_disabled", false));
+				cb->set_mouse_filter(p_preview ? MOUSE_FILTER_IGNORE : MOUSE_FILTER_STOP);
+				cb->set_focus_mode((p_preview || is_empty || is_dis) ? FOCUS_NONE : FOCUS_ALL);
+			}
+		}
 	}
+}
+
+void ClockGearsUiDesignLayer::set_runtime_actor_context(int p_actor_id, int p_equip_slot_idx) {
+	if (runtime_actor_id == p_actor_id && runtime_equip_slot_idx == p_equip_slot_idx) {
+		return;
+	}
+	runtime_actor_id = p_actor_id;
+	runtime_equip_slot_idx = MAX(0, p_equip_slot_idx);
+	refresh_live_values();
 }
 
 void ClockGearsUiDesignLayer::set_viewport_size_override(const Vector2 &p_size) {
@@ -1660,7 +1707,80 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		radial_canvas->connect("slot_activated", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_slot_activated));
 		radial_canvas->connect("selection_changed", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_selection_changed));
 		add_child(radial_canvas);
+		radial_canvas->set_data_context(runtime_actor_id, runtime_equip_slot_idx, use_editor_test_data);
 		radial_canvas->configure(lay, raw, MAX(0.25f, current_ui_scale), !preview_mode);
+	}
+
+	// Identificar carpetas "Plantilla del elemento" dentro de contenedores con fuente de datos
+	HashMap<String, Vector<Dictionary>> container_tpl_children;
+	HashMap<String, Size2> container_tpl_sizes;
+	HashSet<String> tpl_skip_ids;
+	{
+		HashMap<String, Dictionary> raw_map;
+		for (int i = 0; i < raw.size(); i++) {
+			if (raw[i].get_type() == Variant::DICTIONARY) {
+				Dictionary d = raw[i];
+				String did = String(d.get("id", ""));
+				if (!did.is_empty()) raw_map[did] = d;
+			}
+		}
+		for (int i = 0; i < raw.size(); i++) {
+			if (raw[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary c = raw[i];
+			String ctype = String(c.get("type", "")).strip_edges().to_lower();
+			String clm = String(c.get("layout_mode", "free")).strip_edges().to_lower();
+			String cds = ClockGearsDataManager::normalize_ui_data_source(c.get("data_source", "manual"));
+			if (cds == "manual" || (ctype != "container" && !(ctype == "frame" && clm != "free"))) {
+				continue;
+			}
+			String cid = String(c.get("id", ""));
+			String tpl_fid = String(c.get("item_template_folder_id", "")).strip_edges();
+			if (tpl_fid.is_empty()) {
+				for (int j = 0; j < raw.size(); j++) {
+					if (raw[j].get_type() != Variant::DICTIONARY) continue;
+					Dictionary fd = raw[j];
+					if (String(fd.get("type", "")).to_lower() == "folder" && String(fd.get("parent_id", "")) == cid) {
+						tpl_fid = String(fd.get("id", ""));
+						break;
+					}
+				}
+			}
+			if (!tpl_fid.is_empty()) {
+				tpl_skip_ids.insert(tpl_fid);
+				HashSet<String> folder_tree;
+				folder_tree.insert(tpl_fid);
+				bool added = true;
+				while (added) {
+					added = false;
+					for (int j = 0; j < raw.size(); j++) {
+						if (raw[j].get_type() != Variant::DICTIONARY) continue;
+						Dictionary cd = raw[j];
+						String ch_id = String(cd.get("id", ""));
+						String pid = String(cd.get("parent_id", ""));
+						if (!ch_id.is_empty() && !folder_tree.has(ch_id) && folder_tree.has(pid)) {
+							folder_tree.insert(ch_id);
+							tpl_skip_ids.insert(ch_id);
+							added = true;
+						}
+					}
+				}
+				Vector<Dictionary> tpl_kids;
+				float max_w = 120.0f;
+				float max_h = 80.0f;
+				for (int j = 0; j < raw.size(); j++) {
+					if (raw[j].get_type() != Variant::DICTIONARY) continue;
+					Dictionary cd = raw[j];
+					String ch_id = String(cd.get("id", ""));
+					if (ch_id == tpl_fid || !folder_tree.has(ch_id)) continue;
+					if (String(cd.get("type", "")).to_lower() == "folder") continue;
+					tpl_kids.push_back(cd.duplicate(true));
+					max_w = MAX(max_w, float(int(cd.get("offset_x", 0)) + int(cd.get("width", 64))));
+					max_h = MAX(max_h, float(int(cd.get("offset_y", 0)) + int(cd.get("height", 32))));
+				}
+				container_tpl_children[cid] = tpl_kids;
+				container_tpl_sizes[cid] = Size2(max_w, max_h);
+			}
+		}
 	}
 
 	for (int i = 0; i < raw.size(); i++) {
@@ -1674,6 +1794,9 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 			continue;
 		}
 		if (etype == "folder") {
+			continue;
+		}
+		if (tpl_skip_ids.has(String(cfg.get("id", "")))) {
 			continue;
 		}
 		ElementEntry entry;
@@ -1698,6 +1821,10 @@ void ClockGearsUiDesignLayer::_rebuild_from_design(const Dictionary &p_design) {
 		entry.array_order = i;
 		entry.tab_index = MAX(0, int(cfg.get("tab_index", 0)));
 		entry.config = cfg;
+		if (container_tpl_children.has(entry.id)) {
+			entry.data_tpl_children = container_tpl_children[entry.id];
+			entry.data_tpl_cell_base_size = container_tpl_sizes[entry.id];
+		}
 
 		bool has_shape = cfg.has("shape") && cfg["shape"].get_type() == Variant::DICTIONARY;
 		bool can_reuse_frame = (etype == "frame" && !entry.clip_children && String(cfg.get("image_path", "")).strip_edges().is_empty());
@@ -2004,9 +2131,28 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			if (tex.is_valid()) {
 				img->set_texture(tex);
 			}
+			if (bool(r_entry.config.get("rotatable", false)) && !preview_mode) {
+				img->set_mouse_filter(MOUSE_FILTER_STOP);
+				img->connect("gui_input", callable_mp(this, &ClockGearsUiDesignLayer::_on_rotatable_preview_gui_input).bind(r_entry.id));
+			}
 			content->add_child(img);
 			r_entry.image_rect = img;
 		}
+	} else if (r_entry.type == "container") {
+		ScrollContainer *dsc = memnew(ScrollContainer);
+		dsc->set_name("DataContainerScroll");
+		dsc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		dsc->set_clip_contents(true);
+		dsc->set_mouse_filter(MOUSE_FILTER_PASS);
+		content->add_child(dsc);
+		r_entry.data_scroll = dsc;
+
+		Control *dcan = memnew(Control);
+		dcan->set_name("DataItemsCanvas");
+		dcan->set_mouse_filter(MOUSE_FILTER_PASS);
+		dcan->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		dsc->add_child(dcan);
+		r_entry.data_items_canvas = dcan;
 	} else if (r_entry.type == "bar") {
 		ColorRect *bg_r = memnew(ColorRect);
 		bg_r->set_mouse_filter(MOUSE_FILTER_IGNORE);
@@ -2141,12 +2287,26 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 				? Dictionary(r_entry.config["layout"]).duplicate(true)
 				: Dictionary();
 		rlay["mode"] = "radial";
-		if (!rlay.has("radial_slots") || Array(rlay["radial_slots"]).is_empty()) {
+		String ds = ClockGearsDataManager::normalize_ui_data_source(r_entry.config.get("data_source", rlay.get("data_source", "manual")));
+		rlay["data_source"] = ds;
+		static const char *k_copy_keys[] = {
+			"data_filter_category", "data_only_usable", "data_sort_by", "data_equip_slot",
+			"data_show_empty", "data_empty_count", "slot_action", "slot_actions", "pixel_art"
+		};
+		for (int ck = 0; ck < 9; ck++) {
+			if (r_entry.config.has(k_copy_keys[ck]) && !rlay.has(k_copy_keys[ck])) {
+				rlay[k_copy_keys[ck]] = r_entry.config[k_copy_keys[ck]];
+			}
+		}
+		if (ds == "manual" && (!rlay.has("radial_slots") || Array(rlay["radial_slots"]).is_empty())) {
 			rlay["radial_slots"] = ClockGearsDataManager::make_default_radial_slots(6, screen_id);
+		} else if (ds != "manual") {
+			rlay["radial_slots"] = Array();
 		}
 		rlay["radial_center_x"] = 480;
 		rlay["radial_center_y"] = 270;
 		content->add_child(rc);
+		rc->set_data_context(runtime_actor_id, runtime_equip_slot_idx, use_editor_test_data);
 		rc->configure(rlay, Array(), MAX(0.25f, current_ui_scale), !preview_mode);
 		if (!radial_canvas) {
 			radial_canvas = rc;
@@ -2300,7 +2460,7 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	}
 
 	String sid = r_entry.window_style_id;
-	bool force_panel = (r_entry.type == "frame" || r_entry.type == "widget") || has_shape || bool(r_entry.config.get("show_background", false));
+	bool force_panel = (r_entry.type == "frame" || r_entry.type == "widget" || r_entry.type == "container") || has_shape || bool(r_entry.config.get("show_background", false));
 	if (!force_panel && (sid.is_empty() || sid == "none")) {
 		if (r_entry.bg_panel->is_visible()) {
 			r_entry.bg_panel->set_visible(false);
@@ -2313,6 +2473,9 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 			r_entry.content_root->set_size(rsz);
 		}
 		_update_element_image_rect(r_entry, rsz);
+		if (r_entry.type == "container") {
+			_build_or_refresh_data_container(r_entry, p_scale, true);
+		}
 		return;
 	}
 
@@ -2340,6 +2503,9 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	Size2 csz(MAX(4.0f, rsz.x - pad_l - pad_r), MAX(4.0f, rsz.y - pad_t - pad_b));
 	r_entry.content_root->set_size(csz);
 	_update_element_image_rect(r_entry, csz);
+	if (r_entry.type == "container") {
+		_build_or_refresh_data_container(r_entry, p_scale, true);
+	}
 }
 
 void ClockGearsUiDesignLayer::_apply_container_layout(const Dictionary &p_layout, float p_scale) {
@@ -2361,6 +2527,7 @@ void ClockGearsUiDesignLayer::_apply_container_layout(const Dictionary &p_layout
 		if (radial_canvas) {
 			radial_canvas->set_position(current_stage_rect.position);
 			radial_canvas->set_size(current_stage_rect.size);
+			radial_canvas->set_data_context(runtime_actor_id, runtime_equip_slot_idx, use_editor_test_data);
 			radial_canvas->configure(p_layout, active_design.get("elements", Array()), p_scale, !preview_mode);
 		}
 		return;
@@ -2731,10 +2898,31 @@ void ClockGearsUiDesignLayer::refresh_live_values() {
 
 		if (e.type == "text" || e.type == "variable") {
 			if (e.label) {
-				String nt = resolve_element_text(e.config, dm);
+				String b = e.data_binding;
+				String nt;
+				if (dm && (b == "item_name" || b == "item_desc" || b == "item_price" || b == "item_type" || b == "item_params" || (b == "item_qty" && String(e.config.get("item_key", "")).is_empty()))) {
+					nt = dm->resolve_ui_entry_field_binding(b, last_focused_data_entry, e.config, (preview_mode || use_editor_test_data));
+				} else {
+					nt = resolve_element_text(e.config, dm);
+				}
 				if (e.label->get_text() != nt) {
 					e.label->set_text(nt);
 				}
+			}
+		} else if (e.type == "image" && e.image_rect && e.data_binding == "item_icon") {
+			Ref<Texture2D> ic_tex;
+			if (dm && !last_focused_data_entry.is_empty() && !bool(last_focused_data_entry.get("is_empty", false))) {
+				ic_tex = dm->get_entry_icon_texture(last_focused_data_entry, MAX(32, int(e.width * current_ui_scale)));
+			}
+			e.image_rect->set_texture(ic_tex);
+			if (bool(e.config.get("rotatable", false))) {
+				e.image_rect->set_pivot_offset(e.image_rect->get_size() * 0.5f);
+				e.image_rect->set_rotation_degrees(e.rotatable_angle_deg);
+			}
+		} else if (e.type == "container") {
+			String cds = ClockGearsDataManager::normalize_ui_data_source(e.config.get("data_source", "manual"));
+			if (cds != "manual") {
+				_build_or_refresh_data_container(e, current_ui_scale, false);
 			}
 		} else if (e.type == "button") {
 			if (e.button) {
@@ -2946,6 +3134,31 @@ void ClockGearsUiDesignLayer::_on_radial_slot_activated(int p_slot_idx) {
 
 void ClockGearsUiDesignLayer::_on_radial_selection_changed(int p_slot_idx) {
 	emit_signal("radial_selection_changed", p_slot_idx);
+	if (!radial_canvas) {
+		return;
+	}
+	Dictionary info = radial_canvas->get_selected_slot_info();
+	if (!info.is_empty()) {
+		Dictionary entry;
+		entry["key"] = info.get("id", "");
+		entry["name"] = info.get("title", "");
+		entry["description"] = info.get("description", "");
+		entry["icon_path"] = info.get("icon_path", "");
+		ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+		if (dm) {
+			Array inv = dm->get_inventory_entries();
+			for (int i = 0; i < inv.size(); i++) {
+				if (String(Dictionary(inv[i]).get("key", "")) == String(info.get("id", ""))) {
+					entry = Dictionary(inv[i]).duplicate(true);
+					break;
+				}
+			}
+		}
+		last_focused_container_id = "radial";
+		last_focused_data_entry = entry;
+		_refresh_focused_entry_elements();
+		emit_signal("data_entry_focused", String("radial"), entry);
+	}
 }
 
 void ClockGearsUiDesignLayer::_on_layout_page_delta(int p_delta) {
@@ -2972,6 +3185,494 @@ void ClockGearsUiDesignLayer::_on_carousel_step(int p_delta) {
 	last_layout_size = Vector2(-1, -1);
 	_relayout_elements(true);
 	refresh_live_values();
+}
+
+void ClockGearsUiDesignLayer::_apply_data_cell_state_styles(ElementEntry &r_entry, float p_scale) {
+	Dictionary sstyles = (r_entry.config.has("slot_styles") && r_entry.config["slot_styles"].get_type() == Variant::DICTIONARY)
+			? Dictionary(r_entry.config["slot_styles"])
+			: Dictionary();
+	auto make_cell_sb = [&](const String &p_state, const Color &p_def_bg, const Color &p_def_border, int p_def_bw) -> Ref<StyleBoxFlat> {
+		Dictionary cfg = sstyles.has(p_state) && sstyles[p_state].get_type() == Variant::DICTIONARY ? Dictionary(sstyles[p_state]) : Dictionary();
+		Ref<StyleBoxFlat> sb;
+		sb.instantiate();
+		sb->set_bg_color(_cg_ui_parse_color(cfg.get("fill_color", p_def_bg.to_html(true)), p_def_bg));
+		sb->set_border_color(_cg_ui_parse_color(cfg.get("border_color", p_def_border.to_html(true)), p_def_border));
+		int bw = cfg.has("border_width") ? CLAMP(int(cfg["border_width"]), 0, 8) : p_def_bw;
+		int brad = cfg.has("corner_radius") ? CLAMP(int(cfg["corner_radius"]), 0, 32) : 6;
+		sb->set_border_width_all(MAX(0, int(Math::round(float(bw) * p_scale))));
+		sb->set_corner_radius_all(MAX(0, int(Math::round(float(brad) * p_scale))));
+		int pad = MAX(2, int(Math::round(4.0f * p_scale)));
+		sb->set_content_margin_all(pad);
+		return sb;
+	};
+	Ref<StyleBoxFlat> sb_norm = make_cell_sb("normal", Color(0.11f, 0.13f, 0.18f, 0.90f), Color(0.55f, 0.45f, 0.30f, 0.65f), 1);
+	Ref<StyleBoxFlat> sb_sel = make_cell_sb("selected", Color(0.22f, 0.18f, 0.12f, 0.98f), Color(0.96f, 0.74f, 0.33f, 1.0f), 2);
+	Ref<StyleBoxFlat> sb_dis = make_cell_sb("disabled", Color(0.08f, 0.09f, 0.12f, 0.55f), Color(0.32f, 0.34f, 0.38f, 0.40f), 1);
+	Ref<StyleBoxFlat> sb_emp = make_cell_sb("empty", Color(0.06f, 0.07f, 0.10f, 0.40f), Color(0.35f, 0.36f, 0.42f, 0.30f), 1);
+
+	for (int i = 0; i < r_entry.data_cell_buttons.size(); i++) {
+		Button *cb = r_entry.data_cell_buttons[i];
+		if (!cb) continue;
+		bool is_emp = bool(cb->get_meta("entry_empty", false));
+		bool is_dis = bool(cb->get_meta("entry_disabled", false));
+		bool is_sel = (i == r_entry.focused_data_slot_idx) && !is_emp;
+		Ref<StyleBoxFlat> active_sb = is_emp ? sb_emp : (is_sel ? sb_sel : (is_dis ? sb_dis : sb_norm));
+		cb->add_theme_style_override("normal", active_sb);
+		cb->add_theme_style_override("hover", is_emp ? sb_emp : sb_sel);
+		cb->add_theme_style_override("pressed", is_emp ? sb_emp : sb_sel);
+		cb->add_theme_style_override("focus", is_emp ? sb_emp : sb_sel);
+		cb->add_theme_style_override("disabled", is_emp ? sb_emp : sb_dis);
+	}
+}
+
+void ClockGearsUiDesignLayer::_refresh_focused_entry_elements() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (!e.root) continue;
+		String b = e.data_binding;
+		if ((e.type == "text" || e.type == "variable") && e.label) {
+			if (b == "item_name" || b == "item_desc" || b == "item_price" || b == "item_type" || b == "item_params" || (b == "item_qty" && String(e.config.get("item_key", "")).is_empty())) {
+				String nt = dm ? dm->resolve_ui_entry_field_binding(b, last_focused_data_entry, e.config, (preview_mode || use_editor_test_data)) : String();
+				e.label->set_text(nt);
+			}
+		} else if (e.type == "image" && e.image_rect && b == "item_icon") {
+			Ref<Texture2D> ic_tex;
+			if (dm && !last_focused_data_entry.is_empty() && !bool(last_focused_data_entry.get("is_empty", false))) {
+				ic_tex = dm->get_entry_icon_texture(last_focused_data_entry, MAX(32, int(e.width * current_ui_scale)));
+			}
+			e.image_rect->set_texture(ic_tex);
+			if (bool(e.config.get("rotatable", false))) {
+				e.image_rect->set_pivot_offset(e.image_rect->get_size() * 0.5f);
+				e.image_rect->set_rotation_degrees(e.rotatable_angle_deg);
+			}
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_entry, float p_scale, bool p_rebuild_nodes) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !r_entry.data_scroll || !r_entry.data_items_canvas || !r_entry.content_root) {
+		return;
+	}
+	String ds = ClockGearsDataManager::normalize_ui_data_source(r_entry.config.get("data_source", "manual"));
+	if (ds == "manual") {
+		r_entry.data_scroll->set_visible(false);
+		return;
+	}
+	r_entry.data_scroll->set_visible(true);
+	Size2 avail = r_entry.content_root->get_size();
+	if (avail.x < 16.0f || avail.y < 16.0f) {
+		return;
+	}
+
+	Array entries = dm->resolve_ui_container_entries(r_entry.config, runtime_actor_id, runtime_equip_slot_idx, (preview_mode || use_editor_test_data));
+	String sig = ds + "|" + r_entry.config.get("layout_mode", "grid").operator String() + "|" + itos(entries.size()) + "|" +
+			itos(int(Math::round(avail.x))) + "x" + itos(int(Math::round(avail.y))) + "|" + itos(r_entry.data_carousel_offset) + "|" +
+			itos(int(preview_mode)) + "|" + itos(int(use_editor_test_data));
+	for (int i = 0; i < entries.size() && i < 64; i++) {
+		Dictionary ed = entries[i];
+		sig += ";" + String(ed.get("key", "")) + ":" + itos(int(ed.get("qty", 0))) + ":" + String(ed.get("name", "")) + ":" + itos(int(bool(ed.get("disabled", false))));
+	}
+	String prev_sig = r_entry.data_items_canvas->has_meta("_cg_sig") ? String(r_entry.data_items_canvas->get_meta("_cg_sig")) : String();
+	if (!p_rebuild_nodes && prev_sig == sig) {
+		return;
+	}
+	r_entry.data_items_canvas->set_meta("_cg_sig", sig);
+
+	for (int c = r_entry.data_items_canvas->get_child_count() - 1; c >= 0; c--) {
+		Node *ch = r_entry.data_items_canvas->get_child(c);
+		r_entry.data_items_canvas->remove_child(ch);
+		ch->queue_free();
+	}
+	r_entry.data_cell_buttons.clear();
+	r_entry.data_resolved_entries = entries;
+
+	String lmode = String(r_entry.config.get("layout_mode", "grid")).strip_edges().to_lower();
+	bool scroll_on = r_entry.config.has("layout_scroll") ? bool(r_entry.config["layout_scroll"]) : true;
+	int cols = (lmode == "vertical_list") ? 1 : MAX(1, CLAMP(int(r_entry.config.get("layout_columns", 4)), 1, 20));
+	int rows_cfg = CLAMP(int(r_entry.config.get("layout_rows", 2)), 0, 20);
+	float spx = float(CLAMP(int(r_entry.config.get("layout_spacing", 8)), 0, 64)) * p_scale;
+	float spy = float(CLAMP(int(r_entry.config.get("layout_spacing_y", r_entry.config.get("layout_spacing", 8))), 0, 64)) * p_scale;
+	bool pa = bool(r_entry.config.get("pixel_art", true));
+
+	int total = entries.size();
+	if (total <= 0) {
+		r_entry.data_items_canvas->set_custom_minimum_size(avail);
+		return;
+	}
+
+	if (lmode == "horizontal_list") {
+		r_entry.data_scroll->set_horizontal_scroll_mode(scroll_on ? ScrollContainer::SCROLL_MODE_AUTO : ScrollContainer::SCROLL_MODE_DISABLED);
+		r_entry.data_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	} else {
+		r_entry.data_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+		r_entry.data_scroll->set_vertical_scroll_mode((scroll_on && lmode != "carousel") ? ScrollContainer::SCROLL_MODE_AUTO : ScrollContainer::SCROLL_MODE_DISABLED);
+	}
+
+	float cw = avail.x;
+	float ch = MAX(42.0f * p_scale, r_entry.data_tpl_cell_base_size.y * p_scale);
+	if (lmode == "grid") {
+		cw = MAX(36.0f * p_scale, (avail.x - spx * float(cols - 1)) / float(cols));
+		if (rows_cfg > 0) {
+			ch = MAX(36.0f * p_scale, (avail.y - spy * float(rows_cfg - 1)) / float(rows_cfg));
+		} else {
+			ch = MAX(48.0f * p_scale, r_entry.data_tpl_cell_base_size.y * p_scale);
+		}
+	} else if (lmode == "vertical_list") {
+		cols = 1;
+		cw = MAX(64.0f * p_scale, avail.x - (scroll_on ? 10.0f * p_scale : 0.0f));
+		ch = MAX(42.0f * p_scale, MIN(84.0f * p_scale, r_entry.data_tpl_cell_base_size.y * p_scale));
+	} else if (lmode == "horizontal_list") {
+		cols = total;
+		cw = MAX(96.0f * p_scale, r_entry.data_tpl_cell_base_size.x * p_scale);
+		ch = MAX(42.0f * p_scale, avail.y - (scroll_on ? 10.0f * p_scale : 0.0f));
+	} else if (lmode == "carousel") {
+		cols = MIN(3, total);
+		cw = avail.x * 0.42f;
+		ch = avail.y * 0.86f;
+	}
+
+	int total_rows = (lmode == "horizontal_list") ? 1 : MAX(1, int(Math::ceil(float(total) / float(cols))));
+	float canvas_w = (lmode == "horizontal_list") ? (float(total) * cw + float(MAX(0, total - 1)) * spx) : avail.x;
+	float canvas_h = (lmode == "horizontal_list" || lmode == "carousel") ? avail.y : (float(total_rows) * ch + float(MAX(0, total_rows - 1)) * spy);
+	r_entry.data_items_canvas->set_custom_minimum_size(Size2(canvas_w, MAX(avail.y, canvas_h)));
+	r_entry.data_items_canvas->set_size(Size2(canvas_w, MAX(avail.y, canvas_h)));
+
+	Dictionary ov_map = (r_entry.config.has("element_overrides") && r_entry.config["element_overrides"].get_type() == Variant::DICTIONARY)
+			? Dictionary(r_entry.config["element_overrides"])
+			: Dictionary();
+	Ref<Font> cfont = _load_cached_font(String(r_entry.config.get("font_path", "")));
+
+	for (int idx = 0; idx < total; idx++) {
+		Dictionary ed = entries[idx];
+		Dictionary ov = ov_map.has(itos(idx)) && ov_map[itos(idx)].get_type() == Variant::DICTIONARY ? Dictionary(ov_map[itos(idx)]) : Dictionary();
+		bool is_empty = bool(ed.get("is_empty", false));
+		bool is_dis = bool(ed.get("disabled", false)) || is_empty;
+
+		Rect2 cell_r;
+		if (lmode == "carousel") {
+			int cur = CLAMP(r_entry.data_carousel_offset, 0, total - 1);
+			int rel = idx - cur;
+			if (Math::abs(rel) > 1) {
+				Button *hidden_b = memnew(Button);
+				hidden_b->set_visible(false);
+				r_entry.data_items_canvas->add_child(hidden_b);
+				r_entry.data_cell_buttons.push_back(hidden_b);
+				continue;
+			}
+			float csc = (rel == 0) ? 1.0f : 0.78f;
+			Size2 csz(cw * csc, ch * csc);
+			Vector2 mid = avail * 0.5f;
+			cell_r = Rect2(Vector2(mid.x + float(rel) * cw * 0.85f - csz.x * 0.5f, mid.y - csz.y * 0.5f), csz);
+		} else {
+			int col = (lmode == "horizontal_list") ? idx : (idx % cols);
+			int row = (lmode == "horizontal_list") ? 0 : (idx / cols);
+			cell_r = Rect2(Vector2(float(col) * (cw + spx), float(row) * (ch + spy)), Size2(cw, ch));
+		}
+
+		Button *cb = memnew(Button);
+		cb->set_name(vformat("DataCell_%d", idx));
+		cb->set_position(cell_r.position);
+		cb->set_size(cell_r.size);
+		cb->set_clip_contents(true);
+		cb->set_mouse_filter(preview_mode ? MOUSE_FILTER_IGNORE : MOUSE_FILTER_STOP);
+		cb->set_focus_mode((preview_mode || is_empty || is_dis) ? FOCUS_NONE : FOCUS_ALL);
+		cb->set_disabled(is_dis && !is_empty);
+		cb->set_meta("entry_empty", is_empty);
+		cb->set_meta("entry_disabled", is_dis);
+		cb->set_meta("container_id", r_entry.id);
+		cb->set_meta("slot_idx", idx);
+		if (!preview_mode) {
+			cb->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_cell_pressed).bind(r_entry.id, idx), CONNECT_DEFERRED);
+			cb->connect("mouse_entered", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_cell_focused).bind(r_entry.id, idx));
+			cb->connect("focus_entered", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_cell_focused).bind(r_entry.id, idx));
+		}
+		r_entry.data_items_canvas->add_child(cb);
+		r_entry.data_cell_buttons.push_back(cb);
+
+		if (!r_entry.data_tpl_children.is_empty()) {
+			Vector2 base_sz = Vector2(MAX(40.0f, r_entry.data_tpl_cell_base_size.x), MAX(30.0f, r_entry.data_tpl_cell_base_size.y));
+			float sx = cell_r.size.x / base_sz.x;
+			float sy = cell_r.size.y / base_sz.y;
+			for (int k = 0; k < r_entry.data_tpl_children.size(); k++) {
+				const Dictionary &tc = r_entry.data_tpl_children[k];
+				String ttype = String(tc.get("type", "text")).strip_edges().to_lower();
+				String tbind = String(tc.get("data_binding", "none")).strip_edges().to_lower();
+				Vector2 child_pos(float(int(tc.get("offset_x", 0))) * sx, float(int(tc.get("offset_y", 0))) * sy);
+				Vector2 child_sz(MAX(8.0f, float(int(tc.get("width", 48))) * sx), MAX(8.0f, float(int(tc.get("height", 20))) * sy));
+				if (ttype == "image" || tbind == "item_icon") {
+					TextureRect *tr = memnew(TextureRect);
+					tr->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					tr->set_position(child_pos);
+					tr->set_size(child_sz);
+					tr->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+					tr->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+					tr->set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+					if (!is_empty) {
+						tr->set_texture(dm->get_entry_icon_texture(ed, MAX(16, int(MIN(child_sz.x, child_sz.y)))));
+					}
+					cb->add_child(tr);
+				} else {
+					Label *lb = memnew(Label);
+					lb->set_mouse_filter(MOUSE_FILTER_IGNORE);
+					lb->set_position(child_pos);
+					lb->set_size(child_sz);
+					lb->set_clip_text(true);
+					lb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+					String al = String(tc.get("align", "left"));
+					lb->set_horizontal_alignment((al == "center") ? HORIZONTAL_ALIGNMENT_CENTER : ((al == "right") ? HORIZONTAL_ALIGNMENT_RIGHT : HORIZONTAL_ALIGNMENT_LEFT));
+					lb->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+					int fsz = MAX(8, int(Math::round(float(tc.get("font_size", 13)) * MIN(sx, sy))));
+					lb->add_theme_font_size_override("font_size", fsz);
+					if (cfont.is_valid()) lb->add_theme_font_override("font", cfont);
+					if (tc.has("font_color")) {
+						Color fcol = _cg_ui_parse_color(tc["font_color"], Color(1, 1, 1, 1));
+						if (is_empty || is_dis) fcol.a *= 0.55f;
+						lb->add_theme_color_override("font_color", fcol);
+					}
+					String txt = (!tbind.is_empty() && tbind != "none")
+							? dm->resolve_ui_entry_field_binding(tbind, ed, tc, (preview_mode || use_editor_test_data))
+							: String(ov.get("text", tc.get("text", "")));
+					lb->set_text(txt);
+					cb->add_child(lb);
+				}
+			}
+		} else {
+			// Plantilla por defecto integrada si el contenedor aún no tiene carpeta de plantilla hija
+			HBoxContainer *hb = memnew(HBoxContainer);
+			hb->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			hb->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+			hb->add_theme_constant_override("separation", MAX(4, int(6.0f * p_scale)));
+			cb->add_child(hb);
+
+			float ic_px = CLAMP(MIN(cell_r.size.y - 10.0f * p_scale, 36.0f * p_scale), 16.0f, 44.0f);
+			TextureRect *ic = memnew(TextureRect);
+			ic->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			ic->set_custom_minimum_size(Size2(ic_px, ic_px));
+			ic->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+			ic->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+			ic->set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+			if (!is_empty) {
+				ic->set_texture(dm->get_entry_icon_texture(ed, MAX(16, int(ic_px))));
+			}
+			hb->add_child(ic);
+
+			Label *nlbl = memnew(Label);
+			nlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			nlbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			nlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+			nlbl->set_clip_text(true);
+			nlbl->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			int fsz = MAX(9, int(Math::round(13.0f * p_scale)));
+			nlbl->add_theme_font_size_override("font_size", fsz);
+			if (cfont.is_valid()) nlbl->add_theme_font_override("font", cfont);
+			String disp_name = ov.has("text") ? String(ov["text"]) : dm->resolve_ui_entry_field_binding("item_name", ed, Dictionary(), (preview_mode || use_editor_test_data));
+			nlbl->set_text(disp_name);
+			hb->add_child(nlbl);
+
+			String qty_str = dm->resolve_ui_entry_field_binding("item_qty", ed, Dictionary(), (preview_mode || use_editor_test_data));
+			if (!qty_str.is_empty()) {
+				Label *qlbl = memnew(Label);
+				qlbl->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				qlbl->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+				qlbl->add_theme_font_size_override("font_size", MAX(8, fsz - 1));
+				if (cfont.is_valid()) qlbl->add_theme_font_override("font", cfont);
+				qlbl->set_text(qty_str);
+				hb->add_child(qlbl);
+			}
+		}
+	}
+
+	if (lmode == "carousel" && total > 1) {
+		float bw = 28.0f * p_scale;
+		float bh = 28.0f * p_scale;
+		Button *prev_b = memnew(Button);
+		prev_b->set_text("<");
+		prev_b->set_position(Vector2(2.0f, (avail.y - bh) * 0.5f));
+		prev_b->set_size(Size2(bw, bh));
+		prev_b->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_container_carousel_delta).bind(r_entry.id, -1));
+		ClockGearsWindowStyleManager::apply_button_style(prev_b, window_type_fallback);
+		r_entry.content_root->add_child(prev_b);
+		layout_aux_buttons.push_back(prev_b);
+
+		Button *next_b = memnew(Button);
+		next_b->set_text(">");
+		next_b->set_position(Vector2(avail.x - bw - 2.0f, (avail.y - bh) * 0.5f));
+		next_b->set_size(Size2(bw, bh));
+		next_b->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_container_carousel_delta).bind(r_entry.id, 1));
+		ClockGearsWindowStyleManager::apply_button_style(next_b, window_type_fallback);
+		r_entry.content_root->add_child(next_b);
+		layout_aux_buttons.push_back(next_b);
+	}
+
+	r_entry.focused_data_slot_idx = CLAMP(r_entry.focused_data_slot_idx, 0, total - 1);
+	_apply_data_cell_state_styles(r_entry, p_scale);
+	if (last_focused_data_entry.is_empty() || last_focused_container_id == r_entry.id) {
+		last_focused_container_id = r_entry.id;
+		last_focused_data_entry = Dictionary(entries[r_entry.focused_data_slot_idx]).duplicate(true);
+		focused_entry_by_container[r_entry.id] = last_focused_data_entry;
+		_refresh_focused_entry_elements();
+	}
+}
+
+void ClockGearsUiDesignLayer::_on_data_container_carousel_delta(const String &p_container_id, int p_delta) {
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == p_container_id && !elements[i].data_resolved_entries.is_empty()) {
+			int cnt = elements[i].data_resolved_entries.size();
+			elements.write[i].data_carousel_offset = ((elements[i].data_carousel_offset + p_delta) % cnt + cnt) % cnt;
+			elements.write[i].focused_data_slot_idx = elements[i].data_carousel_offset;
+			_build_or_refresh_data_container(elements.write[i], current_ui_scale, true);
+			_on_data_cell_focused(p_container_id, elements[i].focused_data_slot_idx);
+			break;
+		}
+	}
+}
+
+void ClockGearsUiDesignLayer::_on_data_cell_focused(const String &p_container_id, int p_slot_idx) {
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (e.id != p_container_id) continue;
+		if (p_slot_idx < 0 || p_slot_idx >= e.data_resolved_entries.size()) return;
+		e.focused_data_slot_idx = p_slot_idx;
+		_apply_data_cell_state_styles(e, current_ui_scale);
+		if (e.data_scroll && p_slot_idx < e.data_cell_buttons.size() && e.data_cell_buttons[p_slot_idx]) {
+			e.data_scroll->ensure_control_visible(e.data_cell_buttons[p_slot_idx]);
+		}
+		Dictionary entry = Dictionary(e.data_resolved_entries[p_slot_idx]).duplicate(true);
+		last_focused_container_id = p_container_id;
+		last_focused_data_entry = entry;
+		focused_entry_by_container[p_container_id] = entry;
+		_refresh_focused_entry_elements();
+		emit_signal("data_entry_focused", p_container_id, entry);
+		return;
+	}
+}
+
+void ClockGearsUiDesignLayer::_on_data_cell_pressed(const String &p_container_id, int p_slot_idx) {
+	_on_data_cell_focused(p_container_id, p_slot_idx);
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (e.id != p_container_id) continue;
+		if (p_slot_idx < 0 || p_slot_idx >= e.data_resolved_entries.size()) return;
+		Dictionary entry = e.data_resolved_entries[p_slot_idx];
+		if (bool(entry.get("is_empty", false))) return;
+
+		String slot_elem_id = "__cell_" + p_container_id + "_" + itos(p_slot_idx);
+		Dictionary ov_map = (e.config.has("element_overrides") && e.config["element_overrides"].get_type() == Variant::DICTIONARY) ? Dictionary(e.config["element_overrides"]) : Dictionary();
+		Dictionary ov = ov_map.has(itos(p_slot_idx)) && ov_map[itos(p_slot_idx)].get_type() == Variant::DICTIONARY ? Dictionary(ov_map[itos(p_slot_idx)]) : Dictionary();
+
+		Array steps;
+		if (ov.has("actions") && ov["actions"].get_type() == Variant::ARRAY && !Array(ov["actions"]).is_empty()) {
+			steps = Array(ov["actions"]).duplicate(true);
+		} else if (e.config.has("slot_actions") && e.config["slot_actions"].get_type() == Variant::ARRAY && !Array(e.config["slot_actions"]).is_empty()) {
+			steps = Array(e.config["slot_actions"]).duplicate(true);
+		} else {
+			String sact = String(ov.get("action", e.config.get("slot_action", entry.get("slot_action", "")))).strip_edges().to_lower();
+			if (sact.is_empty()) {
+				sact = String(entry.get("slot_action", "show_detail")).strip_edges().to_lower();
+			}
+			if (!sact.is_empty() && sact != "none") {
+				Dictionary st;
+				st["type"] = sact;
+				st["item_key"] = entry.get("key", "");
+				st["slot"] = entry.get("slot", 0);
+				steps.push_back(st);
+			}
+		}
+
+		// Ejecutar acciones directas de inventario / equipo cuando no hay manejador externo
+		String primary_act;
+		bool handled_locally = false;
+		if (!steps.is_empty() && steps[0].get_type() == Variant::DICTIONARY) {
+			primary_act = String(Dictionary(steps[0]).get("type", "")).strip_edges().to_lower();
+		}
+		if (dm && !preview_mode && !get_meta("_cg_external_item_handler", false)) {
+			String ik = String(entry.get("key", ""));
+			int target_actor = runtime_actor_id > 0 ? runtime_actor_id : (!dm->get_party_actor_ids().is_empty() ? int(dm->get_party_actor_ids()[0]) : 1);
+			if ((primary_act == "item_use" || primary_act == "use") && !ik.is_empty()) {
+				handled_locally = dm->use_item_on_actor(ik, target_actor);
+			} else if ((primary_act == "item_discard" || primary_act == "discard") && !ik.is_empty()) {
+				handled_locally = dm->discard_item(ik, 1);
+			} else if ((primary_act == "equip_apply" || primary_act == "equip") && !ik.is_empty()) {
+				handled_locally = dm->equip_actor_piece(target_actor, runtime_equip_slot_idx, ik);
+			}
+		}
+		dynamic_slot_actions_by_id[slot_elem_id.to_lower()] = steps;
+		emit_signal("data_entry_activated", p_container_id, p_slot_idx, entry);
+		emit_signal("action_triggered", primary_act, slot_elem_id);
+		if (handled_locally) {
+			refresh_live_values();
+		}
+		return;
+	}
+}
+
+void ClockGearsUiDesignLayer::_on_rotatable_preview_gui_input(const Ref<InputEvent> &p_event, const String &p_elem_id) {
+	if (preview_mode || p_event.is_null()) return;
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (e.id != p_elem_id || !e.image_rect) continue;
+		Ref<InputEventMouseButton> mb = p_event;
+		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
+			e.rotatable_dragging = mb->is_pressed();
+			return;
+		}
+		Ref<InputEventMouseMotion> mm = p_event;
+		if (mm.is_valid() && e.rotatable_dragging) {
+			e.rotatable_angle_deg += mm->get_relative().x * 1.2f;
+			e.image_rect->set_pivot_offset(e.image_rect->get_size() * 0.5f);
+			e.image_rect->set_rotation_degrees(e.rotatable_angle_deg);
+			return;
+		}
+	}
+}
+
+bool ClockGearsUiDesignLayer::focus_data_slot(const String &p_container_id, int p_slot_idx) {
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == p_container_id && p_slot_idx >= 0 && p_slot_idx < elements[i].data_resolved_entries.size()) {
+			_on_data_cell_focused(p_container_id, p_slot_idx);
+			if (p_slot_idx < elements[i].data_cell_buttons.size() && elements[i].data_cell_buttons[p_slot_idx]) {
+				Button *cb = elements[i].data_cell_buttons[p_slot_idx];
+				if (cb->get_focus_mode() != FOCUS_NONE && cb->is_inside_tree()) {
+					cb->grab_focus();
+				}
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClockGearsUiDesignLayer::activate_data_slot(const String &p_container_id, int p_slot_idx) {
+	for (int i = 0; i < elements.size(); i++) {
+		if (elements[i].id == p_container_id && p_slot_idx >= 0 && p_slot_idx < elements[i].data_resolved_entries.size()) {
+			_on_data_cell_pressed(p_container_id, p_slot_idx);
+			return true;
+		}
+	}
+	return false;
+}
+
+Dictionary ClockGearsUiDesignLayer::get_data_container_info(const String &p_container_id) const {
+	Dictionary info;
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &e = elements[i];
+		if (e.id == p_container_id || (p_container_id.is_empty() && e.type == "container")) {
+			info["id"] = e.id;
+			info["data_source"] = ClockGearsDataManager::normalize_ui_data_source(e.config.get("data_source", "manual"));
+			info["entry_count"] = e.data_resolved_entries.size();
+			info["entries"] = e.data_resolved_entries.duplicate(true);
+			info["cell_count"] = e.data_cell_buttons.size();
+			info["focused_slot"] = e.focused_data_slot_idx;
+			info["scroll_vertical"] = e.data_scroll ? int(e.data_scroll->get_v_scroll()) : 0;
+			info["scroll_horizontal"] = e.data_scroll ? int(e.data_scroll->get_h_scroll()) : 0;
+			info["scroll_max_v"] = e.data_items_canvas ? int(e.data_items_canvas->get_size().y) : 0;
+			return info;
+		}
+	}
+	return info;
 }
 
 void ClockGearsUiDesignLayer::update_cursor_for_button(Button *p_button) {
@@ -3016,6 +3717,18 @@ Vector<Button *> ClockGearsUiDesignLayer::get_focus_ordered_buttons() const {
 	for (int i = 0; i < sorted.size(); i++) {
 		out.push_back(sorted[i]->button);
 	}
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &e = elements[i];
+		if (e.type != "container" || !e.root || !e.root->is_visible()) {
+			continue;
+		}
+		for (int c = 0; c < e.data_cell_buttons.size(); c++) {
+			Button *cb = e.data_cell_buttons[c];
+			if (cb && cb->is_visible() && !cb->is_disabled() && !bool(cb->get_meta("entry_empty", false))) {
+				out.push_back(cb);
+			}
+		}
+	}
 	return out;
 }
 
@@ -3058,6 +3771,9 @@ Button *ClockGearsUiDesignLayer::find_next_focus_button(Button *p_current, int p
 	else dir_v = Vector2(-1, 0);                 // Izquierda
 
 	auto btn_center = [](Button *b) -> Vector2 {
+		if (String(b->get_name()).begins_with("DataCell_")) {
+			return b->get_global_position() + b->get_size() * 0.5f;
+		}
 		Node *p = b->get_parent();
 		while (p) {
 			Control *r = Object::cast_to<Control>(p);
@@ -3115,6 +3831,9 @@ Control *ClockGearsUiDesignLayer::get_element_control(const String &p_elem_id) c
 
 Array ClockGearsUiDesignLayer::get_element_actions(const String &p_elem_id) const {
 	String target = p_elem_id.strip_edges().to_lower();
+	if (dynamic_slot_actions_by_id.has(target)) {
+		return Array(dynamic_slot_actions_by_id[target]).duplicate(true);
+	}
 	for (int i = 0; i < elements.size(); i++) {
 		if (elements[i].id.to_lower() == target) {
 			if (!elements[i].actions.is_empty()) {
@@ -3324,6 +4043,13 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_window_type_fallback"), &ClockGearsUiDesignLayer::get_window_type_fallback);
 	ClassDB::bind_method(D_METHOD("set_preview_mode", "preview"), &ClockGearsUiDesignLayer::set_preview_mode);
 	ClassDB::bind_method(D_METHOD("is_preview_mode"), &ClockGearsUiDesignLayer::is_preview_mode);
+	ClassDB::bind_method(D_METHOD("set_use_editor_test_data", "use_test"), &ClockGearsUiDesignLayer::set_use_editor_test_data);
+	ClassDB::bind_method(D_METHOD("is_using_editor_test_data"), &ClockGearsUiDesignLayer::is_using_editor_test_data);
+	ClassDB::bind_method(D_METHOD("set_runtime_actor_context", "actor_id", "equip_slot_idx"), &ClockGearsUiDesignLayer::set_runtime_actor_context, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("get_focused_data_entry"), &ClockGearsUiDesignLayer::get_focused_data_entry);
+	ClassDB::bind_method(D_METHOD("focus_data_slot", "container_id", "slot_idx"), &ClockGearsUiDesignLayer::focus_data_slot);
+	ClassDB::bind_method(D_METHOD("activate_data_slot", "container_id", "slot_idx"), &ClockGearsUiDesignLayer::activate_data_slot);
+	ClassDB::bind_method(D_METHOD("get_data_container_info", "container_id"), &ClockGearsUiDesignLayer::get_data_container_info, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("set_viewport_size_override", "size"), &ClockGearsUiDesignLayer::set_viewport_size_override);
 	ClassDB::bind_method(D_METHOD("get_viewport_size_override"), &ClockGearsUiDesignLayer::get_viewport_size_override);
 	ClassDB::bind_method(D_METHOD("set_action_disabled", "action", "disabled"), &ClockGearsUiDesignLayer::set_action_disabled);
@@ -3351,6 +4077,8 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo("action_triggered", PropertyInfo(Variant::STRING, "action"), PropertyInfo(Variant::STRING, "element_id")));
 	ADD_SIGNAL(MethodInfo("radial_selection_changed", PropertyInfo(Variant::INT, "slot_index")));
+	ADD_SIGNAL(MethodInfo("data_entry_focused", PropertyInfo(Variant::STRING, "container_id"), PropertyInfo(Variant::DICTIONARY, "entry")));
+	ADD_SIGNAL(MethodInfo("data_entry_activated", PropertyInfo(Variant::STRING, "container_id"), PropertyInfo(Variant::INT, "slot_index"), PropertyInfo(Variant::DICTIONARY, "entry")));
 }
 
 ClockGearsUiDesignLayer::ClockGearsUiDesignLayer() {
