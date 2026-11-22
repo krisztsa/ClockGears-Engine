@@ -4477,8 +4477,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// --- Asistente 3 pasos (4A) ---
 	menu_wizard_dialog = memnew(AcceptDialog);
+	menu_wizard_dialog->set_name("UiMenuWizardDialog");
 	menu_wizard_dialog->set_title(String::utf8("Asistente: Nuevo menú"));
-	menu_wizard_dialog->set_min_size(Size2i(int(720 * EDSCALE), int(500 * EDSCALE)));
+	menu_wizard_dialog->set_min_size(Size2i(int(760 * EDSCALE), int(560 * EDSCALE)));
 	menu_wizard_dialog->get_ok_button()->hide();
 	add_child(menu_wizard_dialog);
 
@@ -4494,9 +4495,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// Paso 1: Plantillas con miniaturas
 	ScrollContainer *wiz_sc1 = memnew(ScrollContainer);
+	wiz_sc1->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wiz_sc1->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wiz_sc1->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	wizard_step_panels[0] = memnew(VBoxContainer);
+	wizard_step_panels[0]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[0]->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[0]->add_child(wiz_sc1);
 	wizard_tpl_grid = memnew(GridContainer);
@@ -4509,15 +4512,18 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// Paso 2: Nombre y botones
 	wizard_step_panels[1] = memnew(VBoxContainer);
+	wizard_step_panels[1]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[1]->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[1]->add_theme_constant_override("separation", int(6 * EDSCALE));
 	wizard_step_panels[1]->add_child(memnew(Label(String::utf8("Nombre del menú:"))));
 	wizard_name_edit = memnew(LineEdit);
+	wizard_name_edit->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_name_edit->set_text(String::utf8("Mi Menú"));
 	wizard_step_panels[1]->add_child(wizard_name_edit);
 	wizard_step_panels[1]->add_child(memnew(Label("Botones iniciales:")));
 	GridContainer *wiz_chk_grid = memnew(GridContainer);
 	wiz_chk_grid->set_columns(3);
+	wiz_chk_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[1]->add_child(wiz_chk_grid);
 	struct WizBtnDef { const char *label; const char *act; bool def_on; };
 	static const WizBtnDef k_wbtns[9] = {
@@ -4544,11 +4550,18 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// Paso 3: Cómo se abre y pausa
 	wizard_step_panels[2] = memnew(VBoxContainer);
+	wizard_step_panels[2]->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[2]->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	wizard_step_panels[2]->add_theme_constant_override("separation", int(8 * EDSCALE));
 	HBoxContainer *wctx_hb = memnew(HBoxContainer);
+	wctx_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	wctx_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
 	wctx_hb->add_child(memnew(Label("Contexto:")));
 	wizard_ctx_opt = memnew(OptionButton);
+	wizard_ctx_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	wizard_ctx_opt->set_fit_to_longest_item(false);
+	wizard_ctx_opt->set_clip_text(true);
+	wizard_ctx_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	wizard_ctx_opt->add_item("Solo en el mapa", 0); wizard_ctx_opt->set_item_metadata(0, "map_only");
 	wizard_ctx_opt->add_item("Mapa y combate", 1); wizard_ctx_opt->set_item_metadata(1, "map_and_combat");
 	wizard_ctx_opt->add_item("Cualquier pantalla", 2); wizard_ctx_opt->set_item_metadata(2, "any");
@@ -4561,11 +4574,17 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wizard_step_panels[2]->add_child(wizard_pause_chk);
 
 	HBoxContainer *wkey_hb = memnew(HBoxContainer);
+	wkey_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	wkey_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
 	wizard_capture_key_btn = memnew(Button("Capturar tecla / mando"));
+	wizard_capture_key_btn->set_h_size_flags(Control::SIZE_SHRINK_BEGIN);
+	wizard_capture_key_btn->set_clip_text(false);
 	s_make_rounded_action_btn(wizard_capture_key_btn);
 	wizard_capture_key_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_wizard_capture_key_pressed));
 	wkey_hb->add_child(wizard_capture_key_btn);
 	wizard_triggers_lbl = memnew(Label("Sin tecla asignada (opcional)"));
+	wizard_triggers_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	wizard_triggers_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	wkey_hb->add_child(wizard_triggers_lbl);
 	wizard_step_panels[2]->add_child(wkey_hb);
 
@@ -4598,7 +4617,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	template_gallery_dialog = memnew(AcceptDialog);
 	template_gallery_dialog->set_name("UiTemplateGalleryDialog");
 	template_gallery_dialog->set_title("Biblioteca de plantillas");
-	template_gallery_dialog->set_min_size(Size2i(int(640 * EDSCALE), int(420 * EDSCALE)));
+	template_gallery_dialog->set_min_size(Size2i(int(760 * EDSCALE), int(560 * EDSCALE)));
 	template_gallery_dialog->set_flag(Window::FLAG_POPUP, false);
 	template_gallery_dialog->set_transient(true);
 	template_gallery_dialog->set_exclusive(false);
@@ -8480,7 +8499,11 @@ void ClockGearsUiDesignEditor::_open_menu_wizard() {
 	}
 	_update_wizard_step_ui();
 	_refresh_wizard_conflict_label();
-	menu_wizard_dialog->popup_centered();
+	ClockGearsTheme::popup_fitted_window(
+			menu_wizard_dialog,
+			Size2i(int(820 * EDSCALE), int(580 * EDSCALE)),
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			"ui_menu_wizard");
 }
 
 void ClockGearsUiDesignEditor::_on_wizard_tpl_selected(const String &p_tpl_id) {
@@ -8623,25 +8646,11 @@ void ClockGearsUiDesignEditor::_on_templates_btn_pressed() {
 	if (!selected_gallery_template_id.is_empty()) {
 		_on_tpl_card_selected(selected_gallery_template_id);
 	}
-	Size2i host_sz(1366, 768);
-	if (Window *pw = get_window()) {
-		if (pw->get_size().x >= 640 && pw->get_size().y >= 400) {
-			host_sz = pw->get_size();
-		}
-	} else if (DisplayServer::get_singleton()) {
-		int scr = DisplayServer::get_singleton()->window_get_current_screen();
-		Size2i usz = DisplayServer::get_singleton()->screen_get_usable_rect(scr).size;
-		if (usz.x >= 640 && usz.y >= 400) {
-			host_sz = usz;
-		}
-	}
-	int max_w = MAX(480, host_sz.x - int(64 * EDSCALE));
-	int max_h = MAX(360, host_sz.y - int(64 * EDSCALE));
-	Size2i pop_sz(MIN(int(900 * EDSCALE), max_w), MIN(int(640 * EDSCALE), max_h));
-	template_gallery_dialog->set_min_size(Size2i(MIN(int(640 * EDSCALE), pop_sz.x), MIN(int(360 * EDSCALE), pop_sz.y)));
-	template_gallery_dialog->set_max_size(Size2i(max_w, max_h));
-	template_gallery_dialog->set_size(pop_sz);
-	template_gallery_dialog->popup_centered(pop_sz);
+	ClockGearsTheme::popup_fitted_window(
+			template_gallery_dialog,
+			Size2i(int(900 * EDSCALE), int(640 * EDSCALE)),
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			"ui_template_gallery");
 }
 
 void ClockGearsUiDesignEditor::_on_tpl_card_selected(const String &p_tpl_id) {
@@ -9927,17 +9936,25 @@ void ClockGearsUiDesignEditor::_on_prop_edit_style_pressed() {
 		style_inline_dialog = memnew(AcceptDialog);
 		style_inline_dialog->set_name("UiInlineStyleDialog");
 		style_inline_dialog->set_title(String::utf8("Editar estilo de marco"));
-		style_inline_dialog->set_min_size(Size2i(int(360 * EDSCALE), int(280 * EDSCALE)));
+		style_inline_dialog->set_min_size(Size2i(int(760 * EDSCALE), int(560 * EDSCALE)));
 		style_inline_dialog->get_ok_button()->set_text("Aplicar al estilo");
 		style_inline_dialog->connect("confirmed", callable_mp(this, &ClockGearsUiDesignEditor::_on_inline_style_applied));
+		ScrollContainer *st_sc = memnew(ScrollContainer);
+		st_sc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		st_sc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		st_sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+		style_inline_dialog->add_child(st_sc);
 		VBoxContainer *vb = memnew(VBoxContainer);
-		vb->add_theme_constant_override("separation", int(6 * EDSCALE));
-		style_inline_dialog->add_child(vb);
+		vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		vb->add_theme_constant_override("separation", int(8 * EDSCALE));
+		st_sc->add_child(vb);
 
 		auto add_row = [&](const String &p_lbl, Control *p_ctrl) {
 			HBoxContainer *hb = memnew(HBoxContainer);
+			hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			hb->add_theme_constant_override("separation", int(8 * EDSCALE));
 			Label *l = memnew(Label(p_lbl));
-			l->set_custom_minimum_size(Size2(115 * EDSCALE, 0));
+			l->set_custom_minimum_size(Size2(130 * EDSCALE, 0));
 			hb->add_child(l);
 			p_ctrl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			hb->add_child(p_ctrl);
@@ -9981,7 +9998,11 @@ void ClockGearsUiDesignEditor::_on_prop_edit_style_pressed() {
 	}
 	if (style_edit_pad) style_edit_pad->set_value(pad_v);
 	if (style_edit_opacity) style_edit_opacity->set_value(fcol.a);
-	style_inline_dialog->popup_centered();
+	ClockGearsTheme::popup_fitted_window(
+			style_inline_dialog,
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			"ui_inline_style");
 }
 
 void ClockGearsUiDesignEditor::_on_inline_style_applied() {
@@ -11612,6 +11633,7 @@ void ClockGearsUiDesignEditor::_on_floating_window_closed(const String &p_key, C
 	if (p_win) {
 		last_floating_window_pos = p_win->get_position();
 		last_floating_window_size = p_win->get_size();
+		ClockGearsTheme::save_remembered_window_rect("ui_elem_floating", p_win);
 		p_win->queue_free();
 	}
 	open_floating_windows.erase(p_key);
@@ -11702,20 +11724,40 @@ Window *ClockGearsUiDesignEditor::open_floating_element_window(const String &p_e
 	ClockGearsUiElementFloatingWindow *fw = memnew(ClockGearsUiElementFloatingWindow);
 	add_child(fw);
 	fw->configure(this, current_screen_id, eid, el);
-	Size2i win_sz = (last_floating_window_size.x >= 380 && last_floating_window_size.y >= 420)
+	const Size2i def_sz(int(780 * EDSCALE), int(580 * EDSCALE));
+	const Size2i min_sz(int(760 * EDSCALE), int(560 * EDSCALE));
+	Rect2i rem = ClockGearsTheme::get_remembered_window_rect("ui_elem_floating");
+	Size2i pref_sz = (last_floating_window_size.x >= min_sz.x && last_floating_window_size.y >= min_sz.y)
 			? last_floating_window_size
-			: Size2i(int(440 * EDSCALE), int(540 * EDSCALE));
-	fw->set_size(win_sz);
-	int cascade = int(open_floating_windows.size()) * int(26 * EDSCALE);
-	if (last_floating_window_pos.x >= 0 && last_floating_window_pos.y >= 0) {
+			: ((rem.size.x >= min_sz.x && rem.size.y >= min_sz.y) ? rem.size : def_sz);
+	int cascade = int(open_floating_windows.size()) * int(24 * EDSCALE);
+	if (last_floating_window_pos != Vector2i(-1, -1)) {
 		fw->set_position(last_floating_window_pos + Vector2i(cascade, cascade));
-		fw->popup();
-	} else {
-		fw->popup_centered(win_sz);
-		if (cascade > 0) {
-			fw->set_position(fw->get_position() + Vector2i(cascade, cascade));
-		}
+		fw->set_size(pref_sz);
+		ClockGearsTheme::save_remembered_window_rect("ui_elem_floating", fw);
+	} else if (rem.size.x >= min_sz.x && rem.size.y >= min_sz.y && cascade > 0) {
+		fw->set_position(rem.position + Vector2i(cascade, cascade));
+		fw->set_size(pref_sz);
+		ClockGearsTheme::save_remembered_window_rect("ui_elem_floating", fw);
 	}
+	ClockGearsTheme::popup_fitted_window(fw, pref_sz, min_sz, "ui_elem_floating");
+	Rect2i fitted(fw->get_position(), fw->get_size());
+	if (cascade > 0 && last_floating_window_pos == Vector2i(-1, -1) && rem.size.x <= 0) {
+		Rect2i usable = ClockGearsTheme::get_window_usable_rect(fw);
+		Rect2i casc_rect = ClockGearsTheme::compute_fitted_popup_rect(
+				usable,
+				fitted.size,
+				min_sz,
+				Size2i(),
+				fitted.position + Vector2i(cascade, cascade),
+				true,
+				fitted.size);
+		fw->set_position(casc_rect.position);
+		fw->set_size(casc_rect.size);
+		fitted = casc_rect;
+	}
+	last_floating_window_pos = fitted.position;
+	last_floating_window_size = fitted.size;
 	fw->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_floating_window_closed).bind(key, fw));
 	open_floating_windows[key] = fw;
 	_trace_log("float_win_open", "screen=" + current_screen_id + " elem=" + eid);
@@ -11792,16 +11834,20 @@ Window *ClockGearsUiDesignEditor::open_create_button_window() {
 		create_floating_window->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_create_floating_window_closed));
 	}
 	create_floating_window->open_for_create_button(this, current_screen_id, draft);
-	Size2i win_sz = (last_floating_window_size.x >= 440 && last_floating_window_size.y >= 520)
+	const Size2i def_sz(int(780 * EDSCALE), int(580 * EDSCALE));
+	const Size2i min_sz(int(760 * EDSCALE), int(560 * EDSCALE));
+	Rect2i rem = ClockGearsTheme::get_remembered_window_rect("ui_elem_floating");
+	Size2i pref_sz = (last_floating_window_size.x >= min_sz.x && last_floating_window_size.y >= min_sz.y)
 			? last_floating_window_size
-			: Size2i(int(480 * EDSCALE), int(560 * EDSCALE));
-	create_floating_window->set_size(win_sz);
-	if (last_floating_window_pos.x >= 0 && last_floating_window_pos.y >= 0) {
+			: ((rem.size.x >= min_sz.x && rem.size.y >= min_sz.y) ? rem.size : def_sz);
+	if (last_floating_window_pos != Vector2i(-1, -1)) {
 		create_floating_window->set_position(last_floating_window_pos);
-		create_floating_window->popup();
-	} else {
-		create_floating_window->popup_centered(win_sz);
+		create_floating_window->set_size(pref_sz);
+		ClockGearsTheme::save_remembered_window_rect("ui_elem_floating", create_floating_window);
 	}
+	ClockGearsTheme::popup_fitted_window(create_floating_window, pref_sz, min_sz, "ui_elem_floating");
+	last_floating_window_pos = create_floating_window->get_position();
+	last_floating_window_size = create_floating_window->get_size();
 	create_floating_window->grab_focus();
 	set_ghost_preview_element(draft, true);
 	_trace_log("create_button_win_open", "screen=" + current_screen_id + " parent=" + String(draft.get("parent_id", "")));
@@ -11889,7 +11935,7 @@ ClockGearsUiElementFloatingWindow::ClockGearsUiElementFloatingWindow() {
 	set_transient(true);
 	set_exclusive(false);
 	set_wrap_controls(false);
-	set_min_size(Size2i(int(460 * EDSCALE), int(500 * EDSCALE)));
+	set_min_size(Size2i(int(760 * EDSCALE), int(560 * EDSCALE)));
 	_build_ui();
 }
 
@@ -11970,10 +12016,17 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 		sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 		sc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		sc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		MarginContainer *tab_mc = memnew(MarginContainer);
+		tab_mc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		tab_mc->add_theme_constant_override("margin_left", int(4 * EDSCALE));
+		tab_mc->add_theme_constant_override("margin_right", int(8 * EDSCALE));
+		tab_mc->add_theme_constant_override("margin_top", int(4 * EDSCALE));
+		tab_mc->add_theme_constant_override("margin_bottom", int(6 * EDSCALE));
+		sc->add_child(tab_mc);
 		VBoxContainer *vb = memnew(VBoxContainer);
 		vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		vb->add_theme_constant_override("separation", int(6 * EDSCALE));
-		sc->add_child(vb);
+		tab_mc->add_child(vb);
 		tabs->add_child(sc);
 		return vb;
 	};
@@ -12004,6 +12057,10 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	add_row(tb_gen, "Nombre:", name_edit);
 
 	quick_shape_opt = memnew(OptionButton);
+	quick_shape_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	quick_shape_opt->set_fit_to_longest_item(false);
+	quick_shape_opt->set_clip_text(true);
+	quick_shape_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	quick_shape_opt->add_item("Rectangular", 0);
 	quick_shape_opt->set_item_metadata(0, "rectangular");
 	quick_shape_opt->add_item("Cuadrado", 1);
@@ -12020,15 +12077,20 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	type_lbl = memnew(Label("-"));
 	add_row(tb_gen, "Tipo:", type_lbl);
 
-	HBoxContainer *flags_hb = memnew(HBoxContainer);
-	flags_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	HFlowContainer *flags_hb = memnew(HFlowContainer);
+	flags_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	flags_hb->add_theme_constant_override("h_separation", int(10 * EDSCALE));
+	flags_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	visible_chk = memnew(CheckBox("Visible"));
+	visible_chk->set_clip_text(false);
 	visible_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	flags_hb->add_child(visible_chk);
 	locked_chk = memnew(CheckBox("Bloqueado"));
+	locked_chk->set_clip_text(false);
 	locked_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	flags_hb->add_child(locked_chk);
 	clip_children_chk = memnew(CheckBox("Recortar hijos"));
+	clip_children_chk->set_clip_text(false);
 	clip_children_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	flags_hb->add_child(clip_children_chk);
 	tb_gen->add_child(flags_hb);
@@ -12062,17 +12124,28 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	make_spin(tb_gen, "Alto:", 16, 540, h_spin);
 	make_spin(tb_gen, "Capa:", -100, 1000, layer_spin);
 
+	auto setup_opt = [&](OptionButton *p_opt) {
+		p_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		p_opt->set_fit_to_longest_item(false);
+		p_opt->set_clip_text(true);
+		p_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		p_opt->set_custom_minimum_size(Size2(120 * EDSCALE, 32 * EDSCALE));
+	};
+
 	// --- Tab 2: Aspecto ---
 	VBoxContainer *tb_asp = make_tab_scroll("Aspecto");
 	show_bg_chk = memnew(CheckBox("Mostrar fondo"));
+	show_bg_chk->set_clip_text(false);
 	show_bg_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_asp, "Fondo:", show_bg_chk);
 
 	style_opt = memnew(OptionButton);
+	setup_opt(style_opt);
 	style_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_asp, "Estilo ventana:", style_opt);
 
 	shape_opt = memnew(OptionButton);
+	setup_opt(shape_opt);
 	shape_opt->add_item(String::utf8("Rectángulo"), 0); shape_opt->set_item_metadata(0, "rect");
 	shape_opt->add_item("Cuadrado", 1); shape_opt->set_item_metadata(1, "square");
 	shape_opt->add_item("Redondeado", 2); shape_opt->set_item_metadata(2, "rounded");
@@ -12083,34 +12156,42 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	add_row(tb_asp, "Forma:", shape_opt);
 
 	HBoxContainer *rad_hb = memnew(HBoxContainer);
+	rad_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rad_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	radius_slider = memnew(HSlider);
 	radius_slider->set_min(0); radius_slider->set_max(64); radius_slider->set_step(1);
 	radius_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	radius_slider->connect("value_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	rad_hb->add_child(radius_slider);
 	radius_val_lbl = memnew(Label("8px"));
-	radius_val_lbl->set_custom_minimum_size(Size2(38 * EDSCALE, 0));
+	radius_val_lbl->set_custom_minimum_size(Size2(44 * EDSCALE, 0));
 	rad_hb->add_child(radius_val_lbl);
 	add_row(tb_asp, "Radio esquinas:", rad_hb);
 
 	fill_color_btn = memnew(ColorPickerButton);
 	fill_color_btn->set_edit_alpha(true);
+	fill_color_btn->set_custom_minimum_size(Size2(48 * EDSCALE, 32 * EDSCALE));
 	fill_color_btn->connect("color_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_asp, "Relleno:", fill_color_btn);
 
 	grad_chk = memnew(CheckBox("Activar degradado"));
+	grad_chk->set_clip_text(false);
 	grad_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_asp, "Degradado:", grad_chk);
 
 	HBoxContainer *gr_hb = memnew(HBoxContainer);
+	gr_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gr_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	grad_top_btn = memnew(ColorPickerButton);
 	grad_top_btn->set_edit_alpha(true);
 	grad_top_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	grad_top_btn->set_custom_minimum_size(Size2(48 * EDSCALE, 32 * EDSCALE));
 	grad_top_btn->connect("color_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	gr_hb->add_child(grad_top_btn);
 	grad_bot_btn = memnew(ColorPickerButton);
 	grad_bot_btn->set_edit_alpha(true);
 	grad_bot_btn->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	grad_bot_btn->set_custom_minimum_size(Size2(48 * EDSCALE, 32 * EDSCALE));
 	grad_bot_btn->connect("color_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	gr_hb->add_child(grad_bot_btn);
 	add_row(tb_asp, "Colores degr.:", gr_hb);
@@ -12122,31 +12203,39 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 
 	border_col_btn = memnew(ColorPickerButton);
 	border_col_btn->set_edit_alpha(true);
+	border_col_btn->set_custom_minimum_size(Size2(48 * EDSCALE, 32 * EDSCALE));
 	border_col_btn->connect("color_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_asp, "Color borde:", border_col_btn);
 
-	HBoxContainer *ef_hb = memnew(HBoxContainer);
+	HFlowContainer *ef_hb = memnew(HFlowContainer);
+	ef_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ef_hb->add_theme_constant_override("h_separation", int(8 * EDSCALE));
+	ef_hb->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	shadow_chk = memnew(CheckBox("Sombra"));
+	shadow_chk->set_clip_text(false);
 	shadow_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	ef_hb->add_child(shadow_chk);
 	glow_chk = memnew(CheckBox("Brillo"));
+	glow_chk->set_clip_text(false);
 	glow_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	ef_hb->add_child(glow_chk);
 	glow_col_btn = memnew(ColorPickerButton);
 	glow_col_btn->set_edit_alpha(true);
-	glow_col_btn->set_custom_minimum_size(Size2(36 * EDSCALE, 24 * EDSCALE));
+	glow_col_btn->set_custom_minimum_size(Size2(48 * EDSCALE, 28 * EDSCALE));
 	glow_col_btn->connect("color_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	ef_hb->add_child(glow_col_btn);
 	add_row(tb_asp, "Sombra / Brillo:", ef_hb);
 
 	HBoxContainer *op_hb = memnew(HBoxContainer);
+	op_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	op_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
 	opacity_slider = memnew(HSlider);
 	opacity_slider->set_min(0); opacity_slider->set_max(100); opacity_slider->set_step(5);
 	opacity_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	opacity_slider->connect("value_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	op_hb->add_child(opacity_slider);
 	opacity_val_lbl = memnew(Label("100%"));
-	opacity_val_lbl->set_custom_minimum_size(Size2(38 * EDSCALE, 0));
+	opacity_val_lbl->set_custom_minimum_size(Size2(46 * EDSCALE, 0));
 	op_hb->add_child(opacity_val_lbl);
 	add_row(tb_asp, "Opacidad:", op_hb);
 
@@ -12161,11 +12250,13 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	image_edit->connect("text_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	mi_hb->add_child(image_edit);
 	Button *mi_pick = memnew(Button(String::utf8("Elegir…")));
+	mi_pick->set_h_size_flags(Control::SIZE_SHRINK_END);
 	mi_pick->set_custom_minimum_size(Size2(84 * EDSCALE, 32 * EDSCALE));
 	mi_pick->set_clip_text(false);
 	mi_pick->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_open_img_picker).bind(-1));
 	mi_hb->add_child(mi_pick);
 	Button *mi_clr = memnew(Button("X"));
+	mi_clr->set_h_size_flags(Control::SIZE_SHRINK_END);
 	mi_clr->set_custom_minimum_size(Size2(34 * EDSCALE, 32 * EDSCALE));
 	mi_clr->set_clip_text(false);
 	mi_clr->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_clear_img_picker).bind(-1));
@@ -12177,8 +12268,8 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	sc_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
 	sc_flow->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	scale_opt = memnew(OptionButton);
-	scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	scale_opt->set_custom_minimum_size(Size2(130 * EDSCALE, 32 * EDSCALE));
+	setup_opt(scale_opt);
+	scale_opt->set_custom_minimum_size(Size2(140 * EDSCALE, 32 * EDSCALE));
 	scale_opt->add_item("Ajustar", 0); scale_opt->set_item_metadata(0, "fit");
 	scale_opt->add_item("Rellenar", 1); scale_opt->set_item_metadata(1, "fill");
 	scale_opt->add_item("Estirar", 2); scale_opt->set_item_metadata(2, "stretch");
@@ -12190,7 +12281,8 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	scale_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	sc_flow->add_child(scale_opt);
 	adjust_manual_btn = memnew(Button("Ajustar manualmente"));
-	adjust_manual_btn->set_custom_minimum_size(Size2(156 * EDSCALE, 32 * EDSCALE));
+	adjust_manual_btn->set_h_size_flags(Control::SIZE_SHRINK_END);
+	adjust_manual_btn->set_custom_minimum_size(Size2(168 * EDSCALE, 32 * EDSCALE));
 	adjust_manual_btn->set_clip_text(false);
 	adjust_manual_btn->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_adjust_manual_pressed));
 	sc_flow->add_child(adjust_manual_btn);
@@ -12199,6 +12291,7 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	make_spin(tb_img, "Margen 9-slice:", 0, 128, nine_slice_spin);
 
 	filter_opt = memnew(OptionButton);
+	setup_opt(filter_opt);
 	filter_opt->add_item("Pixelado (Nearest)", 0); filter_opt->set_item_metadata(0, true);
 	filter_opt->add_item("Suave (Lineal)", 1); filter_opt->set_item_metadata(1, false);
 	filter_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
@@ -12215,11 +12308,13 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 		btn_state_edits[si]->connect("text_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 		bhb->add_child(btn_state_edits[si]);
 		Button *bp = memnew(Button(String::utf8("Elegir…")));
+		bp->set_h_size_flags(Control::SIZE_SHRINK_END);
 		bp->set_custom_minimum_size(Size2(84 * EDSCALE, 32 * EDSCALE));
 		bp->set_clip_text(false);
 		bp->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_open_img_picker).bind(si));
 		bhb->add_child(bp);
 		Button *bc = memnew(Button("X"));
+		bc->set_h_size_flags(Control::SIZE_SHRINK_END);
 		bc->set_custom_minimum_size(Size2(34 * EDSCALE, 32 * EDSCALE));
 		bc->set_clip_text(false);
 		bc->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_clear_img_picker).bind(si));
@@ -12243,11 +12338,16 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	add_row(tb_txt, "Contenido:", text_edit);
 
 	HBoxContainer *fh = memnew(HBoxContainer);
+	fh->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	fh->add_theme_constant_override("separation", int(6 * EDSCALE));
 	font_opt = memnew(OptionButton);
-	font_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	setup_opt(font_opt);
 	font_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	fh->add_child(font_opt);
 	Button *f_imp = memnew(Button(String::utf8("Importar…")));
+	f_imp->set_h_size_flags(Control::SIZE_SHRINK_END);
+	f_imp->set_custom_minimum_size(Size2(104 * EDSCALE, 32 * EDSCALE));
+	f_imp->set_clip_text(false);
 	f_imp->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_open_font_picker));
 	fh->add_child(f_imp);
 	add_row(tb_txt, "Fuente:", fh);
@@ -12256,10 +12356,12 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 
 	font_color_btn = memnew(ColorPickerButton);
 	font_color_btn->set_edit_alpha(true);
+	font_color_btn->set_custom_minimum_size(Size2(48 * EDSCALE, 32 * EDSCALE));
 	font_color_btn->connect("color_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_txt, "Color texto:", font_color_btn);
 
 	align_opt = memnew(OptionButton);
+	setup_opt(align_opt);
 	align_opt->add_item("Izquierda", 0); align_opt->set_item_metadata(0, "left");
 	align_opt->add_item("Centro", 1); align_opt->set_item_metadata(1, "center");
 	align_opt->add_item("Derecha", 2); align_opt->set_item_metadata(2, "right");
@@ -12267,6 +12369,7 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	add_row(tb_txt, String::utf8("Alineación:"), align_opt);
 
 	binding_opt = memnew(OptionButton);
+	setup_opt(binding_opt);
 	Array b_list = ClockGearsDataManager::get_ui_data_bindings();
 	for (int i = 0; i < b_list.size(); i++) {
 		Dictionary bd = b_list[i];
@@ -12277,6 +12380,7 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	add_row(tb_txt, String::utf8("Enlace dinámico:"), binding_opt);
 
 	var_edit = memnew(LineEdit);
+	var_edit->set_custom_minimum_size(Size2(96 * EDSCALE, 32 * EDSCALE));
 	var_edit->connect("text_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(tb_txt, "Variable:", var_edit);
 
@@ -12290,6 +12394,7 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	// --- Tab 5: Acciones ---
 	actions_host = make_tab_scroll("Acciones");
 	quick_action_opt = memnew(OptionButton);
+	setup_opt(quick_action_opt);
 	quick_action_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 	add_row(actions_host, String::utf8("Acción rápida:"), quick_action_opt);
 

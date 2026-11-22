@@ -32,6 +32,7 @@
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #define CG_SCALE EDSCALE
 #else
@@ -3635,6 +3636,202 @@ void ClockGearsTheme::apply_to_window(Window *p_window) {
 	apply_theme_to_node_tree(p_window);
 }
 
+static HashMap<String, Rect2i> &s_get_remembered_window_rects() {
+	static HashMap<String, Rect2i> rects;
+	return rects;
+}
+
+Rect2i ClockGearsTheme::get_window_usable_rect(Window *p_window) {
+	Window *host = p_window ? p_window->get_parent_visible_window() : nullptr;
+	if (!host && p_window && p_window->get_parent()) {
+		host = p_window->get_parent()->get_window();
+		if (host == p_window) {
+			host = nullptr;
+		}
+	}
+	if (!host && p_window && p_window->is_inside_tree() && p_window->get_tree()) {
+		host = p_window->get_tree()->get_root();
+		if (host == p_window) {
+			host = nullptr;
+		}
+	}
+	if ((p_window && p_window->is_embedded()) || (host && host->is_embedding_subwindows())) {
+		Size2i vr = host ? Vector2i(host->get_visible_rect().size) : Vector2i();
+		if (vr.x >= 320 && vr.y >= 240) {
+			return Rect2i(Vector2i(), vr);
+		}
+		Size2i hsz = host ? host->get_size() : Size2i();
+		if (hsz.x >= 320 && hsz.y >= 240) {
+			return Rect2i(Vector2i(), hsz);
+		}
+	}
+	if (DisplayServer::get_singleton()) {
+		int scr = host ? host->get_current_screen() : (p_window ? p_window->get_current_screen() : 0);
+		if (scr < 0) {
+			scr = DisplayServer::get_singleton()->window_get_current_screen();
+		}
+		Rect2i r = DisplayServer::get_singleton()->screen_get_usable_rect(scr);
+		if (r.size.x >= 320 && r.size.y >= 240) {
+			return r;
+		}
+	}
+	return Rect2i(0, 0, 1366, 768);
+}
+
+Rect2i ClockGearsTheme::compute_fitted_popup_rect(
+		const Rect2i &p_usable_rect,
+		const Size2i &p_preferred_size,
+		const Size2i &p_min_size,
+		const Size2i &p_content_min_size,
+		const Point2i &p_remembered_pos,
+		bool p_has_remembered_pos,
+		const Size2i &p_remembered_size) {
+	Rect2i usable = p_usable_rect;
+	if (usable.size.x < 320 || usable.size.y < 240) {
+		usable = Rect2i(0, 0, 1366, 768);
+	}
+	const float sc = MAX(0.5f, float(CG_SCALE));
+	const int margin_x = (usable.size.x <= int(720 * sc)) ? int(16 * sc) : int(24 * sc);
+	const int margin_y = (usable.size.y <= int(520 * sc)) ? int(24 * sc) : int(36 * sc);
+	const int avail_w = MAX(280, usable.size.x - margin_x);
+	const int avail_h = MAX(220, usable.size.y - margin_y);
+
+	const Size2i base_min(MAX(280, p_min_size.x), MAX(220, p_min_size.y));
+	const Size2i eff_min(MIN(base_min.x, avail_w), MIN(base_min.y, avail_h));
+	const Size2i content_min(
+			MIN(MAX(0, p_content_min_size.x), avail_w),
+			MIN(MAX(0, p_content_min_size.y), avail_h));
+
+	Size2i desired = (p_remembered_size.x > 0 && p_remembered_size.y > 0) ? p_remembered_size : p_preferred_size;
+	desired.x = MAX(desired.x, MAX(eff_min.x, content_min.x));
+	desired.y = MAX(desired.y, MAX(eff_min.y, content_min.y));
+
+	Size2i win_sz(
+			CLAMP(desired.x, eff_min.x, avail_w),
+			CLAMP(desired.y, eff_min.y, avail_h));
+
+	Point2i pos = p_has_remembered_pos
+			? p_remembered_pos
+			: (usable.position + (usable.size - win_sz) / 2);
+
+	const int min_x = usable.position.x;
+	const int min_y = usable.position.y;
+	const int max_x = MAX(min_x, usable.position.x + usable.size.x - win_sz.x);
+	const int max_y = MAX(min_y, usable.position.y + usable.size.y - win_sz.y);
+	pos.x = CLAMP(pos.x, min_x, max_x);
+	pos.y = CLAMP(pos.y, min_y, max_y);
+
+	return Rect2i(pos, win_sz);
+}
+
+void ClockGearsTheme::save_remembered_window_rect(const String &p_key, Window *p_window) {
+	if (p_key.is_empty() || !p_window) {
+		return;
+	}
+	Size2i sz = p_window->get_size();
+	if (sz.x < 120 || sz.y < 100) {
+		return;
+	}
+	Rect2i r(p_window->get_position(), sz);
+	s_get_remembered_window_rects()[p_key] = r;
+#ifdef TOOLS_ENABLED
+	if (EditorSettings *es = EditorSettings::get_singleton()) {
+		es->set("clockgears/ui_editor/win_rect_" + p_key, r);
+	}
+#endif
+}
+
+Rect2i ClockGearsTheme::get_remembered_window_rect(const String &p_key) {
+	if (p_key.is_empty()) {
+		return Rect2i();
+	}
+	HashMap<String, Rect2i> &map = s_get_remembered_window_rects();
+	if (map.has(p_key)) {
+		return map[p_key];
+	}
+#ifdef TOOLS_ENABLED
+	if (EditorSettings *es = EditorSettings::get_singleton()) {
+		String skey = "clockgears/ui_editor/win_rect_" + p_key;
+		if (es->has_setting(skey)) {
+			Variant v = es->get(skey);
+			if (v.get_type() == Variant::RECT2I) {
+				Rect2i r = v;
+				map[p_key] = r;
+				return r;
+			}
+		}
+	}
+#endif
+	return Rect2i();
+}
+
+void ClockGearsTheme::_on_remembered_window_event(Window *p_window) {
+	if (!p_window || p_window->get_meta("_cg_popping_guard", false)) {
+		return;
+	}
+	String key = String(p_window->get_meta("_cg_win_remember_key", ""));
+	if (!key.is_empty()) {
+		save_remembered_window_rect(key, p_window);
+	}
+}
+
+void ClockGearsTheme::popup_fitted_window(
+		Window *p_window,
+		const Size2i &p_preferred_size,
+		const Size2i &p_min_size,
+		const String &p_remember_key) {
+	ERR_FAIL_NULL(p_window);
+	if (ClockGearsTheme *ct = ClockGearsTheme::get_singleton()) {
+		ct->apply_to_window(p_window);
+	}
+	p_window->set_meta("_cg_popping_guard", true);
+	Rect2i usable = get_window_usable_rect(p_window);
+	Size2i content_min = Size2i(p_window->get_contents_minimum_size().ceil());
+	if (content_min.x > 0 && content_min.y > 0) {
+		content_min += Size2i(int(12 * CG_SCALE), int(16 * CG_SCALE));
+	}
+	Rect2i rem = p_remember_key.is_empty() ? Rect2i() : get_remembered_window_rect(p_remember_key);
+	bool has_rem = (rem.size.x >= 200 && rem.size.y >= 160);
+	Rect2i target = compute_fitted_popup_rect(
+			usable,
+			p_preferred_size,
+			p_min_size,
+			content_min,
+			rem.position,
+			has_rem,
+			has_rem ? rem.size : Size2i());
+
+	const float sc = MAX(0.5f, float(CG_SCALE));
+	const int margin_x = (usable.size.x <= int(720 * sc)) ? int(16 * sc) : int(24 * sc);
+	const int margin_y = (usable.size.y <= int(520 * sc)) ? int(24 * sc) : int(36 * sc);
+	const int avail_w = MAX(280, usable.size.x - margin_x);
+	const int avail_h = MAX(220, usable.size.y - margin_y);
+	const Size2i eff_min(MIN(MAX(280, p_min_size.x), avail_w), MIN(MAX(220, p_min_size.y), avail_h));
+
+	p_window->set_wrap_controls(false);
+	p_window->set_min_size(eff_min);
+	p_window->set_max_size(Size2i(avail_w, avail_h));
+	p_window->set_size(target.size);
+	p_window->set_position(target.position);
+	p_window->popup(target);
+	p_window->set_size(target.size);
+	p_window->set_position(target.position);
+	p_window->set_meta("_cg_popping_guard", false);
+
+	if (!p_remember_key.is_empty()) {
+		p_window->set_meta("_cg_win_remember_key", p_remember_key);
+		if (ClockGearsTheme *ct = ClockGearsTheme::get_singleton()) {
+			Callable cb = callable_mp(ct, &ClockGearsTheme::_on_remembered_window_event).bind(p_window);
+			if (!p_window->is_connected("visibility_changed", cb)) {
+				p_window->connect("visibility_changed", cb);
+			}
+			if (!p_window->is_connected("size_changed", cb)) {
+				p_window->connect("size_changed", cb);
+			}
+		}
+	}
+}
+
 static float _cg_srgb_channel_to_linear(float p_c) {
 	float c = CLAMP(p_c, 0.0f, 1.0f);
 	return (c <= 0.04045f) ? (c / 12.92f) : Math::pow((c + 0.055f) / 1.055f, 2.4f);
@@ -3968,6 +4165,10 @@ void ClockGearsTheme::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("refresh_all_themed_roots"), &ClockGearsTheme::refresh_all_themed_roots);
 	ClassDB::bind_method(D_METHOD("apply_to_control", "control"), &ClockGearsTheme::apply_to_control);
 	ClassDB::bind_method(D_METHOD("apply_to_window", "window"), &ClockGearsTheme::apply_to_window);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("compute_fitted_popup_rect", "usable_rect", "preferred_size", "min_size", "content_min_size", "remembered_pos", "has_remembered_pos", "remembered_size"), &ClockGearsTheme::compute_fitted_popup_rect, DEFVAL(Size2i(760, 560)), DEFVAL(Size2i()), DEFVAL(Point2i()), DEFVAL(false), DEFVAL(Size2i()));
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("popup_fitted_window", "window", "preferred_size", "min_size", "remember_key"), &ClockGearsTheme::popup_fitted_window, DEFVAL(Size2i(760, 560)), DEFVAL(""));
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("save_remembered_window_rect", "key", "window"), &ClockGearsTheme::save_remembered_window_rect);
+	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("get_remembered_window_rect", "key"), &ClockGearsTheme::get_remembered_window_rect);
 	ClassDB::bind_static_method("ClockGearsTheme", D_METHOD("compute_contrast_ratio", "fg", "bg"), &ClockGearsTheme::compute_contrast_ratio);
 	ClassDB::bind_method(D_METHOD("inspect_theme_metrics", "theme_id"), &ClockGearsTheme::inspect_theme_metrics, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("check_tree_legibility_and_layout", "root", "viewport_size"), &ClockGearsTheme::check_tree_legibility_and_layout, DEFVAL(Vector2i(1366, 768)));

@@ -1939,13 +1939,18 @@ void ClockGearsTilePickerDialog::open_picker(const Ref<Texture2D> &p_tex, const 
 			picker->set_selected_tile(Vector2i(0, 0), Vector2i(1, 1));
 		}
 	}
-	popup_centered(Size2(720, 540) * EDSCALE);
+	ClockGearsTheme::popup_fitted_window(
+			this,
+			Size2i(int(820 * EDSCALE), int(600 * EDSCALE)),
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			"ui_tile_picker");
 }
 
 ClockGearsTilePickerDialog::ClockGearsTilePickerDialog() {
+	set_name("ClockGearsTilePickerDialog");
 	set_title(CG_TP_TR("Selector de Tiles (32x32) - ClockGears Engine"));
 	set_flag(Window::FLAG_RESIZE_DISABLED, false);
-	set_min_size(Size2(540, 420) * EDSCALE);
+	set_min_size(Size2(760, 560) * EDSCALE);
 	set_hide_on_ok(true);
 	set_close_on_escape(true);
 

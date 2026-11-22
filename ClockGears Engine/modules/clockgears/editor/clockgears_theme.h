@@ -212,6 +212,24 @@ public:
 
 	void apply_to_control(Control *p_control);
 	void apply_to_window(Window *p_window);
+	void _on_remembered_window_event(Window *p_window);
+
+	static Rect2i get_window_usable_rect(Window *p_window);
+	static Rect2i compute_fitted_popup_rect(
+			const Rect2i &p_usable_rect,
+			const Size2i &p_preferred_size,
+			const Size2i &p_min_size = Size2i(760, 560),
+			const Size2i &p_content_min_size = Size2i(),
+			const Point2i &p_remembered_pos = Point2i(),
+			bool p_has_remembered_pos = false,
+			const Size2i &p_remembered_size = Size2i());
+	static void save_remembered_window_rect(const String &p_key, Window *p_window);
+	static Rect2i get_remembered_window_rect(const String &p_key);
+	static void popup_fitted_window(
+			Window *p_window,
+			const Size2i &p_preferred_size,
+			const Size2i &p_min_size = Size2i(760, 560),
+			const String &p_remember_key = "");
 
 	static float compute_contrast_ratio(const Color &p_fg, const Color &p_bg);
 	Dictionary inspect_theme_metrics(const String &p_theme_id = "");

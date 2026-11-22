@@ -55,12 +55,17 @@ void ClockGearsCommandSelector::popup_catalog() {
 	if (ClockGearsTheme::get_singleton()) {
 		ClockGearsTheme::get_singleton()->apply_to_window(this);
 	}
-	popup_centered(Size2(620, 500) * EDSCALE);
+	ClockGearsTheme::popup_fitted_window(
+			this,
+			Size2i(int(780 * EDSCALE), int(580 * EDSCALE)),
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			"ui_command_selector");
 }
 
 ClockGearsCommandSelector::ClockGearsCommandSelector() {
+	set_name("ClockGearsCommandSelector");
 	set_title(CG_TR("Catálogo de Comandos de Evento - RPG Maker Paradigm"));
-	set_min_size(Size2(580, 460) * EDSCALE);
+	set_min_size(Size2i(int(760 * EDSCALE), int(560 * EDSCALE)));
 	set_hide_on_ok(true);
 
 	tabs = memnew(TabContainer);

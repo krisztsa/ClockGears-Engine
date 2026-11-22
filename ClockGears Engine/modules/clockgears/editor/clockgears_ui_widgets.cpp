@@ -253,6 +253,7 @@ void ClockGearsSwitchVarPickerDialog::_on_confirmed() {
 void ClockGearsSwitchVarPickerDialog::open_picker(bool p_variable_mode, int p_initial_id) {
 	variable_mode = p_variable_mode;
 	current_selected_id = p_initial_id;
+	set_name("ClockGearsSwitchVarPickerDialog");
 	set_title(variable_mode
 					? String::utf8("Selector de Variables — ClockGears Engine")
 					: String::utf8("Selector de Interruptores — ClockGears Engine"));
@@ -260,7 +261,11 @@ void ClockGearsSwitchVarPickerDialog::open_picker(bool p_variable_mode, int p_in
 		ClockGearsTheme::get_singleton()->apply_to_window(this);
 	}
 	_rebuild_list();
-	popup_centered(Size2(460, 420) * CG_WSCALE);
+	ClockGearsTheme::popup_fitted_window(
+			this,
+			Size2i(int(760 * CG_WSCALE), int(560 * CG_WSCALE)),
+			Size2i(int(760 * CG_WSCALE), int(560 * CG_WSCALE)),
+			"ui_switch_var_picker");
 }
 
 void ClockGearsSwitchVarPickerDialog::_bind_methods() {

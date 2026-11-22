@@ -9,6 +9,7 @@
 #include "core/os/keyboard.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/margin_container.h"
+#include "scene/gui/scroll_container.h"
 
 static PackedVector2Array s_build_shape_outline(const Rect2 &p_rect, const Dictionary &p_shape_cfg) {
 	PackedVector2Array pts;
@@ -276,7 +277,7 @@ ClockGearsImageAdjustDialog::ClockGearsImageAdjustDialog() {
 	set_name("ClockGearsImageAdjustDialog");
 	set_title(String::utf8("Ajustar imagen manualmente"));
 	set_exclusive(true);
-	set_min_size(Size2i(int(720 * EDSCALE), int(560 * EDSCALE)));
+	set_min_size(Size2i(int(760 * EDSCALE), int(560 * EDSCALE)));
 	get_ok_button()->set_text("Aceptar");
 	add_cancel_button("Cancelar");
 	connect("confirmed", callable_mp(this, &ClockGearsImageAdjustDialog::_on_confirmed));
@@ -322,11 +323,17 @@ void ClockGearsImageAdjustDialog::_build_ui() {
 	mc->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
 	bg_root->add_child(mc);
 
+	ScrollContainer *sc = memnew(ScrollContainer);
+	sc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	mc->add_child(sc);
+
 	VBoxContainer *vb = memnew(VBoxContainer);
 	vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	vb->add_theme_constant_override("separation", int(8 * EDSCALE));
-	mc->add_child(vb);
+	sc->add_child(vb);
 
 	// Barra de herramientas superior
 	HFlowContainer *tools = memnew(HFlowContainer);
@@ -375,7 +382,7 @@ void ClockGearsImageAdjustDialog::_build_ui() {
 	frame_pc->set_theme_type_variation("ClockGearsPreviewFrame");
 	frame_pc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	frame_pc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	frame_pc->set_custom_minimum_size(Size2(640 * EDSCALE, 340 * EDSCALE));
+	frame_pc->set_custom_minimum_size(Size2(480 * EDSCALE, 240 * EDSCALE));
 	vb->add_child(frame_pc);
 
 	canvas = memnew(ClockGearsImageAdjustCanvas);
@@ -486,7 +493,11 @@ void ClockGearsImageAdjustDialog::open_adjust(
 	edit_vals = vals.duplicate(true);
 
 	_sync_controls_from_vals();
-	popup_centered(Size2i(int(820 * EDSCALE), int(620 * EDSCALE)));
+	ClockGearsTheme::popup_fitted_window(
+			this,
+			Size2i(int(860 * EDSCALE), int(640 * EDSCALE)),
+			Size2i(int(760 * EDSCALE), int(560 * EDSCALE)),
+			"ui_image_adjust");
 	_refresh_theme();
 	if (canvas) {
 		canvas->grab_focus();
