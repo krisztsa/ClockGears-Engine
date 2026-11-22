@@ -265,26 +265,73 @@ public:
 		String target_sid = p_screen_id.is_empty() ? String("game_menu_main") : p_screen_id;
 		Dictionary render_design;
 		if (is_comp) {
-			Dictionary cel = Dictionary(p_tpl.get("element", Dictionary())).duplicate(true);
-			if (!cel.is_empty()) {
-				int bw = MAX(32, int(cel.get("width", 120)));
-				int bh = MAX(32, int(cel.get("height", 120)));
-				float mult = CLAMP(MIN(420.0f / float(bw), 260.0f / float(bh)), 0.8f, 3.0f);
-				cel["anchor"] = "center";
-				cel["offset_x"] = 0;
-				cel["offset_y"] = 0;
-				cel["width"] = int(Math::round(float(bw) * mult));
-				cel["height"] = int(Math::round(float(bh) * mult));
-				if (String(cel.get("type", "")) == "container" && !p_screen_id.is_empty()) {
-					String ctx_ds = ClockGearsDataManager::get_contextual_data_source_for_screen(p_screen_id);
-					if (!ctx_ds.is_empty() && ctx_ds != "battle_commands") {
-						cel["data_source"] = ctx_ds;
+			Array comp_els = (p_tpl.has("elements") && p_tpl["elements"].get_type() == Variant::ARRAY) ? Array(p_tpl["elements"]).duplicate(true) : Array();
+			if (!comp_els.is_empty()) {
+				Rect2 stage_all(0, 0, 960, 540);
+				HashMap<String, Rect2> rects = ClockGearsUiDesignLayer::compute_all_element_rects(comp_els, stage_all, 1.0f);
+				Rect2 bbox;
+				bool has_bb = false;
+				for (const KeyValue<String, Rect2> &E : rects) {
+					if (!E.value.has_area()) continue;
+					if (!has_bb) {
+						bbox = E.value;
+						has_bb = true;
+					} else {
+						bbox = bbox.merge(E.value);
 					}
 				}
-				Array els;
-				els.push_back(cel);
+				int bw = MAX(48, int(Math::round(has_bb ? bbox.size.x : 260.0f)));
+				int bh = MAX(48, int(Math::round(has_bb ? bbox.size.y : 200.0f)));
+				float mult = CLAMP(MIN(480.0f / float(bw), 300.0f / float(bh)), 0.55f, 1.8f);
+				Dictionary wrap_root = ClockGearsDataManager::make_default_ui_element("folder", target_sid);
+				wrap_root["id"] = "thumb_comp_root";
+				wrap_root["name"] = "Thumb";
+				wrap_root["anchor"] = "center";
+				wrap_root["offset_x"] = 0;
+				wrap_root["offset_y"] = 0;
+				wrap_root["width"] = bw;
+				wrap_root["height"] = bh;
+				wrap_root["scale_percent"] = CLAMP(int(Math::round(mult * 100.0f)), 25, 400);
+				wrap_root["visible"] = true;
+				Array final_els;
+				final_els.push_back(wrap_root);
+				for (int i = 0; i < comp_els.size(); i++) {
+					if (comp_els[i].get_type() != Variant::DICTIONARY) continue;
+					Dictionary ce = Dictionary(comp_els[i]).duplicate(true);
+					if (String(ce.get("parent_id", "")).strip_edges().is_empty()) {
+						String cid = String(ce.get("id", ""));
+						Rect2 cr = rects.has(cid) ? rects[cid] : ClockGearsUiDesignLayer::compute_element_rect(ce, stage_all, 1.0f);
+						ce["parent_id"] = "thumb_comp_root";
+						ce["anchor"] = "top_left";
+						ce["offset_x"] = int(Math::round(cr.position.x - bbox.position.x));
+						ce["offset_y"] = int(Math::round(cr.position.y - bbox.position.y));
+					}
+					final_els.push_back(ce);
+				}
 				render_design["custom_enabled"] = true;
-				render_design["elements"] = els;
+				render_design["elements"] = final_els;
+			} else {
+				Dictionary cel = Dictionary(p_tpl.get("element", Dictionary())).duplicate(true);
+				if (!cel.is_empty()) {
+					int bw = MAX(32, int(cel.get("width", 120)));
+					int bh = MAX(32, int(cel.get("height", 120)));
+					float mult = CLAMP(MIN(420.0f / float(bw), 260.0f / float(bh)), 0.8f, 3.0f);
+					cel["anchor"] = "center";
+					cel["offset_x"] = 0;
+					cel["offset_y"] = 0;
+					cel["width"] = int(Math::round(float(bw) * mult));
+					cel["height"] = int(Math::round(float(bh) * mult));
+					if (String(cel.get("type", "")) == "container" && !p_screen_id.is_empty()) {
+						String ctx_ds = ClockGearsDataManager::get_contextual_data_source_for_screen(p_screen_id);
+						if (!ctx_ds.is_empty() && ctx_ds != "battle_commands") {
+							cel["data_source"] = ctx_ds;
+						}
+					}
+					Array els;
+					els.push_back(cel);
+					render_design["custom_enabled"] = true;
+					render_design["elements"] = els;
+				}
 			}
 		} else if (!p_screen_id.is_empty()) {
 			render_design = ClockGearsDataManager::adapt_ui_template_design_for_screen(p_tpl, p_screen_id);
@@ -411,7 +458,9 @@ bool ClockGearsUiCanvasOverlay::_get_radial_overlay_geometry(Vector2 &r_center, 
 			er = ClockGearsUiDesignLayer::compute_element_rect(sel, stage, p_scale);
 		}
 		r_center = er.get_center();
-		float r = float(CLAMP(int(lay.get("radial_radius", 128)), 48, 250)) * p_scale;
+		HashMap<String, float> acc_scales = ClockGearsUiDesignLayer::compute_all_element_scales(elems);
+		float es = acc_scales.has(sel_id) ? acc_scales[sel_id] : 1.0f;
+		float r = float(CLAMP(int(lay.get("radial_radius", 128)), 48, 250)) * p_scale * es;
 		float max_r = MIN(er.size.x, er.size.y) * 0.38f;
 		r_radius = MAX(16.0f, MIN(r, max_r));
 		r_start_rad = Math::deg_to_rad(float(lay.get("radial_start_angle_deg", -90.0)));
@@ -806,10 +855,10 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					accept_event();
 					return;
 				}
-				if (mb->is_shift_pressed() || mb->is_ctrl_pressed() || mb->is_command_or_control_pressed()) {
+				if (hh == HANDLE_NONE && (mb->is_shift_pressed() || mb->is_ctrl_pressed() || mb->is_command_or_control_pressed())) {
 					owner_editor->toggle_element_in_selection(hit_id);
 					hh = HANDLE_NONE;
-				} else if (!owner_editor->is_element_selected(hit_id)) {
+				} else if (hh == HANDLE_NONE && !owner_editor->is_element_selected(hit_id)) {
 					if (hit_id != owner_editor->get_selected_element_id()) {
 						owner_editor->select_element(hit_id);
 						hh = HANDLE_NONE;
@@ -941,17 +990,21 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 				int rad0 = int(drag_initial_elem.get("corner_radius", 8));
 
 				Dictionary next_elem = drag_initial_elem.duplicate(true);
+				Array snap_elems = drag_initial_screen_snapshot.has("elements") ? Array(drag_initial_screen_snapshot["elements"]) : owner_editor->get_effective_screen_elements();
+				HashMap<String, float> acc_scales = ClockGearsUiDesignLayer::compute_all_element_scales(snap_elems);
+				String raw_pid = String(drag_initial_elem.get("parent_id", "")).strip_edges();
+				float p_acc = (!raw_pid.is_empty() && acc_scales.has(raw_pid)) ? MAX(0.1f, acc_scales[raw_pid]) : 1.0f;
+				float my_acc = acc_scales.has(drag_elem_id) ? MAX(0.1f, acc_scales[drag_elem_id]) : p_acc * CLAMP(float(drag_initial_elem.get("scale_percent", 100)) * 0.01f, 0.25f, 4.0f);
 				if (active_handle == HANDLE_MOVE) {
 					Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_H));
-					Array snap_elems = drag_initial_screen_snapshot.has("elements") ? Array(drag_initial_screen_snapshot["elements"]) : owner_editor->get_effective_screen_elements();
 					Rect2 base_r = ClockGearsUiDesignLayer::compute_element_global_rect(drag_elem_id, snap_elems, stage, 1.0f);
 					if (!base_r.has_area()) {
 						base_r = ClockGearsUiDesignLayer::compute_element_rect(drag_initial_elem, stage, 1.0f);
 					}
 					Vector2 delta{ float(dx), float(dy) };
 					delta = _apply_snap_and_guides(base_r, drag_elem_id, delta);
-					dx = int(Math::round(delta.x));
-					dy = int(Math::round(delta.y));
+					dx = int(Math::round(delta.x / p_acc));
+					dy = int(Math::round(delta.y / p_acc));
 					next_elem["offset_x"] = CLAMP(ox0 + dx, -ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_W);
 					next_elem["offset_y"] = CLAMP(oy0 + dy, -ClockGearsUiDesignEditor::BASE_H, ClockGearsUiDesignEditor::BASE_H);
 				} else if (active_handle == HANDLE_RADIUS) {
@@ -965,9 +1018,7 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					guide_lines_x.clear();
 					guide_lines_y.clear();
 					Rect2 stage(Vector2(), Vector2(ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_H));
-					Array snap_elems = drag_initial_screen_snapshot.has("elements") ? Array(drag_initial_screen_snapshot["elements"]) : owner_editor->get_effective_screen_elements();
 					Rect2 pr(0, 0, ClockGearsUiDesignEditor::BASE_W, ClockGearsUiDesignEditor::BASE_H);
-					String raw_pid = String(drag_initial_elem.get("parent_id", "")).strip_edges();
 					if (!raw_pid.is_empty()) {
 						Rect2 cand_pr = ClockGearsUiDesignLayer::compute_element_global_rect(raw_pid, snap_elems, stage, 1.0f);
 						if (cand_pr.size.x > 0.5f && cand_pr.size.y > 0.5f) {
@@ -980,10 +1031,12 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 					int py = int(Math::round(pr.position.y));
 					int pw = int(Math::round(pr.size.x));
 					int ph = int(Math::round(pr.size.y));
-					int x0 = px + int(Math::round(af.x * float(pw - w0))) + ox0;
-					int y0 = py + int(Math::round(af.y * float(ph - h0))) + oy0;
-					int r0 = x0 + w0;
-					int b0 = y0 + h0;
+					int sw0 = MAX(16, int(Math::round(float(w0) * my_acc)));
+					int sh0 = MAX(16, int(Math::round(float(h0) * my_acc)));
+					int x0 = px + int(Math::round(af.x * float(pw - sw0) + float(ox0) * p_acc));
+					int y0 = py + int(Math::round(af.y * float(ph - sh0) + float(oy0) * p_acc));
+					int r0 = x0 + sw0;
+					int b0 = y0 + sh0;
 
 					int nx = x0;
 					int ny = y0;
@@ -1003,16 +1056,47 @@ void ClockGearsUiCanvasOverlay::gui_input(const Ref<InputEvent> &p_event) {
 						nb = MAX(y0 + 16, b0 + dy);
 					}
 
-					int nw = CLAMP(nr - nx, 16, ClockGearsUiDesignEditor::BASE_W);
-					int nh = CLAMP(nb - ny, 16, ClockGearsUiDesignEditor::BASE_H);
+					if (mm->is_shift_pressed() && sw0 > 0 && sh0 > 0) {
+						float aspect = float(sw0) / float(sh0);
+						int cw = MAX(16, nr - nx);
+						int ch = MAX(16, nb - ny);
+						if (active_handle == HANDLE_L || active_handle == HANDLE_R) {
+							ch = MAX(16, int(Math::round(float(cw) / aspect)));
+							nb = ny + ch;
+						} else if (active_handle == HANDLE_T || active_handle == HANDLE_B) {
+							cw = MAX(16, int(Math::round(float(ch) * aspect)));
+							nr = nx + cw;
+						} else {
+							if (Math::abs(dx) >= Math::abs(dy)) {
+								ch = MAX(16, int(Math::round(float(cw) / aspect)));
+								if (active_handle == HANDLE_TL || active_handle == HANDLE_TR) {
+									ny = nb - ch;
+								} else {
+									nb = ny + ch;
+								}
+							} else {
+								cw = MAX(16, int(Math::round(float(ch) * aspect)));
+								if (active_handle == HANDLE_TL || active_handle == HANDLE_BL) {
+									nx = nr - cw;
+								} else {
+									nr = nx + cw;
+								}
+							}
+						}
+					}
+
+					int nw = CLAMP(int(Math::round(float(nr - nx) / my_acc)), 16, ClockGearsUiDesignEditor::BASE_W);
+					int nh = CLAMP(int(Math::round(float(nb - ny) / my_acc)), 16, ClockGearsUiDesignEditor::BASE_H);
+					int nsw = int(Math::round(float(nw) * my_acc));
+					int nsh = int(Math::round(float(nh) * my_acc));
 					if (active_handle == HANDLE_TL || active_handle == HANDLE_L || active_handle == HANDLE_BL) {
-						nx = nr - nw;
+						nx = nr - nsw;
 					}
 					if (active_handle == HANDLE_TL || active_handle == HANDLE_T || active_handle == HANDLE_TR) {
-						ny = nb - nh;
+						ny = nb - nsh;
 					}
-					int nox = nx - px - int(Math::round(af.x * float(pw - nw)));
-					int noy = ny - py - int(Math::round(af.y * float(ph - nh)));
+					int nox = int(Math::round((float(nx - px) - af.x * float(pw - nsw)) / p_acc));
+					int noy = int(Math::round((float(ny - py) - af.y * float(ph - nsh)) / p_acc));
 
 					next_elem["width"] = nw;
 					next_elem["height"] = nh;
@@ -1951,6 +2035,7 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_visible_prop_row_count"), &ClockGearsUiDesignEditor::get_visible_prop_row_count);
 	ClassDB::bind_method(D_METHOD("create_menu_via_wizard", "opts"), &ClockGearsUiDesignEditor::create_menu_via_wizard);
 	ClassDB::bind_method(D_METHOD("apply_template_by_id", "tpl_id", "preserve_buttons", "record_undo"), &ClockGearsUiDesignEditor::apply_template_by_id, DEFVAL(true), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("insert_component_by_id", "tpl_id", "parent_id"), &ClockGearsUiDesignEditor::insert_component_by_id, DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("save_current_as_user_template", "name"), &ClockGearsUiDesignEditor::save_current_as_user_template);
 	ClassDB::bind_method(D_METHOD("begin_inline_edit_for_selected"), &ClockGearsUiDesignEditor::begin_inline_edit_for_selected);
 	ClassDB::bind_method(D_METHOD("show_canvas_context_menu", "screen_pos"), &ClockGearsUiDesignEditor::show_canvas_context_menu);
@@ -3187,6 +3272,15 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	layer_add_button_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_layer_add_button_pressed));
 	lay_btns->add_child(layer_add_button_btn);
 
+	layer_add_component_btn = memnew(Button("+ Componente"));
+	layer_add_component_btn->set_tooltip_text(String::utf8("Insertar un componente o bloque reutilizable (cuadrícula, rueda radial, panel de detalle, etc.) sin reemplazar la pantalla."));
+	s_make_rounded_action_btn(layer_add_component_btn);
+	layer_add_component_btn->set_custom_minimum_size(Size2(118 * EDSCALE, 32 * EDSCALE));
+	layer_add_component_btn->set_clip_text(false);
+	layer_add_component_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+	layer_add_component_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_layer_add_component_pressed));
+	lay_btns->add_child(layer_add_component_btn);
+
 	layer_add_folder_btn = memnew(Button("+ Carpeta"));
 	layer_add_folder_btn->set_tooltip_text(String::utf8("Crear carpeta nueva; si hay elementos seleccionados, los agrupa dentro manteniendo su posición."));
 	s_make_rounded_action_btn(layer_add_folder_btn);
@@ -3753,6 +3847,34 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	make_spin(sec_pos_body, "Pos Y:", String::utf8("Desplazamiento vertical desde su anclaje."), "y posicion mover", false, -540, 540, prop_oy_spin);
 	make_spin(sec_pos_body, "Ancho:", String::utf8("Anchura en píxeles base 960x540."), "ancho tamano width", false, 16, 960, prop_w_spin);
 	make_spin(sec_pos_body, "Alto:", String::utf8("Altura en píxeles base 960x540."), "alto tamano height", false, 16, 540, prop_h_spin);
+	{
+		HBoxContainer *sc_hb = memnew(HBoxContainer);
+		sc_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		sc_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		prop_scale_slider = memnew(HSlider);
+		prop_scale_slider->set_min(25);
+		prop_scale_slider->set_max(400);
+		prop_scale_slider->set_step(1);
+		prop_scale_slider->set_value(100);
+		prop_scale_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		prop_scale_slider->set_custom_minimum_size(Size2(80 * EDSCALE, 28 * EDSCALE));
+		prop_scale_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+		sc_hb->add_child(prop_scale_slider);
+
+		prop_scale_spin = memnew(SpinBox);
+		prop_scale_spin->set_min(25);
+		prop_scale_spin->set_max(400);
+		prop_scale_spin->set_step(1);
+		prop_scale_spin->set_value(100);
+		prop_scale_spin->set_suffix("%");
+		prop_scale_spin->set_custom_minimum_size(Size2(84 * EDSCALE, 32 * EDSCALE));
+		prop_scale_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+		sc_hb->add_child(prop_scale_spin);
+		make_prop_row(sec_pos_body, "Escala:", String::utf8("Escala en bloque del elemento y de todos sus hijos (25 % a 400 %)."), "escala tamano zoom hijos scale", false, sc_hb);
+	}
+	prop_int_scale_chk = memnew(CheckBox(String::utf8("Pixel art nítido (×1, ×2, ×3…)")));
+	prop_int_scale_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
+	make_prop_row(sec_pos_body, "Escala entera:", String::utf8("Ajusta a múltiplos enteros y desactiva el suavizado para mantener el pixel art nítido."), "escala entera pixel nearest integer", false, prop_int_scale_chk);
 	make_spin(sec_pos_body, "Capa:", String::utf8("Orden de dibujo (mayor aparece encima)."), "capa orden profundidad", true, -100, 1000, prop_layer_spin);
 
 	prop_visible_chk = memnew(CheckBox("Mostrar en juego"));
@@ -7161,6 +7283,21 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 	prop_oy_spin->set_value(int(el.get("offset_y", 0)));
 	prop_w_spin->set_value(int(el.get("width", 120)));
 	prop_h_spin->set_value(int(el.get("height", 36)));
+	{
+		bool int_sc = bool(el.get("integer_scale", false));
+		int sc_pct = CLAMP(int(el.get("scale_percent", 100)), 25, 400);
+		if (prop_int_scale_chk) {
+			prop_int_scale_chk->set_pressed_no_signal(int_sc);
+		}
+		if (prop_scale_slider) {
+			prop_scale_slider->set_step(int_sc ? 100 : 1);
+			prop_scale_slider->set_value_no_signal(sc_pct);
+		}
+		if (prop_scale_spin) {
+			prop_scale_spin->set_step(int_sc ? 100 : 1);
+			prop_scale_spin->set_value_no_signal(sc_pct);
+		}
+	}
 	prop_layer_spin->set_value(int(el.get("layer_order", 0)));
 	prop_visible_chk->set_pressed(bool(el.get("visible", true)));
 	if (prop_locked_chk) {
@@ -9600,6 +9737,7 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 
 void ClockGearsUiDesignEditor::_on_tpl_close_requested() {
 	pending_apply_template_id = "";
+	gallery_insert_component_mode = false;
 	if (template_gallery_dialog) {
 		template_gallery_dialog->hide();
 	}
@@ -9616,7 +9754,46 @@ void ClockGearsUiDesignEditor::_on_templates_btn_pressed() {
 	if (!template_gallery_dialog) {
 		return;
 	}
+	gallery_insert_component_mode = false;
+	template_gallery_dialog->set_title("Biblioteca de plantillas");
+	if (tpl_apply_btn) {
+		tpl_apply_btn->set_text(String::utf8("Aplicar al menú"));
+	}
 	_populate_template_gallery();
+	if (!selected_gallery_template_id.is_empty()) {
+		_on_tpl_card_selected(selected_gallery_template_id);
+	}
+	ClockGearsTheme::popup_fitted_window(
+			template_gallery_dialog,
+			Size2i(int(920 * EDSCALE), int(620 * EDSCALE)),
+			Size2i(int(640 * EDSCALE), int(440 * EDSCALE)),
+			"ui_template_gallery");
+}
+
+void ClockGearsUiDesignEditor::_on_layer_add_component_pressed() {
+	if (!template_gallery_dialog) {
+		return;
+	}
+	gallery_insert_component_mode = true;
+	template_gallery_dialog->set_title("Insertar componente");
+	if (tpl_apply_btn) {
+		tpl_apply_btn->set_text("Insertar componente");
+	}
+	_populate_template_gallery();
+	if (template_tabs && template_tabs->get_tab_count() > 1) {
+		template_tabs->set_current_tab(1);
+	}
+	Array comp_tpls = ClockGearsDataManager::get_builtin_component_templates(current_screen_id);
+	bool cur_is_comp = false;
+	for (int i = 0; i < comp_tpls.size(); i++) {
+		if (String(Dictionary(comp_tpls[i]).get("id", "")) == selected_gallery_template_id) {
+			cur_is_comp = true;
+			break;
+		}
+	}
+	if (!cur_is_comp && !comp_tpls.is_empty()) {
+		selected_gallery_template_id = String(Dictionary(comp_tpls[0]).get("id", ""));
+	}
 	if (!selected_gallery_template_id.is_empty()) {
 		_on_tpl_card_selected(selected_gallery_template_id);
 	}
@@ -9703,11 +9880,51 @@ String ClockGearsUiDesignEditor::save_current_as_user_template(const String &p_n
 	return tid;
 }
 
+String ClockGearsUiDesignEditor::insert_component_by_id(const String &p_tpl_id, const String &p_parent_id) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || p_tpl_id.is_empty()) {
+		return String();
+	}
+	String pid = p_parent_id.strip_edges();
+	if (pid.is_empty() && !selected_elem_id.is_empty()) {
+		Dictionary sel = dm->get_ui_element(current_screen_id, selected_elem_id);
+		if (String(sel.get("type", "")).to_lower() == "folder") {
+			pid = selected_elem_id;
+		}
+	}
+	Dictionary t = ClockGearsDataManager::get_builtin_template_by_id(p_tpl_id);
+	bool is_comp = bool(t.get("is_component", false));
+	if (!is_comp) {
+		Array ut = dm->get_user_menu_templates();
+		for (int i = 0; i < ut.size(); i++) {
+			if (String(Dictionary(ut[i]).get("id", "")) == p_tpl_id) {
+				is_comp = bool(Dictionary(ut[i]).get("is_component", false));
+				break;
+			}
+		}
+	}
+	String eid;
+	if (is_comp) {
+		eid = dm->instantiate_component_template(current_screen_id, p_tpl_id, Vector2i(-1, -1), pid);
+	} else {
+		eid = dm->instantiate_screen_template_as_component(current_screen_id, p_tpl_id, Vector2i(-1, -1), pid);
+	}
+	if (!eid.is_empty()) {
+		selected_elem_id = eid;
+		_notify_data_mutated(true);
+	}
+	return eid;
+}
+
 void ClockGearsUiDesignEditor::_on_tpl_apply_pressed() {
 	if (selected_gallery_template_id.is_empty()) {
 		return;
 	}
 	pending_apply_template_id = selected_gallery_template_id;
+	if (gallery_insert_component_mode) {
+		_on_tpl_apply_confirmed();
+		return;
+	}
 	if (template_apply_confirm_dialog) {
 		template_apply_confirm_dialog->set_text(String::utf8("¿Aplicar esta plantilla a '") + current_screen_id + String::utf8("'? (Puedes usar Deshacer después)"));
 		template_apply_confirm_dialog->popup_centered();
@@ -9717,6 +9934,13 @@ void ClockGearsUiDesignEditor::_on_tpl_apply_pressed() {
 }
 
 void ClockGearsUiDesignEditor::_on_tpl_apply_confirmed() {
+	if (gallery_insert_component_mode) {
+		gallery_insert_component_mode = false;
+		if (!insert_component_by_id(pending_apply_template_id).is_empty() && template_gallery_dialog) {
+			template_gallery_dialog->hide();
+		}
+		return;
+	}
 	bool preserve = tpl_preserve_btns_chk ? tpl_preserve_btns_chk->is_pressed() : true;
 	if (apply_template_by_id(pending_apply_template_id, preserve, true) && template_gallery_dialog) {
 		template_gallery_dialog->hide();
@@ -10464,9 +10688,29 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 	int old_layer = int(el.get("layer_order", 0));
 	bool old_vis = bool(el.get("visible", true));
 	bool was_custom = dm->has_custom_ui_design(current_screen_id);
+	int cur_scale_pct = CLAMP(int(el.get("scale_percent", 100)), 25, 400);
+	bool cur_int_scale = bool(el.get("integer_scale", false));
+	bool new_int_scale = prop_int_scale_chk ? prop_int_scale_chk->is_pressed() : cur_int_scale;
+	int sl_sc = prop_scale_slider ? int(Math::round(prop_scale_slider->get_value())) : cur_scale_pct;
+	int sp_sc = prop_scale_spin ? int(Math::round(prop_scale_spin->get_value())) : cur_scale_pct;
+	int new_scale_pct = CLAMP((sp_sc != cur_scale_pct) ? sp_sc : sl_sc, 25, 400);
+	if (new_int_scale) {
+		new_scale_pct = CLAMP(int(Math::round(float(new_scale_pct) / 100.0f)) * 100, 100, 400);
+	}
+	if (prop_scale_slider) {
+		prop_scale_slider->set_step(new_int_scale ? 100 : 1);
+		prop_scale_slider->set_value_no_signal(new_scale_pct);
+	}
+	if (prop_scale_spin) {
+		prop_scale_spin->set_step(new_int_scale ? 100 : 1);
+		prop_scale_spin->set_value_no_signal(new_scale_pct);
+	}
+
 	bool only_geom = (old_name == prop_name_edit->get_text() &&
 			old_layer == int(Math::round(prop_layer_spin->get_value())) &&
 			old_vis == prop_visible_chk->is_pressed() &&
+			cur_scale_pct == new_scale_pct &&
+			cur_int_scale == new_int_scale &&
 			(!prop_locked_chk || bool(el.get("locked", false)) == prop_locked_chk->is_pressed()) &&
 			(!prop_clip_children_chk || bool(el.get("clip_children", false)) == prop_clip_children_chk->is_pressed()) &&
 			(!prop_parent_layout_opt || prop_parent_layout_opt->get_selected() < 0 || String(el.get("layout_mode", "free")) == String(prop_parent_layout_opt->get_item_metadata(prop_parent_layout_opt->get_selected()))) &&
@@ -10480,6 +10724,8 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 	el["offset_y"] = int(Math::round(prop_oy_spin->get_value()));
 	el["width"] = int(Math::round(prop_w_spin->get_value()));
 	el["height"] = int(Math::round(prop_h_spin->get_value()));
+	el["scale_percent"] = new_scale_pct;
+	el["integer_scale"] = new_int_scale;
 	el["layer_order"] = int(Math::round(prop_layer_spin->get_value()));
 	el["visible"] = prop_visible_chk->is_pressed();
 	if (prop_locked_chk) {
@@ -11457,6 +11703,10 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["new_menu_wizard_btn"] = new_menu_wizard_btn;
 	out["add_submenu_btn"] = add_submenu_btn;
 	out["add_button_bar_btn"] = add_button_bar_btn;
+	out["layer_add_component_btn"] = layer_add_component_btn;
+	out["prop_scale_slider"] = prop_scale_slider;
+	out["prop_scale_spin"] = prop_scale_spin;
+	out["prop_int_scale_chk"] = prop_int_scale_chk;
 	out["templates_btn"] = templates_btn;
 	out["menus_list_vbox"] = menus_list_vbox;
 	out["menu_wizard_dialog"] = menu_wizard_dialog;
@@ -13443,6 +13693,10 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	make_spin(tb_gen, String::utf8("Posición Y:"), -540, 540, oy_spin);
 	make_spin(tb_gen, "Ancho:", 16, 960, w_spin);
 	make_spin(tb_gen, "Alto:", 16, 540, h_spin);
+	make_spin(tb_gen, "Escala (%):", 25, 400, fw_scale_spin);
+	fw_int_scale_chk = memnew(CheckBox(String::utf8("Escala entera (pixel art nítido)")));
+	fw_int_scale_chk->connect("toggled", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
+	tb_gen->add_child(fw_int_scale_chk);
 	make_spin(tb_gen, "Capa:", -100, 1000, layer_spin);
 
 	auto setup_opt = [&](OptionButton *p_opt) {
@@ -14206,6 +14460,15 @@ void ClockGearsUiElementFloatingWindow::sync_from_element(const Dictionary &p_el
 	if (oy_spin) oy_spin->set_value(int(p_elem.get("offset_y", 0)));
 	if (w_spin) w_spin->set_value(int(p_elem.get("width", 120)));
 	if (h_spin) h_spin->set_value(int(p_elem.get("height", 36)));
+	{
+		bool is_int = bool(p_elem.get("integer_scale", false));
+		int scp = CLAMP(int(p_elem.get("scale_percent", 100)), 25, 400);
+		if (fw_scale_spin) {
+			fw_scale_spin->set_step(is_int ? 100 : 1);
+			fw_scale_spin->set_value(scp);
+		}
+		if (fw_int_scale_chk) fw_int_scale_chk->set_pressed(is_int);
+	}
 	if (layer_spin) layer_spin->set_value(int(p_elem.get("layer_order", 0)));
 	if (slot_vis_mode_opt) s_select_option_meta(slot_vis_mode_opt, String(p_elem.get("visibility_mode", "always")));
 	if (slot_vis_sw_edit && slot_vis_sw_edit->get_text() != String(p_elem.get("visibility_switch", ""))) {
@@ -14450,6 +14713,21 @@ void ClockGearsUiElementFloatingWindow::_emit_commit() {
 	if (oy_spin) el["offset_y"] = int(Math::round(oy_spin->get_value()));
 	if (w_spin) el["width"] = int(Math::round(w_spin->get_value()));
 	if (h_spin) el["height"] = int(Math::round(h_spin->get_value()));
+	{
+		bool is_int = fw_int_scale_chk ? fw_int_scale_chk->is_pressed() : false;
+		int scp = fw_scale_spin ? CLAMP(int(Math::round(fw_scale_spin->get_value())), 25, 400) : 100;
+		if (is_int) {
+			scp = CLAMP(int(Math::round(float(scp) / 100.0f)) * 100, 100, 400);
+			if (fw_scale_spin) {
+				fw_scale_spin->set_step(100);
+				fw_scale_spin->set_value_no_signal(scp);
+			}
+		} else if (fw_scale_spin) {
+			fw_scale_spin->set_step(1);
+		}
+		el["scale_percent"] = scp;
+		el["integer_scale"] = is_int;
+	}
 	if (layer_spin) el["layer_order"] = int(Math::round(layer_spin->get_value()));
 	if (slot_vis_mode_opt && slot_vis_mode_opt->get_selected() >= 0) {
 		String vm = String(slot_vis_mode_opt->get_item_metadata(slot_vis_mode_opt->get_selected()));

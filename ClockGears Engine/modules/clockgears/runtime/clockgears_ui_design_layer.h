@@ -349,6 +349,7 @@ public:
 	static Rect2 compute_stage_rect(const Vector2 &p_viewport_size);
 	static Rect2 compute_manual_image_rect(const Rect2 &p_frame, const Vector2 &p_tex_size, const Dictionary &p_cfg);
 	static Rect2 compute_element_rect(const Dictionary &p_elem, const Rect2 &p_stage_rect, float p_scale);
+	static HashMap<String, float> compute_all_element_scales(const Array &p_elems);
 	static HashMap<String, Rect2> compute_all_element_rects(const Array &p_elems, const Rect2 &p_stage_rect, float p_scale);
 	static Rect2 compute_element_global_rect(const String &p_elem_id, const Array &p_elems, const Rect2 &p_stage_rect, float p_scale);
 	static bool is_element_effectively_visible(const String &p_elem_id, const Array &p_elems);

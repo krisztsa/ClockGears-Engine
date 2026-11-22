@@ -332,7 +332,8 @@ public:
 	String save_element_as_component_template(const String &p_screen_id, const String &p_elem_id, const String &p_name);
 	bool delete_user_template(const String &p_template_id);
 	bool apply_menu_template(const String &p_screen_id, const String &p_template_id, bool p_preserve_buttons = true, bool p_record_undo = true);
-	String instantiate_component_template(const String &p_screen_id, const String &p_template_id, const Vector2i &p_pos = Vector2i(-1, -1));
+	String instantiate_component_template(const String &p_screen_id, const String &p_template_id, const Vector2i &p_pos = Vector2i(-1, -1), const String &p_parent_id = String());
+	String instantiate_screen_template_as_component(const String &p_screen_id, const String &p_template_id, const Vector2i &p_pos = Vector2i(-1, -1), const String &p_parent_id = String());
 	String create_menu_from_wizard(const Dictionary &p_opts);
 	bool export_template_package(const String &p_id, const String &p_dst_path, bool p_is_screen = false) const;
 	Dictionary import_template_package(const String &p_src_path, bool p_import_as_custom_menu = false, const String &p_assets_subdir = "res://img/ui/imported");

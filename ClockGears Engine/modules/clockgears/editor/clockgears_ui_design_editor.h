@@ -451,6 +451,7 @@ private:
 	VBoxContainer *layers_list_vbox = nullptr;
 	ClockGearsLayersCanvas *layers_long_canvas = nullptr;
 	Button *layer_add_button_btn = nullptr;
+	Button *layer_add_component_btn = nullptr;
 	Button *layer_add_folder_btn = nullptr;
 	Button *layer_group_btn = nullptr;
 	Button *layer_ungroup_btn = nullptr;
@@ -491,6 +492,9 @@ private:
 	SpinBox *prop_oy_spin = nullptr;
 	SpinBox *prop_w_spin = nullptr;
 	SpinBox *prop_h_spin = nullptr;
+	HSlider *prop_scale_slider = nullptr;
+	SpinBox *prop_scale_spin = nullptr;
+	CheckBox *prop_int_scale_chk = nullptr;
 	SpinBox *prop_layer_spin = nullptr;
 	CheckBox *prop_visible_chk = nullptr;
 	CheckBox *prop_locked_chk = nullptr;
@@ -741,6 +745,7 @@ private:
 	GridContainer *tpl_user_grid = nullptr;
 	CheckBox *tpl_preserve_btns_chk = nullptr;
 	String selected_gallery_template_id;
+	bool gallery_insert_component_mode = false;
 	Label *tpl_selected_info_lbl = nullptr;
 	Button *tpl_apply_btn = nullptr;
 	Button *tpl_export_btn = nullptr;
@@ -949,6 +954,7 @@ private:
 	void _on_reparent_submenu_id(int p_id);
 	void _ensure_design_card_visible(const String &p_elem_id);
 	void _on_layer_add_folder_pressed();
+	void _on_layer_add_component_pressed();
 	void _on_layer_group_pressed();
 	void _on_layer_ungroup_pressed();
 	void _apply_rounded_btn_style(Button *p_btn);
@@ -1008,6 +1014,7 @@ public:
 	int get_visible_prop_row_count() const;
 	String create_menu_via_wizard(const Dictionary &p_opts);
 	bool apply_template_by_id(const String &p_tpl_id, bool p_preserve_buttons = true, bool p_record_undo = true);
+	String insert_component_by_id(const String &p_tpl_id, const String &p_parent_id = String());
 	String save_current_as_user_template(const String &p_name);
 	bool begin_inline_edit_for_selected();
 	void show_canvas_context_menu(const Vector2 &p_screen_pos);
@@ -1148,6 +1155,8 @@ private:
 	SpinBox *oy_spin = nullptr;
 	SpinBox *w_spin = nullptr;
 	SpinBox *h_spin = nullptr;
+	SpinBox *fw_scale_spin = nullptr;
+	CheckBox *fw_int_scale_chk = nullptr;
 	SpinBox *layer_spin = nullptr;
 	OptionButton *slot_vis_mode_opt = nullptr;
 	LineEdit *slot_vis_sw_edit = nullptr;
