@@ -1713,8 +1713,10 @@ ClockGearsTilePicker::ClockGearsTilePicker() {
 	atlas_selector = memnew(OptionButton);
 	atlas_selector->set_h_size_flags(SIZE_EXPAND_FILL);
 	atlas_selector->set_clip_text(true);
+	atlas_selector->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	atlas_selector->set_fit_to_longest_item(false);
-	atlas_selector->set_custom_minimum_size(Size2(36 * EDSCALE, 20 * EDSCALE));
+	atlas_selector->set_tooltip_text(CG_TP_TR("Selecciona el atlas o hoja de TileSet activa"));
+	atlas_selector->set_custom_minimum_size(Size2(64 * EDSCALE, 22 * EDSCALE));
 	atlas_selector->add_item(CG_TP_TR("(Sin TileSet cargado)"), -1);
 	atlas_selector->connect("pressed", callable_mp(this, &ClockGearsTilePicker::_on_atlas_pressed));
 	atlas_selector->connect("item_selected", callable_mp(this, &ClockGearsTilePicker::_on_atlas_selected));
@@ -1722,9 +1724,9 @@ ClockGearsTilePicker::ClockGearsTilePicker() {
 
 	btn_load_tileset = memnew(Button);
 	btn_load_tileset->set_text(CG_TP_TR("📂"));
-	btn_load_tileset->set_clip_text(true);
+	btn_load_tileset->set_clip_text(false);
 	btn_load_tileset->set_tooltip_text(CG_TP_TR("Cargar hoja de tileset 32x32 (.png/.webp) o recurso TileSet (.tres)"));
-	btn_load_tileset->set_custom_minimum_size(Size2(18 * EDSCALE, 20 * EDSCALE));
+	btn_load_tileset->set_custom_minimum_size(Size2(24 * EDSCALE, 22 * EDSCALE));
 	btn_load_tileset->connect("pressed", callable_mp(this, &ClockGearsTilePicker::_on_load_tileset_pressed));
 	top_row_1->add_child(btn_load_tileset);
 
@@ -1733,36 +1735,37 @@ ClockGearsTilePicker::ClockGearsTilePicker() {
 	search_filter_edit->set_h_size_flags(SIZE_EXPAND_FILL);
 	search_filter_edit->set_expand_to_text_length_enabled(false);
 	search_filter_edit->add_theme_constant_override("minimum_character_width", 0);
-	search_filter_edit->set_custom_minimum_size(Size2(28 * EDSCALE, 20 * EDSCALE));
+	search_filter_edit->set_custom_minimum_size(Size2(48 * EDSCALE, 22 * EDSCALE));
 	search_filter_edit->connect("text_changed", callable_mp(this, &ClockGearsTilePicker::_on_search_filter_changed));
 	top_row_1->add_child(search_filter_edit);
 
 	btn_fav_toggle = memnew(Button(CG_TP_TR("★")));
-	btn_fav_toggle->set_clip_text(true);
+	btn_fav_toggle->set_clip_text(false);
 	btn_fav_toggle->set_tooltip_text(CG_TP_TR("Marcar/Desmarcar tiles seleccionados como Favoritos"));
-	btn_fav_toggle->set_custom_minimum_size(Size2(14 * EDSCALE, 20 * EDSCALE));
+	btn_fav_toggle->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
 	btn_fav_toggle->connect("pressed", callable_mp(this, &ClockGearsTilePicker::_on_toggle_favorite_pressed));
 	top_row_1->add_child(btn_fav_toggle);
 
 	btn_only_favorites = memnew(Button(CG_TP_TR("F")));
 	btn_only_favorites->set_toggle_mode(true);
-	btn_only_favorites->set_clip_text(true);
-	btn_only_favorites->set_custom_minimum_size(Size2(14 * EDSCALE, 20 * EDSCALE));
+	btn_only_favorites->set_clip_text(false);
+	btn_only_favorites->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
 	btn_only_favorites->set_tooltip_text(CG_TP_TR("Mostrar solo tiles Favoritos"));
 	btn_only_favorites->connect("toggled", callable_mp(this, &ClockGearsTilePicker::_on_only_favorites_toggled));
 	top_row_1->add_child(btn_only_favorites);
 
 	btn_zoom_out = memnew(Button("-"));
-	btn_zoom_out->set_clip_text(true);
+	btn_zoom_out->set_clip_text(false);
 	btn_zoom_out->set_tooltip_text(CG_TP_TR("Alejar zoom (Rueda abajo)"));
-	btn_zoom_out->set_custom_minimum_size(Size2(12 * EDSCALE, 20 * EDSCALE));
+	btn_zoom_out->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
 	btn_zoom_out->connect("pressed", callable_mp(this, &ClockGearsTilePicker::_on_zoom_out_pressed));
 	top_row_1->add_child(btn_zoom_out);
 
 	zoom_selector = memnew(OptionButton);
-	zoom_selector->set_clip_text(true);
-	zoom_selector->set_fit_to_longest_item(false);
-	zoom_selector->set_custom_minimum_size(Size2(28 * EDSCALE, 20 * EDSCALE));
+	zoom_selector->set_clip_text(false);
+	zoom_selector->set_fit_to_longest_item(true);
+	zoom_selector->set_tooltip_text(CG_TP_TR("Nivel de zoom de la paleta de tiles"));
+	zoom_selector->set_custom_minimum_size(Size2(64 * EDSCALE, 22 * EDSCALE));
 	zoom_selector->add_item("25%", 0);
 	zoom_selector->add_item("50%", 1);
 	zoom_selector->add_item("100%", 2);
@@ -1776,18 +1779,18 @@ ClockGearsTilePicker::ClockGearsTilePicker() {
 	top_row_1->add_child(zoom_selector);
 
 	btn_zoom_in = memnew(Button("+"));
-	btn_zoom_in->set_clip_text(true);
+	btn_zoom_in->set_clip_text(false);
 	btn_zoom_in->set_tooltip_text(CG_TP_TR("Acercar zoom (Rueda arriba)"));
-	btn_zoom_in->set_custom_minimum_size(Size2(12 * EDSCALE, 20 * EDSCALE));
+	btn_zoom_in->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
 	btn_zoom_in->connect("pressed", callable_mp(this, &ClockGearsTilePicker::_on_zoom_in_pressed));
 	top_row_1->add_child(btn_zoom_in);
 
 	btn_grid_toggle = memnew(Button("#"));
 	btn_grid_toggle->set_toggle_mode(true);
 	btn_grid_toggle->set_pressed(true);
-	btn_grid_toggle->set_clip_text(true);
+	btn_grid_toggle->set_clip_text(false);
 	btn_grid_toggle->set_tooltip_text(CG_TP_TR("Mostrar/Ocultar cuadrícula de tiles"));
-	btn_grid_toggle->set_custom_minimum_size(Size2(12 * EDSCALE, 20 * EDSCALE));
+	btn_grid_toggle->set_custom_minimum_size(Size2(22 * EDSCALE, 22 * EDSCALE));
 	btn_grid_toggle->connect("toggled", callable_mp(this, &ClockGearsTilePicker::_on_grid_toggled));
 	top_row_1->add_child(btn_grid_toggle);
 

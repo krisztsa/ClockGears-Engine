@@ -10323,14 +10323,17 @@ void ClockGearsDatabaseDialog::_refresh_enemy_element_rates_ui() {
 		row->add_theme_constant_override("separation", 4);
 
 		Label *lbl = memnew(Label(elem_name + ":"));
-		lbl->set_custom_minimum_size(Size2(82 * EDSCALE, 0));
-		lbl->set_clip_text(true);
+		lbl->set_custom_minimum_size(Size2(106 * EDSCALE, 0));
+		lbl->set_clip_text(false);
+		lbl->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		row->add_child(lbl);
 
 		OptionButton *opt = memnew(OptionButton);
 		opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-		opt->set_custom_minimum_size(Size2(115 * EDSCALE, 0));
+		opt->set_custom_minimum_size(Size2(130 * EDSCALE, 0));
 		opt->set_clip_text(true);
+		opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		opt->set_tooltip_text(elem_name);
 		opt->add_item(CG_DB_TR("Normal x1 (100%)"), 100);
 		opt->add_item(CG_DB_TR("Débil x2 (200%)"), 200);
 		opt->add_item(CG_DB_TR("Resiste x0.5 (50%)"), 50);
@@ -15783,7 +15786,9 @@ PanelContainer *ClockGearsDatabaseDialog::_make_collapsible_menu_card(Control *p
 	hdr->set_pressed(p_expanded);
 	hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	hdr->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
-	hdr->set_clip_text(true);
+	hdr->set_clip_text(false);
+	hdr->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+	hdr->set_tooltip_text(p_title);
 	hdr->set_custom_minimum_size(Size2(0, 28 * EDSCALE));
 	hdr->set_meta("_cg_db_section_hdr", true);
 	hdr->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
