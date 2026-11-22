@@ -2534,14 +2534,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	top_row1_flow = memnew(HFlowContainer);
 	top_row1_flow->set_name("UiDesignerTopRow1");
 	top_row1_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	top_row1_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	top_row1_flow->add_theme_constant_override("h_separation", int(4 * EDSCALE));
 	top_row1_flow->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	top_rows_vbox->add_child(top_row1_flow);
 
 	top_row2_flow = memnew(HFlowContainer);
 	top_row2_flow->set_name("UiDesignerTopRow2");
 	top_row2_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	top_row2_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	top_row2_flow->add_theme_constant_override("h_separation", int(4 * EDSCALE));
 	top_row2_flow->add_theme_constant_override("v_separation", int(4 * EDSCALE));
 	top_rows_vbox->add_child(top_row2_flow);
 
@@ -2555,12 +2555,12 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// Fila 1 - Grupo 1: Pantalla, Nuevo diseño, + Submenú, Plantillas..., Restaurar (solo icono)
 	top_bar = memnew(HBoxContainer);
-	top_bar->add_theme_constant_override("separation", int(6 * EDSCALE));
+	top_bar->add_theme_constant_override("separation", int(4 * EDSCALE));
 	top_row1_flow->add_child(top_bar);
 
 	top_bar->add_child(memnew(Label(String::utf8("Pantalla:"))));
 	screen_opt = memnew(OptionButton);
-	screen_opt->set_custom_minimum_size(Size2(148 * EDSCALE, row_h));
+	screen_opt->set_custom_minimum_size(Size2(118 * EDSCALE, row_h));
 	screen_opt->set_clip_text(true);
 	screen_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	screen_opt->set_fit_to_longest_item(false);
@@ -2568,7 +2568,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	top_bar->add_child(screen_opt);
 
 	new_menu_wizard_btn = memnew(Button(String::utf8("Nuevo diseño")));
-	new_menu_wizard_btn->set_custom_minimum_size(Size2(110 * EDSCALE, row_h));
+	new_menu_wizard_btn->set_custom_minimum_size(Size2(98 * EDSCALE, row_h));
 	new_menu_wizard_btn->set_clip_text(false);
 	new_menu_wizard_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	new_menu_wizard_btn->set_tooltip_text(String::utf8("Abre el asistente guiado (3 pasos) para crear un diseño nuevo."));
@@ -2577,7 +2577,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	top_bar->add_child(new_menu_wizard_btn);
 
 	add_submenu_btn = memnew(Button(String::utf8("+ Submenú")));
-	add_submenu_btn->set_custom_minimum_size(Size2(96 * EDSCALE, row_h));
+	add_submenu_btn->set_custom_minimum_size(Size2(82 * EDSCALE, row_h));
 	add_submenu_btn->set_clip_text(false);
 	add_submenu_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	add_submenu_btn->set_tooltip_text(String::utf8("Crea un submenú propio anidado bajo la pantalla actual."));
@@ -2629,7 +2629,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	top_row1_flow->add_child(play_hb);
 
 	test_btn = memnew(Button("Probar"));
-	test_btn->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	test_btn->set_custom_minimum_size(Size2(68 * EDSCALE, row_h));
 	test_btn->set_tooltip_text(String::utf8("Prueba el menú actual en tiempo real con datos de ejemplo."));
 	s_make_rounded_action_btn(test_btn);
 	test_btn->set_clip_text(false);
@@ -2642,13 +2642,14 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	wide_sep_rows->hide();
 
 	res_hb = memnew(HBoxContainer);
-	res_hb->add_theme_constant_override("separation", int(5 * EDSCALE));
+	res_hb->add_theme_constant_override("separation", int(3 * EDSCALE));
 	top_row2_flow->add_child(res_hb);
 	res_hb->add_child(memnew(Label("Vista:")));
 	preview_res_opt = memnew(OptionButton);
-	preview_res_opt->set_custom_minimum_size(Size2(154 * EDSCALE, row_h));
-	preview_res_opt->set_fit_to_longest_item(true);
-	preview_res_opt->set_clip_text(false);
+	preview_res_opt->set_custom_minimum_size(Size2(124 * EDSCALE, row_h));
+	preview_res_opt->set_fit_to_longest_item(false);
+	preview_res_opt->set_clip_text(true);
+	preview_res_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	preview_res_opt->set_tooltip_text(String::utf8("Resolución de vista previa del diseño (960x540 base 16:9)."));
 	preview_res_opt->add_item("960 x 540 (Base)", 0);
 	preview_res_opt->set_item_metadata(0, Vector2i(960, 540));
@@ -2663,7 +2664,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	res_hb->add_child(preview_res_opt);
 
 	zoom_hb = memnew(HBoxContainer);
-	zoom_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	zoom_hb->add_theme_constant_override("separation", int(3 * EDSCALE));
 	top_row2_flow->add_child(zoom_hb);
 	static const int k_zoom_order[5] = { 0, 3, 1, 2, 4 };
 	static const char *k_zoom_labels[5] = { "Ajustar", "100 %", "200 %", "50 %", "300 %" };
@@ -2679,7 +2680,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		Button *zb = memnew(Button(String::utf8(k_zoom_labels[z])));
 		zb->set_toggle_mode(true);
 		zb->set_pressed(z == canvas_zoom_mode);
-		zb->set_custom_minimum_size(Size2((z == 0 ? 68.0f : 52.0f) * EDSCALE, row_h));
+		zb->set_custom_minimum_size(Size2((z == 0 ? 56.0f : 44.0f) * EDSCALE, row_h));
 		zb->set_clip_text(false);
 		zb->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		zb->set_tooltip_text(String::utf8(k_zoom_tips[z]));
@@ -2692,7 +2693,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	// Fila 2 - Grupo 5: Rejilla, tamaño, Imán, Guías
 	row2_sep_grid = make_top_sep(top_row2_flow);
 	grid_hb = memnew(HBoxContainer);
-	grid_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+	grid_hb->add_theme_constant_override("separation", int(3 * EDSCALE));
 	top_row2_flow->add_child(grid_hb);
 
 	grid_chk = memnew(CheckBox("Rejilla"));
@@ -2708,7 +2709,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	grid_step_opt->add_item("32 px", 2);
 	grid_step_opt->set_item_metadata(2, 32);
 	grid_step_opt->select(1);
-	grid_step_opt->set_custom_minimum_size(Size2(66 * EDSCALE, row_h));
+	grid_step_opt->set_custom_minimum_size(Size2(56 * EDSCALE, row_h));
 	grid_step_opt->set_tooltip_text(String::utf8("Tamaño del paso de rejilla e imán (8, 16 o 32 px)."));
 	grid_step_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_grid_step_selected));
 	grid_hb->add_child(grid_step_opt);
@@ -4574,7 +4575,7 @@ void ClockGearsUiDesignEditor::_relayout_top_toolbar(int p_avail_w) {
 	}
 	int eff_w = p_avail_w > 0 ? p_avail_w : (get_size().x > 200.0f ? int(get_size().x) : 1366);
 	float single_need = 28.0f * EDSCALE;
-	const int flow_sep = int(6 * EDSCALE);
+	const int flow_sep = int(4 * EDSCALE);
 	Control *single_items[] = {
 		top_bar, row1_sep_undo, undo_hb, wide_sep_rows, res_hb, zoom_hb,
 		row2_sep_grid, grid_hb, row2_sep_align, align_hb, row2_sep_clip, clip_hb,
@@ -5180,7 +5181,8 @@ void ClockGearsUiDesignEditor::_refresh_menus_list() {
 					add_tree_screen(root_item, String::utf8("Créditos"), "credits", String::utf8("Lista de créditos, desplazamiento y música."));
 					add_tree_screen(root_item, "Game Over", "game_over", String::utf8("Pantalla de Game Over, música y botones de reintento."));
 					add_tree_screen(root_item, "HUD", "hud", String::utf8("Indicadores en pantalla durante el juego (PV, oro, widgets)."));
-					add_tree_screen(root_item, "Mensajes y batalla", "messages_battle", String::utf8("Cuadros de diálogo y comandos de batalla."));
+					add_tree_screen(root_item, "Mensajes", "messages", String::utf8("Cuadro de diálogo, caja de nombre, retrato, elecciones, número e historial."));
+					add_tree_screen(root_item, "Batalla", "battle", String::utf8("Comandos de combate, panel de grupo, enemigos y aviso de batalla."));
 				} else {
 					Dictionary root_meta = dm ? dm->get_menu_metadata(system_scope_root) : Dictionary();
 					String root_lbl = String(root_meta.get("name", system_scope_root));
@@ -9816,7 +9818,7 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 		test_hud->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		test_window->add_child(test_hud);
 		test_hud->reload_from_data_manager();
-	} else if (current_screen_id == "messages_battle" || (current_screen_id == "game_over" && !dm->has_custom_ui_design("game_over"))) {
+	} else if (current_screen_id == "messages" || current_screen_id == "battle" || (current_screen_id == "game_over" && !dm->has_custom_ui_design("game_over"))) {
 		ColorRect *bg = memnew(ColorRect);
 		bg->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		bg->set_color(current_screen_id == "game_over" ? Color::html("#0c070cff") : Color::html("#131823ff"));
@@ -9825,7 +9827,7 @@ Window *ClockGearsUiDesignEditor::open_test_popup() {
 		ClockGearsUiDesignLayer *layer = memnew(ClockGearsUiDesignLayer);
 		layer->set_name("TestUiIsolatedLayer");
 		layer->set_preview_mode(false);
-		layer->set_window_type_fallback(current_screen_id == "messages_battle" ? "message" : "game_menu");
+		layer->set_window_type_fallback(current_screen_id == "messages" ? "message" : (current_screen_id == "battle" ? "battle_commands" : "game_menu"));
 		layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		Dictionary d = dm->has_custom_ui_design(current_screen_id)
 				? dm->get_ui_screen_design(current_screen_id)
@@ -10653,11 +10655,16 @@ void ClockGearsUiDesignEditor::_refresh_screen_settings_panel() {
 		s_ss_populate_window_styles(gws_opt, dm, String(gcfg.get("window_style_id", "default")), String::utf8("Por defecto"));
 		gws_opt->connect("item_selected", cb.unbind(1));
 		s_ss_add_row(screen_settings_body, "Estilo:", String::utf8("Estilo visual aplicado a la ventana de Fin del Juego."), gws_opt, EDSCALE);
-	} else if (current_screen_id == "messages_battle") {
-		Label *mb_info = memnew(Label(String::utf8("Cuadro de diálogo inferior, retrato, nombre de hablante y comandos de batalla. Arrastra o personaliza cualquier elemento en el lienzo.")));
+	} else if (current_screen_id == "messages") {
+		Label *mb_info = memnew(Label(String::utf8("Cuadro de diálogo, caja de nombre, retratos, ventana de elecciones, entrada de número e historial. Arrastra o personaliza cualquier elemento en el lienzo.")));
 		mb_info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 		mb_info->add_theme_color_override("font_color", Color(0.80f, 0.84f, 0.92f));
 		screen_settings_body->add_child(mb_info);
+	} else if (current_screen_id == "battle") {
+		Label *bt_info = memnew(Label(String::utf8("Panel de comandos de combate, grupo, enemigos y Aviso de batalla. Arrastra o personaliza cualquier elemento en el lienzo.")));
+		bt_info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		bt_info->add_theme_color_override("font_color", Color(0.80f, 0.84f, 0.92f));
+		screen_settings_body->add_child(bt_info);
 	} else {
 		Label *info = memnew(Label(String::utf8("Personaliza fondo, animaciones, entradas y elementos visuales desde el lienzo y las secciones de abajo.")));
 		info->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);

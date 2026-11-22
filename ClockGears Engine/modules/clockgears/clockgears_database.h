@@ -1506,7 +1506,8 @@ public:
 		DB_CAT_MENU_INVENTORY = CAT_MAX + 9,
 		DB_CAT_MENU_EQUIP = CAT_MAX + 10,
 		DB_CAT_MENU_STATUS = CAT_MAX + 11,
-		DB_CAT_MENU_MESSAGES_BATTLE = CAT_MAX + 12
+		DB_CAT_MENU_MESSAGES = CAT_MAX + 12,
+		DB_CAT_MENU_BATTLE = CAT_MAX + 13
 	};
 	void open_database();
 	void select_category(int p_category);

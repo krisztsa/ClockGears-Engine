@@ -1248,6 +1248,28 @@ void ClockGearsBattleScene::_update_initiative_bar() {
 
 void ClockGearsBattleScene::_display_message(const String &p_text) {
 	if (message_window) {
+		String notice_wt;
+		if (ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton()) {
+			Dictionary bdesign = dm->has_custom_ui_design("battle")
+					? dm->get_ui_screen_design("battle")
+					: dm->get_default_ui_screen_template("battle");
+			Array belems = bdesign.get("elements", Array());
+			for (int i = 0; i < belems.size(); i++) {
+				if (belems[i].get_type() != Variant::DICTIONARY) continue;
+				Dictionary el = belems[i];
+				String eid = String(el.get("id", "")).to_lower();
+				String ename = String(el.get("name", "")).to_lower();
+				if (eid == "battle_notice_frame" || ename == "aviso de batalla") {
+					message_window->set_meta("_cg_battle_notice_source", el.get("id", "battle_notice_frame"));
+					String ws = String(el.get("window_style_id", "")).strip_edges().to_lower();
+					if (!ws.is_empty() && ws != "dialog" && ws != "default" && dm->has_custom_ui_design("battle")) {
+						notice_wt = ws;
+					}
+					break;
+				}
+			}
+		}
+		message_window->set_message_window_type_override(notice_wt);
 		message_window->show_message(p_text, "", "", ClockGearsMessageWindow::POS_BOTTOM, ClockGearsMessageWindow::BG_WINDOW);
 	}
 }

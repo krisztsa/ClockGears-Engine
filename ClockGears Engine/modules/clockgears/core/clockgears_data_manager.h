@@ -50,7 +50,7 @@ class ClockGearsDataManager : public Object {
 
 public:
 	static constexpr int CURRENT_SCHEMA_VERSION = 3;
-	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 3;
+	static constexpr int CURRENT_UI_DESIGNS_SCHEMA_VERSION = 4;
 	static constexpr int MAX_CUSTOM_MAP_LAYERS = 16;
 
 	static void normalize_record_defaults(int p_category, Dictionary &r_record);
@@ -518,6 +518,7 @@ public:
 	// Editor simulation helpers and Etapa 1 custom layers / dimming
 	static String sanitize_custom_layer_node_name(const String &p_id);
 	static Dictionary normalize_custom_map_layer(const Dictionary &p_raw, int p_idx = 0);
+	static Dictionary get_last_ui_migration_report();
 	Array get_custom_map_layers() const;
 	void set_custom_map_layers(const Array &p_layers);
 	Dictionary get_custom_map_layer(const String &p_id) const;

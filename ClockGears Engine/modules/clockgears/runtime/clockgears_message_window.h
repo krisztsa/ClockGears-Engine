@@ -118,6 +118,7 @@ private:
 	uint64_t opened_process_frame = 0;
 	String current_face_base_path;
 	String current_speaker_name;
+	String message_style_override;
 	String current_expression;
 	int current_face_frame = 0;
 
@@ -170,6 +171,7 @@ public:
 	State get_state() const { return current_state; }
 	int get_message_state() const { return int(current_state); }
 	bool is_busy() const { return current_state != STATE_CLOSED; }
+	void set_message_window_type_override(const String &p_window_type_id);
 	void refresh_window_styles() { _apply_unified_styles(); }
 
 	ClockGearsMessageWindow();

@@ -215,7 +215,7 @@ static bool s_is_arpg_shape_category(int p_category) {
 
 static bool s_is_category_visible_in_mode(int p_category, int p_combat_mode) {
 	if (p_category >= ClockGearsDatabaseDialog::DB_CAT_MAIN_MENU &&
-			p_category <= ClockGearsDatabaseDialog::DB_CAT_MENU_MESSAGES_BATTLE) {
+			p_category <= ClockGearsDatabaseDialog::DB_CAT_MENU_BATTLE) {
 		return true;
 	}
 	if (p_combat_mode == COMBAT_MODE_ACTION_RPG) {
@@ -847,8 +847,10 @@ String ClockGearsDatabaseDialog::_get_category_name(int p_category) const {
 			return CG_DB_TR("Interfaz");
 		case DB_CAT_GAME_OVER:
 			return CG_DB_TR("Game Over");
-		case DB_CAT_MENU_MESSAGES_BATTLE:
-			return CG_DB_TR("Mensajes y batalla");
+		case DB_CAT_MENU_MESSAGES:
+			return CG_DB_TR("Mensajes");
+		case DB_CAT_MENU_BATTLE:
+			return CG_DB_TR("Batalla");
 		default:
 			return CG_DB_TR("Datos");
 	}
@@ -1200,7 +1202,8 @@ void ClockGearsDatabaseDialog::_init_chapters() {
 			DB_CAT_CREDITS,
 			DB_CAT_GAME_OVER,
 			DB_CAT_HUD,
-			DB_CAT_MENU_MESSAGES_BATTLE,
+			DB_CAT_MENU_MESSAGES,
+			DB_CAT_MENU_BATTLE,
 			DB_CAT_WINDOW_STYLES });
 
 	// Cualquier categoría futura que no esté listada entra al capítulo más cercano sin perderse
@@ -1256,8 +1259,10 @@ static String _cg_get_system_scope_for_category(int p_category) {
 			return "game_over";
 		case ClockGearsDatabaseDialog::DB_CAT_HUD:
 			return "hud";
-		case ClockGearsDatabaseDialog::DB_CAT_MENU_MESSAGES_BATTLE:
-			return "messages_battle";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_MESSAGES:
+			return "messages";
+		case ClockGearsDatabaseDialog::DB_CAT_MENU_BATTLE:
+			return "battle";
 		default:
 			return "";
 	}
@@ -1363,7 +1368,7 @@ void ClockGearsDatabaseDialog::_save_editor_ui_state() {
 }
 
 void ClockGearsDatabaseDialog::_on_category_selected(int p_category) {
-	if (p_category < 0 || (p_category >= CAT_MAX && !(p_category >= DB_CAT_MAIN_MENU && p_category <= DB_CAT_MENU_MESSAGES_BATTLE))) {
+	if (p_category < 0 || (p_category >= CAT_MAX && !(p_category >= DB_CAT_MAIN_MENU && p_category <= DB_CAT_MENU_BATTLE))) {
 		return;
 	}
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
@@ -5825,7 +5830,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	cats_panel->add_child(cats_bar);
 
 	const float cat_btn_h = MAX(row_h, float(icon_px + 16));
-	for (int i = 0; i <= DB_CAT_MENU_MESSAGES_BATTLE; i++) {
+	for (int i = 0; i <= DB_CAT_MENU_BATTLE; i++) {
 		Button *btn = memnew(Button(_get_category_name(i)));
 		btn->set_theme_type_variation("ClockGearsTabButton");
 		btn->set_toggle_mode(true);
@@ -8407,7 +8412,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 
 	Dictionary init_ui_state = _load_editor_ui_state();
 	int init_cat = int(init_ui_state.get("last_category", CAT_ACTORS));
-	if (init_cat < 0 || init_cat > DB_CAT_MENU_MESSAGES_BATTLE) {
+	if (init_cat < 0 || init_cat > DB_CAT_MENU_BATTLE) {
 		init_cat = CAT_ACTORS;
 	}
 	if (init_cat == DB_CAT_UI_DESIGNER) {
@@ -8507,7 +8512,7 @@ void ClockGearsDatabaseDialog::open_database() {
 	_load_database_from_disk();
 	Dictionary ui_state = _load_editor_ui_state();
 	int last_cat = int(ui_state.get("last_category", current_category));
-	if (last_cat >= 0 && last_cat <= DB_CAT_MENU_MESSAGES_BATTLE) {
+	if (last_cat >= 0 && last_cat <= DB_CAT_MENU_BATTLE) {
 		current_category = (last_cat == DB_CAT_UI_DESIGNER) ? DB_CAT_MAIN_MENU : last_cat;
 	}
 	_on_category_selected(current_category);
@@ -12868,8 +12873,10 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 				ckey = "ui_designer";
 			} else if (cid == DB_CAT_GAME_OVER) {
 				ckey = "game_over";
-			} else if (cid == DB_CAT_MENU_MESSAGES_BATTLE) {
-				ckey = "messages_battle";
+			} else if (cid == DB_CAT_MENU_MESSAGES) {
+				ckey = "messages";
+			} else if (cid == DB_CAT_MENU_BATTLE) {
+				ckey = "battle";
 			} else {
 				ckey = ClockGearsDataManager::get_category_key(cid);
 			}
@@ -12914,8 +12921,10 @@ Dictionary ClockGearsDatabaseDialog::get_chapter_structure_info() const {
 		out["current_category_key"] = String("ui_designer");
 	} else if (current_category == DB_CAT_GAME_OVER) {
 		out["current_category_key"] = String("game_over");
-	} else if (current_category == DB_CAT_MENU_MESSAGES_BATTLE) {
-		out["current_category_key"] = String("messages_battle");
+	} else if (current_category == DB_CAT_MENU_MESSAGES) {
+		out["current_category_key"] = String("messages");
+	} else if (current_category == DB_CAT_MENU_BATTLE) {
+		out["current_category_key"] = String("battle");
 	} else {
 		out["current_category_key"] = ClockGearsDataManager::get_category_key(current_category);
 	}
@@ -12972,8 +12981,12 @@ void ClockGearsDatabaseDialog::select_category_by_key(const String &p_key) {
 		_on_category_selected(DB_CAT_GAME_OVER);
 		return;
 	}
-	if (p_key == "messages_battle") {
-		_on_category_selected(DB_CAT_MENU_MESSAGES_BATTLE);
+	if (p_key == "messages" || p_key == "messages_battle") {
+		_on_category_selected(DB_CAT_MENU_MESSAGES);
+		return;
+	}
+	if (p_key == "battle") {
+		_on_category_selected(DB_CAT_MENU_BATTLE);
 		return;
 	}
 	for (int i = 0; i < CAT_MAX; i++) {

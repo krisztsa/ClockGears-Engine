@@ -428,10 +428,17 @@ void ClockGearsMessageWindow::_update_background_style() {
 			main_panel->add_theme_style_override("panel", style_transparent);
 			break;
 		case BG_WINDOW:
-		default:
-			ClockGearsWindowStyleManager::apply_window_style(main_panel, "message");
+		default: {
+			String wt = message_style_override.is_empty() ? String("message") : message_style_override;
+			ClockGearsWindowStyleManager::apply_window_style(main_panel, wt);
 			break;
+		}
 	}
+}
+
+void ClockGearsMessageWindow::set_message_window_type_override(const String &p_window_type_id) {
+	message_style_override = p_window_type_id.strip_edges().to_lower();
+	_update_background_style();
 }
 
 void ClockGearsMessageWindow::set_face(const String &p_path, int p_frame, const String &p_expression) {
