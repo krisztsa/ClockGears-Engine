@@ -229,11 +229,31 @@ void ProjectManager::_update_compact_mode(bool p_reset_threshold) {
 	}
 }
 
+Rect2i ProjectManager::compute_16_9_usable_window_rect(const Rect2i &p_usable_rect) {
+	Rect2i usable = p_usable_rect;
+	if (usable.size.x <= 0 || usable.size.y <= 0) {
+		return Rect2i(0, 0, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT);
+	}
+	const int max_fit_k = MAX(1, MIN(usable.size.x / 16, usable.size.y / 9));
+	const int budget_w = int(Math::floor(double(usable.size.x) * 0.80));
+	const int budget_h = int(Math::floor(double(usable.size.y) * 0.80));
+	const int k_80 = MIN(budget_w / 16, budget_h / 9);
+	int k = MIN(k_80, 100); // Máximo 1600x900 (k=100)
+	if (usable.size.x >= 960 && usable.size.y >= 540) {
+		k = CLAMP(k, 60, max_fit_k); // Mínimo 960x540 (k=60) si cabe en el área útil
+	} else {
+		k = max_fit_k;
+	}
+	const Vector2i win_sz(k * 16, k * 9);
+	const Vector2i win_pos = usable.position + (usable.size - win_sz) / 2;
+	return Rect2i(win_pos, win_sz);
+}
+
 void ProjectManager::_update_size_limits() {
-	const Size2 default_minimum_size = Size2(720, 450) * EDSCALE;
+	const Size2 default_minimum_size = Size2(640, 360) * EDSCALE;
 	const Size2 display_size = DisplayServer::get_singleton()->screen_get_usable_rect(DisplayServerEnums::SCREEN_OF_MAIN_WINDOW).size;
 	const real_t smallest_display_dimension = display_size.width < display_size.height ? display_size.width : display_size.height;
-	const Size2 minimum_size = default_minimum_size.minf(smallest_display_dimension);
+	const Size2 minimum_size = (smallest_display_dimension > 0.0f) ? default_minimum_size.minf(smallest_display_dimension) : default_minimum_size;
 
 	// Define a minimum window size to prevent UI elements from overlapping or being cut off.
 	Window *w = Object::cast_to<Window>(SceneTree::get_singleton()->get_root());
@@ -242,14 +262,15 @@ void ProjectManager::_update_size_limits() {
 		w->set_min_size(minimum_size);
 		DisplayServer::get_singleton()->window_set_min_size(minimum_size);
 	}
-	Size2 real_size = DisplayServer::get_singleton()->window_get_size();
 
 	Rect2i screen_rect = DisplayServer::get_singleton()->screen_get_usable_rect(DisplayServer::get_singleton()->window_get_current_screen());
 	if (screen_rect.size != Vector2i()) {
-		// Center the window on the screen.
-		Vector2i window_position;
-		window_position.x = screen_rect.position.x + (screen_rect.size.x - real_size.x) / 2;
-		window_position.y = screen_rect.position.y + (screen_rect.size.y - real_size.y) / 2;
+		// Al abrir en el Administrador real, forzar proporción 16:9 centrada (sin recordar tamaños no 16:9).
+		if (w && w->get_mode() == Window::MODE_WINDOWED && Engine::get_singleton()->is_project_manager_hint()) {
+			const Rect2i target_rect = compute_16_9_usable_window_rect(screen_rect);
+			DisplayServer::get_singleton()->window_set_size(target_rect.size, DisplayServerEnums::MAIN_WINDOW_ID);
+			DisplayServer::get_singleton()->window_set_position(target_rect.position, DisplayServerEnums::MAIN_WINDOW_ID);
+		}
 
 		// Limit popup menus to prevent unusably long lists.
 		// We try to set it to half the screen resolution, but no smaller than the minimum window size.
@@ -1205,8 +1226,11 @@ void ProjectManager::_update_selected_preview() {
 		sidebar_preview_icon->set_texture(default_icon);
 		sidebar_preview_icon->set_self_modulate(Color(1, 1, 1, 0.45f));
 		sidebar_preview_name->set_text(String::utf8("Sin proyecto seleccionado"));
+		sidebar_preview_path->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		sidebar_preview_path->set_clip_text(false);
+		sidebar_preview_path->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		sidebar_preview_path->set_text(String::utf8("Elige un proyecto de la lista para ver sus acciones."));
-		sidebar_preview_path->set_tooltip_text(String());
+		sidebar_preview_path->set_tooltip_text(String::utf8("Elige un proyecto de la lista para ver sus acciones."));
 		return;
 	}
 
@@ -1221,8 +1245,11 @@ void ProjectManager::_update_selected_preview() {
 		sidebar_preview_icon->set_texture(icon);
 		sidebar_preview_icon->set_self_modulate(Color(1, 1, 1, 1));
 		sidebar_preview_name->set_text(vformat(String::utf8("%d proyectos seleccionados"), selected_projects.size()));
+		sidebar_preview_path->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+		sidebar_preview_path->set_clip_text(false);
+		sidebar_preview_path->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 		sidebar_preview_path->set_text(String::utf8("Usa Editar, Ejecutar o Eliminar de la lista."));
-		sidebar_preview_path->set_tooltip_text(String());
+		sidebar_preview_path->set_tooltip_text(String::utf8("Usa Editar, Ejecutar o Eliminar de la lista."));
 		return;
 	}
 
@@ -1238,9 +1265,16 @@ void ProjectManager::_update_selected_preview() {
 	sidebar_preview_icon->set_self_modulate(item.missing ? Color(1, 1, 1, 0.55f) : Color(1, 1, 1, 1));
 	sidebar_preview_name->set_text(item.project_name.is_empty() ? String::utf8("Proyecto sin título") : item.project_name);
 
+	sidebar_preview_path->set_autowrap_mode(TextServer::AUTOWRAP_OFF);
+	sidebar_preview_path->set_clip_text(true);
+	sidebar_preview_path->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
 	Ref<Font> path_font = sidebar_preview_path->get_theme_font(SceneStringName(font));
 	int path_size = sidebar_preview_path->get_theme_font_size(SceneStringName(font_size));
-	float max_w = MAX(140.0f * EDSCALE, sidebar_preview_path->get_size().x);
+	float max_w = sidebar_preview_path->get_size().x;
+	if (max_w < 80.0f && sidebar_panel) {
+		max_w = MAX(140.0f * EDSCALE, sidebar_panel->get_custom_minimum_size().x - 92.0f * EDSCALE);
+	}
+	max_w = MAX(120.0f * EDSCALE, max_w);
 	String elided = ProjectList::elide_path_middle(item.path, path_font, path_size, max_w);
 	if (item.missing) {
 		sidebar_preview_path->set_text(String::utf8("Faltante • ") + elided);
@@ -2231,19 +2265,22 @@ ProjectManager::ProjectManager() {
 
 	// Footer bar (Pie de página: izquierda sin conexión, derecha versión).
 	{
-		HBoxContainer *footer_bar = memnew(HBoxContainer);
+		footer_bar = memnew(HBoxContainer);
 		footer_bar->add_theme_constant_override("separation", int(12 * EDSCALE));
 		main_vbox->add_child(footer_bar);
 
 #ifdef ENGINE_UPDATE_CHECK_ENABLED
 		EngineUpdateLabel *update_label = memnew(EngineUpdateLabel);
+		update_label->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 		footer_bar->add_child(update_label);
+		footer_status_ctrl = update_label;
 		update_label->connect("offline_clicked", callable_mp(this, &ProjectManager::_show_quick_settings));
 #else
 		Label *offline_footer_lbl = memnew(Label);
 		offline_footer_lbl->set_text(String::utf8("Modo sin conexión • Comprobación de actualizaciones deshabilitada"));
 		offline_footer_lbl->set_self_modulate(Color(1, 1, 1, 0.72f));
 		footer_bar->add_child(offline_footer_lbl);
+		footer_status_ctrl = offline_footer_lbl;
 #endif
 
 		Control *footer_spacer = memnew(Control);
@@ -2580,10 +2617,40 @@ Dictionary ProjectManager::inspect_layout_metrics() const {
 		}
 	}
 	out["horizontal_overflows"] = overflows;
+	PackedStringArray v_overflows;
+	stack.clear();
+	stack.push_back(const_cast<ProjectManager *>(this));
+	while (!stack.is_empty()) {
+		Node *n = stack[stack.size() - 1];
+		stack.remove_at(stack.size() - 1);
+		if (Control *c = Object::cast_to<Control>(n)) {
+			if (!c->is_visible_in_tree()) {
+				continue;
+			}
+			Control *par = Object::cast_to<Control>(c->get_parent());
+			if (par && Object::cast_to<ScrollContainer>(par)) {
+				continue;
+			}
+			Rect2 r = c->get_global_rect();
+			if (r.position.y < -2.0f || r.position.y + r.size.y > root_rect.size.y + 2.0f) {
+				v_overflows.push_back(c->get_class() + ":" + String(c->get_name()) + " (" + String::num(r.position.y) + ".." + String::num(r.position.y + r.size.y) + " vs " + String::num(root_rect.size.y) + ")");
+			}
+		}
+		for (int i = 0; i < n->get_child_count(); i++) {
+			stack.push_back(n->get_child(i));
+		}
+	}
+	out["vertical_overflows"] = v_overflows;
+	out["footer_rect"] = footer_bar ? footer_bar->get_global_rect() : Rect2();
+	out["footer_visible"] = footer_bar ? footer_bar->is_visible_in_tree() : false;
+	out["footer_status_rect"] = footer_status_ctrl ? footer_status_ctrl->get_global_rect() : Rect2();
+	out["sidebar_path_rect"] = sidebar_preview_path ? sidebar_preview_path->get_global_rect() : Rect2();
+	out["sidebar_path_lines"] = sidebar_preview_path ? sidebar_preview_path->get_line_count() : 0;
 	return out;
 }
 
 void ProjectManager::_bind_methods() {
+	ClassDB::bind_static_method("ProjectManager", D_METHOD("compute_16_9_usable_window_rect", "usable_rect"), &ProjectManager::compute_16_9_usable_window_rect);
 	ClassDB::bind_method(D_METHOD("get_search_box"), &ProjectManager::get_search_box);
 	ClassDB::bind_method(D_METHOD("get_project_list"), &ProjectManager::get_project_list);
 	ClassDB::bind_method(D_METHOD("reload_projects_from_config_for_test", "cfg_path"), &ProjectManager::reload_projects_from_config_for_test);

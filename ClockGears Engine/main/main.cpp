@@ -3557,9 +3557,13 @@ Error Main::setup2(bool p_show_boot_logo) {
 					break;
 			}
 			if (!(force_res || use_custom_res)) {
-				display_server->window_set_size(Size2(window_size) * ui_scale, DisplayServerEnums::MAIN_WINDOW_ID);
-			}
-			if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
+				Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
+				Rect2i pm_rect = ProjectManager::compute_16_9_usable_window_rect(scr_rect);
+				display_server->window_set_size(pm_rect.size, DisplayServerEnums::MAIN_WINDOW_ID);
+				if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS) && scr_rect.size != Vector2i()) {
+					display_server->window_set_position(pm_rect.position, DisplayServerEnums::MAIN_WINDOW_ID);
+				}
+			} else if (display_server->has_feature(DisplayServerEnums::FEATURE_SUBWINDOWS) && !display_server->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
 				Size2 real_size = DisplayServer::get_singleton()->window_get_size();
 				Rect2i scr_rect = display_server->screen_get_usable_rect(init_screen);
 				display_server->window_set_position(scr_rect.position + (scr_rect.size - real_size) / 2, DisplayServerEnums::MAIN_WINDOW_ID);

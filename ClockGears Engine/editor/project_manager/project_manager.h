@@ -169,6 +169,8 @@ class ProjectManager : public Control {
 	Button *view_grid_btn = nullptr;
 	Ref<ButtonGroup> view_mode_group;
 	PanelContainer *project_list_panel = nullptr;
+	HBoxContainer *footer_bar = nullptr;
+	Control *footer_status_ctrl = nullptr;
 
 	Button *create_btn = nullptr;
 	Button *import_btn = nullptr;
@@ -298,8 +300,10 @@ protected:
 public:
 	static ProjectManager *get_singleton() { return singleton; }
 
-	static constexpr int DEFAULT_WINDOW_WIDTH = 1152;
-	static constexpr int DEFAULT_WINDOW_HEIGHT = 800;
+	static constexpr int DEFAULT_WINDOW_WIDTH = 1280;
+	static constexpr int DEFAULT_WINDOW_HEIGHT = 720;
+
+	static Rect2i compute_16_9_usable_window_rect(const Rect2i &p_usable_rect);
 
 	// Project list.
 
