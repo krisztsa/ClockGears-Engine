@@ -1017,6 +1017,21 @@ static void _cg_apply_common_neon_copper_controls(const Ref<Theme> &th, bool p_b
 	th->set_stylebox("focus", "ClockGearsIconButton", btn_f);
 	th->set_stylebox("disabled", "ClockGearsIconButton", ic_d);
 
+	// 1c. Botón circular de cierre ("ClockGearsCircleCloseButton") usando tokens del tema
+	auto make_circle_close_sb = [&](const Ref<ClockGearsBrassStyleBox> &p_src) {
+		Ref<ClockGearsBrassStyleBox> cb = p_src->duplicate();
+		cb->set_corner_radius_all(int(999 * p_scale));
+		cb->set_content_margin_all(0);
+		return cb;
+	};
+	th->set_type_variation("ClockGearsCircleCloseButton", "Button");
+	th->set_stylebox("normal", "ClockGearsCircleCloseButton", make_circle_close_sb(ic_n));
+	th->set_stylebox("hover", "ClockGearsCircleCloseButton", make_circle_close_sb(ic_h));
+	th->set_stylebox("pressed", "ClockGearsCircleCloseButton", make_circle_close_sb(ic_p));
+	th->set_stylebox("hover_pressed", "ClockGearsCircleCloseButton", make_circle_close_sb(ic_hp));
+	th->set_stylebox("focus", "ClockGearsCircleCloseButton", make_circle_close_sb(btn_f));
+	th->set_stylebox("disabled", "ClockGearsCircleCloseButton", make_circle_close_sb(ic_d));
+
 	// 2. Casillas y conmutadores (CheckBox, CheckButton): redondeados (6 px), con brillo cuando están activos
 	Ref<ClockGearsBrassStyleBox> chk_n;
 	chk_n.instantiate();
@@ -1763,6 +1778,20 @@ Ref<Theme> ClockGearsTheme::_build_theme(bool p_light, float p_scale, bool *r_ha
 	th->set_stylebox("focus", "ClockGearsIconButton", ic_btn_h);
 	th->set_stylebox("disabled", "ClockGearsIconButton", ic_btn_n);
 
+	auto make_flat_circle_sb = [&](const Ref<StyleBoxFlat> &p_src) {
+		Ref<StyleBoxFlat> cb = p_src->duplicate();
+		cb->set_corner_radius_all(int(999 * p_scale));
+		cb->set_content_margin_all(0);
+		return cb;
+	};
+	th->set_type_variation("ClockGearsCircleCloseButton", "Button");
+	th->set_stylebox("normal", "ClockGearsCircleCloseButton", make_flat_circle_sb(ic_btn_n));
+	th->set_stylebox("hover", "ClockGearsCircleCloseButton", make_flat_circle_sb(ic_btn_h));
+	th->set_stylebox("pressed", "ClockGearsCircleCloseButton", make_flat_circle_sb(ic_btn_p));
+	th->set_stylebox("hover_pressed", "ClockGearsCircleCloseButton", make_flat_circle_sb(ic_btn_p));
+	th->set_stylebox("focus", "ClockGearsCircleCloseButton", make_flat_circle_sb(ic_btn_h));
+	th->set_stylebox("disabled", "ClockGearsCircleCloseButton", make_flat_circle_sb(ic_btn_n));
+
 	// 3b. CheckBox & CheckButton (borde 1px al pasar/enfocar/marcar, esquinas 6px, padding 8px)
 	Ref<StyleBoxFlat> chk_normal;
 	chk_normal.instantiate();
@@ -2394,6 +2423,20 @@ Ref<Theme> ClockGearsTheme::_build_brass_theme(float p_scale, bool *r_has_editor
 	th->set_stylebox("hover_pressed", "ClockGearsIconButton", ic_btn_p);
 	th->set_stylebox("focus", "ClockGearsIconButton", ic_btn_h);
 	th->set_stylebox("disabled", "ClockGearsIconButton", ic_btn_n);
+
+	auto make_brass_circle_sb = [&](const Ref<ClockGearsBrassStyleBox> &p_src) {
+		Ref<ClockGearsBrassStyleBox> cb = p_src->duplicate();
+		cb->set_corner_radius_all(int(999 * p_scale));
+		cb->set_content_margin_all(0);
+		return cb;
+	};
+	th->set_type_variation("ClockGearsCircleCloseButton", "Button");
+	th->set_stylebox("normal", "ClockGearsCircleCloseButton", make_brass_circle_sb(ic_btn_n));
+	th->set_stylebox("hover", "ClockGearsCircleCloseButton", make_brass_circle_sb(ic_btn_h));
+	th->set_stylebox("pressed", "ClockGearsCircleCloseButton", make_brass_circle_sb(ic_btn_p));
+	th->set_stylebox("hover_pressed", "ClockGearsCircleCloseButton", make_brass_circle_sb(ic_btn_p));
+	th->set_stylebox("focus", "ClockGearsCircleCloseButton", make_brass_circle_sb(ic_btn_h));
+	th->set_stylebox("disabled", "ClockGearsCircleCloseButton", make_brass_circle_sb(ic_btn_n));
 
 	// 3b. CheckBox & CheckButton
 	Ref<ClockGearsBrassStyleBox> chk_normal;

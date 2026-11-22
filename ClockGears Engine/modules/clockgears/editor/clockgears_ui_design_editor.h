@@ -678,6 +678,7 @@ private:
 	Array wizard_triggers;
 
 	AcceptDialog *template_gallery_dialog = nullptr;
+	Button *tpl_close_x_btn = nullptr;
 	TabContainer *template_tabs = nullptr;
 	GridContainer *tpl_screen_grid = nullptr;
 	GridContainer *tpl_comp_grid = nullptr;
@@ -795,6 +796,8 @@ private:
 	void _on_add_submenu_pressed();
 	void _on_add_button_bar_pressed();
 	void _on_templates_btn_pressed();
+	void _on_tpl_close_requested();
+	void _on_tpl_window_input(const Ref<InputEvent> &p_event);
 	void _on_tpl_card_selected(const String &p_tpl_id);
 	void _on_tpl_apply_pressed();
 	void _on_tpl_apply_confirmed();

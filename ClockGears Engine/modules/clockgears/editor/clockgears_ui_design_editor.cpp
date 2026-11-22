@@ -28,6 +28,7 @@
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 #include "scene/resources/image_texture.h"
+#include "servers/display/display_server.h"
 #include "scene/resources/texture.h"
 
 namespace {
@@ -4480,9 +4481,17 @@ void ClockGearsUiDesignEditor::_build_ui() {
 
 	// --- Galería de Plantillas (4B) ---
 	template_gallery_dialog = memnew(AcceptDialog);
+	template_gallery_dialog->set_name("UiTemplateGalleryDialog");
 	template_gallery_dialog->set_title("Biblioteca de plantillas");
-	template_gallery_dialog->set_min_size(Size2i(int(760 * EDSCALE), int(520 * EDSCALE)));
+	template_gallery_dialog->set_min_size(Size2i(int(640 * EDSCALE), int(420 * EDSCALE)));
+	template_gallery_dialog->set_flag(Window::FLAG_POPUP, false);
+	template_gallery_dialog->set_transient(true);
+	template_gallery_dialog->set_exclusive(false);
+	template_gallery_dialog->set_close_on_escape(true);
 	template_gallery_dialog->get_ok_button()->hide();
+	template_gallery_dialog->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_close_requested));
+	template_gallery_dialog->connect("canceled", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_close_requested));
+	template_gallery_dialog->connect("window_input", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_window_input));
 	add_child(template_gallery_dialog);
 
 	VBoxContainer *gal_vb = memnew(VBoxContainer);
@@ -4490,6 +4499,24 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	gal_vb->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	gal_vb->add_theme_constant_override("separation", int(8 * EDSCALE));
 	template_gallery_dialog->add_child(gal_vb);
+
+	HBoxContainer *gal_hdr = memnew(HBoxContainer);
+	gal_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gal_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
+	gal_vb->add_child(gal_hdr);
+
+	Label *gal_hdr_lbl = memnew(Label("Elige una plantilla o componente para aplicar al diseño actual:"));
+	gal_hdr_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	gal_hdr_lbl->set_clip_text(true);
+	gal_hdr->add_child(gal_hdr_lbl);
+
+	tpl_close_x_btn = memnew(Button(String::utf8("×")));
+	tpl_close_x_btn->set_name("TplCloseXBtn");
+	tpl_close_x_btn->set_theme_type_variation("ClockGearsCircleCloseButton");
+	tpl_close_x_btn->set_custom_minimum_size(Size2(int(28 * EDSCALE), int(28 * EDSCALE)));
+	tpl_close_x_btn->set_tooltip_text(String::utf8("Cerrar sin aplicar nada (Esc)"));
+	tpl_close_x_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_close_requested));
+	gal_hdr->add_child(tpl_close_x_btn);
 
 	template_tabs = memnew(TabContainer);
 	template_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -4499,7 +4526,11 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	auto make_tpl_tab = [&](const String &p_tab_name, GridContainer *&r_grid) {
 		ScrollContainer *sc = memnew(ScrollContainer);
 		sc->set_name(p_tab_name);
+		sc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		sc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		sc->set_clip_contents(true);
 		sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+		sc->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 		r_grid = memnew(GridContainer);
 		r_grid->set_columns(3);
 		r_grid->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -8306,11 +8337,16 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 			th->set_custom_minimum_size(Size2(192 * EDSCALE, 108 * EDSCALE));
 			th->setup_template(t);
 			vb->add_child(th);
-			Button *sb = memnew(Button(String(t.get("name", tid))));
+			String tname = String(t.get("name", tid));
+			String tdesc = String(t.get("description", ""));
+			Button *sb = memnew(Button(tname));
 			sb->set_toggle_mode(true);
 			sb->set_pressed(tid == selected_gallery_template_id);
 			sb->set_clip_text(true);
+			sb->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			sb->set_tooltip_text(tdesc.is_empty() ? tname : (tname + "\n" + tdesc));
 			sb->set_meta("tpl_id", tid);
+			sb->set_meta("long_help", tdesc.is_empty() ? tname : tdesc);
 			s_make_rounded_action_btn(sb);
 			sb->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_tpl_card_selected).bind(tid));
 			vb->add_child(sb);
@@ -8322,6 +8358,20 @@ void ClockGearsUiDesignEditor::_populate_template_gallery() {
 	fill_grid(tpl_user_grid, dm ? dm->get_user_menu_templates() : Array());
 }
 
+void ClockGearsUiDesignEditor::_on_tpl_close_requested() {
+	pending_apply_template_id = "";
+	if (template_gallery_dialog) {
+		template_gallery_dialog->hide();
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_tpl_window_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventKey> ek = p_event;
+	if (ek.is_valid() && ek->is_pressed() && !ek->is_echo() && ek->get_keycode() == Key::ESCAPE) {
+		_on_tpl_close_requested();
+	}
+}
+
 void ClockGearsUiDesignEditor::_on_templates_btn_pressed() {
 	if (!template_gallery_dialog) {
 		return;
@@ -8330,7 +8380,25 @@ void ClockGearsUiDesignEditor::_on_templates_btn_pressed() {
 	if (!selected_gallery_template_id.is_empty()) {
 		_on_tpl_card_selected(selected_gallery_template_id);
 	}
-	template_gallery_dialog->popup_centered();
+	Size2i host_sz(1366, 768);
+	if (Window *pw = get_window()) {
+		if (pw->get_size().x >= 640 && pw->get_size().y >= 400) {
+			host_sz = pw->get_size();
+		}
+	} else if (DisplayServer::get_singleton()) {
+		int scr = DisplayServer::get_singleton()->window_get_current_screen();
+		Size2i usz = DisplayServer::get_singleton()->screen_get_usable_rect(scr).size;
+		if (usz.x >= 640 && usz.y >= 400) {
+			host_sz = usz;
+		}
+	}
+	int max_w = MAX(480, host_sz.x - int(64 * EDSCALE));
+	int max_h = MAX(360, host_sz.y - int(64 * EDSCALE));
+	Size2i pop_sz(MIN(int(900 * EDSCALE), max_w), MIN(int(640 * EDSCALE), max_h));
+	template_gallery_dialog->set_min_size(Size2i(MIN(int(640 * EDSCALE), pop_sz.x), MIN(int(360 * EDSCALE), pop_sz.y)));
+	template_gallery_dialog->set_max_size(Size2i(max_w, max_h));
+	template_gallery_dialog->set_size(pop_sz);
+	template_gallery_dialog->popup_centered(pop_sz);
 }
 
 void ClockGearsUiDesignEditor::_on_tpl_card_selected(const String &p_tpl_id) {
@@ -9921,7 +9989,11 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["wizard_next_btn"] = wizard_next_btn;
 	out["wizard_finish_btn"] = wizard_finish_btn;
 	out["template_gallery_dialog"] = template_gallery_dialog;
+	out["tpl_close_x_btn"] = tpl_close_x_btn;
+	out["template_tabs"] = template_tabs;
 	out["tpl_screen_grid"] = tpl_screen_grid;
+	out["tpl_comp_grid"] = tpl_comp_grid;
+	out["tpl_user_grid"] = tpl_user_grid;
 	out["tpl_apply_btn"] = tpl_apply_btn;
 	out["template_apply_confirm_dialog"] = template_apply_confirm_dialog;
 	out["props_mode_simple_btn"] = props_mode_simple_btn;
