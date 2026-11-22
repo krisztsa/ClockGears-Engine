@@ -609,6 +609,47 @@ func _run() -> void:
 	check(p4_screens_checked >= 12 and p4_text_broken == 0,
 		"Punto 4: Visited %d UI screen/subscreen tabs with zero broken characters (hits=%d)" % [p4_screens_checked, p4_text_broken])
 
+	# --- PUNTO 5: Panel izquierdo titulado 'Elementos', sin duplicados ni botones cortados a 1366x768 ---
+	db.select_category_by_key("main_menu")
+	db.size = Vector2i(1366, 768)
+	db.adapt_to_window_size(Vector2i(1366, 768))
+	await pump(4)
+	var h5: Dictionary = db.call("get_ui_designer_ui_handles")
+	var left_hdr: Button = h5.get("left_elements_hdr")
+	var menus_card5: Control = h5.get("menus_card")
+	var left_sc5: ScrollContainer = h5.get("left_col_scroll")
+	check(left_hdr != null and left_hdr.text.contains("Elementos") and not left_hdr.text.contains("Diseños"),
+		"Punto 5: Left panel header is 'Elementos' (not 'Diseños')")
+	var dup_menu_btns_hidden := true
+	for k in ["menu_dup_btn", "menu_up_btn", "menu_down_btn", "menu_del_btn"]:
+		var mb: Button = h5.get(k)
+		if mb != null and mb.is_visible_in_tree():
+			dup_menu_btns_hidden = false
+	check(dup_menu_btns_hidden,
+		"Punto 5: Redundant bottom screen-op buttons are hidden (no duplicate Duplicar/Subir/Bajar/Borrar/Restaurar)")
+
+	var clipped_btns := 0
+	var action_btn_count := 0
+	if menus_card5 and left_sc5:
+		var card_r := menus_card5.get_global_rect()
+		var sc_r := left_sc5.get_global_rect()
+		var lay_flow := menus_card5.find_children("*", "HFlowContainer", true, false)
+		for f in lay_flow:
+			var fc := f as Control
+			if fc == null or not fc.is_visible_in_tree():
+				continue
+			for ch in fc.get_children():
+				var btn5 := ch as Button
+				if btn5 == null or not btn5.is_visible_in_tree():
+					continue
+				action_btn_count += 1
+				var br := btn5.get_global_rect()
+				if br.position.x < card_r.position.x - 1.5 or br.end.x > card_r.end.x + 1.5 or br.position.y < card_r.position.y - 1.5 or br.end.y > card_r.end.y + 1.5 or br.end.y > sc_r.end.y + 1.5:
+					clipped_btns += 1
+					print("    CLIPPED_LEFT_BTN: ", btn5.text, " br=", br, " card_r=", card_r, " sc_r=", sc_r)
+	check(action_btn_count >= 5 and clipped_btns == 0,
+		"Punto 5 (1366x768): All %d left-panel action buttons fit without clipping (clipped=%d)" % [action_btn_count, clipped_btns])
+
 	db.queue_free()
 	await pump(2)
 	if dm_owned and dm and is_instance_valid(dm):

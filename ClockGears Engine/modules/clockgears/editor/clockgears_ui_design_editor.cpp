@@ -2952,8 +2952,9 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	menus_body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	menus_body->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	menus_body->add_theme_constant_override("separation", int(5 * EDSCALE));
-	Button *menus_hdr = _attach_collapsible_header(menus_vb, String::utf8("Diseños"), menus_body, true);
+	Button *menus_hdr = _attach_collapsible_header(menus_vb, String::utf8("Elementos"), menus_body, true);
 	if (menus_hdr) {
+		menus_hdr->set_name("LeftElementsHeaderBtn");
 		menus_hdr->set_tooltip_text(String::utf8("Elementos de la pantalla actual en orden de capas (arriba = al frente)."));
 	}
 	menus_vb->add_child(menus_body);
@@ -3065,12 +3066,16 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	design_cards_vbox->add_theme_constant_override("separation", int(4 * EDSCALE));
 	design_cards_scroll->add_child(design_cards_vbox);
 
-	menus_body->add_child(memnew(HSeparator));
+	HSeparator *menu_ops_sep = memnew(HSeparator);
+	menu_ops_sep->hide();
+	menus_body->add_child(menu_ops_sep);
 
+	// Controles heredados de la antigua lista de pantallas: ocultos para evitar duplicados y cortes en el panel Elementos.
 	HFlowContainer *menu_ops = memnew(HFlowContainer);
 	menu_ops->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	menu_ops->add_theme_constant_override("h_separation", int(4 * EDSCALE));
 	menu_ops->add_theme_constant_override("v_separation", int(4 * EDSCALE));
+	menu_ops->hide();
 	menus_body->add_child(menu_ops);
 
 	menu_dup_btn = memnew(Button("Duplicar"));
@@ -10329,6 +10334,7 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["design_layer"] = design_layer;
 	out["canvas_overlay"] = canvas_overlay;
 	out["menus_card"] = menus_card;
+	out["left_elements_hdr"] = menus_card ? menus_card->find_child("LeftElementsHeaderBtn", true, false) : nullptr;
 	out["design_cards_scroll"] = design_cards_scroll;
 	out["design_cards_vbox"] = design_cards_vbox;
 	out["layer_context_menu"] = layer_context_menu;
