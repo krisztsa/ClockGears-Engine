@@ -548,6 +548,67 @@ func _run() -> void:
 	prefs.set_long_help_delay_sec_value(3)
 	prefs.queue_free()
 
+	# --- PUNTO 4: Texto roto en vista previa de batalla y todas las pantallas/sub-pantallas ---
+	var check_no_mojibake := func(v: Variant) -> int:
+		var broken := 0
+		var stack: Array = [v]
+		while not stack.is_empty():
+			var cur = stack.pop_back()
+			if cur is String:
+				var s := String(cur)
+				if s.contains("Ã") or s.contains("Â") or s.contains("â€") or s.find(String.chr(0xFFFD)) >= 0:
+					broken += 1
+					print("    MOJIBAKE DETECTED: ", s)
+			elif cur is Array:
+				for it in cur:
+					stack.push_back(it)
+			elif cur is Dictionary:
+				for k in cur.keys():
+					stack.push_back(cur[k])
+		return broken
+
+	var ued_p4 = db.call("get_ui_designer_editor")
+	ued_p4.select_screen("battle_enemies")
+	await pump(1)
+	var be_elems: Array = ued_p4.get_effective_screen_elements()
+	var found_enemy_lbl := false
+	var enemy_lbl_clean := false
+	for el in be_elems:
+		if str(el.get("id", "")) == "battle_enemies_lbl":
+			found_enemy_lbl = true
+			var txt := str(el.get("text", ""))
+			enemy_lbl_clean = (txt == "Slime Lv.2   ·   Murciélago Lv.3" and not txt.contains("Ã") and not txt.contains("Â"))
+	check(found_enemy_lbl and enemy_lbl_clean,
+		"Punto 4: battle_enemies preview label uses exact UTF-8 ('Slime Lv.2   ·   Murciélago Lv.3') without mojibake")
+
+	var all_ui_screens_dict: Dictionary = dm.get_ui_designs_config().get("screens", {})
+	var ui_broken_cnt := int(check_no_mojibake.call(all_ui_screens_dict))
+	var enemies_arr_p4: Array = dm.get_records("enemies")
+	ui_broken_cnt += int(check_no_mojibake.call(enemies_arr_p4))
+	check(ui_broken_cnt == 0,
+		"Punto 4: Zero broken accents/mojibake across all UI screens, subscreens, and enemies.json (hits=%d)" % ui_broken_cnt)
+
+	var p4_screens_checked := 0
+	var p4_text_broken := 0
+	for p4_cat in ["main_menu", "game_menu", "messages", "battle"]:
+		db.select_category_by_key(p4_cat)
+		await pump(2)
+		var p4_h: Dictionary = db.call("get_ui_designer_ui_handles")
+		var p4_sopt: OptionButton = p4_h.get("screen_opt")
+		if p4_sopt:
+			for si in range(p4_sopt.item_count):
+				p4_sopt.select(si)
+				p4_sopt.emit_signal("item_selected", si)
+				await pump(1)
+				p4_screens_checked += 1
+				for lbl in db.find_children("*", "Label", true, false):
+					p4_text_broken += int(check_no_mojibake.call((lbl as Label).text))
+				for btn in db.find_children("*", "Button", true, false):
+					p4_text_broken += int(check_no_mojibake.call((btn as Button).text))
+					p4_text_broken += int(check_no_mojibake.call((btn as Button).tooltip_text))
+	check(p4_screens_checked >= 12 and p4_text_broken == 0,
+		"Punto 4: Visited %d UI screen/subscreen tabs with zero broken characters (hits=%d)" % [p4_screens_checked, p4_text_broken])
+
 	db.queue_free()
 	await pump(2)
 	if dm_owned and dm and is_instance_valid(dm):

@@ -1183,7 +1183,7 @@ void ClockGearsUiCanvasOverlay::_notification(int p_what) {
 						sb->set_corner_radius_all(r_px);
 						draw_style_box(sb, gr);
 					}
-					String gtxt = String(ghost.get("text", ghost.get("name", "Nuevo botón")));
+					String gtxt = String(ghost.get("text", ghost.get("name", String::utf8("Nuevo botón"))));
 					if (badge_font.is_valid() && !gtxt.is_empty()) {
 						int fsz = MAX(10, int(Math::round(float(ghost.get("font_size", 16)) * scale)));
 						Color tc(0.96f, 0.96f, 0.98f, 0.88f);
@@ -4615,7 +4615,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	gal_hdr->add_theme_constant_override("separation", int(8 * EDSCALE));
 	gal_vb->add_child(gal_hdr);
 
-	Label *gal_hdr_lbl = memnew(Label("Elige una plantilla o componente para aplicar al diseño actual:"));
+	Label *gal_hdr_lbl = memnew(Label(String::utf8("Elige una plantilla o componente para aplicar al diseño actual:")));
 	gal_hdr_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	gal_hdr_lbl->set_clip_text(true);
 	gal_hdr->add_child(gal_hdr_lbl);
@@ -12050,8 +12050,8 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 		r_sp->connect("value_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
 		add_row(p_parent, p_lbl, r_sp);
 	};
-	make_spin(tb_gen, "Posición X:", -960, 960, ox_spin);
-	make_spin(tb_gen, "Posición Y:", -540, 540, oy_spin);
+	make_spin(tb_gen, String::utf8("Posición X:"), -960, 960, ox_spin);
+	make_spin(tb_gen, String::utf8("Posición Y:"), -540, 540, oy_spin);
 	make_spin(tb_gen, "Ancho:", 16, 960, w_spin);
 	make_spin(tb_gen, "Alto:", 16, 540, h_spin);
 	make_spin(tb_gen, "Capa:", -100, 1000, layer_spin);
@@ -12268,7 +12268,7 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 		binding_opt->set_item_metadata(i, String(bd.get("id", "none")));
 	}
 	binding_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
-	add_row(tb_txt, "Enlace dinámico:", binding_opt);
+	add_row(tb_txt, String::utf8("Enlace dinámico:"), binding_opt);
 
 	var_edit = memnew(LineEdit);
 	var_edit->connect("text_changed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));

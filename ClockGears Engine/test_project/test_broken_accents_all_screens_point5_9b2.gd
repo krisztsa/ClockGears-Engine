@@ -46,6 +46,8 @@ func _scan_tree_texts(root_node: Node, prefix: String) -> void:
 		_check_str(node_tag + ".title", (root_node as Window).title)
 	if root_node is Control:
 		_check_str(node_tag + ".tooltip", (root_node as Control).tooltip_text)
+		if (root_node as Control).has_meta("_cg_long_help"):
+			_check_str(node_tag + ".long_help", String((root_node as Control).get_meta("_cg_long_help")))
 	if root_node is Label:
 		_check_str(node_tag + ".text", (root_node as Label).text)
 	elif root_node is RichTextLabel:
@@ -161,6 +163,27 @@ func _run() -> void:
 					tcont.current_tab = ti
 			await _step_frames(1)
 			_scan_tree_texts(db, "DB[%s]" % String(ckey))
+			var uh: Dictionary = db.call("get_ui_designer_ui_handles")
+			var ued = uh.get("panel", null)
+			var u_sopt: OptionButton = uh.get("screen_opt", null)
+			if ued != null and ued.visible and u_sopt != null:
+				for si in range(u_sopt.item_count):
+					var sid: String = String(u_sopt.get_item_metadata(si))
+					ued.select_screen(sid)
+					await _step_frames(1)
+					_scan_tree_texts(db, "DB[%s/%s]" % [String(ckey), sid])
+					if dm != null:
+						_scan_variant("UI_SCREEN[%s]" % sid, dm.get_ui_screen_elements(sid))
+				var tbtn_b: Button = uh.get("templates_btn", null)
+				var xbtn_b: Button = uh.get("tpl_close_x_btn", null)
+				var gal_b: AcceptDialog = uh.get("template_gallery_dialog", null)
+				if String(ckey) == "main_menu" and tbtn_b != null and gal_b != null:
+					tbtn_b.emit_signal("pressed")
+					await _step_frames(2)
+					_scan_tree_texts(gal_b, "DB.TemplateGallery")
+					if xbtn_b != null:
+						xbtn_b.emit_signal("pressed")
+						await _step_frames(1)
 	db.queue_free()
 	await _step_frames(1)
 
