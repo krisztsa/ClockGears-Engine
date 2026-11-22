@@ -406,6 +406,8 @@ public:
 	Dictionary get_layout_state_info() const;
 
 	bool trigger_action(const String &p_action);
+	bool owns_control(const Control *p_ctrl) const;
+	static bool execute_common_action_step(const Dictionary &p_step, ClockGearsUiDesignLayer *p_layer = nullptr);
 	Dictionary get_layout_bounds_info(const Vector2 &p_viewport_size = Vector2()) const;
 
 	ClockGearsUiDesignLayer();

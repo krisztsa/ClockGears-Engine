@@ -4573,6 +4573,14 @@ void ClockGearsUiDesignLayer::input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 		if (kc == Key::ENTER || kc == Key::KP_ENTER || kc == Key::SPACE || jb == JoyButton::A) {
+			if (Viewport *vp = get_viewport()) {
+				Button *focused_btn = Object::cast_to<Button>(vp->gui_get_focus_owner());
+				if (focused_btn && owns_control(focused_btn) && !focused_btn->is_disabled() && focused_btn->is_visible_in_tree()) {
+					focused_btn->emit_signal("pressed");
+					vp->set_input_as_handled();
+					return;
+				}
+			}
 			if (radial_canvas->activate_selected_slot()) {
 				if (get_viewport()) get_viewport()->set_input_as_handled();
 				return;
@@ -4617,4 +4625,106 @@ void ClockGearsUiDesignLayer::unhandled_input(const Ref<InputEvent> &p_event) {
 			return;
 		}
 	}
+}
+
+bool ClockGearsUiDesignLayer::owns_control(const Control *p_ctrl) const {
+	if (!p_ctrl) {
+		return false;
+	}
+	const Node *cur = p_ctrl;
+	while (cur) {
+		if (cur == this) {
+			return true;
+		}
+		cur = cur->get_parent();
+	}
+	return false;
+}
+
+bool ClockGearsUiDesignLayer::execute_common_action_step(const Dictionary &p_step, ClockGearsUiDesignLayer *p_layer) {
+	String stype = String(p_step.get("type", p_step.get("action", ""))).strip_edges().to_lower();
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (stype == "set_switch") {
+		String sw = String(p_step.get("switch_name", p_step.get("switch", p_step.get("name", "")))).strip_edges();
+		Variant raw_v = p_step.get("value", true);
+		if (dm && !sw.is_empty()) {
+			bool val = (raw_v.get_type() == Variant::STRING && String(raw_v).strip_edges().to_lower() == "toggle")
+					? !dm->get_switch(sw)
+					: bool(raw_v);
+			dm->set_switch(sw, val);
+			if (p_layer && p_layer->is_visible()) {
+				p_layer->refresh_live_values();
+			}
+			return true;
+		}
+		return false;
+	}
+	if (stype == "set_variable") {
+		String vn = String(p_step.get("variable_name", "")).strip_edges();
+		if (vn.is_empty()) {
+			vn = String(p_step.get("var_name", p_step.get("variable", p_step.get("name", "")))).strip_edges();
+		}
+		String op = String(p_step.get("op", "set")).strip_edges().to_lower();
+		int val = int(p_step.get("value", 0));
+		if (dm && !vn.is_empty()) {
+			int cur = dm->get_variable(vn);
+			if (op == "+" || op == "add") cur += val;
+			else if (op == "-" || op == "sub") cur -= val;
+			else if (op == "*" || op == "mul") cur *= val;
+			else if ((op == "/" || op == "div") && val != 0) cur /= val;
+			else if ((op == "%" || op == "mod") && val != 0) cur %= val;
+			else cur = val;
+			dm->set_variable(vn, cur);
+			if (p_layer && p_layer->is_visible()) {
+				p_layer->refresh_live_values();
+			}
+			return true;
+		}
+		return false;
+	}
+	if (stype == "play_sound") {
+		String spath = String(p_step.get("sound_path", p_step.get("sound", p_step.get("path", "")))).strip_edges();
+		float vol = p_step.has("volume") ? float(p_step["volume"]) : Math::db_to_linear(float(p_step.get("volume_db", 0.0f)));
+		float pitch = float(p_step.get("pitch", 1.0f));
+		if (!spath.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_se(spath, vol, pitch);
+			}
+			return true;
+		}
+		return false;
+	}
+	if (stype == "play_music") {
+		String spath = String(p_step.get("sound_path", p_step.get("music_path", p_step.get("path", "")))).strip_edges();
+		float vol = p_step.has("volume") ? float(p_step["volume"]) : Math::db_to_linear(float(p_step.get("volume_db", 0.0f)));
+		float pitch = float(p_step.get("pitch", 1.0f));
+		if (!spath.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_bgm(spath, vol, pitch);
+			}
+			return true;
+		}
+		return false;
+	}
+	if (stype == "hud_visibility") {
+		String scope = String(p_step.get("scope", "all")).strip_edges().to_lower();
+		String widget = String(p_step.get("widget_id", p_step.get("widget", p_step.get("widget_name", "")))).strip_edges();
+		Variant raw_vis = p_step.get("visible", true);
+		if (dm) {
+			bool vis = true;
+			if (raw_vis.get_type() == Variant::STRING && String(raw_vis).strip_edges().to_lower() == "toggle") {
+				vis = widget.is_empty() ? !dm->is_hud_runtime_visible() : !dm->is_hud_widget_runtime_visible(widget);
+			} else {
+				vis = bool(raw_vis);
+			}
+			if (!widget.is_empty() && scope != "all") {
+				dm->set_hud_widget_runtime_visible(widget, vis);
+			} else {
+				dm->set_hud_runtime_visible(vis);
+			}
+			return true;
+		}
+		return false;
+	}
+	return false;
 }

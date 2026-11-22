@@ -7,7 +7,11 @@
 #include "core/io/image.h"
 #include "core/math/math_funcs.h"
 #include "core/object/callable_mp.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
+#include "scene/resources/style_box_flat.h"
+#include "scene/resources/style_box_texture.h"
 
 namespace {
 static Color s_hud_parse_color(const Variant &p_val, const Color &p_default) {
@@ -405,7 +409,8 @@ void ClockGearsHudOverlay::_rebuild_widgets(const String &p_reason) {
 void ClockGearsHudOverlay::_build_widget_entry(WidgetEntry &r_entry, int p_index) {
 	Control *root = memnew(Control);
 	root->set_name("HudWidget_" + r_entry.id);
-	root->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	const bool is_interactive_btn = (r_entry.type == "button" && !preview_mode);
+	root->set_mouse_filter(is_interactive_btn ? MOUSE_FILTER_PASS : MOUSE_FILTER_IGNORE);
 	root->set_z_index(r_entry.layer_order);
 	root->set_clip_contents(false);
 	root->set_meta("_cg_widget_id", r_entry.id);
@@ -423,7 +428,7 @@ void ClockGearsHudOverlay::_build_widget_entry(WidgetEntry &r_entry, int p_index
 
 	Control *content = memnew(Control);
 	content->set_name("ContentRoot");
-	content->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	content->set_mouse_filter(is_interactive_btn ? MOUSE_FILTER_PASS : MOUSE_FILTER_IGNORE);
 	root->add_child(content);
 	r_entry.content_root = content;
 
@@ -568,6 +573,27 @@ void ClockGearsHudOverlay::_build_widget_entry(WidgetEntry &r_entry, int p_index
 		if (r_entry.bg_panel) {
 			r_entry.bg_panel->set_modulate(Color(1, 1, 1, op));
 		}
+	} else if (r_entry.type == "button") {
+		Button *btn = memnew(Button);
+		btn->set_name("ActionButton");
+		btn->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		btn->set_text(String(r_entry.config.get("text", r_entry.name)));
+		btn->set_clip_text(true);
+		btn->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		btn->set_mouse_filter(preview_mode ? MOUSE_FILTER_IGNORE : MOUSE_FILTER_STOP);
+		btn->set_focus_mode(preview_mode ? FOCUS_NONE : FOCUS_ALL);
+		btn->set_disabled(bool(r_entry.config.get("disabled", false)));
+		btn->set_texture_filter(tf);
+		String ip = String(r_entry.config.get("icon_path", "")).strip_edges();
+		if (!ip.is_empty()) {
+			Ref<Texture2D> itex = ClockGearsWindowStyleManager::load_texture_safe(ip);
+			if (itex.is_valid()) {
+				btn->set_button_icon(itex);
+			}
+		}
+		btn->connect("pressed", callable_mp(this, &ClockGearsHudOverlay::_on_hud_button_pressed).bind(p_index), CONNECT_DEFERRED);
+		content->add_child(btn);
+		r_entry.button = btn;
 	} else {
 		TextureRect *img_r = memnew(TextureRect);
 		img_r->set_mouse_filter(MOUSE_FILTER_IGNORE);
@@ -600,6 +626,60 @@ void ClockGearsHudOverlay::_build_widget_entry(WidgetEntry &r_entry, int p_index
 
 void ClockGearsHudOverlay::_apply_widget_window_style(WidgetEntry &r_entry, float p_scale) {
 	if (!r_entry.bg_panel || !r_entry.content_root || !r_entry.root) {
+		return;
+	}
+	if (r_entry.type == "button") {
+		r_entry.bg_panel->set_visible(false);
+		r_entry.content_root->set_position(Vector2(0, 0));
+		r_entry.content_root->set_size(r_entry.root->get_size());
+		if (r_entry.button) {
+			Dictionary b_over;
+			String bws = r_entry.window_style_id.strip_edges().to_lower();
+			if (!bws.is_empty() && bws != "default" && bws != "hud") {
+				if (ClockGearsDataManager *dm_b = ClockGearsDataManager::get_singleton()) {
+					b_over = dm_b->get_window_style(bws);
+				}
+			}
+			if (r_entry.config.has("shape") && r_entry.config["shape"].get_type() == Variant::DICTIONARY) {
+				Dictionary sh = r_entry.config["shape"];
+				Array skeys = sh.keys();
+				for (int k = 0; k < skeys.size(); k++) {
+					b_over[skeys[k]] = sh[skeys[k]];
+				}
+				String st_str = String(sh.get("shape_type", "")).strip_edges().to_lower();
+				if (st_str == "rect") b_over["border_type"] = "rect";
+				else if (!st_str.is_empty()) b_over["border_type"] = "rounded";
+			}
+			ClockGearsWindowStyleManager::apply_button_style(r_entry.button, "hud", b_over);
+			String img_norm = String(r_entry.config.get("image_normal", r_entry.config.get("image_path", ""))).strip_edges();
+			String img_hov = String(r_entry.config.get("image_hover", "")).strip_edges();
+			String img_prs = String(r_entry.config.get("image_pressed", "")).strip_edges();
+			String img_dis = String(r_entry.config.get("image_disabled", "")).strip_edges();
+			if (!img_norm.is_empty() || !img_hov.is_empty() || !img_prs.is_empty() || !img_dis.is_empty()) {
+				auto apply_tex_st = [&](const char *p_state, const String &p_path, const String &p_fb) {
+					String use_p = p_path.is_empty() ? p_fb : p_path;
+					if (use_p.is_empty()) return;
+					Ref<Texture2D> t = ClockGearsWindowStyleManager::load_texture_safe(use_p);
+					if (t.is_valid()) {
+						Ref<StyleBoxTexture> sbt;
+						sbt.instantiate();
+						sbt->set_texture(t);
+						sbt->set_content_margin_all(4.0f * p_scale);
+						r_entry.button->add_theme_style_override(p_state, sbt);
+					}
+				};
+				apply_tex_st("normal", img_norm, img_hov);
+				apply_tex_st("hover", img_hov, img_norm);
+				apply_tex_st("pressed", img_prs, img_hov.is_empty() ? img_norm : img_hov);
+				apply_tex_st("disabled", img_dis, img_norm);
+			}
+			int fsz = MAX(8, int(Math::round(float(r_entry.config.get("font_size", 16)) * p_scale)));
+			r_entry.button->add_theme_font_size_override("font_size", fsz);
+			Color fc = s_hud_parse_color(r_entry.config.get("font_color", "#FFFFFFFF"), Color(1, 1, 1, 1));
+			r_entry.button->add_theme_color_override("font_color", fc);
+			r_entry.button->add_theme_color_override("font_hover_color", fc);
+			r_entry.button->add_theme_color_override("font_focus_color", fc);
+		}
 		return;
 	}
 	if (r_entry.type == "hearts") {
@@ -801,6 +881,11 @@ void ClockGearsHudOverlay::_relayout_widgets(bool p_refresh_styles) {
 			if (w.text_label) {
 				int fsz = MAX(8, int(Math::round(float(w.config.get("font_size", 16)) * s)));
 				w.text_label->add_theme_font_size_override("font_size", fsz);
+			}
+		} else if (w.type == "button") {
+			if (w.button) {
+				int fsz = MAX(8, int(Math::round(float(w.config.get("font_size", 16)) * s)));
+				w.button->add_theme_font_size_override("font_size", fsz);
 			}
 		}
 		// Reaplicar geometría interna proporcional de barra / corazones según el nuevo tamaño
@@ -1097,6 +1182,13 @@ void ClockGearsHudOverlay::_update_widget_data(WidgetEntry &r_entry, const Strin
 		snap["text"] = out_txt;
 	} else if (r_entry.type == "frame") {
 		snap["window_style_id"] = r_entry.window_style_id;
+	} else if (r_entry.type == "button") {
+		String btxt = String(r_entry.config.get("text", r_entry.name));
+		if (r_entry.button && r_entry.button->get_text() != btxt) {
+			r_entry.button->set_text(btxt);
+		}
+		snap["text"] = btxt;
+		snap["action"] = String(r_entry.config.get("action", ""));
 	} else {
 		snap["image_path"] = String(r_entry.config.get("image_path", ""));
 	}
@@ -1426,6 +1518,58 @@ Dictionary ClockGearsHudOverlay::get_layout_bounds_info() const {
 	return out;
 }
 
+void ClockGearsHudOverlay::_on_hud_button_pressed(int p_index) {
+	if (preview_mode || p_index < 0 || p_index >= widgets.size()) {
+		return;
+	}
+	const WidgetEntry &w = widgets[p_index];
+	String single_act = String(w.config.get("action", "")).strip_edges().to_lower();
+	Array steps = w.config.has("actions") && w.config["actions"].get_type() == Variant::ARRAY
+			? Array(w.config["actions"]).duplicate(true)
+			: Array();
+	if (steps.is_empty() && !single_act.is_empty() && single_act != "none") {
+		Dictionary st = w.config.duplicate(true);
+		st["type"] = single_act;
+		steps.push_back(st);
+	}
+	for (int i = 0; i < steps.size(); i++) {
+		if (steps[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary st = steps[i];
+		String tp = String(st.get("type", st.get("action", ""))).strip_edges().to_lower();
+		if (tp == "open_menu" || tp == "open_screen" || tp == "items" || tp == "equip" || tp == "status" || tp == "save" || tp == "options") {
+			String mtarget = String(st.get("menu_id", st.get("screen_id", st.get("screen", st.get("target", ""))))).strip_edges().to_lower();
+			if (mtarget.is_empty()) {
+				mtarget = (tp == "open_menu") ? String("game_menu_main") : tp;
+			}
+			if (is_inside_tree() && get_tree()) {
+				if (Node *root = get_tree()->get_root()) {
+					Node *gm = root->find_child("ClockGearsGameMenu", true, false);
+					if (gm) {
+						gm->call("open_menu_by_id", mtarget, false, false, true);
+					}
+				}
+			}
+			continue;
+		}
+		if (tp == "common_event") {
+			int ce_id = int(st.get("common_event_id", st.get("id", 0)));
+			if (ce_id > 0 && is_inside_tree() && get_tree()) {
+				if (Node *root = get_tree()->get_root()) {
+					Node *interp = root->find_child("ClockGearsEventInterpreter", true, false);
+					if (interp) {
+						interp->call("execute_common_event", ce_id);
+					}
+				}
+			}
+			continue;
+		}
+		ClockGearsUiDesignLayer::execute_common_action_step(st, nullptr);
+	}
+	emit_signal("button_action_triggered", single_act, w.id);
+}
+
 void ClockGearsHudOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("apply_hud_config", "cfg"), &ClockGearsHudOverlay::apply_hud_config);
 	ClassDB::bind_method(D_METHOD("reload_from_data_manager"), &ClockGearsHudOverlay::reload_from_data_manager);
@@ -1449,4 +1593,6 @@ void ClockGearsHudOverlay::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_total_update_count"), &ClockGearsHudOverlay::get_total_update_count);
 	ClassDB::bind_method(D_METHOD("reset_update_counters"), &ClockGearsHudOverlay::reset_update_counters);
 	ClassDB::bind_method(D_METHOD("get_layout_bounds_info"), &ClockGearsHudOverlay::get_layout_bounds_info);
+
+	ADD_SIGNAL(MethodInfo("button_action_triggered", PropertyInfo(Variant::STRING, "action"), PropertyInfo(Variant::STRING, "element_id")));
 }

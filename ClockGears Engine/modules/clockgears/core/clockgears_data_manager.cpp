@@ -5488,7 +5488,7 @@ Dictionary ClockGearsDataManager::normalize_hud_widget(const Dictionary &p_widge
 	out["window_style_id"] = ws;
 
 	String vmode = String(p_widget.get("visibility_mode", def["visibility_mode"])).strip_edges().to_lower();
-	if (vmode != "switch") {
+	if (vmode != "switch" && vmode != "never" && vmode != "hidden") {
 		vmode = "always";
 	}
 	out["visibility_mode"] = vmode;
@@ -5498,6 +5498,24 @@ Dictionary ClockGearsDataManager::normalize_hud_widget(const Dictionary &p_widge
 	out["visible"] = p_widget.has("visible") ? bool(p_widget["visible"]) : true;
 	out["data_binding"] = _cg_norm_ui_data_binding(p_widget.get("data_binding", (wtype == "variable") ? Variant("variable") : Variant("none")));
 	out["actor_id"] = MAX(0, int(p_widget.get("actor_id", 0)));
+	if (p_widget.has("shape") && p_widget["shape"].get_type() == Variant::DICTIONARY) {
+		out["shape"] = normalize_ui_shape(Dictionary(p_widget["shape"]));
+	}
+	if (p_widget.has("actions") && p_widget["actions"].get_type() == Variant::ARRAY) {
+		Array acts_in = p_widget["actions"];
+		Array acts_out;
+		for (int ai = 0; ai < acts_in.size(); ai++) {
+			if (acts_in[ai].get_type() == Variant::DICTIONARY) {
+				acts_out.push_back(_cg_norm_button_action_step(Dictionary(acts_in[ai])));
+			}
+		}
+		out["actions"] = acts_out;
+	}
+	for (const char *fk : { "focus_next_up", "focus_next_down", "focus_next_left", "focus_next_right" }) {
+		if (p_widget.has(fk)) {
+			out[fk] = String(p_widget[fk]).strip_edges();
+		}
+	}
 
 	_cg_normalize_hud_core_fields(p_widget, def, wtype, out);
 	return out;
@@ -7978,6 +7996,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		rb["id"] = "btn_game_over_retry";
 		rb["name"] = String::utf8("Botón Reintentar");
 		rb["text"] = String(go.get("retry_label", "Reintentar"));
+		rb["action"] = "retry";
 		rb["visible"] = bool(go.get("retry_enabled", true));
 		rb["anchor"] = "bottom_center";
 		rb["offset_x"] = 0;
@@ -7991,6 +8010,7 @@ Dictionary ClockGearsDataManager::get_default_ui_screen_template(const String &p
 		tb["id"] = "btn_game_over_title";
 		tb["name"] = String::utf8("Botón Volver al título");
 		tb["text"] = String(go.get("title_label", String::utf8("Volver al menú")));
+		tb["action"] = "to_title";
 		tb["visible"] = bool(go.get("title_enabled", true));
 		tb["anchor"] = "bottom_center";
 		tb["offset_x"] = 0;
@@ -8972,6 +8992,16 @@ String ClockGearsDataManager::add_ui_element(const String &p_screen_id, const Di
 		uid = base_id + "_" + itos(suffix++);
 	}
 	ne["id"] = uid;
+	String ne_type = String(ne.get("type", "")).strip_edges().to_lower();
+	if (!p_elem.has("layer_order") && ne_type != "frame" && ne_type != "folder") {
+		int top_layer = 1;
+		for (int i = 0; i < elems.size(); i++) {
+			if (elems[i].get_type() == Variant::DICTIONARY) {
+				top_layer = MAX(top_layer, int(Dictionary(elems[i]).get("layer_order", 0)));
+			}
+		}
+		ne["layer_order"] = MIN(1000, top_layer + 1);
+	}
 	elems.push_back(ne);
 
 	if (!ne.has("_skip_auto_radial_slots") && String(ne.get("type", "")).to_lower() == "radial" && normalize_ui_data_source(ne.get("data_source", "manual")) == "manual") {

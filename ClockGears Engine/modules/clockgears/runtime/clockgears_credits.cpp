@@ -248,6 +248,11 @@ void ClockGearsCreditsPlayer::_rebuild_from_config(const Dictionary &p_cfg) {
 			custom_ui_layer->set_visible(true);
 			if (!preview_mode) {
 				custom_ui_layer->play_transition_in();
+				Vector<Button *> cbtns = custom_ui_layer->get_focus_ordered_buttons();
+				if (!cbtns.is_empty() && cbtns[0] && is_inside_tree()) {
+					cbtns[0]->grab_focus();
+					custom_ui_layer->update_cursor_for_button(cbtns[0]);
+				}
 			}
 		} else {
 			custom_ui_layer->set_visible(false);
@@ -531,11 +536,21 @@ void ClockGearsCreditsPlayer::input(const Ref<InputEvent> &p_event) {
 			_finish(true);
 			return;
 		}
+		bool custom_btn_focused = false;
+		if (custom_ui_layer && custom_ui_layer->is_visible() && get_viewport()) {
+			Button *fb = Object::cast_to<Button>(get_viewport()->gui_get_focus_owner());
+			if (fb && custom_ui_layer->owns_control(fb) && !fb->is_disabled() && fb->is_visible_in_tree()) {
+				custom_btn_focused = true;
+			}
+		}
 		bool is_accel_key = (kev->get_keycode() == Key::ENTER || kev->get_keycode() == Key::KP_ENTER);
 		if (!is_accel_key && im && im->has_action("ui_accept")) {
 			is_accel_key = kev->is_action("ui_accept");
 		}
 		if (is_accel_key) {
+			if (custom_btn_focused) {
+				return;
+			}
 			enter_held = kev->is_pressed();
 			if (Viewport *vp = get_viewport()) {
 				vp->set_input_as_handled();
@@ -554,6 +569,12 @@ void ClockGearsCreditsPlayer::input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMouseButton> mev = p_event;
 	if (mev.is_valid() && mev->get_button_index() == MouseButton::LEFT) {
+		if (custom_ui_layer && custom_ui_layer->is_visible() && get_viewport()) {
+			Button *hb = Object::cast_to<Button>(get_viewport()->gui_get_hovered_control());
+			if (hb && custom_ui_layer->owns_control(hb) && !hb->is_disabled()) {
+				return;
+			}
+		}
 		mouse_held = mev->is_pressed();
 		if (Viewport *vp = get_viewport()) {
 			vp->set_input_as_handled();

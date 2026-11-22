@@ -10,6 +10,8 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/texture_rect.h"
 
+class ClockGearsUiDesignLayer;
+
 class ClockGearsGameOverScreen : public Control {
 	GDCLASS(ClockGearsGameOverScreen, Control);
 
@@ -17,6 +19,7 @@ private:
 	ColorRect *bg_color_rect = nullptr;
 	TextureRect *bg_texture_rect = nullptr;
 	Control *stage_root = nullptr;
+	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
 	VBoxContainer *main_vbox = nullptr;
 	Label *title_label = nullptr;
 	PanelContainer *panel = nullptr;
@@ -34,6 +37,7 @@ private:
 	void _update_responsive_stage(const Vector2 &p_override_vp = Vector2());
 	void _on_retry_pressed();
 	void _on_return_title_pressed();
+	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
 
 protected:
 	static void _bind_methods();
@@ -56,6 +60,7 @@ public:
 
 	Dictionary get_state_snapshot() const;
 	String get_last_action() const { return last_action; }
+	Control *get_custom_ui_layer() const;
 
 	ClockGearsGameOverScreen();
 };

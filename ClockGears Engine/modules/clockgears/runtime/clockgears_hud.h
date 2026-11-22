@@ -2,6 +2,7 @@
 #define CLOCKGEARS_HUD_H
 
 #include "scene/gui/box_container.h"
+#include "scene/gui/button.h"
 #include "scene/gui/color_rect.h"
 #include "scene/gui/control.h"
 #include "scene/gui/label.h"
@@ -67,6 +68,9 @@ private:
 		// Image subnode
 		TextureRect *image_rect = nullptr;
 
+		// Button subnode
+		Button *button = nullptr;
+
 		// Snapshot / Metrics (event-driven only)
 		int update_count = 0;
 		Dictionary last_snapshot;
@@ -115,6 +119,7 @@ private:
 	void _on_runtime_state_changed(const String &p_topic, const String &p_key);
 	void _on_data_changed(const String &p_category, int p_id);
 	void _on_viewport_resized();
+	void _on_hud_button_pressed(int p_index);
 
 protected:
 	static void _bind_methods();

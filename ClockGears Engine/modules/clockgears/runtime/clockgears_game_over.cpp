@@ -3,6 +3,7 @@
 #include "../core/clockgears_data_manager.h"
 #include "clockgears_audio_manager.h"
 #include "clockgears_title_screen.h"
+#include "clockgears_ui_design_layer.h"
 #include "clockgears_window_style.h"
 
 #include "core/config/engine.h"
@@ -11,6 +12,7 @@
 #include "scene/gui/center_container.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
 
 ClockGearsGameOverScreen::ClockGearsGameOverScreen() {
 	set_name("ClockGearsGameOverScreen");
@@ -84,6 +86,14 @@ void ClockGearsGameOverScreen::_ensure_ui_nodes() {
 	return_title_btn->set_text(String::utf8("Volver al menú"));
 	return_title_btn->connect("pressed", callable_mp(this, &ClockGearsGameOverScreen::_on_return_title_pressed));
 	buttons_vbox->add_child(return_title_btn);
+
+	custom_ui_layer = memnew(ClockGearsUiDesignLayer);
+	custom_ui_layer->set_name("CustomGameOverUiLayer");
+	custom_ui_layer->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	custom_ui_layer->set_window_type_fallback("game_menu");
+	custom_ui_layer->set_visible(false);
+	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsGameOverScreen::_on_custom_ui_action));
+	add_child(custom_ui_layer);
 }
 
 void ClockGearsGameOverScreen::_rebuild_from_config(const Dictionary &p_cfg) {
@@ -130,6 +140,23 @@ void ClockGearsGameOverScreen::_rebuild_from_config(const Dictionary &p_cfg) {
 	}
 	if (return_title_btn) {
 		ClockGearsWindowStyleManager::apply_button_style(return_title_btn, "default", style_overrides);
+	}
+
+	if (custom_ui_layer) {
+		if (dm && dm->has_custom_ui_design("game_over")) {
+			if (stage_root) stage_root->set_visible(false);
+			custom_ui_layer->set_window_type_fallback("game_menu");
+			custom_ui_layer->set_preview_mode(preview_mode);
+			custom_ui_layer->apply_screen_design("game_over");
+			custom_ui_layer->set_visible(true);
+			if (!preview_mode) {
+				custom_ui_layer->play_transition_in();
+			}
+		} else {
+			if (stage_root) stage_root->set_visible(true);
+			custom_ui_layer->set_visible(false);
+			custom_ui_layer->clear_elements();
+		}
 	}
 
 	_update_responsive_stage();
@@ -188,7 +215,13 @@ void ClockGearsGameOverScreen::show_game_over(const Dictionary &p_cfg_override) 
 				am->play_bgm(bgm, 1.0f, 1.0f, 0.35f, float(double(active_config.get("bgm_volume_db", 0.0))));
 			}
 		}
-		if (retry_btn && retry_btn->is_visible() && is_inside_tree()) {
+		if (custom_ui_layer && custom_ui_layer->is_visible()) {
+			Vector<Button *> cbtns = custom_ui_layer->get_focus_ordered_buttons();
+			if (!cbtns.is_empty() && cbtns[0] && is_inside_tree()) {
+				cbtns[0]->grab_focus();
+				custom_ui_layer->update_cursor_for_button(cbtns[0]);
+			}
+		} else if (retry_btn && retry_btn->is_visible() && is_inside_tree()) {
 			retry_btn->grab_focus();
 		} else if (return_title_btn && return_title_btn->is_visible() && is_inside_tree()) {
 			return_title_btn->grab_focus();
@@ -231,6 +264,60 @@ void ClockGearsGameOverScreen::_on_return_title_pressed() {
 		return;
 	}
 	trigger_return_to_title();
+}
+
+Control *ClockGearsGameOverScreen::get_custom_ui_layer() const {
+	return custom_ui_layer;
+}
+
+void ClockGearsGameOverScreen::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	if (preview_mode) {
+		return;
+	}
+	Array steps;
+	if (custom_ui_layer && !p_elem_id.is_empty()) {
+		steps = custom_ui_layer->get_element_actions(p_elem_id);
+	}
+	if (steps.is_empty() && !p_action.strip_edges().is_empty()) {
+		Dictionary single;
+		single["type"] = p_action.strip_edges().to_lower();
+		steps.push_back(single);
+	}
+	for (int i = 0; i < steps.size(); i++) {
+		if (steps[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary st = steps[i];
+		String tp = String(st.get("type", st.get("action", ""))).strip_edges().to_lower();
+		if (tp == "retry" || tp == "load_latest" || tp == "reintentar") {
+			trigger_retry();
+			return;
+		}
+		if (tp == "to_title" || tp == "return_to_title" || tp == "title") {
+			trigger_return_to_title();
+			return;
+		}
+		if (tp == "close" || tp == "back") {
+			hide_game_over();
+			return;
+		}
+		if (tp == "common_event") {
+			int ce_id = int(st.get("common_event_id", st.get("id", 0)));
+			last_action = "common_event:" + itos(ce_id);
+			if (is_inside_tree() && get_tree()) {
+				if (Node *root = get_tree()->get_root()) {
+					Node *interp = root->find_child("ClockGearsEventInterpreter", true, false);
+					if (interp && ce_id > 0) {
+						interp->call("execute_common_event", ce_id);
+					}
+				}
+			}
+			continue;
+		}
+		if (ClockGearsUiDesignLayer::execute_common_action_step(st, custom_ui_layer)) {
+			last_action = tp;
+		}
+	}
 }
 
 bool ClockGearsGameOverScreen::trigger_retry() {
@@ -312,7 +399,42 @@ void ClockGearsGameOverScreen::gui_input(const Ref<InputEvent> &p_event) {
 	}
 	Ref<InputEventKey> k = p_event;
 	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
-		if (k->get_keycode() == Key::ENTER || k->get_keycode() == Key::KP_ENTER || k->get_keycode() == Key::SPACE) {
+		Key kc = k->get_keycode();
+		if (custom_ui_layer && custom_ui_layer->is_visible()) {
+			Vector<Button *> btns = custom_ui_layer->get_focus_ordered_buttons();
+			Button *fbtn = get_viewport() ? Object::cast_to<Button>(get_viewport()->gui_get_focus_owner()) : nullptr;
+			if (!btns.is_empty()) {
+				int dir = -1;
+				if (kc == Key::UP || kc == Key::W) dir = 0;
+				else if (kc == Key::RIGHT || kc == Key::D) dir = 1;
+				else if (kc == Key::DOWN || kc == Key::S) dir = 2;
+				else if (kc == Key::LEFT || kc == Key::A) dir = 3;
+				if (dir >= 0) {
+					Button *cur = (fbtn && btns.has(fbtn)) ? fbtn : btns[0];
+					Button *nxt = custom_ui_layer->find_next_focus_button(cur, dir);
+					if (!nxt) {
+						int idx = btns.find(cur);
+						int delta = (dir == 1 || dir == 2) ? 1 : -1;
+						nxt = btns[(idx + delta + btns.size()) % btns.size()];
+					}
+					if (nxt) {
+						nxt->grab_focus();
+						custom_ui_layer->update_cursor_for_button(nxt);
+					}
+					accept_event();
+					return;
+				}
+				if (kc == Key::ENTER || kc == Key::KP_ENTER || kc == Key::SPACE) {
+					Button *act_b = (fbtn && btns.has(fbtn)) ? fbtn : btns[0];
+					if (act_b && !act_b->is_disabled()) {
+						act_b->emit_signal("pressed");
+						accept_event();
+						return;
+					}
+				}
+			}
+		}
+		if (kc == Key::ENTER || kc == Key::KP_ENTER || kc == Key::SPACE) {
 			Control *f = get_viewport() ? get_viewport()->gui_get_focus_owner() : nullptr;
 			if (f == return_title_btn && return_title_btn->is_visible()) {
 				trigger_return_to_title();
@@ -337,6 +459,7 @@ void ClockGearsGameOverScreen::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("trigger_return_to_title"), &ClockGearsGameOverScreen::trigger_return_to_title);
 	ClassDB::bind_method(D_METHOD("get_state_snapshot"), &ClockGearsGameOverScreen::get_state_snapshot);
 	ClassDB::bind_method(D_METHOD("get_last_action"), &ClockGearsGameOverScreen::get_last_action);
+	ClassDB::bind_method(D_METHOD("get_custom_ui_layer"), &ClockGearsGameOverScreen::get_custom_ui_layer);
 
 	ADD_SIGNAL(MethodInfo("game_over_shown"));
 	ADD_SIGNAL(MethodInfo("game_over_closed"));

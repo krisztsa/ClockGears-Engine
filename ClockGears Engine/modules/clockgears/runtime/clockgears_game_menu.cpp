@@ -1546,6 +1546,14 @@ bool ClockGearsGameMenu::handle_input_key(Key p_keycode) {
 				return true;
 			}
 			if (p_keycode == Key::ENTER || p_keycode == Key::KP_ENTER || p_keycode == Key::SPACE) {
+				if (is_inside_tree() && root_control && root_control->get_viewport()) {
+					Button *fbtn = Object::cast_to<Button>(root_control->get_viewport()->gui_get_focus_owner());
+					if (fbtn && custom_ui_layer->owns_control(fbtn) && !fbtn->is_disabled() && fbtn->is_visible_in_tree()) {
+						_play_menu_sound("accept");
+						fbtn->emit_signal("pressed");
+						return true;
+					}
+				}
 				_play_menu_sound("accept");
 				return rad->activate_selected_slot();
 			}
@@ -2055,7 +2063,7 @@ void ClockGearsGameMenu::_refresh_main_view() {
 			}
 		}
 	}
-	if (first_btn && is_inside_tree()) {
+	if (first_btn && is_inside_tree() && !(custom_ui_layer && custom_ui_layer->is_visible())) {
 		first_btn->grab_focus();
 	}
 

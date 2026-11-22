@@ -12,6 +12,8 @@
 #include "scene/gui/texture_rect.h"
 #include "scene/resources/style_box_flat.h"
 
+class ClockGearsUiDesignLayer;
+
 class ClockGearsMessageWindow : public Control {
 	GDCLASS(ClockGearsMessageWindow, Control);
 
@@ -118,6 +120,9 @@ private:
 	uint64_t opened_process_frame = 0;
 	String current_face_base_path;
 	String current_speaker_name;
+	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
+	void _refresh_custom_ui_layer();
+	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
 	String message_style_override;
 	String current_expression;
 	int current_face_frame = 0;
@@ -173,6 +178,7 @@ public:
 	bool is_busy() const { return current_state != STATE_CLOSED; }
 	void set_message_window_type_override(const String &p_window_type_id);
 	void refresh_window_styles() { _apply_unified_styles(); }
+	Control *get_custom_ui_layer() const;
 
 	ClockGearsMessageWindow();
 	~ClockGearsMessageWindow();

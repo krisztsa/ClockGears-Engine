@@ -44,12 +44,15 @@ struct ClockGearsBattlerVisual {
 // CanvasLayer que encapsula gráficos de tropas, grupo, barra de iniciativa,
 // comandos y la ventana de mensajes de la Fase 7A.
 // ============================================================================
+class ClockGearsUiDesignLayer;
+
 class ClockGearsBattleScene : public CanvasLayer {
 	GDCLASS(ClockGearsBattleScene, CanvasLayer);
 
 private:
 	Ref<ClockGearsBattleController> controller;
 	ClockGearsMessageWindow *message_window = nullptr;
+	ClockGearsUiDesignLayer *custom_ui_layer = nullptr;
 	bool owns_message_window = false;
 
 	// UI Layout
@@ -138,6 +141,8 @@ private:
 	void _check_battle_state();
 	void _on_message_completed();
 	void _on_hit_executed(const String &p_log);
+	void _refresh_custom_ui_layer(bool p_can_act);
+	void _on_custom_ui_action(const String &p_action, const String &p_elem_id);
 	bool waiting_finish_confirmation = false;
 
 protected:
@@ -219,6 +224,7 @@ public:
 	void refresh_window_styles();
 
 	Ref<ClockGearsBattleController> get_controller() const { return controller; }
+	Control *get_custom_ui_layer() const;
 
 	// Métodos para pruebas automatizadas y control programático
 	void advance_time(float p_delta);

@@ -7689,6 +7689,16 @@ String ClockGearsUiDesignEditor::add_element_at(const String &p_type, const Vect
 		return String();
 	}
 	Dictionary el = dm->make_default_ui_element(p_type, current_screen_id);
+	if (p_type != "frame" && p_type != "folder") {
+		Array cur_els = dm->get_ui_screen_elements(current_screen_id);
+		int top_l = 1;
+		for (int i = 0; i < cur_els.size(); i++) {
+			if (cur_els[i].get_type() == Variant::DICTIONARY) {
+				top_l = MAX(top_l, int(Dictionary(cur_els[i]).get("layer_order", 0)));
+			}
+		}
+		el["layer_order"] = MIN(1000, top_l + 1);
+	}
 	el["anchor"] = "top_left";
 	int w = int(el.get("width", 120));
 	int h = int(el.get("height", 36));
@@ -8331,6 +8341,16 @@ String ClockGearsUiDesignEditor::add_child_element_of_type(const String &p_paren
 	}
 	String canon_pid = String(parent_el.get("id", p_parent_id));
 	Dictionary el = dm->make_default_ui_element(p_type, current_screen_id);
+	if (p_type != "frame" && p_type != "folder") {
+		Array cur_els = get_effective_screen_elements();
+		int top_l = 1;
+		for (int i = 0; i < cur_els.size(); i++) {
+			if (cur_els[i].get_type() == Variant::DICTIONARY) {
+				top_l = MAX(top_l, int(Dictionary(cur_els[i]).get("layer_order", 0)));
+			}
+		}
+		el["layer_order"] = MIN(1000, top_l + 1);
+	}
 	el["parent_id"] = canon_pid;
 	el["anchor"] = "top_left";
 	Array existing = get_effective_screen_elements();
@@ -12962,8 +12982,8 @@ Window *ClockGearsUiDesignEditor::open_floating_element_window(const String &p_e
 	ClockGearsUiElementFloatingWindow *fw = memnew(ClockGearsUiElementFloatingWindow);
 	add_child(fw);
 	fw->configure(this, current_screen_id, eid, el);
-	const Size2i def_sz(int(780 * EDSCALE), int(580 * EDSCALE));
-	const Size2i min_sz(int(760 * EDSCALE), int(560 * EDSCALE));
+	const Size2i def_sz(int(740 * EDSCALE), int(500 * EDSCALE));
+	const Size2i min_sz(int(680 * EDSCALE), int(460 * EDSCALE));
 	Rect2i rem = ClockGearsTheme::get_remembered_window_rect("ui_elem_floating");
 	Size2i pref_sz = (last_floating_window_size.x >= min_sz.x && last_floating_window_size.y >= min_sz.y)
 			? last_floating_window_size
@@ -13046,6 +13066,14 @@ Window *ClockGearsUiDesignEditor::open_create_button_window() {
 		return nullptr;
 	}
 	Dictionary draft = dm->make_default_ui_element("button", current_screen_id);
+	Array cur_els = get_effective_screen_elements();
+	int top_l = 1;
+	for (int i = 0; i < cur_els.size(); i++) {
+		if (cur_els[i].get_type() == Variant::DICTIONARY) {
+			top_l = MAX(top_l, int(Dictionary(cur_els[i]).get("layer_order", 0)));
+		}
+	}
+	draft["layer_order"] = MIN(1000, top_l + 1);
 	draft["id"] = "__creating_ghost__";
 	draft["name"] = String::utf8("Nuevo botón");
 	draft["text"] = String::utf8("Nuevo botón");
@@ -13072,8 +13100,8 @@ Window *ClockGearsUiDesignEditor::open_create_button_window() {
 		create_floating_window->connect("close_requested", callable_mp(this, &ClockGearsUiDesignEditor::_on_create_floating_window_closed));
 	}
 	create_floating_window->open_for_create_button(this, current_screen_id, draft);
-	const Size2i def_sz(int(780 * EDSCALE), int(580 * EDSCALE));
-	const Size2i min_sz(int(760 * EDSCALE), int(560 * EDSCALE));
+	const Size2i def_sz(int(740 * EDSCALE), int(500 * EDSCALE));
+	const Size2i min_sz(int(680 * EDSCALE), int(460 * EDSCALE));
 	Rect2i rem = ClockGearsTheme::get_remembered_window_rect("ui_elem_floating");
 	Size2i pref_sz = (last_floating_window_size.x >= min_sz.x && last_floating_window_size.y >= min_sz.y)
 			? last_floating_window_size

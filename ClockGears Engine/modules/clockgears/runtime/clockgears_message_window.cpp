@@ -1,5 +1,6 @@
 #include "clockgears_message_window.h"
 #include "../core/clockgears_data_manager.h"
+#include "clockgears_ui_design_layer.h"
 #include "clockgears_window_style.h"
 #include "core/config/engine.h"
 #include "core/input/input.h"
@@ -9,7 +10,9 @@
 #include "core/object/callable_mp.h"
 #include "scene/gui/separator.h"
 #include "scene/main/canvas_layer.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
 #include "scene/resources/atlas_texture.h"
 #include "scene/resources/image_texture.h"
 
@@ -41,6 +44,7 @@ void ClockGearsMessageWindow::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("refresh_window_styles"), &ClockGearsMessageWindow::refresh_window_styles);
 	ClassDB::bind_method(D_METHOD("handle_choice_cancel"), &ClockGearsMessageWindow::_handle_choice_cancel);
 	ClassDB::bind_method(D_METHOD("unhandled_input", "event"), &ClockGearsMessageWindow::unhandled_input);
+	ClassDB::bind_method(D_METHOD("get_custom_ui_layer"), &ClockGearsMessageWindow::get_custom_ui_layer);
 
 	ADD_SIGNAL(MethodInfo("message_completed"));
 	ADD_SIGNAL(MethodInfo("choice_selected", PropertyInfo(Variant::INT, "index")));
@@ -256,7 +260,111 @@ ClockGearsMessageWindow::ClockGearsMessageWindow() {
 	history_scroll->add_child(history_vbox);
 
 	_apply_unified_styles();
+	custom_ui_layer = memnew(ClockGearsUiDesignLayer);
+	custom_ui_layer->set_name("CustomMessagesUiLayer");
+	custom_ui_layer->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	custom_ui_layer->set_window_type_fallback("dialog");
+	custom_ui_layer->set_mouse_filter(MOUSE_FILTER_PASS);
+	custom_ui_layer->set_z_index(10);
+	custom_ui_layer->set_visible(false);
+	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsMessageWindow::_on_custom_ui_action));
+	add_child(custom_ui_layer);
 	hide();
+}
+
+Control *ClockGearsMessageWindow::get_custom_ui_layer() const {
+	return custom_ui_layer;
+}
+
+void ClockGearsMessageWindow::_refresh_custom_ui_layer() {
+	if (!custom_ui_layer) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !dm->has_custom_ui_design("messages")) {
+		custom_ui_layer->set_visible(false);
+		custom_ui_layer->clear_elements();
+		return;
+	}
+	Dictionary design = dm->get_ui_screen_design("messages").duplicate(true);
+	Array elems = design.get("elements", Array());
+	Array updated;
+	for (int i = 0; i < elems.size(); i++) {
+		if (elems[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary el = Dictionary(elems[i]).duplicate(true);
+		String eid = String(el.get("id", ""));
+		if (eid == "msg_box_frame" || eid == "msg_name_frame" || eid == "msg_speaker_lbl" ||
+				eid == "msg_portrait" || eid == "msg_body_lbl" || eid == "msg_continue_lbl") {
+			// Los gestiona en vivo ClockGearsMessageWindow; ocultar placeholders del editor de forma persistente.
+			el["visible"] = false;
+			el["visibility_mode"] = "never";
+			el["clip_children"] = false;
+		}
+		updated.push_back(el);
+	}
+	design["elements"] = updated;
+	custom_ui_layer->set_window_type_fallback("dialog");
+	custom_ui_layer->set_preview_mode(false);
+	custom_ui_layer->apply_screen_design("messages", design);
+	custom_ui_layer->set_mouse_filter(MOUSE_FILTER_PASS);
+	custom_ui_layer->set_visible(true);
+}
+
+void ClockGearsMessageWindow::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	Array steps;
+	if (custom_ui_layer && !p_elem_id.is_empty()) {
+		steps = custom_ui_layer->get_element_actions(p_elem_id);
+	}
+	if (steps.is_empty() && !p_action.strip_edges().is_empty()) {
+		Dictionary single;
+		single["type"] = p_action.strip_edges().to_lower();
+		steps.push_back(single);
+	}
+	for (int i = 0; i < steps.size(); i++) {
+		if (steps[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary st = steps[i];
+		String tp = String(st.get("type", st.get("action", ""))).strip_edges().to_lower();
+		if (tp == "close" || tp == "back") {
+			close_window_with_reason("boton ui mensajes");
+			return;
+		}
+		if (tp == "next" || tp == "advance" || tp == "continue") {
+			if (current_state == STATE_TYPING) {
+				instant_text_active = true;
+				_complete_typing_to_next_pause();
+			} else if (current_state == STATE_WAITING) {
+				advance_or_close();
+			}
+			return;
+		}
+		if (tp == "skip") {
+			set_skip_mode(!is_skip_mode);
+			continue;
+		}
+		if (tp == "auto") {
+			set_auto_mode(!is_auto_mode);
+			continue;
+		}
+		if (tp == "history") {
+			is_history_open() ? close_history() : open_history();
+			continue;
+		}
+		if (tp == "common_event") {
+			int ce_id = int(st.get("common_event_id", st.get("id", 0)));
+			if (ce_id > 0 && is_inside_tree() && get_tree()) {
+				if (Node *root = get_tree()->get_root()) {
+					Node *interp = root->find_child("ClockGearsEventInterpreter", true, false);
+					if (interp) {
+						interp->call("execute_common_event", ce_id);
+					}
+				}
+			}
+			continue;
+		}
+		ClockGearsUiDesignLayer::execute_common_action_step(st, custom_ui_layer);
+	}
 }
 
 ClockGearsMessageWindow::~ClockGearsMessageWindow() {
@@ -594,6 +702,7 @@ void ClockGearsMessageWindow::show_message(const String &p_text, const String &p
 
 	show();
 	main_panel->show();
+	_refresh_custom_ui_layer();
 
 	if (active_message.plain_text.strip_edges().is_empty()) {
 		current_state = STATE_WAITING;
@@ -735,6 +844,7 @@ void ClockGearsMessageWindow::close_window_with_reason(const String &p_reason) {
 	if (gold_panel) gold_panel->hide();
 	if (choices_panel) choices_panel->hide();
 	if (number_panel) number_panel->hide();
+	if (custom_ui_layer) custom_ui_layer->hide();
 	emit_signal("message_completed");
 }
 
@@ -1076,6 +1186,21 @@ void ClockGearsMessageWindow::unhandled_input(const Ref<InputEvent> &p_event) {
 	}
 
 	bool is_advance = false;
+	if (custom_ui_layer && custom_ui_layer->is_visible() && get_viewport()) {
+		if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+			Button *hb = Object::cast_to<Button>(get_viewport()->gui_get_hovered_control());
+			if (hb && custom_ui_layer->owns_control(hb) && !hb->is_disabled()) {
+				return;
+			}
+		}
+		if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
+			Button *fb = Object::cast_to<Button>(get_viewport()->gui_get_focus_owner());
+			if (fb && custom_ui_layer->owns_control(fb) && !fb->is_disabled() &&
+					(k->get_keycode() == Key::ENTER || k->get_keycode() == Key::KP_ENTER || k->get_keycode() == Key::SPACE)) {
+				return;
+			}
+		}
+	}
 	if (k.is_valid() && k->is_pressed() && !k->is_echo()) {
 		if (k->get_keycode() == Key::ENTER || k->get_keycode() == Key::KP_ENTER || k->get_keycode() == Key::SPACE || k->get_keycode() == Key::Z) {
 			is_advance = true;

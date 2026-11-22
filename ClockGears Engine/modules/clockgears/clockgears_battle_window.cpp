@@ -2,6 +2,7 @@
 #include "clockgears_debug_panel.h"
 #include "core/clockgears_data_manager.h"
 #include "clockgears_fx_manager.h"
+#include "runtime/clockgears_ui_design_layer.h"
 #include "runtime/clockgears_window_style.h"
 #include "editor/clockgears_theme.h"
 #include "editor/themes/editor_scale.h"
@@ -11,6 +12,8 @@
 #include "core/io/file_access.h"
 #include "core/io/image_loader.h"
 #include "core/io/resource_loader.h"
+#include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
 #include "scene/resources/placeholder_textures.h"
 #include "scene/resources/style_box_flat.h"
 
@@ -347,6 +350,7 @@ void ClockGearsBattleScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_enemy_hp_bar_visible", "idx"), &ClockGearsBattleScene::is_enemy_hp_bar_visible);
 	ClassDB::bind_method(D_METHOD("get_enemy_current_visual_anim", "idx"), &ClockGearsBattleScene::get_enemy_current_visual_anim);
 	ClassDB::bind_method(D_METHOD("get_drawn_battleback_rect", "slot"), &ClockGearsBattleScene::get_drawn_battleback_rect);
+	ClassDB::bind_method(D_METHOD("get_custom_ui_layer"), &ClockGearsBattleScene::get_custom_ui_layer);
 
 	ADD_SIGNAL(MethodInfo("battle_finished", PropertyInfo(Variant::INT, "result")));
 }
@@ -504,6 +508,16 @@ void ClockGearsBattleScene::_setup_ui() {
 	btn_flee->set_text_alignment(HORIZONTAL_ALIGNMENT_LEFT);
 	btn_flee->connect("pressed", callable_mp(this, &ClockGearsBattleScene::_on_btn_flee_pressed));
 	actions_vbox->add_child(btn_flee);
+
+	// Capa UI personalizada (diseños de Batalla + botones añadidos)
+	custom_ui_layer = memnew(ClockGearsUiDesignLayer);
+	custom_ui_layer->set_name("CustomBattleUiLayer");
+	custom_ui_layer->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	custom_ui_layer->set_window_type_fallback("battle_commands");
+	custom_ui_layer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	custom_ui_layer->set_visible(false);
+	custom_ui_layer->connect("action_triggered", callable_mp(this, &ClockGearsBattleScene::_on_custom_ui_action));
+	add_child(custom_ui_layer);
 
 	// 4. Submenú flotante para selección de objetivo / habilidad / objeto
 	sub_menu_panel = memnew(PanelContainer);
@@ -1215,6 +1229,82 @@ void ClockGearsBattleScene::_refresh_ui() {
 	if (btn_item) btn_item->set_disabled(!can_act);
 	if (btn_defend) btn_defend->set_disabled(!can_act);
 	if (btn_flee) btn_flee->set_disabled(!can_act);
+	_refresh_custom_ui_layer(can_act);
+}
+
+Control *ClockGearsBattleScene::get_custom_ui_layer() const {
+	return custom_ui_layer;
+}
+
+void ClockGearsBattleScene::_refresh_custom_ui_layer(bool p_can_act) {
+	if (!custom_ui_layer) {
+		return;
+	}
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || !dm->has_custom_ui_design("battle")) {
+		custom_ui_layer->set_visible(false);
+		custom_ui_layer->clear_elements();
+		if (actions_panel) actions_panel->set_visible(true);
+		return;
+	}
+	custom_ui_layer->set_window_type_fallback("battle_commands");
+	custom_ui_layer->set_preview_mode(false);
+	custom_ui_layer->apply_screen_design("battle");
+	custom_ui_layer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	custom_ui_layer->set_visible(true);
+
+	const bool has_custom_cmds = (custom_ui_layer->get_element_control("btn_battle_1") != nullptr);
+	if (actions_panel) {
+		actions_panel->set_visible(!has_custom_cmds);
+	}
+	static const char *k_cmd_ids[5] = { "btn_battle_1", "btn_battle_2", "btn_battle_3", "btn_battle_4", "btn_battle_5" };
+	for (int i = 0; i < 5; i++) {
+		if (Control *ec = custom_ui_layer->get_element_control(k_cmd_ids[i])) {
+			if (Button *b = Object::cast_to<Button>(ec->find_child("ActionButton", true, false))) {
+				b->set_disabled(!p_can_act);
+			}
+		}
+	}
+}
+
+void ClockGearsBattleScene::_on_custom_ui_action(const String &p_action, const String &p_elem_id) {
+	Array steps;
+	if (custom_ui_layer && !p_elem_id.is_empty()) {
+		steps = custom_ui_layer->get_element_actions(p_elem_id);
+	}
+	if (steps.is_empty() && !p_action.strip_edges().is_empty()) {
+		Dictionary single;
+		single["type"] = p_action.strip_edges().to_lower();
+		steps.push_back(single);
+	}
+	String eid_low = p_elem_id.strip_edges().to_lower();
+	if (eid_low == "btn_battle_1") { _on_btn_attack_pressed(); return; }
+	if (eid_low == "btn_battle_2") { _on_btn_skill_pressed(); return; }
+	if (eid_low == "btn_battle_3") { _on_btn_item_pressed(); return; }
+	if (eid_low == "btn_battle_4") { _on_btn_defend_pressed(); return; }
+	if (eid_low == "btn_battle_5") { _on_btn_flee_pressed(); return; }
+
+	for (int i = 0; i < steps.size(); i++) {
+		if (steps[i].get_type() != Variant::DICTIONARY) continue;
+		Dictionary st = steps[i];
+		String tp = String(st.get("type", st.get("action", ""))).strip_edges().to_lower();
+		if (tp == "attack" || tp == "atacar") { _on_btn_attack_pressed(); return; }
+		if (tp == "skill" || tp == "habilidad") { _on_btn_skill_pressed(); return; }
+		if (tp == "item" || tp == "objeto") { _on_btn_item_pressed(); return; }
+		if (tp == "defend" || tp == "guard" || tp == "defender") { _on_btn_defend_pressed(); return; }
+		if (tp == "flee" || tp == "escape" || tp == "huir") { _on_btn_flee_pressed(); return; }
+		if (tp == "common_event") {
+			int ce_id = int(st.get("common_event_id", st.get("id", 0)));
+			if (ce_id > 0 && is_inside_tree() && get_tree()) {
+				if (Node *root = get_tree()->get_root()) {
+					Node *interp = root->find_child("ClockGearsEventInterpreter", true, false);
+					if (interp) interp->call("execute_common_event", ce_id);
+				}
+			}
+			continue;
+		}
+		ClockGearsUiDesignLayer::execute_common_action_step(st, custom_ui_layer);
+	}
 }
 
 void ClockGearsBattleScene::_update_initiative_bar() {
