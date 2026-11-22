@@ -15,6 +15,7 @@
 #include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/slider.h"
@@ -341,10 +342,33 @@ private:
 	Button *add_button_bar_btn = nullptr;
 	Button *templates_btn = nullptr;
 	Label *screen_status_lbl = nullptr;
+	Button *context_btn = nullptr;
+	PopupPanel *context_popover = nullptr;
+	PanelContainer *context_pop_panel = nullptr;
 	CheckBox *view_context_chk = nullptr;
+	HSlider *context_opacity_slider = nullptr;
+	Label *context_opacity_val_lbl = nullptr;
+	VBoxContainer *context_siblings_section = nullptr;
+	Button *context_all_btn = nullptr;
+	Button *context_none_btn = nullptr;
+	VBoxContainer *context_siblings_list = nullptr;
+	Label *context_siblings_empty_lbl = nullptr;
+	VBoxContainer *context_sample_section = nullptr;
 	CheckBox *sample_scene_chk = nullptr;
+	HSlider *sample_scene_opacity_slider = nullptr;
+	Label *sample_scene_opacity_lbl = nullptr;
 	Control *ctx_battle_backdrop_node = nullptr;
 	Control *context_layers_root = nullptr;
+	struct TabContextPrefs {
+		bool show_context = false;
+		int opacity_pct = 25;
+		HashMap<String, bool> sibling_enabled; // missing key defaults to true when show_context is ON
+		bool sample_scene_enabled = false;
+		int sample_opacity_pct = 25;
+	};
+	static HashMap<String, TabContextPrefs> &s_get_context_prefs_store();
+	String last_context_popover_key;
+	bool context_ui_updating = false;
 
 	// Barra de edición rápida (rejilla, paso, imán, guías, alinear, distribuir, duplicar, copiar/pegar)
 	CheckBox *grid_chk = nullptr;
@@ -748,8 +772,16 @@ private:
 	void _refresh_canvas_stage();
 	void _refresh_background_and_default_preview(bool p_has_custom);
 	void _refresh_context_preview();
+	String _get_active_context_tab_key() const;
+	TabContextPrefs &_get_tab_context_prefs(const String &p_tab_key);
+	void _rebuild_context_popover_contents(bool p_force_rebuild = false);
+	void _on_context_btn_pressed();
 	void _on_context_chk_toggled(bool p_pressed);
+	void _on_context_opacity_changed(double p_val);
+	void _on_context_sibling_toggled(bool p_pressed, const String &p_sid);
+	void _on_context_select_all(bool p_all);
 	void _on_sample_scene_chk_toggled(bool p_pressed);
+	void _on_sample_scene_opacity_changed(double p_val);
 	void _refresh_menus_list();
 	void _refresh_screen_dropdown();
 	void _refresh_layers_list();

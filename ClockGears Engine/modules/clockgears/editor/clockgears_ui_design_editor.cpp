@@ -2745,6 +2745,142 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	preview_res_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_preview_res_selected));
 	res_hb->add_child(preview_res_opt);
 
+	context_btn = memnew(Button("Contexto"));
+	context_btn->set_name("UiDesignerContextBtn");
+	context_btn->set_custom_minimum_size(Size2(84 * EDSCALE, row_h));
+	context_btn->set_clip_text(false);
+	context_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+	context_btn->set_tooltip_text(String::utf8("Configura qué sub-pantallas hermanas o escena de ejemplo se ven en segundo plano y con qué opacidad."));
+	s_make_rounded_action_btn(context_btn);
+	context_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_btn_pressed));
+	res_hb->add_child(context_btn);
+
+	context_popover = memnew(PopupPanel);
+	context_popover->set_name("UiDesignerContextPopover");
+	context_popover->set_min_size(Size2i(int(310 * EDSCALE), int(140 * EDSCALE)));
+	add_child(context_popover);
+
+	context_pop_panel = memnew(PanelContainer);
+	context_pop_panel->set_theme_type_variation("ClockGearsContainer");
+	context_pop_panel->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	context_pop_panel->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	context_popover->add_child(context_pop_panel);
+
+	MarginContainer *ctx_mc = memnew(MarginContainer);
+	ctx_mc->add_theme_constant_override("margin_left", int(10 * EDSCALE));
+	ctx_mc->add_theme_constant_override("margin_right", int(10 * EDSCALE));
+	ctx_mc->add_theme_constant_override("margin_top", int(8 * EDSCALE));
+	ctx_mc->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
+	context_pop_panel->add_child(ctx_mc);
+
+	VBoxContainer *ctx_vb = memnew(VBoxContainer);
+	ctx_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ctx_vb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	ctx_mc->add_child(ctx_vb);
+
+	view_context_chk = memnew(CheckBox("Mostrar contexto"));
+	view_context_chk->set_name("UiDesignerViewContextChk");
+	view_context_chk->set_pressed(false);
+	view_context_chk->set_clip_text(false);
+	view_context_chk->set_tooltip_text(String::utf8("Muestra las sub-pantallas hermanas seleccionadas atenuadas detrás del diseño activo."));
+	view_context_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_chk_toggled));
+	ctx_vb->add_child(view_context_chk);
+
+	HBoxContainer *ctx_op_hb = memnew(HBoxContainer);
+	ctx_op_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ctx_op_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	ctx_op_hb->add_child(memnew(Label("Opacidad:")));
+	context_opacity_slider = memnew(HSlider);
+	context_opacity_slider->set_name("UiDesignerContextOpacitySlider");
+	context_opacity_slider->set_min(5);
+	context_opacity_slider->set_max(100);
+	context_opacity_slider->set_step(5);
+	context_opacity_slider->set_value(25);
+	context_opacity_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	context_opacity_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_opacity_changed));
+	ctx_op_hb->add_child(context_opacity_slider);
+	context_opacity_val_lbl = memnew(Label("25 %"));
+	context_opacity_val_lbl->set_custom_minimum_size(Size2(44 * EDSCALE, 0));
+	context_opacity_val_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+	ctx_op_hb->add_child(context_opacity_val_lbl);
+	ctx_vb->add_child(ctx_op_hb);
+
+	context_siblings_section = memnew(VBoxContainer);
+	context_siblings_section->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	context_siblings_section->add_theme_constant_override("separation", int(6 * EDSCALE));
+	ctx_vb->add_child(context_siblings_section);
+	context_siblings_section->add_child(memnew(HSeparator));
+
+	HBoxContainer *ctx_sib_hdr = memnew(HBoxContainer);
+	ctx_sib_hdr->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ctx_sib_hdr->add_theme_constant_override("separation", int(6 * EDSCALE));
+	Label *sib_lbl = memnew(Label("Sub-pantallas hermanas:"));
+	sib_lbl->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ctx_sib_hdr->add_child(sib_lbl);
+	context_all_btn = memnew(Button("Todas"));
+	context_all_btn->set_name("UiDesignerContextAllBtn");
+	context_all_btn->set_clip_text(false);
+	s_make_rounded_action_btn(context_all_btn);
+	context_all_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_select_all).bind(true));
+	ctx_sib_hdr->add_child(context_all_btn);
+	context_none_btn = memnew(Button("Ninguna"));
+	context_none_btn->set_name("UiDesignerContextNoneBtn");
+	context_none_btn->set_clip_text(false);
+	s_make_rounded_action_btn(context_none_btn);
+	context_none_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_select_all).bind(false));
+	ctx_sib_hdr->add_child(context_none_btn);
+	context_siblings_section->add_child(ctx_sib_hdr);
+
+	ScrollContainer *ctx_sib_sc = memnew(ScrollContainer);
+	ctx_sib_sc->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	ctx_sib_sc->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	ctx_sib_sc->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
+	context_siblings_section->add_child(ctx_sib_sc);
+
+	context_siblings_list = memnew(VBoxContainer);
+	context_siblings_list->set_name("UiDesignerContextSiblingsList");
+	context_siblings_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	context_siblings_list->add_theme_constant_override("separation", int(4 * EDSCALE));
+	ctx_sib_sc->add_child(context_siblings_list);
+
+	context_siblings_empty_lbl = memnew(Label(String::utf8("Sin sub-pantallas hermanas en esta pestaña.")));
+	context_siblings_empty_lbl->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	context_siblings_empty_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
+	context_siblings_section->add_child(context_siblings_empty_lbl);
+
+	context_sample_section = memnew(VBoxContainer);
+	context_sample_section->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	context_sample_section->add_theme_constant_override("separation", int(6 * EDSCALE));
+	ctx_vb->add_child(context_sample_section);
+	context_sample_section->add_child(memnew(HSeparator));
+
+	sample_scene_chk = memnew(CheckBox("Escena de ejemplo"));
+	sample_scene_chk->set_name("UiDesignerSampleSceneChk");
+	sample_scene_chk->set_pressed(false);
+	sample_scene_chk->set_clip_text(false);
+	sample_scene_chk->set_tooltip_text(String::utf8("Muestra un fondo de batalla y un enemigo de ejemplo atenuados y no editables."));
+	sample_scene_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_sample_scene_chk_toggled));
+	context_sample_section->add_child(sample_scene_chk);
+
+	HBoxContainer *smp_op_hb = memnew(HBoxContainer);
+	smp_op_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	smp_op_hb->add_theme_constant_override("separation", int(8 * EDSCALE));
+	smp_op_hb->add_child(memnew(Label("Opacidad escena:")));
+	sample_scene_opacity_slider = memnew(HSlider);
+	sample_scene_opacity_slider->set_name("UiDesignerSampleOpacitySlider");
+	sample_scene_opacity_slider->set_min(5);
+	sample_scene_opacity_slider->set_max(100);
+	sample_scene_opacity_slider->set_step(5);
+	sample_scene_opacity_slider->set_value(25);
+	sample_scene_opacity_slider->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sample_scene_opacity_slider->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_sample_scene_opacity_changed));
+	smp_op_hb->add_child(sample_scene_opacity_slider);
+	sample_scene_opacity_lbl = memnew(Label("25 %"));
+	sample_scene_opacity_lbl->set_custom_minimum_size(Size2(44 * EDSCALE, 0));
+	sample_scene_opacity_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+	smp_op_hb->add_child(sample_scene_opacity_lbl);
+	context_sample_section->add_child(smp_op_hb);
+
 	zoom_hb = memnew(HBoxContainer);
 	zoom_hb->add_theme_constant_override("separation", int(3 * EDSCALE));
 	top_row2_flow->add_child(zoom_hb);
@@ -3270,20 +3406,6 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	screen_status_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_accent_amber());
 	canvas_status_hb->add_child(screen_status_lbl);
 
-	view_context_chk = memnew(CheckBox("Ver contexto"));
-	view_context_chk->set_name("UiDesignerViewContextChk");
-	view_context_chk->set_pressed(true);
-	view_context_chk->set_tooltip_text(String::utf8("Muestra las demás sub-pantallas de esta pestaña atenuadas (35%) en el lienzo."));
-	view_context_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_chk_toggled));
-	canvas_status_hb->add_child(view_context_chk);
-
-	sample_scene_chk = memnew(CheckBox("Escena de ejemplo"));
-	sample_scene_chk->set_name("UiDesignerSampleSceneChk");
-	sample_scene_chk->set_pressed(true);
-	sample_scene_chk->set_tooltip_text(String::utf8("Muestra un fondo de batalla y un enemigo de ejemplo atenuados y no editables."));
-	sample_scene_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_sample_scene_chk_toggled));
-	canvas_status_hb->add_child(sample_scene_chk);
-
 	zoom_info_lbl = memnew(Label("960x540"));
 	zoom_info_lbl->add_theme_font_size_override("font_size", int(11 * EDSCALE));
 	zoom_info_lbl->add_theme_color_override("font_color", ClockGearsTheme::color_text_secondary());
@@ -3325,7 +3447,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	ctx_battle_backdrop_node->set_name("UiDesignerBattleBackdrop");
 	ctx_battle_backdrop_node->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	ctx_battle_backdrop_node->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	ctx_battle_backdrop_node->set_modulate(Color(1, 1, 1, 0.35f));
+	ctx_battle_backdrop_node->set_modulate(Color(1, 1, 1, 0.25f));
 	ctx_battle_backdrop_node->hide();
 	canvas_stage->add_child(ctx_battle_backdrop_node);
 
@@ -3333,7 +3455,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	context_layers_root->set_name("UiDesignerContextLayers");
 	context_layers_root->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	context_layers_root->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	context_layers_root->set_modulate(Color(1, 1, 1, 0.35f));
+	context_layers_root->set_modulate(Color(1, 1, 1, 0.25f));
+	context_layers_root->hide();
 	canvas_stage->add_child(context_layers_root);
 
 	design_layer = memnew(ClockGearsUiDesignLayer);
@@ -4739,7 +4862,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	ClockGearsTheme::set_control_long_help(dup_elem_btn, String::utf8("Duplicar elemento (Ctrl+D)\nCrea una copia exacta del elemento seleccionado ligeramente desplazada en la misma pantalla."));
 	ClockGearsTheme::set_control_long_help(copy_elem_btn, String::utf8("Copiar elemento (Ctrl+C)\nGuarda en el portapapeles el elemento seleccionado para pegarlo aquí o en otra pantalla."));
 	ClockGearsTheme::set_control_long_help(paste_elem_btn, String::utf8("Pegar elemento (Ctrl+V)\nInserta una copia del elemento previamente copiado en el diseño activo."));
-	ClockGearsTheme::set_control_long_help(view_context_chk, String::utf8("Ver contexto\nMuestra el resto de ventanas de este módulo atenuadas en segundo plano para alinear sin perder referencias."));
+	ClockGearsTheme::set_control_long_help(context_btn, String::utf8("Contexto\nAbre las opciones de contexto en segundo plano: visibilidad, opacidad, sub-pantallas hermanas y escena de ejemplo en Batalla."));
+	ClockGearsTheme::set_control_long_help(view_context_chk, String::utf8("Mostrar contexto\nMuestra las sub-pantallas hermanas elegidas de esta pestaña atenuadas detrás del diseño activo."));
 	ClockGearsTheme::set_control_long_help(sample_scene_chk, String::utf8("Escena de ejemplo\nMuestra un campo de batalla y enemigos de muestra detrás de los paneles para comprobar la legibilidad."));
 	ClockGearsTheme::set_control_long_help(layer_add_button_btn, String::utf8("+ Botón\nAbre la ventana rápida para crear un botón nuevo con su texto, posición y acción."));
 	ClockGearsTheme::set_control_long_help(layer_add_folder_btn, String::utf8("+ Carpeta\nCrea una carpeta organizadora en el árbol de capas para agrupar elementos relacionados."));
@@ -5226,11 +5350,241 @@ static Ref<Texture2D> _cg_icon_for_screen_id(const String &p_id, Control *p_ref)
 	return ci->get_icon_with_fallback(iname, "db_system", 1.0f);
 }
 
+static void s_set_subtree_mouse_ignore(Node *p_node) {
+	if (!p_node) {
+		return;
+	}
+	if (Control *c = Object::cast_to<Control>(p_node)) {
+		c->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		c->set_focus_mode(Control::FOCUS_NONE);
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		s_set_subtree_mouse_ignore(p_node->get_child(i));
+	}
+}
+
+HashMap<String, ClockGearsUiDesignEditor::TabContextPrefs> &ClockGearsUiDesignEditor::s_get_context_prefs_store() {
+	static HashMap<String, TabContextPrefs> store;
+	return store;
+}
+
+String ClockGearsUiDesignEditor::_get_active_context_tab_key() const {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String scope = dm ? dm->get_menu_system_group(current_screen_id) : system_scope_root;
+	if (scope.is_empty()) {
+		scope = system_scope_root.is_empty() ? current_screen_id : system_scope_root;
+	}
+	if (scope.is_empty()) {
+		scope = "title";
+	}
+	String proj_key = "";
+	if (ProjectSettings::get_singleton()) {
+		proj_key = ProjectSettings::get_singleton()->globalize_path("res://").simplify_path().to_lower();
+	}
+	return proj_key + "::" + scope.to_lower();
+}
+
+ClockGearsUiDesignEditor::TabContextPrefs &ClockGearsUiDesignEditor::_get_tab_context_prefs(const String &p_tab_key) {
+	HashMap<String, TabContextPrefs> &store = s_get_context_prefs_store();
+	if (!store.has(p_tab_key)) {
+		store[p_tab_key] = TabContextPrefs();
+	}
+	return store[p_tab_key];
+}
+
+void ClockGearsUiDesignEditor::_rebuild_context_popover_contents(bool p_force_rebuild) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	String scope = dm ? dm->get_menu_system_group(current_screen_id) : system_scope_root;
+	if (scope.is_empty()) {
+		scope = system_scope_root;
+	}
+	bool has_subscreen_scope = (scope == "messages" || scope == "battle");
+	bool is_battle_scope = (scope == "battle");
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	String pop_key = scope + "::" + current_screen_id;
+	bool need_rebuild = p_force_rebuild || (last_context_popover_key != pop_key);
+
+	bool prev = context_ui_updating;
+	context_ui_updating = true;
+	if (view_context_chk) {
+		view_context_chk->set_visible(true);
+		view_context_chk->set_pressed(prefs.show_context);
+	}
+	if (context_opacity_slider) {
+		context_opacity_slider->set_value(CLAMP(prefs.opacity_pct, 5, 100));
+	}
+	if (context_opacity_val_lbl) {
+		context_opacity_val_lbl->set_text(itos(CLAMP(prefs.opacity_pct, 5, 100)) + " %");
+	}
+	if (context_siblings_list) {
+		int sib_count = 0;
+		if (need_rebuild) {
+			last_context_popover_key = pop_key;
+			while (context_siblings_list->get_child_count() > 0) {
+				Node *ch = context_siblings_list->get_child(0);
+				context_siblings_list->remove_child(ch);
+				ch->queue_free();
+			}
+			if (has_subscreen_scope && dm) {
+				Array menus = dm->get_all_menus_for_selector();
+				for (int i = 0; i < menus.size(); i++) {
+					Dictionary sd = menus[i];
+					String sid = String(sd.get("id", ""));
+					if (sid.is_empty() || sid == current_screen_id) {
+						continue;
+					}
+					String sg = String(sd.get("system_group", dm->get_menu_system_group(sid)));
+					if (sid != scope && sg != scope) {
+						continue;
+					}
+					bool on = prefs.sibling_enabled.has(sid) ? prefs.sibling_enabled[sid] : true;
+					String label_txt = String(sd.get("name", sid));
+					CheckBox *cb = memnew(CheckBox(label_txt));
+					cb->set_name("CtxSiblingChk_" + sid);
+					cb->set_meta("sibling_id", sid);
+					cb->set_pressed(on);
+					cb->set_clip_text(false);
+					cb->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_context_sibling_toggled).bind(sid));
+					context_siblings_list->add_child(cb);
+					sib_count++;
+				}
+			}
+		} else {
+			for (int i = 0; i < context_siblings_list->get_child_count(); i++) {
+				CheckBox *cb = Object::cast_to<CheckBox>(context_siblings_list->get_child(i));
+				if (cb) {
+					String sid = String(cb->get_meta("sibling_id", ""));
+					bool on = prefs.sibling_enabled.has(sid) ? prefs.sibling_enabled[sid] : true;
+					cb->set_pressed(on);
+					sib_count++;
+				}
+			}
+		}
+		if (context_siblings_section) {
+			context_siblings_section->set_visible(has_subscreen_scope);
+		}
+		if (context_siblings_empty_lbl) {
+			context_siblings_empty_lbl->set_visible(has_subscreen_scope && sib_count == 0);
+		}
+		if (context_all_btn) {
+			context_all_btn->set_visible(sib_count > 0);
+		}
+		if (context_none_btn) {
+			context_none_btn->set_visible(sib_count > 0);
+		}
+	}
+	if (context_sample_section) {
+		context_sample_section->set_visible(is_battle_scope);
+	}
+	if (sample_scene_chk) {
+		sample_scene_chk->set_visible(is_battle_scope);
+		sample_scene_chk->set_pressed(prefs.sample_scene_enabled);
+	}
+	if (sample_scene_opacity_slider) {
+		sample_scene_opacity_slider->set_value(CLAMP(prefs.sample_opacity_pct, 5, 100));
+	}
+	if (sample_scene_opacity_lbl) {
+		sample_scene_opacity_lbl->set_text(itos(CLAMP(prefs.sample_opacity_pct, 5, 100)) + " %");
+	}
+	context_ui_updating = prev;
+}
+
+void ClockGearsUiDesignEditor::_on_context_btn_pressed() {
+	if (!context_popover || !context_btn) {
+		return;
+	}
+	_rebuild_context_popover_contents(true);
+	if (ClockGearsTheme *ct = ClockGearsTheme::get_singleton()) {
+		ct->apply_to_window(context_popover);
+		if (context_pop_panel) {
+			ct->apply_to_control(context_pop_panel);
+		}
+	}
+	Rect2 btn_rect = context_btn->get_screen_rect();
+	if (Window *pw = context_btn->get_window()) {
+		if (pw->is_embedding_subwindows()) {
+			btn_rect = context_btn->get_global_rect();
+		}
+	}
+	Size2 min_sz = context_pop_panel ? context_pop_panel->get_combined_minimum_size() : Size2(310 * EDSCALE, 220 * EDSCALE);
+	Size2i pop_sz(MAX(int(320 * EDSCALE), int(Math::ceil(min_sz.x)) + int(8 * EDSCALE)),
+			MAX(int(140 * EDSCALE), int(Math::ceil(min_sz.y)) + int(8 * EDSCALE)));
+	Rect2i usable = ClockGearsTheme::get_window_usable_rect(context_popover);
+	Point2i desired_pos(int(Math::round(btn_rect.position.x)), int(Math::round(btn_rect.position.y + btn_rect.size.y + 4.0 * EDSCALE)));
+	Rect2i pop_rect = ClockGearsTheme::compute_fitted_popup_rect(usable, pop_sz, Size2i(260, 120), pop_sz, desired_pos, true, pop_sz);
+	context_popover->set_size(pop_rect.size);
+	context_popover->set_position(pop_rect.position);
+	context_popover->popup(pop_rect);
+}
+
 void ClockGearsUiDesignEditor::_on_context_chk_toggled(bool p_pressed) {
+	if (context_ui_updating) {
+		return;
+	}
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	prefs.show_context = p_pressed;
+	_refresh_context_preview();
+}
+
+void ClockGearsUiDesignEditor::_on_context_opacity_changed(double p_val) {
+	if (context_ui_updating) {
+		return;
+	}
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	prefs.opacity_pct = CLAMP(int(Math::round(p_val)), 5, 100);
+	if (context_opacity_val_lbl) {
+		context_opacity_val_lbl->set_text(itos(prefs.opacity_pct) + " %");
+	}
+	_refresh_context_preview();
+}
+
+void ClockGearsUiDesignEditor::_on_context_sibling_toggled(bool p_pressed, const String &p_sid) {
+	if (context_ui_updating || p_sid.is_empty()) {
+		return;
+	}
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	prefs.sibling_enabled[p_sid] = p_pressed;
+	_refresh_context_preview();
+}
+
+void ClockGearsUiDesignEditor::_on_context_select_all(bool p_all) {
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	if (context_siblings_list) {
+		bool prev = context_ui_updating;
+		context_ui_updating = true;
+		for (int i = 0; i < context_siblings_list->get_child_count(); i++) {
+			CheckBox *cb = Object::cast_to<CheckBox>(context_siblings_list->get_child(i));
+			if (cb) {
+				String sid = String(cb->get_meta("sibling_id", ""));
+				if (!sid.is_empty()) {
+					prefs.sibling_enabled[sid] = p_all;
+				}
+				cb->set_pressed(p_all);
+			}
+		}
+		context_ui_updating = prev;
+	}
 	_refresh_context_preview();
 }
 
 void ClockGearsUiDesignEditor::_on_sample_scene_chk_toggled(bool p_pressed) {
+	if (context_ui_updating) {
+		return;
+	}
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	prefs.sample_scene_enabled = p_pressed;
+	_refresh_context_preview();
+}
+
+void ClockGearsUiDesignEditor::_on_sample_scene_opacity_changed(double p_val) {
+	if (context_ui_updating) {
+		return;
+	}
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
+	prefs.sample_opacity_pct = CLAMP(int(Math::round(p_val)), 5, 100);
+	if (sample_scene_opacity_lbl) {
+		sample_scene_opacity_lbl->set_text(itos(prefs.sample_opacity_pct) + " %");
+	}
 	_refresh_context_preview();
 }
 
@@ -5240,16 +5594,15 @@ void ClockGearsUiDesignEditor::_refresh_context_preview() {
 	if (scope.is_empty()) scope = system_scope_root;
 	bool has_subscreen_scope = (scope == "messages" || scope == "battle");
 	bool is_battle_scope = (scope == "battle");
+	TabContextPrefs &prefs = _get_tab_context_prefs(_get_active_context_tab_key());
 
-	if (view_context_chk) {
-		view_context_chk->set_visible(has_subscreen_scope);
-	}
-	if (sample_scene_chk) {
-		sample_scene_chk->set_visible(is_battle_scope);
-	}
+	_rebuild_context_popover_contents(false);
+
 	if (ctx_battle_backdrop_node) {
-		bool show_bd = is_battle_scope && (!sample_scene_chk || sample_scene_chk->is_pressed());
+		bool show_bd = is_battle_scope && prefs.sample_scene_enabled;
 		ctx_battle_backdrop_node->set_visible(show_bd);
+		ctx_battle_backdrop_node->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		ctx_battle_backdrop_node->set_modulate(Color(1.0f, 1.0f, 1.0f, CLAMP(prefs.sample_opacity_pct, 5, 100) / 100.0f));
 		ctx_battle_backdrop_node->set_size(Vector2(BASE_W, BASE_H));
 		if (show_bd) {
 			ctx_battle_backdrop_node->queue_redraw();
@@ -5263,9 +5616,10 @@ void ClockGearsUiDesignEditor::_refresh_context_preview() {
 		context_layers_root->remove_child(ch);
 		memdelete(ch);
 	}
-	bool show_ctx = has_subscreen_scope && (!view_context_chk || view_context_chk->is_pressed());
+	bool show_ctx = has_subscreen_scope && prefs.show_context;
 	context_layers_root->set_visible(show_ctx);
-	context_layers_root->set_modulate(Color(1, 1, 1, 0.35f));
+	context_layers_root->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	context_layers_root->set_modulate(Color(1.0f, 1.0f, 1.0f, CLAMP(prefs.opacity_pct, 5, 100) / 100.0f));
 	if (!show_ctx || !dm) {
 		return;
 	}
@@ -5276,6 +5630,8 @@ void ClockGearsUiDesignEditor::_refresh_context_preview() {
 		if (sid.is_empty() || sid == current_screen_id) continue;
 		String sg = String(sd.get("system_group", dm->get_menu_system_group(sid)));
 		if (sid != scope && sg != scope) continue;
+		bool sib_on = prefs.sibling_enabled.has(sid) ? prefs.sibling_enabled[sid] : true;
+		if (!sib_on) continue;
 		Dictionary d = dm->has_custom_ui_design(sid) ? dm->get_ui_screen_design(sid) : dm->get_default_ui_screen_template(sid);
 		ClockGearsUiDesignLayer *ctx_l = memnew(ClockGearsUiDesignLayer);
 		ctx_l->set_name("CtxLayer_" + sid);
@@ -5285,6 +5641,7 @@ void ClockGearsUiDesignEditor::_refresh_context_preview() {
 		ctx_l->set_viewport_size_override(Vector2(BASE_W, BASE_H));
 		context_layers_root->add_child(ctx_l);
 		ctx_l->apply_prebuilt_screen_design(sid, d);
+		s_set_subtree_mouse_ignore(ctx_l);
 	}
 }
 
@@ -10335,6 +10692,13 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["top_row1_flow"] = top_row1_flow;
 	out["top_row2_flow"] = top_row2_flow;
 	out["screen_status_lbl"] = screen_status_lbl;
+	out["context_btn"] = context_btn;
+	out["context_popover"] = context_popover;
+	out["context_opacity_slider"] = context_opacity_slider;
+	out["context_siblings_list"] = context_siblings_list;
+	out["context_all_btn"] = context_all_btn;
+	out["context_none_btn"] = context_none_btn;
+	out["sample_scene_opacity_slider"] = sample_scene_opacity_slider;
 	out["view_context_chk"] = view_context_chk;
 	out["sample_scene_chk"] = sample_scene_chk;
 	out["context_layers_root"] = context_layers_root;

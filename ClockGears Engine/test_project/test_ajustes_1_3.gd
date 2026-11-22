@@ -304,7 +304,111 @@ func _run() -> void:
 	tp_dlg.queue_free()
 
 	host.queue_free()
+	await pump(4)
+
+	# --- PUNTO 4: Botón "Contexto" junto a Vista, barra de estado limpia, opacidad y selección por pestaña ---
+	var host4 := Window.new()
+	host4.size = Vector2i(1366, 768)
+	host4.gui_embed_subwindows = true
+	get_root().add_child(host4)
+	var ed4 := ClockGearsUiDesignEditor.new()
+	ed4.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	host4.add_child(ed4)
+	ed4.set_system_scope("messages")
+	await pump(4)
+
+	var h4: Dictionary = ed4.get_ui_handles()
+	var status_lbl: Label = h4.get("screen_status_lbl", null)
+	var status_bar: Node = status_lbl.get_parent() if status_lbl != null else null
+	var bar_has_chk := false
+	if status_bar != null:
+		for ch in status_bar.get_children():
+			if ch is CheckBox:
+				bar_has_chk = true
+	var ctx_btn: Button = h4.get("context_btn", null)
+	var res_opt: OptionButton = h4.get("preview_res_opt", null)
+	check(status_lbl != null and status_lbl.visible and not bar_has_chk,
+		"Punto 4 Status Bar Clean: no CheckBox overlapping '%s'" % (status_lbl.text if status_lbl != null else ""))
+	check(ctx_btn != null and res_opt != null and ctx_btn.get_parent() == res_opt.get_parent() and ctx_btn.global_position.x >= res_opt.get_global_rect().end.x - 1.0,
+		"Punto 4 Contexto Button next to Vista: btn=%s res=%s" % [str(ctx_btn.get_global_rect() if ctx_btn != null else Rect2()), str(res_opt.get_global_rect() if res_opt != null else Rect2())])
+
+	var vctx: CheckBox = h4.get("view_context_chk", null)
+	var ctx_op: HSlider = h4.get("context_opacity_slider", null)
+	var ctx_root: Control = h4.get("context_layers_root", null)
+	var ctx_pop: PopupPanel = h4.get("context_popover", null)
+	var ctx_all: Button = h4.get("context_all_btn", null)
+	var ctx_none: Button = h4.get("context_none_btn", null)
+	var ctx_sibs: VBoxContainer = h4.get("context_siblings_list", null)
+	var smp_chk: CheckBox = h4.get("sample_scene_chk", null)
+	var smp_op: HSlider = h4.get("sample_scene_opacity_slider", null)
+	var bbd: Control = h4.get("ctx_battle_backdrop_node", null)
+
+	check(vctx != null and not vctx.button_pressed and ctx_root != null and not ctx_root.visible and ctx_op != null and int(ctx_op.value) == 25,
+		"Punto 4 Default Off & 25%%: show=%s ctx_vis=%s op=%.0f%%" % [str(vctx.button_pressed if vctx != null else true), str(ctx_root.visible if ctx_root != null else true), ctx_op.value if ctx_op != null else -1.0])
+
+	if ctx_btn != null:
+		ctx_btn.emit_signal("pressed")
+		await pump(2)
+	check(ctx_pop != null and ctx_pop.visible and ctx_sibs != null and ctx_sibs.get_child_count() == 4,
+		"Punto 4 Popover Opens (messages): visible=%s sibling_chks=%d" % [str(ctx_pop.visible if ctx_pop != null else false), ctx_sibs.get_child_count() if ctx_sibs != null else -1])
+
+	if vctx != null:
+		vctx.button_pressed = true
+		await pump(2)
+	check(ctx_root != null and ctx_root.visible and absf(ctx_root.modulate.a - 0.25) < 0.02 and ctx_root.get_child_count() == 4 and ctx_root.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"Punto 4 Context Enabled: vis=%s alpha=%.2f cnt=%d ignore=%s" % [str(ctx_root.visible), ctx_root.modulate.a, ctx_root.get_child_count(), str(ctx_root.mouse_filter == Control.MOUSE_FILTER_IGNORE)])
+
+	if ctx_op != null:
+		ctx_op.value = 60.0
+		await pump(1)
+	check(ctx_root != null and absf(ctx_root.modulate.a - 0.60) < 0.02,
+		"Punto 4 Opacity Slider 60%%: alpha=%.2f" % (ctx_root.modulate.a if ctx_root != null else -1.0))
+
+	if ctx_none != null and ctx_sibs != null:
+		ctx_none.emit_signal("pressed")
+		await pump(1)
+		var none_cnt := ctx_root.get_child_count() if ctx_root != null else -1
+		if ctx_sibs.get_child_count() > 0:
+			var first_chk := ctx_sibs.get_child(0) as CheckBox
+			if first_chk != null:
+				first_chk.button_pressed = true
+		await pump(1)
+		var one_cnt := ctx_root.get_child_count() if ctx_root != null else -1
+		if ctx_all != null:
+			ctx_all.emit_signal("pressed")
+		await pump(1)
+		var all_cnt := ctx_root.get_child_count() if ctx_root != null else -1
+		check(none_cnt == 0 and one_cnt == 1 and all_cnt == 4,
+			"Punto 4 Sibling Selection (Ninguna/1/Todas): %d -> %d -> %d" % [none_cnt, one_cnt, all_cnt])
+
+	# Verificar Batalla con sus valores propios + Escena de ejemplo y persistencia por pestaña
+	if ctx_pop != null and ctx_pop.visible:
+		ctx_pop.hide()
+	ed4.set_system_scope("battle")
+	await pump(3)
+	check(vctx != null and not vctx.button_pressed and smp_chk != null and not smp_chk.button_pressed and bbd != null and not bbd.visible and ctx_root != null and not ctx_root.visible,
+		"Punto 4 Battle Tab Fresh Defaults: ctx=%s sample=%s" % [str(vctx.button_pressed), str(smp_chk.button_pressed)])
+
+	if smp_chk != null:
+		smp_chk.button_pressed = true
+	if smp_op != null:
+		smp_op.value = 50.0
 	await pump(2)
+	check(bbd != null and bbd.visible and absf(bbd.modulate.a - 0.50) < 0.02 and bbd.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"Punto 4 Battle Sample Scene 50%%: vis=%s alpha=%.2f" % [str(bbd.visible), bbd.modulate.a])
+
+	# Volver a Mensajes y luego a Batalla: conserva elecciones por pestaña
+	ed4.set_system_scope("messages")
+	await pump(2)
+	var msg_restored: bool = (vctx != null and vctx.button_pressed and ctx_op != null and int(ctx_op.value) == 60 and ctx_root != null and ctx_root.visible and ctx_root.get_child_count() == 4)
+	ed4.set_system_scope("battle")
+	await pump(2)
+	var bat_restored: bool = (smp_chk != null and smp_chk.button_pressed and smp_op != null and int(smp_op.value) == 50 and bbd != null and bbd.visible)
+	check(msg_restored and bat_restored,
+		"Punto 4 Per-Tab Persistence: messages_restored=%s battle_restored=%s" % [str(msg_restored), str(bat_restored)])
+
+	host4.queue_free()
+	await pump(4)
 
 	print("Tiempo: %d ms" % (Time.get_ticks_msec() - start_msec))
 	print("RESULTADOS: %d PASS, %d FAIL" % [pass_count, fail_count])
