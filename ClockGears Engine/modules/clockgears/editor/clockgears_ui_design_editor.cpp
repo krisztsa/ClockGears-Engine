@@ -2476,16 +2476,13 @@ void ClockGearsUiDesignEditor::_update_canvas_fit_scale() {
 		return;
 	}
 	if (canvas_zoom_mode == 0) {
-		Size2 fit_box = holder_sz;
-		if (sc_sz.x >= 16.0f && sc_sz.y >= 16.0f) {
-			fit_box = Vector2(MIN(holder_sz.x, sc_sz.x), MIN(holder_sz.y, sc_sz.y));
-		}
-		float margin = MIN(16.0f * EDSCALE, MIN(fit_box.x, fit_box.y) * 0.06f);
+		Size2 fit_box = (sc_sz.x >= 16.0f && sc_sz.y >= 16.0f) ? sc_sz : holder_sz;
+		float margin = 8.0f * EDSCALE;
 		Size2 avail(MAX(32.0f, fit_box.x - margin * 2.0f), MAX(18.0f, fit_box.y - margin * 2.0f));
 		float s = MIN(avail.x / MAX(1.0f, stage_sz.x), avail.y / MAX(1.0f, stage_sz.y));
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(s, s));
-		canvas_stage->set_position((fit_box - stage_sz * s) * 0.5f);
+		canvas_stage->set_position((holder_sz - stage_sz * s) * 0.5f);
 	} else {
 		canvas_stage->set_size(stage_sz);
 		canvas_stage->set_scale(Vector2(1.0f, 1.0f));

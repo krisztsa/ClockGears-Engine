@@ -133,6 +133,34 @@ func _run() -> void:
 	check(top_card.size.y <= 52.0 and not row2_flow.visible and row1_flow.get_line_count() == 1,
 		"Punto 2 (2560x1440): Toolbar fits in 1 single row (total=%.1f, r2_vis=%s, lines=%d)" % [top_card.size.y, str(row2_flow.visible), row1_flow.get_line_count()])
 
+	# --- PUNTO 3: Vista previa completa ---
+	for res_p3 in [Vector2i(1366, 768), Vector2i(1920, 1080)]:
+		db.size = res_p3
+		db.adapt_to_window_size(res_p3)
+		await pump(5)
+		var h3: Dictionary = db.call("get_ui_designer_ui_handles")
+		var cscroll: Control = h3.get("canvas_scroll")
+		var cstage: Control = h3.get("canvas_stage")
+		var lcard: Control = h3.get("left_card")
+		var rcard: Control = h3.get("right_card")
+		var whbox: Control = h3.get("wide_hbox")
+		if cscroll and cstage and whbox:
+			var sc_rect: Rect2 = cscroll.get_global_rect()
+			var st_scaled: Vector2 = cstage.size * cstage.scale
+			var st_rect: Rect2 = Rect2(cstage.get_global_position(), st_scaled)
+			var w_ratio: float = st_scaled.x / max(1.0, sc_rect.size.x)
+			var aspect: float = st_scaled.x / max(1.0, st_scaled.y)
+			var inside_ok: bool = (st_rect.position.x >= sc_rect.position.x + 6.0 and st_rect.position.y >= sc_rect.position.y + 6.0 and st_rect.end.x <= sc_rect.end.x - 6.0 and st_rect.end.y <= sc_rect.end.y - 6.0)
+			if res_p3 == Vector2i(1366, 768):
+				check(w_ratio >= 0.90, "Punto 3 (1366x768): Preview fills >=90%% canvas width (%.1f%%, stage_w=%.1f, scroll_w=%.1f)" % [w_ratio * 100.0, st_scaled.x, sc_rect.size.x])
+			check(inside_ok and absf(aspect - (16.0 / 9.0)) < 0.03,
+				"Punto 3 %s: Full 16:9 preview inside canvas with ~8px margin (aspect=%.3f, st=%s, sc=%s)" % [str(res_p3), aspect, str(st_rect), str(sc_rect)])
+			if lcard and rcard and whbox.size.x > 100.0:
+				var l_pct: float = lcard.size.x / whbox.size.x
+				var r_pct: float = rcard.size.x / whbox.size.x
+				check(l_pct >= 0.17 and l_pct <= 0.25 and r_pct >= 0.30 and r_pct <= 0.38,
+					"Punto 3 %s: Three zones stay ~21%% / rest / ~34%% (left=%.1f%%, right=%.1f%%)" % [str(res_p3), l_pct * 100.0, r_pct * 100.0])
+
 	db.queue_free()
 	await pump(2)
 	if dm_owned and dm and is_instance_valid(dm):
