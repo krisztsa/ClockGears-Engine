@@ -12,6 +12,7 @@
 #include "core/clockgears_time_manager.h"
 
 // Tema, Iconos y Widgets Reutilizables Fase 2 & Fase 3 (icons/ y editor/)
+#include "editor/clockgears_image_adjust_dialog.h"
 #include "editor/clockgears_project_manager.h"
 #include "editor/clockgears_shape_editor.h"
 #include "editor/clockgears_theme.h"
@@ -125,6 +126,8 @@ void initialize_clockgears_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(ClockGearsMapCellSelector);
 		GDREGISTER_CLASS(ClockGearsUiPaletteButton);
 		GDREGISTER_CLASS(ClockGearsUiCanvasOverlay);
+		GDREGISTER_CLASS(ClockGearsImageAdjustCanvas);
+		GDREGISTER_CLASS(ClockGearsImageAdjustDialog);
 		GDREGISTER_CLASS(ClockGearsUiDesignEditor);
 		GDREGISTER_CLASS(ClockGearsUiElementFloatingWindow);
 		GDREGISTER_CLASS(ClockGearsNewProjectDialog);

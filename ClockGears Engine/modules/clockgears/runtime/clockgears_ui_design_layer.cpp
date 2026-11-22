@@ -75,6 +75,9 @@ protected:
 					int mult = MAX(1, int(Math::floor(MIN(sz.x / ts.x, sz.y / ts.y))));
 					Vector2 dsz = ts * float(mult);
 					draw_texture_rect(bg_tex, Rect2(((sz - dsz) * 0.5f).floor(), dsz), false);
+				} else if (sm == "manual") {
+					Rect2 dr = ClockGearsUiDesignLayer::compute_manual_image_rect(Rect2(Vector2(), sz), ts, bg_cfg);
+					draw_texture_rect(bg_tex, dr, false);
 				} else if (sm == "nine_slice") {
 					float m = CLAMP(float(bg_cfg.get("nine_slice_margin", 16)), 0.0f, MIN(ts.x, ts.y) * 0.45f);
 					Ref<StyleBoxTexture> sbt;
@@ -95,11 +98,72 @@ public:
 		bg_tex = p_tex;
 	bool pa = bg_cfg.has("pixel_art") ? bool(bg_cfg["pixel_art"]) : true;
 	String sm = String(bg_cfg.get("scale_mode", "stretch")).strip_edges().to_lower();
-	set_texture_filter((pa || sm == "integer") ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
+	bool int_sc = bool(bg_cfg.get("manual_integer_scale", false));
+	set_texture_filter((pa || sm == "integer" || (sm == "manual" && int_sc)) ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
 	queue_redraw();
 	}
 	void set_scroll_offset(const Vector2 &p_off) {
 		scroll_offset = p_off;
+		queue_redraw();
+	}
+};
+
+class UiButtonManualImageHost : public Control {
+	GDCLASS(UiButtonManualImageHost, Control);
+
+	Button *button_ref = nullptr;
+	Dictionary cfg;
+	Ref<Texture2D> tex_normal;
+	Ref<Texture2D> tex_hover;
+	Ref<Texture2D> tex_pressed;
+	Ref<Texture2D> tex_disabled;
+	Ref<Texture2D> tex_fallback;
+
+protected:
+	void _notification(int p_what) {
+		if (p_what != NOTIFICATION_DRAW) {
+			return;
+		}
+		Size2 sz = get_size();
+		if (sz.x <= 0.0f || sz.y <= 0.0f) {
+			return;
+		}
+		Ref<Texture2D> active_tex = tex_normal;
+		if (button_ref) {
+			if (button_ref->is_disabled() && tex_disabled.is_valid()) {
+				active_tex = tex_disabled;
+			} else if (button_ref->is_pressed() && tex_pressed.is_valid()) {
+				active_tex = tex_pressed;
+			} else if (button_ref->is_hovered() && tex_hover.is_valid()) {
+				active_tex = tex_hover;
+			}
+		}
+		if (active_tex.is_null()) {
+			active_tex = tex_normal.is_valid() ? tex_normal : (tex_hover.is_valid() ? tex_hover : tex_fallback);
+		}
+		if (active_tex.is_null()) {
+			return;
+		}
+		Vector2 ts = active_tex->get_size();
+		if (ts.x <= 0.0f || ts.y <= 0.0f) {
+			return;
+		}
+		Rect2 dr = ClockGearsUiDesignLayer::compute_manual_image_rect(Rect2(Vector2(), sz), ts, cfg);
+		draw_texture_rect(active_tex, dr, false);
+	}
+
+public:
+	void configure(Button *p_btn, const Dictionary &p_cfg, const Ref<Texture2D> &p_norm, const Ref<Texture2D> &p_hov, const Ref<Texture2D> &p_prs, const Ref<Texture2D> &p_dis, const Ref<Texture2D> &p_fb) {
+		button_ref = p_btn;
+		cfg = p_cfg;
+		tex_normal = p_norm;
+		tex_hover = p_hov;
+		tex_pressed = p_prs;
+		tex_disabled = p_dis;
+		tex_fallback = p_fb;
+		bool pa = cfg.has("pixel_art") ? bool(cfg["pixel_art"]) : true;
+		bool int_sc = bool(cfg.get("manual_integer_scale", false));
+		set_texture_filter((pa || int_sc) ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
 		queue_redraw();
 	}
 };
@@ -914,6 +978,21 @@ Rect2 ClockGearsUiDesignLayer::compute_stage_rect(const Vector2 &p_viewport_size
 	Size2 stage_sz(LOGICAL_WIDTH * s, LOGICAL_HEIGHT * s);
 	Vector2 origin((w - stage_sz.x) * 0.5f, (h - stage_sz.y) * 0.5f);
 	return Rect2(origin, stage_sz);
+}
+
+Rect2 ClockGearsUiDesignLayer::compute_manual_image_rect(const Rect2 &p_frame, const Vector2 &p_tex_size, const Dictionary &p_cfg) {
+	if (p_tex_size.x <= 0.0f || p_tex_size.y <= 0.0f || p_frame.size.x <= 0.0f || p_frame.size.y <= 0.0f) {
+		return p_frame;
+	}
+	float base_s = MIN(p_frame.size.x / p_tex_size.x, p_frame.size.y / p_tex_size.y);
+	bool keep_asp = p_cfg.has("manual_keep_aspect") ? bool(p_cfg["manual_keep_aspect"]) : true;
+	float sx_pct = CLAMP(float(p_cfg.get("manual_scale_x_pct", 100.0)), 5.0f, 1000.0f);
+	float sy_pct = keep_asp ? sx_pct : CLAMP(float(p_cfg.get("manual_scale_y_pct", sx_pct)), 5.0f, 1000.0f);
+	Vector2 dsz(p_tex_size.x * base_s * (sx_pct / 100.0f), p_tex_size.y * base_s * (sy_pct / 100.0f));
+	float ox_pct = CLAMP(float(p_cfg.get("manual_offset_x_pct", 0.0)), -400.0f, 400.0f);
+	float oy_pct = CLAMP(float(p_cfg.get("manual_offset_y_pct", 0.0)), -400.0f, 400.0f);
+	Vector2 center = p_frame.position + p_frame.size * 0.5f + Vector2(p_frame.size.x * (ox_pct / 100.0f), p_frame.size.y * (oy_pct / 100.0f));
+	return Rect2(center - dsz * 0.5f, dsz);
 }
 
 Rect2 ClockGearsUiDesignLayer::compute_element_rect(const Dictionary &p_elem, const Rect2 &p_stage_rect, float p_scale) {
@@ -1785,7 +1864,10 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 	content_parent->add_child(content);
 	r_entry.content_root = content;
 
-	TextureFilter tf = bool(r_entry.config.get("pixel_art", true)) ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR;
+	bool pa = bool(r_entry.config.get("pixel_art", true));
+	bool int_sc = bool(r_entry.config.get("manual_integer_scale", false));
+	String elem_sm = String(r_entry.config.get("scale_mode", "stretch")).strip_edges().to_lower();
+	TextureFilter tf = (pa || elem_sm == "integer" || (elem_sm == "manual" && int_sc)) ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR;
 
 	if (r_entry.type == "frame") {
 		String fip = String(r_entry.config.get("image_path", "")).strip_edges();
@@ -1807,6 +1889,7 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 					np->set_texture_filter(tf);
 					content->add_child(np);
 				} else {
+					content->set_clip_contents(true);
 					TextureRect *fimg = memnew(TextureRect);
 					fimg->set_name("FrameFillImage");
 					fimg->set_mouse_filter(MOUSE_FILTER_IGNORE);
@@ -1821,6 +1904,14 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			}
 		}
 	} else if (r_entry.type == "button") {
+		String bsm = String(r_entry.config.get("scale_mode", "stretch")).strip_edges().to_lower();
+		String img_norm = String(r_entry.config.get("image_normal", "")).strip_edges();
+		String img_hov = String(r_entry.config.get("image_hover", "")).strip_edges();
+		String img_prs = String(r_entry.config.get("image_pressed", "")).strip_edges();
+		String img_dis = String(r_entry.config.get("image_disabled", "")).strip_edges();
+		String fb_img = String(r_entry.config.get("image_path", "")).strip_edges();
+		bool use_manual_img = (bsm == "manual") && (!img_norm.is_empty() || !img_hov.is_empty() || !img_prs.is_empty() || !img_dis.is_empty() || !fb_img.is_empty());
+
 		Button *btn = memnew(Button);
 		btn->set_name("ActionButton");
 		btn->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
@@ -1832,7 +1923,32 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		btn->set_meta("ui_elem_id", r_entry.id);
 		btn->set_meta("ui_action", r_entry.action);
 		btn->set_meta("focus_order", r_entry.focus_order);
-		String ip = String(r_entry.config.get("icon_path", r_entry.config.get("image_path", ""))).strip_edges();
+
+		if (use_manual_img) {
+			content->set_clip_contents(true);
+			UiButtonManualImageHost *bimg = memnew(UiButtonManualImageHost);
+			bimg->set_name("ManualButtonImg");
+			bimg->set_mouse_filter(MOUSE_FILTER_IGNORE);
+			bimg->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+			bimg->configure(
+					btn,
+					r_entry.config,
+					img_norm.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(img_norm),
+					img_hov.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(img_hov),
+					img_prs.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(img_prs),
+					img_dis.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(img_dis),
+					fb_img.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(fb_img));
+			content->add_child(bimg);
+			r_entry.manual_btn_img_host = bimg;
+			btn->connect("mouse_entered", callable_mp((CanvasItem *)bimg, &CanvasItem::queue_redraw));
+			btn->connect("mouse_exited", callable_mp((CanvasItem *)bimg, &CanvasItem::queue_redraw));
+			btn->connect("button_down", callable_mp((CanvasItem *)bimg, &CanvasItem::queue_redraw));
+			btn->connect("button_up", callable_mp((CanvasItem *)bimg, &CanvasItem::queue_redraw));
+			btn->connect("focus_entered", callable_mp((CanvasItem *)bimg, &CanvasItem::queue_redraw));
+			btn->connect("focus_exited", callable_mp((CanvasItem *)bimg, &CanvasItem::queue_redraw));
+		}
+
+		String ip = String(r_entry.config.get("icon_path", use_manual_img ? String() : String(r_entry.config.get("image_path", "")))).strip_edges();
 		if (!ip.is_empty()) {
 			Ref<Texture2D> itex = ClockGearsWindowStyleManager::load_texture_safe(ip);
 			if (itex.is_valid()) {
@@ -1863,12 +1979,13 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 			if (tex.is_valid()) np->set_texture(tex);
 			content->add_child(np);
 		} else {
+			content->set_clip_contents(true);
 			TextureRect *img = memnew(TextureRect);
 			img->set_name("Image");
 			img->set_mouse_filter(MOUSE_FILTER_IGNORE);
 			img->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 			img->set_texture_filter(tf);
-			if (sm == "stretch") {
+			if (sm == "stretch" || sm == "manual") {
 				img->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
 				img->set_stretch_mode(TextureRect::STRETCH_SCALE);
 			} else if (sm == "fill") {
@@ -2051,6 +2168,33 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 	}
 }
 
+void ClockGearsUiDesignLayer::_update_element_image_rect(ElementEntry &r_entry, const Size2 &p_target_sz) {
+	if (!r_entry.image_rect) {
+		return;
+	}
+	Ref<Texture2D> it = r_entry.image_rect->get_texture();
+	if (!it.is_valid()) {
+		return;
+	}
+	Vector2 ts = it->get_size();
+	if (ts.x <= 0.0f || ts.y <= 0.0f) {
+		return;
+	}
+	String sm = String(r_entry.config.get("scale_mode", "")).strip_edges().to_lower();
+	if (sm == "integer") {
+		int mult = MAX(1, int(Math::floor(MIN(p_target_sz.x / ts.x, p_target_sz.y / ts.y))));
+		Vector2 dsz = ts * float(mult);
+		r_entry.image_rect->set_anchors_preset(PRESET_TOP_LEFT);
+		r_entry.image_rect->set_position(((p_target_sz - dsz) * 0.5f).floor());
+		r_entry.image_rect->set_size(dsz);
+	} else if (sm == "manual") {
+		Rect2 dr = compute_manual_image_rect(Rect2(Vector2(), p_target_sz), ts, r_entry.config);
+		r_entry.image_rect->set_anchors_preset(PRESET_TOP_LEFT);
+		r_entry.image_rect->set_position(dr.position);
+		r_entry.image_rect->set_size(dr.size);
+	}
+}
+
 void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float p_scale) {
 	if (!r_entry.bg_panel || !r_entry.content_root || !r_entry.root) {
 		return;
@@ -2085,6 +2229,10 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 		}
 		r_entry.content_root->set_position(Vector2());
 		r_entry.content_root->set_size(r_entry.root->get_size());
+		_update_element_image_rect(r_entry, r_entry.root->get_size());
+		if (r_entry.manual_btn_img_host) {
+			r_entry.manual_btn_img_host->queue_redraw();
+		}
 		if (r_entry.button) {
 			Ref<StyleBoxEmpty> empty_sb;
 			empty_sb.instantiate();
@@ -2115,7 +2263,17 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 		String img_hov = String(r_entry.config.get("image_hover", "")).strip_edges();
 		String img_prs = String(r_entry.config.get("image_pressed", "")).strip_edges();
 		String img_dis = String(r_entry.config.get("image_disabled", "")).strip_edges();
-		if (!img_norm.is_empty() || !img_hov.is_empty() || !img_prs.is_empty() || !img_dis.is_empty()) {
+		if (r_entry.manual_btn_img_host) {
+			Ref<StyleBoxEmpty> empty_sb;
+			empty_sb.instantiate();
+			r_entry.button->add_theme_style_override("normal", empty_sb);
+			r_entry.button->add_theme_style_override("hover", empty_sb);
+			r_entry.button->add_theme_style_override("pressed", empty_sb);
+			r_entry.button->add_theme_style_override("hover_pressed", empty_sb);
+			r_entry.button->add_theme_style_override("focus", empty_sb);
+			r_entry.button->add_theme_style_override("disabled", empty_sb);
+			r_entry.manual_btn_img_host->queue_redraw();
+		} else if (!img_norm.is_empty() || !img_hov.is_empty() || !img_prs.is_empty() || !img_dis.is_empty()) {
 			auto apply_btn_tex_state = [&](const char *p_state, const String &p_path, const String &p_fb) {
 				String use_p = p_path.is_empty() ? p_fb : p_path;
 				if (use_p.is_empty()) return;
@@ -2154,19 +2312,7 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 		if (r_entry.content_root->get_size() != rsz) {
 			r_entry.content_root->set_size(rsz);
 		}
-		if (r_entry.image_rect && String(r_entry.config.get("scale_mode", "")).strip_edges().to_lower() == "integer") {
-			Ref<Texture2D> it = r_entry.image_rect->get_texture();
-			if (it.is_valid()) {
-				Vector2 ts = it->get_size();
-				if (ts.x > 0.0f && ts.y > 0.0f) {
-					int mult = MAX(1, int(Math::floor(MIN(rsz.x / ts.x, rsz.y / ts.y))));
-					Vector2 dsz = ts * float(mult);
-					r_entry.image_rect->set_anchors_preset(PRESET_TOP_LEFT);
-					r_entry.image_rect->set_position(((rsz - dsz) * 0.5f).floor());
-					r_entry.image_rect->set_size(dsz);
-				}
-			}
-		}
+		_update_element_image_rect(r_entry, rsz);
 		return;
 	}
 
@@ -2193,19 +2339,7 @@ void ClockGearsUiDesignLayer::_apply_element_style(ElementEntry &r_entry, float 
 	r_entry.content_root->set_position(Vector2(pad_l, pad_t));
 	Size2 csz(MAX(4.0f, rsz.x - pad_l - pad_r), MAX(4.0f, rsz.y - pad_t - pad_b));
 	r_entry.content_root->set_size(csz);
-	if (r_entry.image_rect && String(r_entry.config.get("scale_mode", "")).strip_edges().to_lower() == "integer") {
-		Ref<Texture2D> it = r_entry.image_rect->get_texture();
-		if (it.is_valid()) {
-			Vector2 ts = it->get_size();
-			if (ts.x > 0.0f && ts.y > 0.0f) {
-				int mult = MAX(1, int(Math::floor(MIN(csz.x / ts.x, csz.y / ts.y))));
-				Vector2 dsz = ts * float(mult);
-				r_entry.image_rect->set_anchors_preset(PRESET_TOP_LEFT);
-				r_entry.image_rect->set_position(((csz - dsz) * 0.5f).floor());
-				r_entry.image_rect->set_size(dsz);
-			}
-		}
-	}
+	_update_element_image_rect(r_entry, csz);
 }
 
 void ClockGearsUiDesignLayer::_apply_container_layout(const Dictionary &p_layout, float p_scale) {

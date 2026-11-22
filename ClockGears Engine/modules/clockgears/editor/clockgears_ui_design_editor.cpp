@@ -8,6 +8,7 @@
 #include "../runtime/clockgears_hud.h"
 #include "../runtime/clockgears_title_screen.h"
 #include "../runtime/clockgears_ui_design_layer.h"
+#include "clockgears_image_adjust_dialog.h"
 #include "clockgears_theme.h"
 #include "core/config/project_settings.h"
 #include "core/input/input_event.h"
@@ -57,6 +58,38 @@ static void s_make_rounded_action_btn(Button *p_btn) {
 		return;
 	}
 	p_btn->set_theme_type_variation("Button");
+}
+
+static void s_sync_manual_adjust_btn_state(Button *p_btn, const String &p_scale_mode, bool p_has_image) {
+	if (!p_btn) {
+		return;
+	}
+	String sm = p_scale_mode.strip_edges().to_lower();
+	if (sm == "nine_slice") {
+		p_btn->set_disabled(true);
+		p_btn->set_tooltip_text(String::utf8("Desactivado en modo 9-slice porque ya ajusta automáticamente los bordes."));
+	} else if (!p_has_image) {
+		p_btn->set_disabled(true);
+		p_btn->set_tooltip_text(String::utf8("Elige primero una imagen para poder ajustarla manualmente."));
+	} else {
+		p_btn->set_disabled(false);
+		p_btn->set_tooltip_text(String::utf8("Abre el editor visual para mover y escalar la imagen dentro del marco."));
+	}
+}
+
+static bool s_elem_has_any_image(const Dictionary &p_el) {
+	if (!String(p_el.get("image_path", "")).strip_edges().is_empty()) {
+		return true;
+	}
+	if (!String(p_el.get("icon_path", "")).strip_edges().is_empty()) {
+		return true;
+	}
+	for (const char *sk : { "image_normal", "image_hover", "image_pressed", "image_disabled" }) {
+		if (!String(p_el.get(sk, "")).strip_edges().is_empty()) {
+			return true;
+		}
+	}
+	return false;
 }
 
 static void s_clamp_narrow_controls(Control *p_ctrl, float p_scale) {
@@ -1833,6 +1866,8 @@ void ClockGearsUiDesignEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_ui_handles"), &ClockGearsUiDesignEditor::get_ui_handles);
 	ClassDB::bind_method(D_METHOD("get_test_popup_info"), &ClockGearsUiDesignEditor::get_test_popup_info);
 	ClassDB::bind_method(D_METHOD("reset_split_layout", "split_idx"), &ClockGearsUiDesignEditor::_reset_wide_split, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("open_manual_image_adjust_for_selected"), &ClockGearsUiDesignEditor::open_manual_image_adjust_for_selected);
+	ClassDB::bind_method(D_METHOD("open_manual_image_adjust_for_screen_bg"), &ClockGearsUiDesignEditor::open_manual_image_adjust_for_screen_bg);
 }
 
 float ClockGearsUiDesignEditor::persisted_left_split_w = -1.0f;
@@ -3526,10 +3561,10 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_image_clear_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_clear_image_pressed));
 	im_hb->add_child(prop_image_clear_btn);
 
-	HBoxContainer *sm_hb = memnew(HBoxContainer);
+	HFlowContainer *sm_hb = memnew(HFlowContainer);
 	sm_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	sm_hb->set_custom_minimum_size(Size2(0, 32 * EDSCALE));
-	sm_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+	sm_hb->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	sm_hb->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	prop_image_scale_opt = memnew(OptionButton);
 	prop_image_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	prop_image_scale_opt->set_custom_minimum_size(Size2(130 * EDSCALE, 32 * EDSCALE));
@@ -3541,8 +3576,16 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	prop_image_scale_opt->add_item("Mosaico", 3); prop_image_scale_opt->set_item_metadata(3, "tile");
 	prop_image_scale_opt->add_item("9-slice", 4); prop_image_scale_opt->set_item_metadata(4, "nine_slice");
 	prop_image_scale_opt->add_item("Escala entera", 5); prop_image_scale_opt->set_item_metadata(5, "integer");
+	prop_image_scale_opt->add_item("Manual", 6); prop_image_scale_opt->set_item_metadata(6, "manual");
 	prop_image_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_field_changed).unbind(1));
 	sm_hb->add_child(prop_image_scale_opt);
+	prop_image_adjust_manual_btn = memnew(Button("Ajustar manualmente"));
+	prop_image_adjust_manual_btn->set_custom_minimum_size(Size2(156 * EDSCALE, 32 * EDSCALE));
+	prop_image_adjust_manual_btn->set_clip_text(false);
+	prop_image_adjust_manual_btn->set_text_overrun_behavior(TextServer::OVERRUN_NO_TRIMMING);
+	s_make_rounded_action_btn(prop_image_adjust_manual_btn);
+	prop_image_adjust_manual_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_image_adjust_manual_pressed));
+	sm_hb->add_child(prop_image_adjust_manual_btn);
 	prop_nine_slice_spin = memnew(SpinBox);
 	prop_nine_slice_spin->set_min(0);
 	prop_nine_slice_spin->set_max(128);
@@ -3910,15 +3953,29 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	mbg_im->add_child(menu_bg_img_btn);
 	make_prop_row(bg_body, "Imagen fondo:", String::utf8("Imagen de fondo del menú."), "fondo imagen scroll", false, mbg_im);
 
+	HFlowContainer *mbg_sc_flow = memnew(HFlowContainer);
+	mbg_sc_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	mbg_sc_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	mbg_sc_flow->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	menu_bg_scale_opt = memnew(OptionButton);
+	menu_bg_scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	menu_bg_scale_opt->set_custom_minimum_size(Size2(120 * EDSCALE, 32 * EDSCALE));
 	menu_bg_scale_opt->add_item("Estirar", 0); menu_bg_scale_opt->set_item_metadata(0, "stretch");
 	menu_bg_scale_opt->add_item("Ajustar", 1); menu_bg_scale_opt->set_item_metadata(1, "fit");
 	menu_bg_scale_opt->add_item("Rellenar", 2); menu_bg_scale_opt->set_item_metadata(2, "fill");
 	menu_bg_scale_opt->add_item("Mosaico", 3); menu_bg_scale_opt->set_item_metadata(3, "tile");
 	menu_bg_scale_opt->add_item("9-slice", 4); menu_bg_scale_opt->set_item_metadata(4, "nine_slice");
 	menu_bg_scale_opt->add_item("Escala entera", 5); menu_bg_scale_opt->set_item_metadata(5, "integer");
+	menu_bg_scale_opt->add_item("Manual", 6); menu_bg_scale_opt->set_item_metadata(6, "manual");
 	menu_bg_scale_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
-	make_prop_row(bg_body, "Ajuste fondo:", String::utf8("Cómo se escala la imagen de fondo."), "ajuste escala fondo imagen", false, menu_bg_scale_opt);
+	mbg_sc_flow->add_child(menu_bg_scale_opt);
+	menu_bg_adjust_manual_btn = memnew(Button("Ajustar manualmente"));
+	menu_bg_adjust_manual_btn->set_custom_minimum_size(Size2(156 * EDSCALE, 32 * EDSCALE));
+	menu_bg_adjust_manual_btn->set_clip_text(false);
+	s_make_rounded_action_btn(menu_bg_adjust_manual_btn);
+	menu_bg_adjust_manual_btn->connect("pressed", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_bg_adjust_manual_pressed));
+	mbg_sc_flow->add_child(menu_bg_adjust_manual_btn);
+	make_prop_row(bg_body, "Ajuste fondo:", String::utf8("Cómo se escala la imagen de fondo."), "ajuste escala fondo imagen manual", false, mbg_sc_flow);
 
 	menu_bg_pixel_chk = memnew(CheckBox("Pixelado (Nearest)"));
 	menu_bg_pixel_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_menu_global_changed).unbind(1));
@@ -5797,6 +5854,10 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 			prop_image_scale_opt->set_visible(has_scale_mode);
 			s_select_option_meta(prop_image_scale_opt, String(el.get("scale_mode", "stretch")));
 		}
+		if (prop_image_adjust_manual_btn) {
+			prop_image_adjust_manual_btn->set_visible(has_scale_mode);
+			s_sync_manual_adjust_btn_state(prop_image_adjust_manual_btn, String(el.get("scale_mode", "stretch")), s_elem_has_any_image(el));
+		}
 		if (prop_nine_slice_spin) {
 			prop_nine_slice_spin->set_visible(has_scale_mode);
 			prop_nine_slice_spin->set_value(int(el.get("nine_slice_margin", 12)));
@@ -5900,6 +5961,7 @@ void ClockGearsUiDesignEditor::_refresh_menu_global_properties() {
 	if (menu_bg_grad_bot_btn && Color::html_is_valid(mg)) menu_bg_grad_bot_btn->set_pick_color(Color::html(mg));
 	if (menu_bg_img_edit) menu_bg_img_edit->set_text(String(bg.get("image_path", "")));
 	if (menu_bg_scale_opt) s_select_option_meta(menu_bg_scale_opt, String(bg.get("scale_mode", "stretch")));
+	s_sync_manual_adjust_btn_state(menu_bg_adjust_manual_btn, String(bg.get("scale_mode", "stretch")), !String(bg.get("image_path", "")).strip_edges().is_empty());
 	if (menu_bg_pixel_chk) menu_bg_pixel_chk->set_pressed(bg.has("pixel_art") ? bool(bg["pixel_art"]) : true);
 	if (menu_bg_scroll_x_spin) menu_bg_scroll_x_spin->set_value(int(bg.get("scroll_speed_x", 0)));
 	if (menu_bg_scroll_y_spin) menu_bg_scroll_y_spin->set_value(int(bg.get("scroll_speed_y", 0)));
@@ -8225,6 +8287,7 @@ void ClockGearsUiDesignEditor::_on_menu_global_changed() {
 		bg["veil_color"] = "#" + vc.to_html(true);
 	}
 	d["background"] = ClockGearsDataManager::normalize_ui_background(bg);
+	s_sync_manual_adjust_btn_state(menu_bg_adjust_manual_btn, String(bg.get("scale_mode", "stretch")), !String(bg.get("image_path", "")).strip_edges().is_empty());
 
 	Dictionary tin = d.get("transition_in", Dictionary());
 	Dictionary tout = d.get("transition_out", Dictionary());
@@ -8330,6 +8393,165 @@ void ClockGearsUiDesignEditor::_on_menu_radial_add_slot_pressed() {
 void ClockGearsUiDesignEditor::_on_menu_bg_import_pressed() {
 	image_import_target = 1;
 	_on_prop_import_image_pressed();
+}
+
+ClockGearsImageAdjustDialog *ClockGearsUiDesignEditor::_ensure_image_adjust_dialog() {
+	if (!image_adjust_dialog) {
+		image_adjust_dialog = memnew(ClockGearsImageAdjustDialog);
+		add_child(image_adjust_dialog);
+	}
+	return image_adjust_dialog;
+}
+
+void ClockGearsUiDesignEditor::open_manual_image_adjust_for_dict(
+		const String &p_title,
+		const Vector2 &p_logical_sz,
+		const Dictionary &p_shape_cfg,
+		const Dictionary &p_cur_cfg,
+		const Vector<Pair<String, String>> &p_state_imgs,
+		bool p_pixel_art,
+		const Callable &p_on_confirm) {
+	ClockGearsImageAdjustDialog *dlg = _ensure_image_adjust_dialog();
+	if (!dlg) {
+		return;
+	}
+	dlg->open_adjust(p_title, p_logical_sz, p_shape_cfg, p_cur_cfg, p_state_imgs, p_pixel_art, p_on_confirm);
+}
+
+void ClockGearsUiDesignEditor::open_manual_image_adjust_for_element_dict(const Dictionary &p_el, const Callable &p_on_confirm) {
+	if (p_el.is_empty()) {
+		return;
+	}
+	String sm = String(p_el.get("scale_mode", "stretch")).strip_edges().to_lower();
+	if (sm == "nine_slice") {
+		return;
+	}
+	String etype = String(p_el.get("type", "image")).strip_edges().to_lower();
+	Vector<Pair<String, String>> imgs;
+	if (etype == "button") {
+		for (const Pair<const char *, const char *> &st : {
+				Pair<const char *, const char *>("Normal", "image_normal"),
+				Pair<const char *, const char *>("Encima", "image_hover"),
+				Pair<const char *, const char *>("Pulsado", "image_pressed"),
+				Pair<const char *, const char *>("Desact.", "image_disabled") }) {
+			String p = String(p_el.get(st.second, "")).strip_edges();
+			if (!p.is_empty()) {
+				imgs.push_back(Pair<String, String>(String::utf8(st.first), p));
+			}
+		}
+	}
+	String main_p = String(p_el.get("image_path", p_el.get("icon_path", ""))).strip_edges();
+	if (!main_p.is_empty() && imgs.is_empty()) {
+		imgs.push_back(Pair<String, String>(String("Imagen"), main_p));
+	}
+	if (imgs.is_empty()) {
+		return;
+	}
+	Vector2 fsz(MAX(16.0f, float(p_el.get("width", 120))), MAX(16.0f, float(p_el.get("height", 80))));
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary shape_st = s_extract_elem_shape_ui_state(dm, p_el);
+	bool pa = p_el.has("pixel_art") ? bool(p_el["pixel_art"]) : true;
+	open_manual_image_adjust_for_dict(
+			String::utf8("Ajustar imagen: ") + String(p_el.get("name", p_el.get("id", "elemento"))),
+			fsz,
+			shape_st,
+			p_el,
+			imgs,
+			pa,
+			p_on_confirm);
+}
+
+void ClockGearsUiDesignEditor::open_manual_image_adjust_for_selected() {
+	if (selected_elem_id.is_empty()) {
+		return;
+	}
+	Dictionary el = get_effective_element(selected_elem_id);
+	open_manual_image_adjust_for_element_dict(el, callable_mp(this, &ClockGearsUiDesignEditor::_on_manual_adjust_elem_confirmed));
+}
+
+void ClockGearsUiDesignEditor::open_manual_image_adjust_for_screen_bg() {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	Dictionary d = dm->get_ui_screen_design(current_screen_id);
+	Dictionary bg = d.get("background", Dictionary());
+	String sm = String(bg.get("scale_mode", "stretch")).strip_edges().to_lower();
+	String ip = String(bg.get("image_path", "")).strip_edges();
+	if (sm == "nine_slice" || ip.is_empty()) {
+		return;
+	}
+	Vector<Pair<String, String>> imgs;
+	imgs.push_back(Pair<String, String>(String("Fondo"), ip));
+	Dictionary frame_shape;
+	frame_shape["shape_type"] = "rect";
+	bool pa = bg.has("pixel_art") ? bool(bg["pixel_art"]) : true;
+	open_manual_image_adjust_for_dict(
+			String::utf8("Ajustar fondo de pantalla"),
+			Vector2(BASE_W, BASE_H),
+			frame_shape,
+			bg,
+			imgs,
+			pa,
+			callable_mp(this, &ClockGearsUiDesignEditor::_on_manual_adjust_bg_confirmed));
+}
+
+void ClockGearsUiDesignEditor::_on_prop_image_adjust_manual_pressed() {
+	open_manual_image_adjust_for_selected();
+}
+
+void ClockGearsUiDesignEditor::_on_menu_bg_adjust_manual_pressed() {
+	open_manual_image_adjust_for_screen_bg();
+}
+
+void ClockGearsUiDesignEditor::_on_manual_adjust_elem_confirmed(const Dictionary &p_vals) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm || selected_elem_id.is_empty()) {
+		return;
+	}
+	Dictionary el = get_effective_element(selected_elem_id);
+	if (el.is_empty()) {
+		return;
+	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	Array keys = p_vals.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		el[keys[i]] = p_vals[keys[i]];
+	}
+	el["scale_mode"] = "manual";
+	if (dm->update_ui_element(current_screen_id, selected_elem_id, el, false)) {
+		dm->push_ui_design_undo_state(current_screen_id, snap);
+		_refresh_properties_panel();
+		_refresh_layers_list();
+		_refresh_canvas_stage();
+		_refresh_undo_redo_buttons();
+		_sync_open_floating_windows();
+		_notify_data_mutated(true);
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_manual_adjust_bg_confirmed(const Dictionary &p_vals) {
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	if (!dm) {
+		return;
+	}
+	Dictionary snap = dm->get_ui_screen_design(current_screen_id);
+	ensure_screen_customizable_for_edit(false);
+	Dictionary d = dm->get_ui_screen_design(current_screen_id).duplicate(true);
+	Dictionary bg = Dictionary(d.get("background", Dictionary())).duplicate(true);
+	Array keys = p_vals.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		bg[keys[i]] = p_vals[keys[i]];
+	}
+	bg["scale_mode"] = "manual";
+	d["background"] = ClockGearsDataManager::normalize_ui_background(bg);
+	dm->set_ui_screen_design(current_screen_id, d, false);
+	dm->push_ui_design_undo_state(current_screen_id, snap);
+	_refresh_menu_global_properties();
+	_refresh_canvas_stage();
+	_refresh_undo_redo_buttons();
+	_notify_data_mutated(true);
 }
 
 void ClockGearsUiDesignEditor::_on_prop_font_import_pressed() {
@@ -8831,6 +9053,9 @@ void ClockGearsUiDesignEditor::_on_prop_field_changed() {
 					el[k_sk[si]] = sv;
 				}
 			}
+		}
+		if (prop_image_adjust_manual_btn && (etype == "image" || etype == "frame" || etype == "button")) {
+			s_sync_manual_adjust_btn_state(prop_image_adjust_manual_btn, String(el.get("scale_mode", "stretch")), s_elem_has_any_image(el));
 		}
 	}
 	if (prop_var_row->is_visible()) {
@@ -9509,11 +9734,14 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["prop_text_edit"] = prop_text_edit;
 	out["prop_image_edit"] = prop_image_edit;
 	out["prop_image_scale_opt"] = prop_image_scale_opt;
+	out["prop_image_adjust_manual_btn"] = prop_image_adjust_manual_btn;
 	out["prop_nine_slice_spin"] = prop_nine_slice_spin;
 	out["prop_pixel_art_chk"] = prop_pixel_art_chk;
 	out["menu_bg_type_opt"] = menu_bg_type_opt;
 	out["menu_bg_img_edit"] = menu_bg_img_edit;
 	out["menu_bg_scale_opt"] = menu_bg_scale_opt;
+	out["menu_bg_adjust_manual_btn"] = menu_bg_adjust_manual_btn;
+	out["image_adjust_dialog"] = image_adjust_dialog;
 	out["menu_bg_pixel_chk"] = menu_bg_pixel_chk;
 	out["menu_bg_blur_chk"] = menu_bg_blur_chk;
 	out["menu_bg_blur_slider"] = menu_bg_blur_slider;
@@ -10979,7 +11207,13 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	mi_hb->add_child(mi_clr);
 	add_row(tb_img, "Imagen:", mi_hb);
 
+	HFlowContainer *sc_flow = memnew(HFlowContainer);
+	sc_flow->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	sc_flow->add_theme_constant_override("h_separation", int(6 * EDSCALE));
+	sc_flow->add_theme_constant_override("v_separation", int(6 * EDSCALE));
 	scale_opt = memnew(OptionButton);
+	scale_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	scale_opt->set_custom_minimum_size(Size2(130 * EDSCALE, 32 * EDSCALE));
 	scale_opt->add_item("Ajustar", 0); scale_opt->set_item_metadata(0, "fit");
 	scale_opt->add_item("Rellenar", 1); scale_opt->set_item_metadata(1, "fill");
 	scale_opt->add_item("Estirar", 2); scale_opt->set_item_metadata(2, "stretch");
@@ -10987,8 +11221,15 @@ void ClockGearsUiElementFloatingWindow::_build_ui() {
 	scale_opt->add_item("Nativo", 4); scale_opt->set_item_metadata(4, "native");
 	scale_opt->add_item("9 partes", 5); scale_opt->set_item_metadata(5, "nine_slice");
 	scale_opt->add_item(String::utf8("Múltiplo entero"), 6); scale_opt->set_item_metadata(6, "integer");
+	scale_opt->add_item("Manual", 7); scale_opt->set_item_metadata(7, "manual");
 	scale_opt->connect("item_selected", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_any_changed).unbind(1));
-	add_row(tb_img, "Escalado:", scale_opt);
+	sc_flow->add_child(scale_opt);
+	adjust_manual_btn = memnew(Button("Ajustar manualmente"));
+	adjust_manual_btn->set_custom_minimum_size(Size2(156 * EDSCALE, 32 * EDSCALE));
+	adjust_manual_btn->set_clip_text(false);
+	adjust_manual_btn->connect("pressed", callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_adjust_manual_pressed));
+	sc_flow->add_child(adjust_manual_btn);
+	add_row(tb_img, "Escalado:", sc_flow);
 
 	make_spin(tb_img, "Margen 9-slice:", 0, 128, nine_slice_spin);
 
@@ -11170,6 +11411,7 @@ void ClockGearsUiElementFloatingWindow::sync_from_element(const Dictionary &p_el
 	if (ip.is_empty() && tp == "button") ip = String(p_elem.get("icon_path", ""));
 	if (image_edit && image_edit->get_text() != ip) image_edit->set_text(ip);
 	if (scale_opt) s_select_option_meta(scale_opt, String(p_elem.get("scale_mode", "stretch")));
+	s_sync_manual_adjust_btn_state(adjust_manual_btn, String(p_elem.get("scale_mode", "stretch")), s_elem_has_any_image(p_elem));
 	if (nine_slice_spin) nine_slice_spin->set_value(int(p_elem.get("nine_slice_margin", 12)));
 	bool pa = p_elem.has("pixel_art") ? bool(p_elem["pixel_art"]) : true;
 	if (filter_opt) filter_opt->select(pa ? 0 : 1);
@@ -11317,7 +11559,33 @@ void ClockGearsUiElementFloatingWindow::_emit_commit() {
 	if (quick_action_opt && quick_action_opt->get_selected() >= 0) el["action"] = String(quick_action_opt->get_item_metadata(quick_action_opt->get_selected()));
 
 	working_elem = el.duplicate(true);
+	s_sync_manual_adjust_btn_state(adjust_manual_btn, String(el.get("scale_mode", "stretch")), s_elem_has_any_image(el));
 	owner_editor->apply_floating_window_element_update(target_screen_id, target_elem_id, el);
+}
+
+void ClockGearsUiElementFloatingWindow::_on_adjust_manual_pressed() {
+	if (!owner_editor || working_elem.is_empty()) {
+		return;
+	}
+	owner_editor->open_manual_image_adjust_for_element_dict(
+			working_elem,
+			callable_mp(this, &ClockGearsUiElementFloatingWindow::_on_adjust_manual_confirmed));
+}
+
+void ClockGearsUiElementFloatingWindow::_on_adjust_manual_confirmed(const Dictionary &p_vals) {
+	Array keys = p_vals.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		working_elem[keys[i]] = p_vals[keys[i]];
+	}
+	working_elem["scale_mode"] = "manual";
+	bool prev = updating;
+	updating = true;
+	if (scale_opt) {
+		s_select_option_meta(scale_opt, "manual");
+	}
+	s_sync_manual_adjust_btn_state(adjust_manual_btn, "manual", s_elem_has_any_image(working_elem));
+	updating = prev;
+	_emit_commit();
 }
 
 void ClockGearsUiElementFloatingWindow::_on_open_img_picker(int p_target) {
@@ -11403,6 +11671,7 @@ Dictionary ClockGearsUiElementFloatingWindow::get_ui_handles() const {
 	d["glow_col_btn"] = glow_col_btn;
 	d["image_edit"] = image_edit;
 	d["scale_opt"] = scale_opt;
+	d["adjust_manual_btn"] = adjust_manual_btn;
 	d["nine_slice_spin"] = nine_slice_spin;
 	d["filter_opt"] = filter_opt;
 	d["btn_normal_edit"] = btn_state_edits[0];

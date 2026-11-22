@@ -31,6 +31,7 @@ class ClockGearsCreditsPlayer;
 class ClockGearsDatabaseDialog;
 class ClockGearsGameMenu;
 class ClockGearsHudOverlay;
+class ClockGearsImageAdjustDialog;
 class ClockGearsTitleScreen;
 class ClockGearsUiDesignEditor;
 class ClockGearsUiDesignLayer;
@@ -488,6 +489,7 @@ private:
 	LineEdit *menu_bg_img_edit = nullptr;
 	Button *menu_bg_img_btn = nullptr;
 	OptionButton *menu_bg_scale_opt = nullptr;
+	Button *menu_bg_adjust_manual_btn = nullptr;
 	CheckBox *menu_bg_pixel_chk = nullptr;
 	SpinBox *menu_bg_scroll_x_spin = nullptr;
 	SpinBox *menu_bg_scroll_y_spin = nullptr;
@@ -569,7 +571,9 @@ private:
 	Button *prop_image_import_btn = nullptr;
 	Button *prop_image_clear_btn = nullptr;
 	OptionButton *prop_image_scale_opt = nullptr;
+	Button *prop_image_adjust_manual_btn = nullptr;
 	SpinBox *prop_nine_slice_spin = nullptr;
+	ClockGearsImageAdjustDialog *image_adjust_dialog = nullptr;
 	VBoxContainer *prop_btn_state_imgs_box = nullptr;
 	LineEdit *prop_btn_state_img_edits[4] = { nullptr, nullptr, nullptr, nullptr };
 	VBoxContainer *prop_binding_row = nullptr;
@@ -781,6 +785,11 @@ private:
 	void _on_menu_capture_key_pressed();
 	void _on_menu_radial_add_slot_pressed();
 	void _on_menu_bg_import_pressed();
+	void _on_menu_bg_adjust_manual_pressed();
+	void _on_prop_image_adjust_manual_pressed();
+	void _on_manual_adjust_elem_confirmed(const Dictionary &p_vals);
+	void _on_manual_adjust_bg_confirmed(const Dictionary &p_vals);
+	ClockGearsImageAdjustDialog *_ensure_image_adjust_dialog();
 	void _on_prop_font_import_pressed();
 	void _on_font_file_selected(const String &p_path);
 	void _on_prop_add_multi_action_pressed();
@@ -913,6 +922,17 @@ public:
 	void commit_canvas_drag_undo(const Dictionary &p_initial_snapshot);
 	void log_trace_action(const String &p_event, const String &p_detail = "") const { _trace_log(p_event, p_detail); }
 
+	void open_manual_image_adjust_for_dict(
+			const String &p_title,
+			const Vector2 &p_logical_sz,
+			const Dictionary &p_shape_cfg,
+			const Dictionary &p_cur_cfg,
+			const Vector<Pair<String, String>> &p_state_imgs,
+			bool p_pixel_art,
+			const Callable &p_on_confirm);
+	void open_manual_image_adjust_for_element_dict(const Dictionary &p_el, const Callable &p_on_confirm);
+	void open_manual_image_adjust_for_selected();
+	void open_manual_image_adjust_for_screen_bg();
 	String add_element_at(const String &p_type, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
 	String drop_image_file_on_canvas(const String &p_path, const Vector2i &p_canvas_pos = Vector2i(-1, -1));
 	bool select_element(const String &p_elem_id);
@@ -1017,6 +1037,7 @@ private:
 	// Imagen
 	LineEdit *image_edit = nullptr;
 	OptionButton *scale_opt = nullptr;
+	Button *adjust_manual_btn = nullptr;
 	SpinBox *nine_slice_spin = nullptr;
 	OptionButton *filter_opt = nullptr;
 	LineEdit *btn_state_edits[4] = { nullptr, nullptr, nullptr, nullptr };
@@ -1047,6 +1068,8 @@ private:
 	void _on_img_file_selected(const String &p_path);
 	void _on_open_font_picker();
 	void _on_font_file_selected(const String &p_path);
+	void _on_adjust_manual_pressed();
+	void _on_adjust_manual_confirmed(const Dictionary &p_vals);
 	void _on_theme_changed();
 
 protected:
