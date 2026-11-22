@@ -5935,8 +5935,44 @@ Dictionary ClockGearsDataManager::normalize_menu_layout(const Dictionary &p_layo
 		roa = "radial_spin";
 	}
 	out["radial_open_anim"] = roa;
+	out["radial_open_duration_ms"] = CLAMP(int(p_layout.get("radial_open_duration_ms", 220)), 80, 1500);
+	String rcurve = String(p_layout.get("radial_open_curve", "ease_out")).strip_edges().to_lower();
+	if (rcurve != "linear" && rcurve != "ease_out" && rcurve != "back_out" && rcurve != "bounce") {
+		rcurve = "ease_out";
+	}
+	out["radial_open_curve"] = rcurve;
 	out["radial_ring_color"] = _cg_norm_color_rgba(p_layout.get("radial_ring_color", "#1a1e2ad9"), "#1a1e2ad9");
 	out["radial_accent_color"] = _cg_norm_color_rgba(p_layout.get("radial_accent_color", "#f5bc54ff"), "#f5bc54ff");
+	String scsrc = String(p_layout.get("radial_slot_count_source", "manual")).strip_edges().to_lower();
+	out["radial_slot_count_source"] = (scsrc == "data") ? "data" : "manual";
+	out["radial_slot_spacing"] = CLAMP(int(p_layout.get("radial_slot_spacing", 0)), 0, 64);
+	String sshape = String(p_layout.get("radial_slot_shape", "circle")).strip_edges().to_lower();
+	if (sshape != "circle" && sshape != "sector" && sshape != "rectangle" && sshape != "image") {
+		sshape = "circle";
+	}
+	out["radial_slot_shape"] = sshape;
+	out["radial_selected_border_color"] = _cg_norm_color_rgba(p_layout.get("radial_selected_border_color", p_layout.get("radial_accent_color", "#f5bc54ff")), "#f5bc54ff");
+	out["radial_selected_border_width"] = CLAMP(int(p_layout.get("radial_selected_border_width", 3)), 0, 12);
+	out["radial_selected_glow"] = p_layout.has("radial_selected_glow") ? bool(p_layout["radial_selected_glow"]) : true;
+	out["radial_selected_glow_color"] = _cg_norm_color_rgba(p_layout.get("radial_selected_glow_color", "#f5bc5466"), "#f5bc5466");
+	out["radial_selected_image"] = String(p_layout.get("radial_selected_image", "")).strip_edges();
+	String cshape = String(p_layout.get("radial_center_shape", "circle")).strip_edges().to_lower();
+	if (cshape != "circle" && cshape != "rounded" && cshape != "none") {
+		cshape = "circle";
+	}
+	out["radial_center_shape"] = cshape;
+	out["radial_center_image"] = String(p_layout.get("radial_center_image", "")).strip_edges();
+	out["radial_center_show_icon"] = p_layout.has("radial_center_show_icon") ? bool(p_layout["radial_center_show_icon"]) : true;
+	out["radial_center_show_title"] = p_layout.has("radial_center_show_title") ? bool(p_layout["radial_center_show_title"]) : true;
+	out["radial_center_show_desc"] = p_layout.has("radial_center_show_desc") ? bool(p_layout["radial_center_show_desc"]) : true;
+	out["radial_ring_image"] = String(p_layout.get("radial_ring_image", "")).strip_edges();
+	out["radial_ring_thickness"] = CLAMP(int(p_layout.get("radial_ring_thickness", 0)), 0, 160);
+	out["radial_indicator_enabled"] = p_layout.has("radial_indicator_enabled") ? bool(p_layout["radial_indicator_enabled"]) : true;
+	out["radial_indicator_color"] = _cg_norm_color_rgba(p_layout.get("radial_indicator_color", p_layout.get("radial_accent_color", "#f5bc54ff")), "#f5bc54ff");
+	out["radial_indicator_image"] = String(p_layout.get("radial_indicator_image", "")).strip_edges();
+	out["radial_sound_open"] = String(p_layout.get("radial_sound_open", "")).strip_edges();
+	out["radial_sound_move"] = String(p_layout.get("radial_sound_move", "")).strip_edges();
+	out["radial_sound_accept"] = String(p_layout.get("radial_sound_accept", "")).strip_edges();
 
 	Array r_slots;
 	if (p_layout.has("radial_slots") && p_layout["radial_slots"].get_type() == Variant::ARRAY) {
@@ -5974,6 +6010,19 @@ Dictionary ClockGearsDataManager::normalize_menu_layout(const Dictionary &p_layo
 			nrs["enabled_switch"] = String(rs.get("enabled_switch", "")).strip_edges();
 			nrs["visibility_mode"] = String(rs.get("visibility_mode", "always")).strip_edges().to_lower();
 			nrs["visibility_switch"] = String(rs.get("visibility_switch", "")).strip_edges();
+			String slot_sh = String(rs.get("shape", "")).strip_edges().to_lower();
+			if (slot_sh != "circle" && slot_sh != "sector" && slot_sh != "rectangle" && slot_sh != "image") {
+				slot_sh = "";
+			}
+			nrs["shape"] = slot_sh;
+			nrs["image_normal"] = String(rs.get("image_normal", "")).strip_edges();
+			nrs["image_hover"] = String(rs.get("image_hover", "")).strip_edges();
+			nrs["image_pressed"] = String(rs.get("image_pressed", "")).strip_edges();
+			nrs["image_disabled"] = String(rs.get("image_disabled", "")).strip_edges();
+			if (rs.has("fill_color")) nrs["fill_color"] = _cg_norm_color_rgba(rs["fill_color"], "#1c1f29f0");
+			if (rs.has("border_color")) nrs["border_color"] = _cg_norm_color_rgba(rs["border_color"], "#f5bc54ff");
+			if (rs.has("font_color")) nrs["font_color"] = _cg_norm_color_rgba(rs["font_color"], "#f5f2eaff");
+			if (rs.has("slot_scale")) nrs["slot_scale"] = CLAMP(float(rs["slot_scale"]), 0.5f, 2.0f);
 			r_slots.push_back(nrs);
 		}
 	}
@@ -14061,7 +14110,9 @@ bool ClockGearsDataManager::simulate_editor_shortcut(const String &p_action_name
 }
 
 ClockGearsDataManager::ClockGearsDataManager() {
-	singleton = this;
+	if (singleton == nullptr) {
+		singleton = this;
+	}
 	init_empty();
 }
 

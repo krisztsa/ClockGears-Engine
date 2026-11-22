@@ -360,6 +360,8 @@ void ClockGearsRadialCanvas::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_slot_visual_scale", "index"), &ClockGearsRadialCanvas::get_slot_visual_scale);
 	ClassDB::bind_method(D_METHOD("get_center_displayed_info"), &ClockGearsRadialCanvas::get_center_displayed_info);
 	ClassDB::bind_method(D_METHOD("get_selected_slot_info"), &ClockGearsRadialCanvas::get_selected_slot_info);
+	ClassDB::bind_method(D_METHOD("get_radial_layout_config"), &ClockGearsRadialCanvas::get_radial_layout_config);
+	ClassDB::bind_method(D_METHOD("get_radial_slot_visual_config", "index"), &ClockGearsRadialCanvas::get_radial_slot_visual_config);
 
 	ADD_SIGNAL(MethodInfo("slot_activated", PropertyInfo(Variant::INT, "slot_index")));
 	ADD_SIGNAL(MethodInfo("selection_changed", PropertyInfo(Variant::INT, "slot_index")));
@@ -380,10 +382,21 @@ void ClockGearsRadialCanvas::configure(const Dictionary &p_layout, const Array &
 
 	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
 	String ds = ClockGearsDataManager::normalize_ui_data_source(layout_cfg.get("data_source", "manual"));
+	String count_src = String(layout_cfg.get("radial_slot_count_source", "manual")).strip_edges().to_lower();
 	Array raw_slots = layout_cfg.get("radial_slots", Array());
-	if (ds != "manual" && raw_slots.is_empty() && dm) {
+
+	auto load_opt_tex = [&](const Variant &p_path) -> Ref<Texture2D> {
+		String sp = String(p_path).strip_edges();
+		return sp.is_empty() ? Ref<Texture2D>() : ClockGearsWindowStyleManager::load_texture_safe(sp);
+	};
+	cached_ring_tex = load_opt_tex(layout_cfg.get("radial_ring_image", ""));
+	cached_center_tex = load_opt_tex(layout_cfg.get("radial_center_image", ""));
+	cached_selected_tex = load_opt_tex(layout_cfg.get("radial_selected_image", ""));
+	cached_indicator_tex = load_opt_tex(layout_cfg.get("radial_indicator_image", ""));
+
+	if (ds != "manual" && (raw_slots.is_empty() || count_src == "data") && dm) {
 		Array entries = dm->resolve_ui_container_entries(layout_cfg, runtime_actor_id, runtime_equip_slot_idx, (!interactive || use_editor_test_data));
-		for (int i = 0; i < entries.size(); i++) {
+		for (int i = 0; i < entries.size() && i < 16; i++) {
 			if (entries[i].get_type() != Variant::DICTIONARY) continue;
 			Dictionary ed = entries[i];
 			RadialSlot rs;
@@ -417,9 +430,25 @@ void ClockGearsRadialCanvas::configure(const Dictionary &p_layout, const Array &
 			rs.enabled_switch = String(d.get("enabled_switch", "")).strip_edges();
 			rs.visibility_mode = String(d.get("visibility_mode", "always")).strip_edges().to_lower();
 			rs.visibility_switch = String(d.get("visibility_switch", "")).strip_edges();
+			rs.shape = String(d.get("shape", "")).strip_edges().to_lower();
+			rs.image_normal = String(d.get("image_normal", "")).strip_edges();
+			rs.image_hover = String(d.get("image_hover", "")).strip_edges();
+			rs.image_pressed = String(d.get("image_pressed", "")).strip_edges();
+			rs.image_disabled = String(d.get("image_disabled", "")).strip_edges();
+			rs.has_fill_color = d.has("fill_color");
+			if (rs.has_fill_color) rs.fill_color = _cg_ui_parse_color(d["fill_color"], Color(0.11f, 0.12f, 0.16f, 0.94f));
+			rs.has_border_color = d.has("border_color");
+			if (rs.has_border_color) rs.border_color = _cg_ui_parse_color(d["border_color"], Color(0.96f, 0.74f, 0.33f, 1.0f));
+			rs.has_font_color = d.has("font_color");
+			if (rs.has_font_color) rs.font_color = _cg_ui_parse_color(d["font_color"], Color(0.95f, 0.93f, 0.88f, 1.0f));
+			rs.slot_scale = d.has("slot_scale") ? CLAMP(float(d["slot_scale"]), 0.5f, 2.0f) : 1.0f;
 			if (!rs.icon_path.is_empty()) {
 				rs.cached_icon = ClockGearsWindowStyleManager::load_texture_safe(rs.icon_path);
 			}
+			rs.tex_normal = load_opt_tex(rs.image_normal);
+			rs.tex_hover = load_opt_tex(rs.image_hover);
+			rs.tex_pressed = load_opt_tex(rs.image_pressed);
+			rs.tex_disabled = load_opt_tex(rs.image_disabled);
 			all_slots.push_back(rs);
 		}
 	} else {
@@ -512,6 +541,14 @@ Vector2 ClockGearsRadialCanvas::_compute_center_local() const {
 }
 
 void ClockGearsRadialCanvas::play_open_anim() {
+	if (interactive) {
+		String sopen = String(layout_cfg.get("radial_sound_open", "")).strip_edges();
+		if (!sopen.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_se(sopen, 1.0f, 1.0f);
+			}
+		}
+	}
 	if (!interactive || open_anim == "none" || open_anim.is_empty()) {
 		open_anim_progress = 1.0f;
 		open_anim_playing = false;
@@ -606,6 +643,14 @@ bool ClockGearsRadialCanvas::select_slot(int p_index) {
 	anim_active = true;
 	set_process(true);
 	queue_redraw();
+	if (interactive) {
+		String smove = String(layout_cfg.get("radial_sound_move", "")).strip_edges();
+		if (!smove.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_se(smove, 1.0f, 1.0f);
+			}
+		}
+	}
 	emit_signal("selection_changed", selected_pos);
 	return true;
 }
@@ -652,6 +697,14 @@ bool ClockGearsRadialCanvas::activate_selected_slot() {
 	if (rs.disabled) {
 		return false;
 	}
+	if (interactive) {
+		String sacc = String(layout_cfg.get("radial_sound_accept", "")).strip_edges();
+		if (!sacc.is_empty()) {
+			if (ClockGearsAudioManager *am = ClockGearsAudioManager::get_singleton()) {
+				am->play_se(sacc, 1.0f, 1.0f);
+			}
+		}
+	}
 	emit_signal("slot_activated", selected_pos);
 	return true;
 }
@@ -697,6 +750,29 @@ Dictionary ClockGearsRadialCanvas::get_center_displayed_info() const {
 	return info;
 }
 
+Dictionary ClockGearsRadialCanvas::get_radial_slot_visual_config(int p_index) const {
+	Dictionary d;
+	if (p_index < 0 || p_index >= active_slot_indices.size()) {
+		return d;
+	}
+	const RadialSlot &rs = all_slots[active_slot_indices[p_index]];
+	String def_shape = String(layout_cfg.get("radial_slot_shape", "circle")).strip_edges().to_lower();
+	d["id"] = rs.id;
+	d["title"] = rs.title;
+	d["description"] = rs.description;
+	d["shape"] = rs.shape.is_empty() ? def_shape : rs.shape;
+	d["icon_path"] = rs.icon_path;
+	d["image_normal"] = rs.image_normal;
+	d["image_hover"] = rs.image_hover;
+	d["image_pressed"] = rs.image_pressed;
+	d["image_disabled"] = rs.image_disabled;
+	d["action"] = rs.action;
+	d["actions"] = rs.actions.duplicate(true);
+	d["disabled"] = rs.disabled;
+	d["visible"] = rs.visible;
+	return d;
+}
+
 void ClockGearsRadialCanvas::gui_input(const Ref<InputEvent> &p_event) {
 	if (!interactive || !p_event.is_valid()) {
 		return;
@@ -732,9 +808,22 @@ void ClockGearsRadialCanvas::_notification(int p_what) {
 		}
 		float dt = float(get_process_delta_time());
 		if (open_anim_playing) {
-			open_anim_progress = MIN(1.0f, open_anim_progress + dt / 0.22f);
+			float dur_s = MAX(0.05f, float(layout_cfg.get("radial_open_duration_ms", 220)) / 1000.0f);
+			float lin = MIN(1.0f, open_anim_progress + dt / dur_s);
+			String curve = String(layout_cfg.get("radial_open_curve", "ease_out")).strip_edges().to_lower();
+			float eased = lin;
+			if (curve == "ease_out") {
+				float inv = 1.0f - lin;
+				eased = 1.0f - inv * inv * inv;
+			} else if (curve == "back_out") {
+				float inv = lin - 1.0f;
+				eased = 1.0f + 2.70158f * inv * inv * inv + 1.70158f * inv * inv;
+			} else if (curve == "bounce") {
+				eased = lin < 0.7f ? (lin / 0.7f) : (1.0f + Math::sin((lin - 0.7f) / 0.3f * Math::PI) * 0.08f);
+			}
+			open_anim_progress = lin;
 			if (open_anim == "fade" || open_anim == "scale" || open_anim == "radial_spin") {
-				set_modulate(Color(1, 1, 1, open_anim_progress));
+				set_modulate(Color(1, 1, 1, CLAMP(eased, 0.0f, 1.0f)));
 			}
 			if (open_anim_progress >= 1.0f) {
 				open_anim_playing = false;
@@ -767,6 +856,7 @@ void ClockGearsRadialCanvas::_notification(int p_what) {
 		}
 		Vector2 center = _compute_center_local();
 		float radius = _compute_radius_px();
+		float slot_sp = float(CLAMP(int(layout_cfg.get("radial_slot_spacing", 0)), 0, 64)) * ui_scale;
 		float base_slot = float(CLAMP(int(layout_cfg.get("radial_slot_size", 64)), 28, 140)) * ui_scale;
 		float sweep_deg = CLAMP(float(layout_cfg.get("radial_sweep_angle_deg", 360.0)), 45.0f, 360.0f);
 		float start_rad = Math::deg_to_rad(float(layout_cfg.get("radial_start_angle_deg", -90.0)));
@@ -774,26 +864,59 @@ void ClockGearsRadialCanvas::_notification(int p_what) {
 		bool cw = layout_cfg.has("radial_clockwise") ? bool(layout_cfg["radial_clockwise"]) : true;
 		Color ring_col = _cg_ui_parse_color(layout_cfg.get("radial_ring_color", "#1a1e2ad9"), Color(0.10f, 0.12f, 0.16f, 0.85f));
 		Color accent_col = _cg_ui_parse_color(layout_cfg.get("radial_accent_color", "#f5bc54ff"), Color(0.96f, 0.74f, 0.33f, 1.0f));
+		Color sel_bord_col = _cg_ui_parse_color(layout_cfg.get("radial_selected_border_color", layout_cfg.get("radial_accent_color", "#f5bc54ff")), accent_col);
+		float sel_bord_w = float(CLAMP(int(layout_cfg.get("radial_selected_border_width", 3)), 0, 12)) * ui_scale;
+		bool sel_glow = layout_cfg.has("radial_selected_glow") ? bool(layout_cfg["radial_selected_glow"]) : true;
+		Color sel_glow_col = _cg_ui_parse_color(layout_cfg.get("radial_selected_glow_color", "#f5bc5466"), Color(accent_col.r, accent_col.g, accent_col.b, 0.35f));
+		String default_slot_shape = String(layout_cfg.get("radial_slot_shape", "circle")).strip_edges().to_lower();
 
-		// 1. Pista circular / arco estilo Zelda 3D
-		float end_rad = start_rad + (cw ? sweep_rad : -sweep_rad);
-		float track_w = base_slot * 0.92f;
-		_cg_draw_thick_arc(this, center, radius, MIN(start_rad, end_rad), MAX(start_rad, end_rad), track_w, ring_col, true);
-		_cg_draw_thick_arc(this, center, radius + track_w * 0.5f, MIN(start_rad, end_rad), MAX(start_rad, end_rad), MAX(1.5f, 2.0f * ui_scale), Color(accent_col.r, accent_col.g, accent_col.b, 0.42f), true);
-		_cg_draw_thick_arc(this, center, MAX(8.0f, radius - track_w * 0.5f), MIN(start_rad, end_rad), MAX(start_rad, end_rad), MAX(1.5f, 2.0f * ui_scale), Color(accent_col.r, accent_col.g, accent_col.b, 0.35f), true);
+		// 1. Pista circular / imagen de fondo del anillo
+		int ring_th = int(layout_cfg.get("radial_ring_thickness", 0));
+		float track_w = (ring_th > 0) ? (float(ring_th) * ui_scale) : (base_slot * 0.92f + slot_sp * 0.35f);
+		if (cached_ring_tex.is_valid()) {
+			float r_side = (radius + track_w * 0.65f) * 2.0f;
+			Rect2 r_rect(center - Vector2(r_side * 0.5f, r_side * 0.5f), Vector2(r_side, r_side));
+			draw_texture_rect(cached_ring_tex, r_rect, false, Color(1, 1, 1, ring_col.a));
+		} else {
+			float end_rad = start_rad + (cw ? sweep_rad : -sweep_rad);
+			_cg_draw_thick_arc(this, center, radius, MIN(start_rad, end_rad), MAX(start_rad, end_rad), track_w, ring_col, true);
+			_cg_draw_thick_arc(this, center, radius + track_w * 0.5f, MIN(start_rad, end_rad), MAX(start_rad, end_rad), MAX(1.5f, 2.0f * ui_scale), Color(accent_col.r, accent_col.g, accent_col.b, 0.42f), true);
+			_cg_draw_thick_arc(this, center, MAX(8.0f, radius - track_w * 0.5f), MIN(start_rad, end_rad), MAX(start_rad, end_rad), MAX(1.5f, 2.0f * ui_scale), Color(accent_col.r, accent_col.g, accent_col.b, 0.35f), true);
+		}
 
 		int cnt = active_slot_indices.size();
 		if (cnt <= 0) {
 			return;
 		}
 
-		// 2. Rayo selector desde el centro hacia la ranura activa
-		Vector2 sel_pos_px = get_slot_local_pos(selected_pos);
-		Vector2 dir_u = (sel_pos_px - center);
-		float dist = dir_u.length();
-		if (dist > 1.0f) {
-			dir_u /= dist;
-			draw_line(center + dir_u * MAX(18.0f, radius * 0.44f), sel_pos_px - dir_u * (base_slot * 0.55f), Color(accent_col.r, accent_col.g, accent_col.b, 0.75f), MAX(2.0f, 3.0f * ui_scale), true);
+		// 2. Indicador o cursor que gira hacia la ranura seleccionada
+		bool ind_on = layout_cfg.has("radial_indicator_enabled") ? bool(layout_cfg["radial_indicator_enabled"]) : true;
+		if (ind_on) {
+			Color ind_col = _cg_ui_parse_color(layout_cfg.get("radial_indicator_color", layout_cfg.get("radial_accent_color", "#f5bc54ff")), accent_col);
+			Vector2 sel_pos_px = get_slot_local_pos(selected_pos);
+			Vector2 dir_u = (sel_pos_px - center);
+			float dist = dir_u.length();
+			if (dist > 1.0f) {
+				dir_u /= dist;
+				if (cached_indicator_tex.is_valid()) {
+					float ang = Math::atan2(dir_u.y, dir_u.x);
+					Vector2 ind_pos = center + dir_u * MAX(20.0f, radius * 0.52f);
+					float isz = MAX(18.0f * ui_scale, base_slot * 0.42f);
+					draw_set_transform(ind_pos, ang, Vector2(1, 1));
+					draw_texture_rect(cached_indicator_tex, Rect2(-isz * 0.5f, -isz * 0.5f, isz, isz), false, ind_col);
+					draw_set_transform(Vector2(), 0.0f, Vector2(1, 1));
+				} else {
+					Vector2 p0 = center + dir_u * MAX(18.0f, radius * 0.44f);
+					Vector2 p1 = sel_pos_px - dir_u * (base_slot * 0.55f);
+					draw_line(p0, p1, Color(ind_col.r, ind_col.g, ind_col.b, 0.85f), MAX(2.0f, 3.0f * ui_scale), true);
+					Vector2 perp(-dir_u.y, dir_u.x);
+					Vector<Vector2> tri;
+					tri.push_back(p1 + dir_u * (7.0f * ui_scale));
+					tri.push_back(p1 - dir_u * (3.0f * ui_scale) + perp * (5.0f * ui_scale));
+					tri.push_back(p1 - dir_u * (3.0f * ui_scale) - perp * (5.0f * ui_scale));
+					draw_colored_polygon(tri, ind_col);
+				}
+			}
 		}
 
 		Ref<Font> font = get_theme_default_font();
@@ -801,7 +924,8 @@ void ClockGearsRadialCanvas::_notification(int p_what) {
 		int desc_fsz = MAX(9, int(Math::round(12.0f * ui_scale)));
 		int badge_fsz = MAX(8, int(Math::round(10.0f * ui_scale)));
 
-		// 3. Medallones de ranura (no seleccionados primero, activo al final para quedar arriba)
+		// 3. Ranuras personalizables (formas: circle, sector, rectangle, image + imágenes de estado)
+		float half_step = (cnt > 1) ? ((sweep_deg >= 359.5f) ? (sweep_rad / float(cnt)) : (sweep_rad / float(cnt - 1))) * 0.44f : 0.45f;
 		for (int pass = 0; pass < 2; pass++) {
 			for (int i = 0; i < cnt; i++) {
 				bool is_sel = (i == selected_pos);
@@ -810,23 +934,73 @@ void ClockGearsRadialCanvas::_notification(int p_what) {
 				}
 				const RadialSlot &rs = all_slots[active_slot_indices[i]];
 				Vector2 sp = get_slot_local_pos(i);
-				float sc = (i < slot_visual_scales.size()) ? slot_visual_scales[i] : (is_sel ? 1.28f : 1.0f);
+				float sc = ((i < slot_visual_scales.size()) ? slot_visual_scales[i] : (is_sel ? 1.28f : 1.0f)) * rs.slot_scale;
 				float srad = (base_slot * 0.46f) * sc;
+				String eff_shape = rs.shape.is_empty() ? default_slot_shape : rs.shape;
 
-				// Sombra bajo medallón
-				draw_circle(sp + Vector2(0, 3.0f * ui_scale), srad + 2.0f * ui_scale, Color(0, 0, 0, is_sel ? 0.50f : 0.34f));
-				if (is_sel) {
-					draw_circle(sp, srad + 5.0f * ui_scale, Color(accent_col.r, accent_col.g, accent_col.b, 0.24f));
-				}
-
-				Color fill_c = is_sel ? Color(0.20f, 0.16f, 0.11f, 0.98f) : Color(0.11f, 0.12f, 0.16f, 0.94f);
+				Color fill_c = rs.has_fill_color ? rs.fill_color : (is_sel ? Color(0.20f, 0.16f, 0.11f, 0.98f) : Color(0.11f, 0.12f, 0.16f, 0.94f));
 				if (rs.disabled) {
 					fill_c = Color(0.08f, 0.08f, 0.10f, 0.65f);
 				}
-				draw_circle(sp, srad, fill_c);
+				Color rim_c = rs.has_border_color ? rs.border_color : (is_sel ? sel_bord_col : Color(accent_col.r, accent_col.g, accent_col.b, rs.disabled ? 0.25f : 0.62f));
+				float rim_w = is_sel ? MAX(1.0f, sel_bord_w) : MAX(1.0f, 1.5f * ui_scale);
 
-				Color rim_c = is_sel ? accent_col : Color(accent_col.r, accent_col.g, accent_col.b, rs.disabled ? 0.25f : 0.62f);
-				draw_arc(sp, srad, 0.0f, float(Math::TAU), 36, rim_c, is_sel ? MAX(2.0f, 2.5f * ui_scale) : MAX(1.0f, 1.5f * ui_scale), true);
+				Ref<Texture2D> state_tex;
+				if (rs.disabled && rs.tex_disabled.is_valid()) state_tex = rs.tex_disabled;
+				else if (is_sel && rs.tex_hover.is_valid()) state_tex = rs.tex_hover;
+				else if (rs.tex_normal.is_valid()) state_tex = rs.tex_normal;
+				else if (is_sel && cached_selected_tex.is_valid()) state_tex = cached_selected_tex;
+
+				if (eff_shape == "sector") {
+					float sa = _compute_slot_angle(i, cnt);
+					float r_in = MAX(18.0f * ui_scale, radius - srad * 0.95f);
+					float r_out = radius + srad * 0.95f;
+					Vector<Vector2> poly;
+					const int segs = 10;
+					for (int k = 0; k <= segs; k++) {
+						float ang = Math::lerp(sa - half_step, sa + half_step, float(k) / float(segs));
+						poly.push_back(center + Vector2(Math::cos(ang), Math::sin(ang)) * r_out);
+					}
+					for (int k = segs; k >= 0; k--) {
+						float ang = Math::lerp(sa - half_step, sa + half_step, float(k) / float(segs));
+						poly.push_back(center + Vector2(Math::cos(ang), Math::sin(ang)) * r_in);
+					}
+					if (is_sel && sel_glow) {
+						draw_circle(sp, srad + 6.0f * ui_scale, sel_glow_col);
+					}
+					draw_colored_polygon(poly, fill_c);
+					poly.push_back(poly[0]);
+					draw_polyline(poly, rim_c, rim_w, true);
+				} else if (eff_shape == "rectangle") {
+					Rect2 rr(sp - Vector2(srad, srad), Vector2(srad * 2.0f, srad * 2.0f));
+					if (is_sel && sel_glow) {
+						draw_rect(rr.grow(4.0f * ui_scale), sel_glow_col);
+					}
+					draw_rect(rr, fill_c);
+					draw_rect(rr, rim_c, false, rim_w);
+				} else if (eff_shape == "image" && state_tex.is_valid()) {
+					if (is_sel && sel_glow) {
+						draw_circle(sp, srad + 5.0f * ui_scale, sel_glow_col);
+					}
+					Rect2 ir(sp - Vector2(srad, srad), Vector2(srad * 2.0f, srad * 2.0f));
+					draw_texture_rect(state_tex, ir, false, rs.disabled ? Color(1, 1, 1, 0.45f) : Color(1, 1, 1, 1));
+					if (is_sel && sel_bord_w > 0.5f) {
+						draw_rect(ir, rim_c, false, rim_w);
+					}
+				} else {
+					draw_circle(sp + Vector2(0, 3.0f * ui_scale), srad + 2.0f * ui_scale, Color(0, 0, 0, is_sel ? 0.50f : 0.34f));
+					if (is_sel && sel_glow) {
+						draw_circle(sp, srad + 5.0f * ui_scale, sel_glow_col);
+					}
+					draw_circle(sp, srad, fill_c);
+					if (state_tex.is_valid()) {
+						Rect2 ir(sp - Vector2(srad * 0.9f, srad * 0.9f), Vector2(srad * 1.8f, srad * 1.8f));
+						draw_texture_rect(state_tex, ir, false, rs.disabled ? Color(1, 1, 1, 0.45f) : Color(1, 1, 1, 1));
+					}
+					if (rim_w > 0.1f) {
+						draw_arc(sp, srad, 0.0f, float(Math::TAU), 36, rim_c, rim_w, true);
+					}
+				}
 
 				if (rs.cached_icon.is_valid()) {
 					float icon_side = srad * 1.32f;
@@ -838,37 +1012,55 @@ void ClockGearsRadialCanvas::_notification(int p_what) {
 					Rect2 icon_r(sp - Vector2(icon_side * 0.5f, icon_side * 0.5f), Vector2(icon_side, icon_side));
 					Color icon_mod = rs.disabled ? Color(1, 1, 1, 0.4f) : Color(1, 1, 1, 1);
 					draw_texture_rect(rs.cached_icon, icon_r, false, icon_mod);
-				} else if (font.is_valid()) {
+				} else if (font.is_valid() && !(eff_shape == "image" && state_tex.is_valid())) {
 					String abbr = ClockGearsDataManager::truncate_with_ellipsis(rs.title, 4);
 					Vector2 tsz = font->get_string_size(abbr, HORIZONTAL_ALIGNMENT_LEFT, -1, badge_fsz);
-					Color tc = rs.disabled ? Color(0.6f, 0.6f, 0.65f, 0.7f) : (is_sel ? accent_col : Color(0.95f, 0.93f, 0.88f, 1.0f));
+					Color tc = rs.has_font_color ? rs.font_color : (rs.disabled ? Color(0.6f, 0.6f, 0.65f, 0.7f) : (is_sel ? accent_col : Color(0.95f, 0.93f, 0.88f, 1.0f)));
 					draw_string(font, sp + Vector2(-tsz.x * 0.5f, tsz.y * 0.30f), abbr, HORIZONTAL_ALIGNMENT_LEFT, -1, badge_fsz, tc);
 				}
 			}
 		}
 
-		// 4. Núcleo central con icono grande, título y descripción
+		// 4. Núcleo central (forma, imagen, icono grande, título y descripción configurables)
 		bool show_center = layout_cfg.has("radial_show_center_info") ? bool(layout_cfg["radial_show_center_info"]) : true;
-		if (show_center) {
+		String cshape = String(layout_cfg.get("radial_center_shape", "circle")).strip_edges().to_lower();
+		if (show_center && cshape != "none") {
 			const RadialSlot &active = all_slots[active_slot_indices[selected_pos]];
 			float hub_r = CLAMP(radius - base_slot * 0.62f, 36.0f * ui_scale, 108.0f * ui_scale);
-			draw_circle(center + Vector2(0, 3.0f * ui_scale), hub_r + 3.0f * ui_scale, Color(0, 0, 0, 0.45f));
-			draw_circle(center, hub_r, Color(0.09f, 0.08f, 0.07f, 0.92f));
-			draw_arc(center, hub_r, 0.0f, float(Math::TAU), 48, Color(accent_col.r, accent_col.g, accent_col.b, 0.78f), MAX(1.5f, 2.0f * ui_scale), true);
+			if (cshape == "rounded") {
+				Rect2 hbox(center - Vector2(hub_r, hub_r * 0.82f), Vector2(hub_r * 2.0f, hub_r * 1.64f));
+				draw_rect(Rect2(hbox.position + Vector2(0, 3.0f * ui_scale), hbox.size), Color(0, 0, 0, 0.42f));
+				draw_rect(hbox, Color(0.09f, 0.08f, 0.07f, 0.92f));
+				draw_rect(hbox, Color(accent_col.r, accent_col.g, accent_col.b, 0.78f), false, MAX(1.5f, 2.0f * ui_scale));
+			} else {
+				draw_circle(center + Vector2(0, 3.0f * ui_scale), hub_r + 3.0f * ui_scale, Color(0, 0, 0, 0.45f));
+				draw_circle(center, hub_r, Color(0.09f, 0.08f, 0.07f, 0.92f));
+				draw_arc(center, hub_r, 0.0f, float(Math::TAU), 48, Color(accent_col.r, accent_col.g, accent_col.b, 0.78f), MAX(1.5f, 2.0f * ui_scale), true);
+			}
+			if (cached_center_tex.is_valid()) {
+				Rect2 ctr_r(center - Vector2(hub_r * 0.88f, hub_r * 0.88f), Vector2(hub_r * 1.76f, hub_r * 1.76f));
+				draw_texture_rect(cached_center_tex, ctr_r, false, Color(1, 1, 1, 0.92f));
+			}
+
+			bool show_icon = layout_cfg.has("radial_center_show_icon") ? bool(layout_cfg["radial_center_show_icon"]) : true;
+			bool show_title = layout_cfg.has("radial_center_show_title") ? bool(layout_cfg["radial_center_show_title"]) : true;
+			bool show_desc = layout_cfg.has("radial_center_show_desc") ? bool(layout_cfg["radial_center_show_desc"]) : true;
 
 			float y_off = -hub_r * 0.45f;
-			if (active.cached_icon.is_valid()) {
+			if (show_icon && active.cached_icon.is_valid()) {
 				float c_ic = MIN(hub_r * 0.68f, 44.0f * ui_scale);
 				Rect2 ic_r(center + Vector2(-c_ic * 0.5f, -hub_r * 0.68f), Vector2(c_ic, c_ic));
 				draw_texture_rect(active.cached_icon, ic_r, false, active.disabled ? Color(1, 1, 1, 0.4f) : Color(1, 1, 1, 1));
 				y_off = 4.0f * ui_scale;
 			}
 			if (font.is_valid()) {
-				String title_txt = ClockGearsDataManager::truncate_with_ellipsis(active.title, 20);
 				float max_tw = hub_r * 1.72f;
-				draw_string(font, center + Vector2(-max_tw * 0.5f, y_off + float(title_fsz) * 0.35f),
-						title_txt, HORIZONTAL_ALIGNMENT_CENTER, max_tw, title_fsz, accent_col);
-				if (!active.description.is_empty()) {
+				if (show_title) {
+					String title_txt = ClockGearsDataManager::truncate_with_ellipsis(active.title, 20);
+					draw_string(font, center + Vector2(-max_tw * 0.5f, y_off + float(title_fsz) * 0.35f),
+							title_txt, HORIZONTAL_ALIGNMENT_CENTER, max_tw, title_fsz, accent_col);
+				}
+				if (show_desc && !active.description.is_empty()) {
 					String desc_txt = ClockGearsDataManager::truncate_with_ellipsis(active.description, 44);
 					draw_multiline_string(font, center + Vector2(-max_tw * 0.5f, y_off + float(title_fsz) * 0.95f),
 							desc_txt, HORIZONTAL_ALIGNMENT_CENTER, max_tw, desc_fsz, 2, Color(0.92f, 0.89f, 0.82f, 0.96f));
@@ -3348,7 +3540,23 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 		Dictionary ed = entries[idx];
 		Dictionary ov = ov_map.has(itos(idx)) && ov_map[itos(idx)].get_type() == Variant::DICTIONARY ? Dictionary(ov_map[itos(idx)]) : Dictionary();
 		bool is_empty = bool(ed.get("is_empty", false));
-		bool is_dis = bool(ed.get("disabled", false)) || is_empty;
+		bool ov_vis = ov.has("visible") ? bool(ov["visible"]) : true;
+		String ov_vmode = String(ov.get("visibility_mode", "always")).strip_edges().to_lower();
+		if (ov_vmode == "hidden" || ov_vmode == "never") {
+			ov_vis = false;
+		} else if (ov_vis && ov_vmode == "switch") {
+			String vsw = String(ov.get("visibility_switch", "")).strip_edges();
+			ov_vis = (!vsw.is_empty() && dm) ? dm->get_switch(vsw) : false;
+		}
+		bool ov_dis = false;
+		String ov_emode = String(ov.get("enabled_mode", "always")).strip_edges().to_lower();
+		if (ov_emode == "disabled") {
+			ov_dis = true;
+		} else if (ov_emode == "switch") {
+			String esw = String(ov.get("enabled_switch", "")).strip_edges();
+			ov_dis = (!esw.is_empty() && dm) ? !dm->get_switch(esw) : true;
+		}
+		bool is_dis = bool(ed.get("disabled", false)) || is_empty || ov_dis;
 
 		Rect2 cell_r;
 		if (lmode == "carousel") {
@@ -3375,14 +3583,50 @@ void ClockGearsUiDesignLayer::_build_or_refresh_data_container(ElementEntry &r_e
 		cb->set_name(vformat("DataCell_%d", idx));
 		cb->set_position(cell_r.position);
 		cb->set_size(cell_r.size);
+		cb->set_visible(ov_vis);
 		cb->set_clip_contents(true);
 		cb->set_mouse_filter(preview_mode ? MOUSE_FILTER_IGNORE : MOUSE_FILTER_STOP);
-		cb->set_focus_mode((preview_mode || is_empty || is_dis) ? FOCUS_NONE : FOCUS_ALL);
+		cb->set_focus_mode((preview_mode || is_empty || is_dis || !ov_vis) ? FOCUS_NONE : FOCUS_ALL);
 		cb->set_disabled(is_dis && !is_empty);
 		cb->set_meta("entry_empty", is_empty);
 		cb->set_meta("entry_disabled", is_dis);
 		cb->set_meta("container_id", r_entry.id);
 		cb->set_meta("slot_idx", idx);
+		String o_img_n = String(ov.get("image_normal", ov.get("image_path", ""))).strip_edges();
+		String o_img_h = String(ov.get("image_hover", "")).strip_edges();
+		String o_img_p = String(ov.get("image_pressed", "")).strip_edges();
+		String o_img_d = String(ov.get("image_disabled", "")).strip_edges();
+		if (!o_img_n.is_empty() || !o_img_h.is_empty() || !o_img_p.is_empty() || !o_img_d.is_empty()) {
+			auto apply_ov_tex = [&](const StringName &p_st, const String &p_path) {
+				String use_p = p_path.is_empty() ? o_img_n : p_path;
+				if (use_p.is_empty()) return;
+				Ref<Texture2D> t = ClockGearsWindowStyleManager::load_texture_safe(use_p);
+				if (t.is_valid()) {
+					Ref<StyleBoxTexture> sbt;
+					sbt.instantiate();
+					sbt->set_texture(t);
+					cb->add_theme_style_override(p_st, sbt);
+				}
+			};
+			apply_ov_tex("normal", o_img_n);
+			apply_ov_tex("hover", o_img_h);
+			apply_ov_tex("pressed", o_img_p);
+			apply_ov_tex("focus", o_img_h);
+			apply_ov_tex("disabled", o_img_d);
+		} else if (ov.has("fill_color") || ov.has("border_color")) {
+			Ref<StyleBoxFlat> osb;
+			osb.instantiate();
+			osb->set_bg_color(_cg_ui_parse_color(ov.get("fill_color", "#1c1f29f0"), Color(0.11f, 0.12f, 0.16f, 0.94f)));
+			osb->set_border_color(_cg_ui_parse_color(ov.get("border_color", "#d8a040ff"), Color(0.85f, 0.63f, 0.25f, 1.0f)));
+			osb->set_border_width_all(1);
+			osb->set_corner_radius_all(4);
+			cb->add_theme_style_override("normal", osb);
+			cb->add_theme_style_override("hover", osb);
+			cb->add_theme_style_override("focus", osb);
+		}
+		if (ov.has("font_color")) {
+			cb->add_theme_color_override("font_color", _cg_ui_parse_color(ov["font_color"], Color(1, 1, 1, 1)));
+		}
 		if (!preview_mode) {
 			cb->connect("pressed", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_cell_pressed).bind(r_entry.id, idx), CONNECT_DEFERRED);
 			cb->connect("mouse_entered", callable_mp(this, &ClockGearsUiDesignLayer::_on_data_cell_focused).bind(r_entry.id, idx));

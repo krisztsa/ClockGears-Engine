@@ -1105,13 +1105,16 @@ public:
 	Dictionary debug_step_long_help(float p_delta_sec, const Vector2 &p_pointer_pos = Vector2(-1, -1));
 	Dictionary debug_get_long_help_state() const;
 
+	friend class ClockGearsUiElementFloatingWindow;
+
 	ClockGearsUiDesignEditor();
 	virtual ~ClockGearsUiDesignEditor();
 };
 
 // ============================================================================
 // ClockGearsUiElementFloatingWindow — Ventana flotante no modal por elemento
-// 5 pestañas: General, Aspecto, Imagen, Texto, Acciones (sincronizada 2 vías)
+// 8 pestañas: General, Aspecto, Distribución, Elementos, Imagen, Texto,
+// Animación y Acciones (sincronizada 2 vías, soporta radiales y ranuras hijas)
 // ============================================================================
 class ClockGearsUiElementFloatingWindow : public Window {
 	GDCLASS(ClockGearsUiElementFloatingWindow, Window);
@@ -1144,6 +1147,10 @@ private:
 	SpinBox *w_spin = nullptr;
 	SpinBox *h_spin = nullptr;
 	SpinBox *layer_spin = nullptr;
+	OptionButton *slot_vis_mode_opt = nullptr;
+	LineEdit *slot_vis_sw_edit = nullptr;
+	OptionButton *slot_en_mode_opt = nullptr;
+	LineEdit *slot_en_sw_edit = nullptr;
 
 	// Aspecto
 	CheckBox *show_bg_chk = nullptr;
@@ -1163,6 +1170,54 @@ private:
 	CheckBox *glow_chk = nullptr;
 	ColorPickerButton *glow_col_btn = nullptr;
 
+	// Distribución (radial y contenedores)
+	VBoxContainer *dist_radial_box = nullptr;
+	VBoxContainer *dist_grid_box = nullptr;
+	OptionButton *rad_count_src_opt = nullptr;
+	SpinBox *rad_count_spin = nullptr;
+	SpinBox *rad_radius_spin = nullptr;
+	SpinBox *rad_start_spin = nullptr;
+	CheckBox *rad_full_chk = nullptr;
+	SpinBox *rad_sweep_spin = nullptr;
+	CheckBox *rad_cw_chk = nullptr;
+	SpinBox *rad_slot_size_spin = nullptr;
+	SpinBox *rad_slot_spacing_spin = nullptr;
+	OptionButton *rad_slot_shape_opt = nullptr;
+	SpinBox *rad_sel_scale_spin = nullptr;
+	ColorPickerButton *rad_sel_border_col_btn = nullptr;
+	SpinBox *rad_sel_border_w_spin = nullptr;
+	CheckBox *rad_sel_glow_chk = nullptr;
+	LineEdit *rad_sel_img_edit = nullptr;
+	OptionButton *rad_center_shape_opt = nullptr;
+	LineEdit *rad_center_img_edit = nullptr;
+	CheckBox *rad_center_icon_chk = nullptr;
+	CheckBox *rad_center_title_chk = nullptr;
+	CheckBox *rad_center_desc_chk = nullptr;
+	LineEdit *rad_ring_img_edit = nullptr;
+	ColorPickerButton *rad_ring_col_btn = nullptr;
+	SpinBox *rad_ring_thick_spin = nullptr;
+	CheckBox *rad_ind_enabled_chk = nullptr;
+	ColorPickerButton *rad_ind_col_btn = nullptr;
+	LineEdit *rad_ind_img_edit = nullptr;
+	OptionButton *cont_layout_opt = nullptr;
+	SpinBox *cont_cols_spin = nullptr;
+	SpinBox *cont_rows_spin = nullptr;
+	SpinBox *cont_spx_spin = nullptr;
+	SpinBox *cont_spy_spin = nullptr;
+	CheckBox *cont_scroll_chk = nullptr;
+
+	// Elementos (fuente datos, filtros, estados casilla y Aplicar a todas)
+	OptionButton *el_data_source_opt = nullptr;
+	OptionButton *el_filter_opt = nullptr;
+	CheckBox *el_usable_chk = nullptr;
+	OptionButton *el_sort_opt = nullptr;
+	SpinBox *el_equip_slot_spin = nullptr;
+	CheckBox *el_show_empty_chk = nullptr;
+	SpinBox *el_empty_cnt_spin = nullptr;
+	OptionButton *el_slot_action_opt = nullptr;
+	Button *el_create_tpl_btn = nullptr;
+	Button *el_apply_all_btn = nullptr;
+
 	// Imagen
 	LineEdit *image_edit = nullptr;
 	OptionButton *scale_opt = nullptr;
@@ -1175,6 +1230,7 @@ private:
 
 	// Texto
 	TextEdit *text_edit = nullptr;
+	LineEdit *desc_edit = nullptr;
 	OptionButton *font_opt = nullptr;
 	SpinBox *font_size_spin = nullptr;
 	ColorPickerButton *font_color_btn = nullptr;
@@ -1183,15 +1239,31 @@ private:
 	LineEdit *var_edit = nullptr;
 	FileDialog *font_file_dialog = nullptr;
 
+	// Animación y sonidos
+	OptionButton *anim_type_opt = nullptr;
+	SpinBox *anim_dur_spin = nullptr;
+	OptionButton *anim_curve_opt = nullptr;
+	LineEdit *snd_open_edit = nullptr;
+	LineEdit *snd_move_edit = nullptr;
+	LineEdit *snd_accept_edit = nullptr;
+
 	// Acciones (host reutilizado en P4 + P5 lista de comandos)
 	VBoxContainer *actions_host = nullptr;
 	OptionButton *quick_action_opt = nullptr;
+	OptionButton *fw_add_action_opt = nullptr;
+	Button *fw_add_action_btn = nullptr;
+	VBoxContainer *fw_actions_list_vbox = nullptr;
 	Label *actions_summary_lbl = nullptr;
 
 	void _build_ui();
 	void _emit_commit();
 	void _on_anchor_pressed(int p_idx);
 	void _on_any_changed();
+	void _on_apply_all_slots_pressed();
+	void _on_create_tpl_pressed();
+	void _on_fw_add_action_pressed();
+	void _on_fw_remove_action_pressed(int p_idx);
+	void _refresh_fw_actions_list();
 	void _on_open_img_picker(int p_target);
 	void _on_clear_img_picker(int p_target);
 	void _on_img_file_selected(const String &p_path);

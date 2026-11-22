@@ -87,7 +87,23 @@ public:
 		String visibility_switch;
 		bool visible = true;
 		bool disabled = false;
+		String shape;
+		String image_normal;
+		String image_hover;
+		String image_pressed;
+		String image_disabled;
+		bool has_fill_color = false;
+		Color fill_color;
+		bool has_border_color = false;
+		Color border_color;
+		bool has_font_color = false;
+		Color font_color;
+		float slot_scale = 1.0f;
 		Ref<Texture2D> cached_icon;
+		Ref<Texture2D> tex_normal;
+		Ref<Texture2D> tex_hover;
+		Ref<Texture2D> tex_pressed;
+		Ref<Texture2D> tex_disabled;
 	};
 
 private:
@@ -95,6 +111,10 @@ private:
 	Vector<RadialSlot> all_slots;
 	Vector<int> active_slot_indices;
 	Vector<float> slot_visual_scales;
+	Ref<Texture2D> cached_ring_tex;
+	Ref<Texture2D> cached_center_tex;
+	Ref<Texture2D> cached_selected_tex;
+	Ref<Texture2D> cached_indicator_tex;
 	int selected_pos = 0;
 	float ui_scale = 1.0f;
 	bool anim_active = false;
@@ -136,6 +156,8 @@ public:
 	float get_slot_visual_scale(int p_index) const;
 	Dictionary get_center_displayed_info() const;
 	Dictionary get_selected_slot_info() const;
+	Dictionary get_radial_layout_config() const { return layout_cfg.duplicate(true); }
+	Dictionary get_radial_slot_visual_config(int p_index) const;
 
 	ClockGearsRadialCanvas();
 };

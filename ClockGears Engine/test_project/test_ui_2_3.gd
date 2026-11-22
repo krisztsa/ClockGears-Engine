@@ -45,6 +45,7 @@ func _run() -> void:
 
 	await _test_punto_1()
 	await _test_punto_2()
+	await _test_punto_3()
 
 	# Restaurar estado original del proyecto de pruebas para no ensuciarlo
 	dm.set_category_array(3, orig_cat_items)
@@ -406,6 +407,170 @@ func _test_punto_2() -> void:
 			amb_kept = true
 	check(amb_kept, "Pantalla personalizada ambigua queda sin tocar durante la migración")
 	mig_dm.free()
+
+func _select_meta_p3(opt: OptionButton, target: String) -> void:
+	if opt == null:
+		return
+	for i in range(opt.get_item_count()):
+		if str(opt.get_item_metadata(i)) == target:
+			opt.select(i)
+			opt.emit_signal("item_selected", i)
+			return
+
+func _test_punto_3() -> void:
+	print("--- Punto 3: Radiales y contenedores personalizables en ventana flotante ---")
+	var ed = ClassDB.instantiate("ClockGearsUiDesignEditor")
+	get_root().add_child(ed)
+	ed.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ed.set_size(Vector2(1366, 768))
+	await process_frame
+	await process_frame
+	ed.select_screen("game_menu_items")
+	await process_frame
+
+	var rad_id: String = ed.add_element_at("radial", Vector2i(260, 80))
+	check(not rad_id.is_empty(), "Añadida rueda radial personalizable: " + rad_id)
+	await process_frame
+
+	var fw = ed.open_floating_element_window(rad_id)
+	await process_frame
+	check(fw != null and fw.is_visible(), "Doble clic / apertura abre la ventana flotante unificada para la rueda radial")
+	var fh: Dictionary = fw.get_ui_handles()
+	var tabs: TabContainer = fh.get("tabs", null)
+	check(tabs != null and tabs.get_tab_count() == 8, "Ventana flotante tiene las 8 pestañas completas (actual=%d)" % (tabs.get_tab_count() if tabs != null else -1))
+	if tabs != null and tabs.get_tab_count() == 8:
+		var tab_titles := []
+		for ti in range(tabs.get_tab_count()):
+			tab_titles.append(tabs.get_tab_title(ti))
+		check(tab_titles == ["General", "Aspecto", "Distribución", "Elementos", "Imagen", "Texto", "Animación", "Acciones"], "Nombres de las 8 pestañas coinciden: " + str(tab_titles))
+
+	# Personalizar rueda radial completa: 8 ranuras, radio 160, forma sector, centro cuadro, sin indicador, anim 420ms back_out
+	var rad_count_spin: SpinBox = fh.get("rad_count_spin", null)
+	var rad_radius_spin: SpinBox = fh.get("rad_radius_spin", null)
+	var rad_slot_shape_opt: OptionButton = fh.get("rad_slot_shape_opt", null)
+	var rad_center_shape_opt: OptionButton = fh.get("rad_center_shape_opt", null)
+	var rad_ind_enabled_chk: CheckBox = fh.get("rad_ind_enabled_chk", null)
+	var anim_dur_spin: SpinBox = fh.get("anim_dur_spin", null)
+	var anim_curve_opt: OptionButton = fh.get("anim_curve_opt", null)
+
+	rad_count_spin.value = 8
+	rad_radius_spin.value = 160
+	_select_meta_p3(rad_slot_shape_opt, "sector")
+	_select_meta_p3(rad_center_shape_opt, "square")
+	rad_ind_enabled_chk.button_pressed = false
+	anim_dur_spin.value = 420
+	_select_meta_p3(anim_curve_opt, "back_out")
+	await process_frame
+	await process_frame
+
+	# Verificar que las 8 ranuras aparecen como tarjetas hijas en 'Elementos'
+	var cards: Array = ed.get_design_cards_info()
+	var child_slots := []
+	for c in cards:
+		var cid := str(c.get("id", ""))
+		if cid.begins_with("__slot__::" + rad_id + "::"):
+			child_slots.append(cid)
+	check(child_slots.size() == 8, "Lista Elementos muestra 8 ranuras hijas bajo la rueda radial (actual=%d)" % child_slots.size())
+
+	# Editar ranura hija 2 en su propia ventana flotante: forma rectángulo, imagen, título, descripción y acción
+	var slot2_id := "__slot__::" + rad_id + "::2"
+	var sfw = ed.open_floating_element_window(slot2_id)
+	await process_frame
+	check(sfw != null and sfw.is_visible(), "Abrir ventana flotante desde una ranura hija individual funciona")
+	var sfh: Dictionary = sfw.get_ui_handles()
+	sfh["name_edit"].text = "Slot Poción"
+	sfh["name_edit"].emit_signal("text_changed", "Slot Poción")
+	sfh["text_edit"].text = "Slot Poción"
+	sfh["text_edit"].emit_signal("text_changed")
+	sfh["desc_edit"].text = "Curación rápida"
+	sfh["desc_edit"].emit_signal("text_changed", "Curación rápida")
+	_select_meta_p3(sfh["rad_slot_shape_opt"], "rectangle")
+	sfh["btn_normal_edit"].text = "res://img/characters/door_wood.png"
+	sfh["btn_normal_edit"].emit_signal("text_changed", "res://img/characters/door_wood.png")
+	sfh["fw_add_action_opt"].select(0)
+	sfh["fw_add_action_btn"].emit_signal("pressed")
+	await process_frame
+	await process_frame
+
+	# Comprobar consistencia Canvas vs Probar vs F5 (ClockGearsGameMenu)
+	var canvas_layer = ed.get_canvas_design_layer()
+	var canvas_rc: Node = canvas_layer.find_child("ElemRadialCanvas", true, false)
+	check(canvas_rc != null, "Lienzo del editor renderiza ElemRadialCanvas")
+	if canvas_rc != null:
+		var c_cfg: Dictionary = canvas_rc.get_radial_layout_config()
+		var c_s2: Dictionary = canvas_rc.get_radial_slot_visual_config(2)
+		check(int(c_cfg.get("radial_radius", 0)) == 160 and int(c_cfg.get("radial_open_duration_ms", 0)) == 420 and str(c_cfg.get("radial_open_curve", "")) == "back_out" and not bool(c_cfg.get("radial_indicator_enabled", true)), "Lienzo refleja configuración personalizada de la rueda radial")
+		check(str(c_s2.get("shape", "")) == "rectangle" and str(c_s2.get("title", "")) == "Slot Poción" and str(c_s2.get("image_normal", "")) == "res://img/characters/door_wood.png", "Lienzo refleja forma e imagen individual de ranura 2")
+
+	var tw = ed.open_test_popup()
+	await process_frame
+	await process_frame
+	var tinfo: Dictionary = ed.get_test_popup_info()
+	var probar_gm = tinfo.get("game_menu", null)
+	var probar_layer = probar_gm.get_custom_ui_layer() if probar_gm != null else null
+	var probar_rc = probar_layer.find_child("ElemRadialCanvas", true, false) if probar_layer != null else null
+	check(probar_rc != null, "Ventana Probar renderiza ElemRadialCanvas")
+	if probar_rc != null:
+		var p_s2: Dictionary = probar_rc.get_radial_slot_visual_config(2)
+		check(str(p_s2.get("shape", "")) == "rectangle" and str(p_s2.get("title", "")) == "Slot Poción", "Probar coincide con el lienzo en ranura 2")
+	ed.close_test_popup()
+	await process_frame
+
+	var gm_f5 = ClassDB.instantiate("ClockGearsGameMenu")
+	get_root().add_child(gm_f5)
+	gm_f5.open_menu_by_id("game_menu_items", false, false, true)
+	await process_frame
+	await process_frame
+	var f5_layer = gm_f5.get_custom_ui_layer()
+	var f5_rc = f5_layer.find_child("ElemRadialCanvas", true, false) if f5_layer != null else null
+	check(f5_rc != null, "Juego (F5 / ClockGearsGameMenu) renderiza ElemRadialCanvas")
+	if f5_rc != null:
+		var f_cfg: Dictionary = f5_rc.get_radial_layout_config()
+		var f_s2: Dictionary = f5_rc.get_radial_slot_visual_config(2)
+		check(int(f_cfg.get("radial_radius", 0)) == 160 and str(f_s2.get("shape", "")) == "rectangle" and str(f_s2.get("image_normal", "")) == "res://img/characters/door_wood.png", "F5 coincide exactamente con Lienzo y Probar")
+	gm_f5.queue_free()
+
+	# Probar 'Aplicar a todas' en ranura 2 y verificar que ranura 5 hereda forma e imagen manteniendo su título
+	sfh["el_apply_all_btn"].emit_signal("pressed")
+	await process_frame
+	await process_frame
+	var canvas_rc2: Node = canvas_layer.find_child("ElemRadialCanvas", true, false)
+	if canvas_rc2 != null:
+		var s5: Dictionary = canvas_rc2.get_radial_slot_visual_config(5)
+		check(str(s5.get("shape", "")) == "rectangle" and str(s5.get("image_normal", "")) == "res://img/characters/door_wood.png" and str(s5.get("title", "")) != "Slot Poción", "Botón 'Aplicar a todas' copia estilo a las demás ranuras conservando su título")
+
+	# Verificar también contenedor (Distribución + Elementos + ranuras hijas + ventana flotante 8 pestañas)
+	var cont_id: String = ed.add_element_at("container", Vector2i(40, 80))
+	check(not cont_id.is_empty(), "Añadido contenedor personalizable: " + cont_id)
+	var cfw = ed.open_floating_element_window(cont_id)
+	await process_frame
+	check(cfw != null and cfw.is_visible(), "Doble clic / apertura abre ventana flotante en contenedor")
+	var cfh: Dictionary = cfw.get_ui_handles()
+	cfh["cont_cols_spin"].value = 3
+	cfh["el_empty_cnt_spin"].value = 4
+	await process_frame
+	await process_frame
+	var ccards: Array = ed.get_design_cards_info()
+	var c_slots := []
+	for cc in ccards:
+		if str(cc.get("id", "")).begins_with("__slot__::" + cont_id + "::"):
+			c_slots.append(str(cc.get("id", "")))
+	check(c_slots.size() == 4, "Contenedor muestra sus 4 ranuras hijas en la lista Elementos (actual=%d)" % c_slots.size())
+	var csfw = ed.open_floating_element_window("__slot__::" + cont_id + "::1")
+	await process_frame
+	var csfh: Dictionary = csfw.get_ui_handles()
+	csfh["text_edit"].text = "Casilla VIP"
+	csfh["text_edit"].emit_signal("text_changed")
+	csfh["btn_normal_edit"].text = "res://img/characters/door_wood.png"
+	csfh["btn_normal_edit"].emit_signal("text_changed", "res://img/characters/door_wood.png")
+	await process_frame
+	await process_frame
+	var updated_ov: Dictionary = dm.get_ui_element("game_menu_items", cont_id).get("element_overrides", {}).get("1", {})
+	check(str(updated_ov.get("text", "")) == "Casilla VIP" and str(updated_ov.get("image_normal", "")) == "res://img/characters/door_wood.png", "Edición de ranura hija de contenedor guarda texto e imagen individual")
+
+	ed.close_all_floating_element_windows()
+	ed.queue_free()
+	await process_frame
 
 func _finish() -> void:
 	print("RESULTADOS: %d PASS, %d FAIL" % [passes, fails])
