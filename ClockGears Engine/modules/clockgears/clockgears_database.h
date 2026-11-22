@@ -23,6 +23,7 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/gui/separator.h"
 #include "scene/gui/slider.h"
 
 class ClockGearsBattleScene;
@@ -468,6 +469,11 @@ private:
 	Button *btn_select_graphic = nullptr;
 	Button *btn_pick_tile_graphic = nullptr;
 	ClockGearsTilePickerDialog *tile_picker_dialog = nullptr;
+	VBoxContainer *dlg_outer_vbox = nullptr;
+	MarginContainer *dlg_content_root = nullptr;
+	HSeparator *dlg_footer_sep = nullptr;
+	Control *dlg_footer_bar = nullptr;
+	HBoxContainer *dlg_footer_btns = nullptr;
 	Button *btn_apply_changes = nullptr;
 	bool has_pending_changes = false;
 	mutable HashMap<String, Ref<Texture2D>> record_list_icon_cache;
@@ -1552,6 +1558,9 @@ public:
 	ClockGearsShapeEditor *get_movement_shape_editor() const { return movement_shape_editor; }
 	TabContainer *get_main_editor_tabs() const { return main_editor_tabs; }
 	Button *get_apply_button() const { return btn_apply_changes; }
+	Control *get_content_root() const { return dlg_content_root; }
+	HSeparator *get_footer_separator() const { return dlg_footer_sep; }
+	Control *get_footer_bar() const { return dlg_footer_bar; }
 	bool select_main_tab_by_name(const String &p_name);
 	Dictionary check_all_tabs_layout(const Vector2i &p_window_size);
 	PanelContainer *_make_collapsible_menu_card(Control *p_parent, const String &p_title, VBoxContainer *&r_body, bool p_expanded = true);

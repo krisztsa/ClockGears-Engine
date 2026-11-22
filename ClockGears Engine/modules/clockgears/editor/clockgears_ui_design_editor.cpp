@@ -2968,7 +2968,7 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	design_cards_scroll = memnew(ScrollContainer);
 	design_cards_scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	design_cards_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	design_cards_scroll->set_custom_minimum_size(Size2(0, 220 * EDSCALE));
+	design_cards_scroll->set_custom_minimum_size(Size2(0, 120 * EDSCALE));
 	design_cards_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
 	design_cards_scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_AUTO);
 	design_cards_scroll->set_tooltip_text(String::utf8("Lista de elementos (arriba = al frente). Haz clic para seleccionar, doble clic para editar en ventana, clic derecho para acciones, o arrastra para reordenar / anidar."));

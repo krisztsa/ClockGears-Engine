@@ -473,6 +473,9 @@ void ClockGearsDatabaseDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_movement_shape_editor"), &ClockGearsDatabaseDialog::get_movement_shape_editor);
 	ClassDB::bind_method(D_METHOD("get_main_editor_tabs"), &ClockGearsDatabaseDialog::get_main_editor_tabs);
 	ClassDB::bind_method(D_METHOD("get_apply_button"), &ClockGearsDatabaseDialog::get_apply_button);
+	ClassDB::bind_method(D_METHOD("get_content_root"), &ClockGearsDatabaseDialog::get_content_root);
+	ClassDB::bind_method(D_METHOD("get_footer_separator"), &ClockGearsDatabaseDialog::get_footer_separator);
+	ClassDB::bind_method(D_METHOD("get_footer_bar"), &ClockGearsDatabaseDialog::get_footer_bar);
 	ClassDB::bind_method(D_METHOD("select_main_tab_by_name", "name"), &ClockGearsDatabaseDialog::select_main_tab_by_name);
 	ClassDB::bind_method(D_METHOD("check_all_tabs_layout", "window_size"), &ClockGearsDatabaseDialog::check_all_tabs_layout);
 	ClassDB::bind_method(D_METHOD("adapt_to_window_size", "window_size"), &ClockGearsDatabaseDialog::adapt_to_window_size);
@@ -5753,15 +5756,24 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	const int icon_px = 32 * icon_scale;
 	const float row_h = 32.0f * EDSCALE;
 
+	dlg_outer_vbox = memnew(VBoxContainer);
+	dlg_outer_vbox->set_name("ClockGearsDbOuterVBox");
+	dlg_outer_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	dlg_outer_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	dlg_outer_vbox->add_theme_constant_override("separation", 0);
+	add_child(dlg_outer_vbox);
+
 	MarginContainer *root_margin = memnew(MarginContainer);
-	root_margin->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	dlg_content_root = root_margin;
+	root_margin->set_name("ClockGearsDbContentRoot");
 	root_margin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	root_margin->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	root_margin->set_clip_contents(true);
 	root_margin->add_theme_constant_override("margin_left", int(12 * EDSCALE));
 	root_margin->add_theme_constant_override("margin_top", int(12 * EDSCALE));
 	root_margin->add_theme_constant_override("margin_right", int(12 * EDSCALE));
-	root_margin->add_theme_constant_override("margin_bottom", int(12 * EDSCALE));
-	add_child(root_margin);
+	root_margin->add_theme_constant_override("margin_bottom", int(8 * EDSCALE));
+	dlg_outer_vbox->add_child(root_margin);
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
 	main_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -5863,7 +5875,7 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	record_list->set_theme_type_variation("ClockGearsCardItemList");
 	record_list->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	record_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	record_list->set_custom_minimum_size(Size2(0, 140 * EDSCALE));
+	record_list->set_custom_minimum_size(Size2(0, 100 * EDSCALE));
 	record_list->set_fixed_icon_size(Size2i(icon_px, icon_px));
 	record_list->set_texture_filter(CanvasItem::TEXTURE_FILTER_NEAREST);
 	record_list->connect("item_selected", callable_mp(this, &ClockGearsDatabaseDialog::_on_record_selected));
@@ -8332,20 +8344,64 @@ ClockGearsDatabaseDialog::ClockGearsDatabaseDialog() {
 	asset_warning_dialog->set_title(CG_DB_TR("Aviso Pixel Art (32x32)"));
 	add_child(asset_warning_dialog);
 
-	const float footer_btn_h = 32.0f * EDSCALE;
+	const float footer_btn_h = 34.0f * EDSCALE;
+	add_theme_constant_override("buttons_separation", 0);
 	add_theme_constant_override("buttons_min_width", int(112 * EDSCALE));
 	add_theme_constant_override("buttons_min_height", int(footer_btn_h));
 	set_hide_on_ok(false);
 	connect("confirmed", callable_mp(this, &ClockGearsDatabaseDialog::_on_db_ok_pressed));
-	if (get_ok_button()) {
-		get_ok_button()->set_text(CG_DB_TR("OK"));
-		get_ok_button()->set_theme_type_variation("ClockGearsPrimaryButton");
-		get_ok_button()->set_custom_minimum_size(Size2(112 * EDSCALE, footer_btn_h));
-	}
+
+	Button *ok_btn = get_ok_button();
+	Control *native_buttons_hb = ok_btn ? Object::cast_to<Control>(ok_btn->get_parent()) : nullptr;
 	btn_apply_changes = add_button(CG_DB_TR("Aplicar"), true);
+
+	dlg_footer_sep = memnew(HSeparator);
+	dlg_footer_sep->set_name("ClockGearsDbFooterSep");
+	dlg_footer_sep->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	dlg_footer_sep->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	dlg_outer_vbox->add_child(dlg_footer_sep);
+
+	MarginContainer *footer_wrap = memnew(MarginContainer);
+	footer_wrap->set_name("ClockGearsDbFooterBar");
+	footer_wrap->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	footer_wrap->set_v_size_flags(Control::SIZE_SHRINK_END);
+	footer_wrap->set_custom_minimum_size(Size2(0, 56 * EDSCALE));
+	footer_wrap->add_theme_constant_override("margin_left", int(12 * EDSCALE));
+	footer_wrap->add_theme_constant_override("margin_right", int(12 * EDSCALE));
+	footer_wrap->add_theme_constant_override("margin_top", int(10 * EDSCALE));
+	footer_wrap->add_theme_constant_override("margin_bottom", int(10 * EDSCALE));
+	dlg_outer_vbox->add_child(footer_wrap);
+	dlg_footer_bar = footer_wrap;
+
+	dlg_footer_btns = memnew(HBoxContainer);
+	dlg_footer_btns->set_name("ClockGearsDbFooterBtns");
+	dlg_footer_btns->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	dlg_footer_btns->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	dlg_footer_btns->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	dlg_footer_btns->add_theme_constant_override("separation", int(16 * EDSCALE));
+	footer_wrap->add_child(dlg_footer_btns);
+
+	if (ok_btn) {
+		if (ok_btn->get_parent()) {
+			ok_btn->get_parent()->remove_child(ok_btn);
+		}
+		dlg_footer_btns->add_child(ok_btn);
+		ok_btn->set_text(CG_DB_TR("OK"));
+		ok_btn->set_theme_type_variation("ClockGearsPrimaryButton");
+		ok_btn->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		ok_btn->set_custom_minimum_size(Size2(112 * EDSCALE, footer_btn_h));
+	}
 	if (btn_apply_changes) {
+		if (btn_apply_changes->get_parent()) {
+			btn_apply_changes->get_parent()->remove_child(btn_apply_changes);
+		}
+		dlg_footer_btns->add_child(btn_apply_changes);
+		btn_apply_changes->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
 		btn_apply_changes->set_custom_minimum_size(Size2(112 * EDSCALE, footer_btn_h));
 		btn_apply_changes->connect("pressed", callable_mp(this, &ClockGearsDatabaseDialog::_on_db_apply_pressed));
+	}
+	if (native_buttons_hb && native_buttons_hb != dlg_footer_btns) {
+		native_buttons_hb->hide();
 	}
 	_set_pending_changes(false);
 
