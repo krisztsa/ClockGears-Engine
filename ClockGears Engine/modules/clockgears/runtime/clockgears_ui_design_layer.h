@@ -177,6 +177,11 @@ class ClockGearsMenuCursorOverlay : public Control {
 	float ui_scale = 1.0f;
 	double anim_phase = 0.0;
 	Ref<Texture2D> cursor_tex;
+	Rect2 container_focus_rect;
+	bool container_focus_enabled = false;
+	String container_focus_mode = "theme_border";
+	Color container_focus_color = Color(0.96f, 0.74f, 0.33f, 1.0f);
+	float container_focus_width = 2.0f;
 
 protected:
 	void _notification(int p_what);
@@ -184,6 +189,7 @@ protected:
 public:
 	void configure(const Dictionary &p_cursor_cfg, float p_scale);
 	void set_target_rect(const Rect2 &p_rect, bool p_visible);
+	void set_container_focus(const Rect2 &p_rect, bool p_enabled, const String &p_mode = "theme_border", const Color &p_col = Color(0.96f, 0.74f, 0.33f, 1.0f), float p_width = 2.0f);
 	Dictionary get_cursor_state() const;
 	ClockGearsMenuCursorOverlay();
 };
@@ -351,6 +357,10 @@ private:
 	void _on_button_focus_changed(ObjectID p_btn_id, const String &p_elem_id);
 	void _on_radial_slot_activated(int p_slot_idx);
 	void _on_radial_selection_changed(int p_slot_idx);
+	void _on_radial_elem_selection_changed(int p_slot_idx, const String &p_elem_id);
+	void _update_container_focus_visuals();
+	bool _is_entry_focus_target(const ElementEntry &p_entry) const;
+	bool _step_within_data_container(ElementEntry &r_entry, int p_dx, int p_dy);
 	void _on_layout_page_delta(int p_delta);
 	void _on_layout_tab_selected(int p_tab_idx);
 	void _on_carousel_step(int p_delta);
@@ -454,6 +464,8 @@ public:
 	bool toggle_container_open(const String &p_elem_id, const String &p_trans = "scale", double p_dur = 0.16);
 	bool is_container_open(const String &p_elem_id) const;
 	bool focus_container(const String &p_elem_id);
+	bool navigate_focus_direction(int p_dx, int p_dy);
+	Dictionary get_container_focus_overlay_state() const;
 	String get_active_focus_container_id() const { return active_focus_container_id; }
 	bool set_container_filter(const String &p_elem_id, const String &p_filter_category);
 	bool set_container_data_source(const String &p_elem_id, const String &p_data_source);

@@ -7196,11 +7196,34 @@ Dictionary ClockGearsDataManager::normalize_ui_element(const Dictionary &p_elem,
 			}
 			out["actions"] = acts_out;
 		}
-		out["focus_order"] = CLAMP(int(p_elem.get("focus_order", def.get("focus_order", p_index_hint))), 0, 9999);
+	}
+	if (etype == "button" || etype == "container" || etype == "radial" || etype == "pager") {
+		if (etype == "button" || p_elem.has("focus_order")) {
+			out["focus_order"] = CLAMP(int(p_elem.get("focus_order", def.get("focus_order", p_index_hint))), 0, 9999);
+		}
 		if (p_elem.has("focus_next_up")) out["focus_next_up"] = String(p_elem["focus_next_up"]).strip_edges();
 		if (p_elem.has("focus_next_down")) out["focus_next_down"] = String(p_elem["focus_next_down"]).strip_edges();
 		if (p_elem.has("focus_next_left")) out["focus_next_left"] = String(p_elem["focus_next_left"]).strip_edges();
 		if (p_elem.has("focus_next_right")) out["focus_next_right"] = String(p_elem["focus_next_right"]).strip_edges();
+	}
+	if (etype == "container" || etype == "radial" || etype == "pager") {
+		if (p_elem.has("focus_cursor_mode") || etype == "container" || etype == "radial") {
+			String fcm = String(p_elem.get("focus_cursor_mode", "theme_border")).strip_edges().to_lower();
+			if (fcm != "theme_border" && fcm != "ring" && fcm != "none") fcm = "theme_border";
+			out["focus_cursor_mode"] = fcm;
+		}
+		if (p_elem.has("focus_cursor_color") || etype == "container" || etype == "radial") {
+			out["focus_cursor_color"] = _cg_norm_color_rgba(p_elem.get("focus_cursor_color", "#f5bc54ff"), "#f5bc54ff");
+		}
+		if (p_elem.has("focus_cursor_width") || etype == "container" || etype == "radial") {
+			out["focus_cursor_width"] = CLAMP(int(p_elem.get("focus_cursor_width", 2)), 1, 8);
+		}
+		if (p_elem.has("dim_unfocused")) {
+			out["dim_unfocused"] = bool(p_elem["dim_unfocused"]);
+		}
+		if (p_elem.has("unfocused_opacity") || bool(p_elem.get("dim_unfocused", false))) {
+			out["unfocused_opacity"] = CLAMP(int(p_elem.get("unfocused_opacity", 65)), 15, 100);
+		}
 	}
 	return out;
 }

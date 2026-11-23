@@ -1237,14 +1237,27 @@ void ClockGearsMenuCursorOverlay::configure(const Dictionary &p_cursor_cfg, floa
 	set_texture_filter(pa ? TEXTURE_FILTER_NEAREST : TEXTURE_FILTER_LINEAR);
 	bool enabled = bool(cursor_cfg.get("enabled", false));
 	String anim = String(cursor_cfg.get("animation", "pulse")).strip_edges().to_lower();
-	set_visible(enabled);
-	set_process(enabled && anim != "none");
+	set_visible(enabled || container_focus_enabled);
+	set_process((enabled && anim != "none") || container_focus_enabled);
 	queue_redraw();
 }
 
 void ClockGearsMenuCursorOverlay::set_target_rect(const Rect2 &p_rect, bool p_visible) {
 	target_rect = p_rect;
 	has_target = p_visible;
+	queue_redraw();
+}
+
+void ClockGearsMenuCursorOverlay::set_container_focus(const Rect2 &p_rect, bool p_enabled, const String &p_mode, const Color &p_col, float p_width) {
+	container_focus_rect = p_rect;
+	container_focus_enabled = p_enabled && (p_mode != "none");
+	container_focus_mode = p_mode;
+	container_focus_color = p_col;
+	container_focus_width = MAX(1.0f, p_width);
+	bool btn_en = bool(cursor_cfg.get("enabled", false));
+	set_visible(btn_en || container_focus_enabled);
+	String anim = String(cursor_cfg.get("animation", "pulse")).strip_edges().to_lower();
+	set_process((btn_en && anim != "none") || container_focus_enabled);
 	queue_redraw();
 }
 
@@ -1255,17 +1268,37 @@ Dictionary ClockGearsMenuCursorOverlay::get_cursor_state() const {
 	d["target_rect"] = target_rect;
 	d["shape"] = String(cursor_cfg.get("shape", "ring"));
 	d["animation"] = String(cursor_cfg.get("animation", "pulse"));
+	d["container_focus_enabled"] = container_focus_enabled;
+	d["container_focus_rect"] = container_focus_rect;
+	d["container_focus_mode"] = container_focus_mode;
+	d["container_focus_color"] = "#" + container_focus_color.to_html(true);
 	return d;
 }
 
 void ClockGearsMenuCursorOverlay::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
-		if (!is_visible_in_tree() || !has_target) {
+		if (!is_visible_in_tree() || (!has_target && !container_focus_enabled)) {
 			return;
 		}
 		anim_phase += get_process_delta_time() * 4.5;
 		queue_redraw();
 	} else if (p_what == NOTIFICATION_DRAW) {
+		if (container_focus_enabled && container_focus_rect.has_area() && container_focus_mode != "none") {
+			float pulse = (container_focus_mode == "ring") ? (1.5f * float(Math::sin(anim_phase)) * ui_scale) : 0.0f;
+			Rect2 cf = container_focus_rect.grow(MAX(1.0f, 2.0f * ui_scale) + pulse);
+			float bw = MAX(1.5f, container_focus_width * ui_scale);
+			Color glow_col(container_focus_color.r, container_focus_color.g, container_focus_color.b, 0.28f);
+			Vector<Vector2> glow_pts = ClockGearsWindowStyleBox::build_shape_polygon(cf.grow(bw * 0.9f), "rounded", 8.0f * ui_scale, 16);
+			if (glow_pts.size() >= 3) {
+				glow_pts.push_back(glow_pts[0]);
+				draw_polyline(glow_pts, glow_col, bw * 1.8f, true);
+			}
+			Vector<Vector2> cf_pts = ClockGearsWindowStyleBox::build_shape_polygon(cf, "rounded", 8.0f * ui_scale, 16);
+			if (cf_pts.size() >= 3) {
+				cf_pts.push_back(cf_pts[0]);
+				draw_polyline(cf_pts, container_focus_color, bw, true);
+			}
+		}
 		if (!has_target || !bool(cursor_cfg.get("enabled", false))) {
 			return;
 		}
@@ -2764,7 +2797,7 @@ void ClockGearsUiDesignLayer::_build_element_entry(ElementEntry &r_entry) {
 		rc->set_name("ElemRadialCanvas");
 		rc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 		rc->connect("slot_activated", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_slot_activated));
-		rc->connect("selection_changed", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_selection_changed));
+		rc->connect("selection_changed", callable_mp(this, &ClockGearsUiDesignLayer::_on_radial_elem_selection_changed).bind(r_entry.id));
 		Dictionary rlay = (r_entry.config.has("layout") && r_entry.config["layout"].get_type() == Variant::DICTIONARY)
 				? Dictionary(r_entry.config["layout"]).duplicate(true)
 				: Dictionary();
@@ -3729,6 +3762,7 @@ void ClockGearsUiDesignLayer::refresh_live_values() {
 			e.root->set_visible(vis);
 		}
 	}
+	_update_container_focus_visuals();
 }
 
 void ClockGearsUiDesignLayer::_on_button_pressed(const String &p_action, const String &p_elem_id) {
@@ -3783,6 +3817,7 @@ void ClockGearsUiDesignLayer::_on_button_focus_changed(ObjectID p_btn_id, const 
 		}
 	}
 	_on_button_hover(p_elem_id);
+	_update_container_focus_visuals();
 }
 
 void ClockGearsUiDesignLayer::_on_radial_slot_activated(int p_slot_idx) {
@@ -3828,6 +3863,22 @@ void ClockGearsUiDesignLayer::_on_radial_selection_changed(int p_slot_idx) {
 		_refresh_focused_entry_elements();
 		emit_signal("data_entry_focused", String("radial"), entry);
 	}
+}
+
+void ClockGearsUiDesignLayer::_on_radial_elem_selection_changed(int p_slot_idx, const String &p_elem_id) {
+	if (!preview_mode && !p_elem_id.is_empty()) {
+		active_focus_container_id = p_elem_id;
+		for (int i = 0; i < elements.size(); i++) {
+			if (elements[i].id == p_elem_id && elements[i].content_root) {
+				if (ClockGearsRadialCanvas *rc = Object::cast_to<ClockGearsRadialCanvas>(elements[i].content_root->find_child("ElemRadialCanvas", false, false))) {
+					radial_canvas = rc;
+				}
+				break;
+			}
+		}
+		_update_container_focus_visuals();
+	}
+	_on_radial_selection_changed(p_slot_idx);
 }
 
 void ClockGearsUiDesignLayer::_on_layout_page_delta(int p_delta) {
@@ -4349,6 +4400,7 @@ void ClockGearsUiDesignLayer::_on_data_cell_focused(const String &p_container_id
 		last_focused_data_entry = entry;
 		focused_entry_by_container[p_container_id] = entry;
 		_refresh_focused_entry_elements();
+		_update_container_focus_visuals();
 		emit_signal("data_entry_focused", p_container_id, entry);
 		return;
 	}
@@ -4849,6 +4901,7 @@ void ClockGearsUiDesignLayer::_notification(int p_what) {
 				ce.root->set_modulate(Color(1, 1, 1, 1));
 				bool show_fin = ce.runtime_vis_override_set ? ce.runtime_vis_override : ce.visible;
 				ce.root->set_visible(show_fin);
+				_update_container_focus_visuals();
 			}
 		}
 		Dictionary bg = (active_design.has("background") && active_design["background"].get_type() == Variant::DICTIONARY)
@@ -4920,6 +4973,8 @@ void ClockGearsUiDesignLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("toggle_container_open", "elem_id", "trans", "dur"), &ClockGearsUiDesignLayer::toggle_container_open, DEFVAL("scale"), DEFVAL(0.16));
 	ClassDB::bind_method(D_METHOD("is_container_open", "elem_id"), &ClockGearsUiDesignLayer::is_container_open);
 	ClassDB::bind_method(D_METHOD("focus_container", "elem_id"), &ClockGearsUiDesignLayer::focus_container);
+	ClassDB::bind_method(D_METHOD("navigate_focus_direction", "dx", "dy"), &ClockGearsUiDesignLayer::navigate_focus_direction);
+	ClassDB::bind_method(D_METHOD("get_container_focus_overlay_state"), &ClockGearsUiDesignLayer::get_container_focus_overlay_state);
 	ClassDB::bind_method(D_METHOD("get_active_focus_container_id"), &ClockGearsUiDesignLayer::get_active_focus_container_id);
 	ClassDB::bind_method(D_METHOD("set_container_filter", "elem_id", "filter_category"), &ClockGearsUiDesignLayer::set_container_filter);
 	ClassDB::bind_method(D_METHOD("set_container_data_source", "elem_id", "data_source"), &ClockGearsUiDesignLayer::set_container_data_source);
@@ -4942,77 +4997,123 @@ void ClockGearsUiDesignLayer::input(const Ref<InputEvent> &p_event) {
 	if (preview_mode || !is_visible_in_tree() || p_event.is_null()) {
 		return;
 	}
-	ClockGearsRadialCanvas *active_rc = nullptr;
-	int best_layer = -999999;
-	for (int i = 0; i < elements.size(); i++) {
-		const ElementEntry &e = elements[i];
-		if (e.type != "radial" || !e.root || !e.root->is_visible_in_tree() || !e.content_root) continue;
-		ClockGearsRadialCanvas *rc = Object::cast_to<ClockGearsRadialCanvas>(e.content_root->find_child("ElemRadialCanvas", false, false));
-		if (!rc || !rc->is_visible_in_tree()) continue;
-		if (e.id == active_focus_container_id) {
-			active_rc = rc;
-			break;
-		}
-		if (e.layer_order >= best_layer) {
-			best_layer = e.layer_order;
-			active_rc = rc;
-		}
-	}
-	if (!active_rc && radial_canvas && radial_canvas->is_visible_in_tree()) {
-		active_rc = radial_canvas;
-	}
-	if (!active_rc) {
-		return;
-	}
-	Ref<InputEventJoypadMotion> jm = p_event;
-	if (jm.is_valid()) {
-		int dev = jm->get_device();
-		float ax = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_X) : 0.0f;
-		float ay = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_Y) : 0.0f;
-		if (jm->get_axis() == JoyAxis::LEFT_X) ax = jm->get_axis_value();
-		if (jm->get_axis() == JoyAxis::LEFT_Y) ay = jm->get_axis_value();
-		Vector2 stick(ax, ay);
-		if (stick.length() >= 0.55f) {
-			active_rc->select_by_angle_vector(stick);
-			if (get_viewport()) get_viewport()->set_input_as_handled();
+	if (Viewport *vp = get_viewport()) {
+		Control *fo = vp->gui_get_focus_owner();
+		if (fo && (fo->is_class("LineEdit") || fo->is_class("TextEdit"))) {
 			return;
 		}
 	}
-	if (p_event->is_pressed() && !p_event->is_echo()) {
+
+	// Comprobar si hay un contenedor/botón no-radial enfocado o navegación entre contenedores (Punto 4)
+	bool focused_is_radial = false;
+	ClockGearsRadialCanvas *focused_rc = nullptr;
+	ClockGearsRadialCanvas *fallback_rc = nullptr;
+	int best_layer = -999999;
+	bool has_navigable_container = false;
+	for (int i = 0; i < elements.size(); i++) {
+		const ElementEntry &e = elements[i];
+		if (!e.root || !e.root->is_visible_in_tree()) continue;
+		if (e.type == "container" || e.type == "radial") {
+			has_navigable_container = true;
+		} else if (!String(e.config.get("focus_next_left", "")).is_empty() ||
+				!String(e.config.get("focus_next_right", "")).is_empty() ||
+				!String(e.config.get("focus_next_up", "")).is_empty() ||
+				!String(e.config.get("focus_next_down", "")).is_empty()) {
+			has_navigable_container = true;
+		}
+		if (e.type == "radial" && e.content_root) {
+			ClockGearsRadialCanvas *rc = Object::cast_to<ClockGearsRadialCanvas>(e.content_root->find_child("ElemRadialCanvas", false, false));
+			if (!rc || !rc->is_visible_in_tree()) continue;
+			if (e.id == active_focus_container_id) {
+				focused_is_radial = true;
+				focused_rc = rc;
+			}
+			if (e.layer_order >= best_layer) {
+				best_layer = e.layer_order;
+				fallback_rc = rc;
+			}
+		}
+	}
+	if (active_focus_container_id.is_empty() && fallback_rc) {
+		focused_is_radial = true;
+		focused_rc = fallback_rc;
+	}
+	if (!focused_rc && radial_canvas && radial_canvas->is_visible_in_tree() && active_focus_container_id.is_empty()) {
+		focused_is_radial = true;
+		focused_rc = radial_canvas;
+	}
+
+	if (focused_is_radial && focused_rc) {
+		Ref<InputEventJoypadMotion> jm = p_event;
+		if (jm.is_valid()) {
+			int dev = jm->get_device();
+			float ax = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_X) : 0.0f;
+			float ay = Input::get_singleton() ? Input::get_singleton()->get_joy_axis(dev, JoyAxis::LEFT_Y) : 0.0f;
+			if (jm->get_axis() == JoyAxis::LEFT_X) ax = jm->get_axis_value();
+			if (jm->get_axis() == JoyAxis::LEFT_Y) ay = jm->get_axis_value();
+			Vector2 stick(ax, ay);
+			if (stick.length() >= 0.55f) {
+				focused_rc->select_by_angle_vector(stick);
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+				return;
+			}
+		}
+		if (p_event->is_pressed() && !p_event->is_echo()) {
+			Ref<InputEventKey> rk = p_event;
+			Ref<InputEventJoypadButton> rj = p_event;
+			Key kc = rk.is_valid() ? rk->get_keycode() : Key::NONE;
+			JoyButton jb = rj.is_valid() ? rj->get_button_index() : JoyButton::INVALID;
+			if (kc == Key::RIGHT || kc == Key::D || jb == JoyButton::DPAD_RIGHT) {
+				focused_rc->step_selection(1);
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+				return;
+			}
+			if (kc == Key::LEFT || kc == Key::A || jb == JoyButton::DPAD_LEFT) {
+				focused_rc->step_selection(-1);
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+				return;
+			}
+			if (kc == Key::UP || kc == Key::W || jb == JoyButton::DPAD_UP) {
+				focused_rc->select_by_angle_vector(Vector2(0, -1));
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+				return;
+			}
+			if (kc == Key::DOWN || kc == Key::S || jb == JoyButton::DPAD_DOWN) {
+				focused_rc->select_by_angle_vector(Vector2(0, 1));
+				if (get_viewport()) get_viewport()->set_input_as_handled();
+				return;
+			}
+			if (kc == Key::ENTER || kc == Key::KP_ENTER || kc == Key::SPACE || jb == JoyButton::A) {
+				if (Viewport *vp = get_viewport()) {
+					Button *focused_btn = Object::cast_to<Button>(vp->gui_get_focus_owner());
+					if (focused_btn && owns_control(focused_btn) && !focused_btn->is_disabled() && focused_btn->is_visible_in_tree()) {
+						focused_btn->emit_signal("pressed");
+						vp->set_input_as_handled();
+						return;
+					}
+				}
+				if (focused_rc->activate_selected_slot()) {
+					if (get_viewport()) get_viewport()->set_input_as_handled();
+					return;
+				}
+			}
+		}
+		return;
+	}
+
+	if (has_navigable_container && p_event->is_pressed()) {
 		Ref<InputEventKey> rk = p_event;
 		Ref<InputEventJoypadButton> rj = p_event;
 		Key kc = rk.is_valid() ? rk->get_keycode() : Key::NONE;
 		JoyButton jb = rj.is_valid() ? rj->get_button_index() : JoyButton::INVALID;
-		if (kc == Key::RIGHT || kc == Key::D || jb == JoyButton::DPAD_RIGHT) {
-			active_rc->step_selection(1);
-			if (get_viewport()) get_viewport()->set_input_as_handled();
-			return;
-		}
-		if (kc == Key::LEFT || kc == Key::A || jb == JoyButton::DPAD_LEFT) {
-			active_rc->step_selection(-1);
-			if (get_viewport()) get_viewport()->set_input_as_handled();
-			return;
-		}
-		if (kc == Key::UP || kc == Key::W || jb == JoyButton::DPAD_UP) {
-			active_rc->select_by_angle_vector(Vector2(0, -1));
-			if (get_viewport()) get_viewport()->set_input_as_handled();
-			return;
-		}
-		if (kc == Key::DOWN || kc == Key::S || jb == JoyButton::DPAD_DOWN) {
-			active_rc->select_by_angle_vector(Vector2(0, 1));
-			if (get_viewport()) get_viewport()->set_input_as_handled();
-			return;
-		}
-		if (kc == Key::ENTER || kc == Key::KP_ENTER || kc == Key::SPACE || jb == JoyButton::A) {
-			if (Viewport *vp = get_viewport()) {
-				Button *focused_btn = Object::cast_to<Button>(vp->gui_get_focus_owner());
-				if (focused_btn && owns_control(focused_btn) && !focused_btn->is_disabled() && focused_btn->is_visible_in_tree()) {
-					focused_btn->emit_signal("pressed");
-					vp->set_input_as_handled();
-					return;
-				}
-			}
-			if (active_rc->activate_selected_slot()) {
+		int dx = 0;
+		int dy = 0;
+		if (kc == Key::RIGHT || jb == JoyButton::DPAD_RIGHT) dx = 1;
+		else if (kc == Key::LEFT || jb == JoyButton::DPAD_LEFT) dx = -1;
+		else if (kc == Key::DOWN || jb == JoyButton::DPAD_DOWN) dy = 1;
+		else if (kc == Key::UP || jb == JoyButton::DPAD_UP) dy = -1;
+		if (dx != 0 || dy != 0) {
+			if (navigate_focus_direction(dx, dy)) {
 				if (get_viewport()) get_viewport()->set_input_as_handled();
 				return;
 			}
@@ -5811,6 +5912,9 @@ bool ClockGearsUiDesignLayer::set_container_open(const String &p_elem_id, bool p
 			focus_container(e.id);
 		} else if (active_focus_container_id.to_lower() == e.id.to_lower()) {
 			active_focus_container_id = String();
+			_update_container_focus_visuals();
+		} else {
+			_update_container_focus_visuals();
 		}
 		return true;
 	}
@@ -5835,6 +5939,228 @@ bool ClockGearsUiDesignLayer::is_container_open(const String &p_elem_id) const {
 	return false;
 }
 
+void ClockGearsUiDesignLayer::_update_container_focus_visuals() {
+	if (preview_mode) {
+		if (cursor_overlay) {
+			cursor_overlay->set_container_focus(Rect2(), false);
+		}
+		return;
+	}
+	ElementEntry *focused_container = nullptr;
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if (e.id.to_lower() == active_focus_container_id.to_lower() && e.root && e.root->is_visible_in_tree()) {
+			focused_container = &e;
+			break;
+		}
+	}
+	if (!focused_container && get_viewport()) {
+		if (Control *fo = get_viewport()->gui_get_focus_owner()) {
+			for (int i = 0; i < elements.size(); i++) {
+				ElementEntry &e = elements.write[i];
+				if ((e.type == "container" || e.type == "radial") && e.root && e.root->is_visible_in_tree() &&
+						(fo == e.root || e.root->is_ancestor_of(fo))) {
+					focused_container = &e;
+					active_focus_container_id = e.id;
+					break;
+				}
+			}
+		}
+	}
+
+	bool has_focused = (focused_container != nullptr);
+	for (int i = 0; i < elements.size(); i++) {
+		ElementEntry &e = elements.write[i];
+		if ((e.type != "container" && e.type != "radial") || !e.root || e.container_trans_active) {
+			continue;
+		}
+		bool is_foc = (focused_container == &e);
+		bool dim_en = bool(e.config.get("dim_unfocused", false));
+		float target_alpha = 1.0f;
+		if (has_focused && !is_foc && dim_en) {
+			target_alpha = CLAMP(float(e.config.get("unfocused_opacity", 65)) * 0.01f, 0.15f, 1.0f);
+		}
+		Color mod(1, 1, 1, target_alpha);
+		if (e.root->get_modulate() != mod) {
+			e.root->set_modulate(mod);
+		}
+	}
+
+	if (cursor_overlay) {
+		if (focused_container && (focused_container->type == "container" || focused_container->type == "radial") && focused_container->root) {
+			String fcm = String(focused_container->config.get("focus_cursor_mode", "theme_border")).strip_edges().to_lower();
+			Color fcc = _cg_ui_parse_color(focused_container->config.get("focus_cursor_color", "#f5bc54ff"), Color(0.96f, 0.74f, 0.33f, 1.0f));
+			float fcw = float(CLAMP(int(focused_container->config.get("focus_cursor_width", 2)), 1, 8));
+			Rect2 gr = focused_container->root->get_global_rect();
+			Rect2 local_r(gr.position - cursor_overlay->get_global_position(), gr.size);
+			cursor_overlay->set_container_focus(local_r, fcm != "none", fcm, fcc, fcw);
+		} else {
+			cursor_overlay->set_container_focus(Rect2(), false);
+		}
+	}
+}
+
+bool ClockGearsUiDesignLayer::_is_entry_focus_target(const ElementEntry &p_entry) const {
+	if (!p_entry.root || !p_entry.root->is_visible_in_tree()) {
+		return false;
+	}
+	if (p_entry.type == "container") {
+		for (int i = 0; i < p_entry.data_cell_buttons.size(); i++) {
+			Button *b = p_entry.data_cell_buttons[i];
+			if (b && b->get_focus_mode() != FOCUS_NONE && b->is_visible_in_tree() && !b->is_disabled()) {
+				return true;
+			}
+		}
+		TypedArray<Node> btns = p_entry.root->find_children("*", "Button", true, false);
+		for (int bi = 0; bi < btns.size(); bi++) {
+			Button *b = Object::cast_to<Button>(btns[bi]);
+			if (b && b->get_focus_mode() != FOCUS_NONE && b->is_visible_in_tree() && !b->is_disabled()) {
+				return true;
+			}
+		}
+		return false;
+	}
+	if (p_entry.type == "radial") {
+		return true;
+	}
+	if (p_entry.type == "button" && p_entry.button) {
+		return p_entry.button->get_focus_mode() != FOCUS_NONE && !p_entry.button->is_disabled();
+	}
+	return false;
+}
+
+bool ClockGearsUiDesignLayer::_step_within_data_container(ElementEntry &r_entry, int p_dx, int p_dy) {
+	if (r_entry.type != "container" || r_entry.data_cell_buttons.is_empty()) {
+		return false;
+	}
+	int n = r_entry.data_cell_buttons.size();
+	int cur = CLAMP(r_entry.focused_data_slot_idx, 0, n - 1);
+	String lmode = String(r_entry.config.get("layout_mode", "grid")).strip_edges().to_lower();
+	int next = -1;
+	if (lmode == "vertical_list") {
+		if (p_dx != 0) return false;
+		next = cur + p_dy;
+	} else if (lmode == "horizontal_list" || lmode == "carousel") {
+		if (p_dy != 0) return false;
+		next = cur + p_dx;
+	} else {
+		int cols = MAX(1, int(r_entry.config.get("layout_columns", 4)));
+		int r = cur / cols;
+		int c = cur % cols;
+		int nr = r + p_dy;
+		int nc = c + p_dx;
+		if (nc < 0 || nc >= cols || nr < 0) {
+			return false;
+		}
+		next = nr * cols + nc;
+	}
+	if (next < 0 || next >= n) {
+		return false;
+	}
+	Button *nb = r_entry.data_cell_buttons[next];
+	if (!nb || nb->get_focus_mode() == FOCUS_NONE || !nb->is_visible_in_tree() || nb->is_disabled()) {
+		return false;
+	}
+	nb->grab_focus();
+	_on_data_cell_focused(r_entry.id, next);
+	return true;
+}
+
+bool ClockGearsUiDesignLayer::navigate_focus_direction(int p_dx, int p_dy) {
+	if (preview_mode || !is_visible_in_tree() || (p_dx == 0 && p_dy == 0)) {
+		return false;
+	}
+	int cur_idx = -1;
+	if (!active_focus_container_id.is_empty()) {
+		for (int i = 0; i < elements.size(); i++) {
+			if (elements[i].id.to_lower() == active_focus_container_id.to_lower() && elements[i].root && elements[i].root->is_visible_in_tree()) {
+				cur_idx = i;
+				break;
+			}
+		}
+	}
+	if (cur_idx < 0 && get_viewport()) {
+		if (Control *fo = get_viewport()->gui_get_focus_owner()) {
+			for (int i = 0; i < elements.size(); i++) {
+				if (elements[i].root && elements[i].root->is_visible_in_tree() && (fo == elements[i].root || elements[i].root->is_ancestor_of(fo))) {
+					if (elements[i].type == "container" || elements[i].type == "button" || elements[i].type == "radial") {
+						cur_idx = i;
+						break;
+					}
+				}
+			}
+		}
+	}
+	if (cur_idx < 0) {
+		for (int i = 0; i < elements.size(); i++) {
+			if ((elements[i].type == "container" || elements[i].type == "radial") && _is_entry_focus_target(elements[i])) {
+				return focus_container(elements[i].id);
+			}
+		}
+		return false;
+	}
+
+	// 1. Paso interno dentro del contenedor de datos actual si no toca su borde
+	if (_step_within_data_container(elements.write[cur_idx], p_dx, p_dy)) {
+		return true;
+	}
+
+	const ElementEntry &cur_e = elements[cur_idx];
+	// 2. Enlace manual explícito focus_next_left/right/up/down
+	String link_key = (p_dx < 0) ? "focus_next_left" : ((p_dx > 0) ? "focus_next_right" : ((p_dy < 0) ? "focus_next_up" : "focus_next_down"));
+	String manual_tgt = String(cur_e.config.get(link_key, "")).strip_edges();
+	if (!manual_tgt.is_empty()) {
+		for (int i = 0; i < elements.size(); i++) {
+			if (elements[i].id.to_lower() == manual_tgt.to_lower() && _is_entry_focus_target(elements[i])) {
+				return focus_container(elements[i].id);
+			}
+		}
+	}
+
+	// 3. Búsqueda espacial al vecino más cercano en la dirección (p_dx, p_dy)
+	Rect2 cur_r = cur_e.root ? cur_e.root->get_global_rect() : Rect2();
+	Vector2 cur_c = cur_r.get_center();
+	Vector2 dir{ float(p_dx), float(p_dy) };
+	float best_score = 1e18f;
+	String best_id;
+	for (int i = 0; i < elements.size(); i++) {
+		if (i == cur_idx) continue;
+		const ElementEntry &cand = elements[i];
+		if (!_is_entry_focus_target(cand)) continue;
+		if (!cand.parent_id.is_empty() && cand.parent_id.to_lower() == cur_e.id.to_lower()) continue;
+		Rect2 br = cand.root->get_global_rect();
+		Vector2 d = br.get_center() - cur_c;
+		float primary = d.dot(dir);
+		if (primary <= 4.0f) continue;
+		float perp = Math::abs(d.x * dir.y - d.y * dir.x);
+		float score = primary + perp * 2.2f;
+		if (score < best_score) {
+			best_score = score;
+			best_id = cand.id;
+		}
+	}
+	if (!best_id.is_empty()) {
+		return focus_container(best_id);
+	}
+	return false;
+}
+
+Dictionary ClockGearsUiDesignLayer::get_container_focus_overlay_state() const {
+	Dictionary out;
+	if (cursor_overlay) {
+		out = cursor_overlay->get_cursor_state();
+	}
+	out["active_focus_container_id"] = active_focus_container_id;
+	Dictionary alphas;
+	for (int i = 0; i < elements.size(); i++) {
+		if ((elements[i].type == "container" || elements[i].type == "radial") && elements[i].root) {
+			alphas[elements[i].id] = elements[i].root->get_modulate().a;
+		}
+	}
+	out["container_alphas"] = alphas;
+	return out;
+}
+
 bool ClockGearsUiDesignLayer::focus_container(const String &p_elem_id) {
 	String low = p_elem_id.strip_edges().to_lower();
 	if (low.is_empty()) return false;
@@ -5842,28 +6168,36 @@ bool ClockGearsUiDesignLayer::focus_container(const String &p_elem_id) {
 		const ElementEntry &e = elements[i];
 		if (e.id.to_lower() != low || !e.root || !e.root->is_visible_in_tree()) continue;
 		active_focus_container_id = e.id;
+		bool focused_ok = false;
 		if (e.type == "button" && e.button && e.button->get_focus_mode() != FOCUS_NONE) {
 			e.button->grab_focus();
+			focused_ok = true;
 		} else if (e.type == "container") {
 			if (!e.data_cell_buttons.is_empty()) {
 				int si = CLAMP(e.focused_data_slot_idx, 0, e.data_cell_buttons.size() - 1);
 				if (e.data_cell_buttons[si] && e.data_cell_buttons[si]->get_focus_mode() != FOCUS_NONE && e.data_cell_buttons[si]->is_visible_in_tree()) {
 					e.data_cell_buttons[si]->grab_focus();
-					return true;
+					focused_ok = true;
 				}
-				for (int bi = 0; bi < e.data_cell_buttons.size(); bi++) {
-					if (e.data_cell_buttons[bi] && e.data_cell_buttons[bi]->get_focus_mode() != FOCUS_NONE && e.data_cell_buttons[bi]->is_visible_in_tree()) {
-						e.data_cell_buttons[bi]->grab_focus();
-						return true;
+				if (!focused_ok) {
+					for (int bi = 0; bi < e.data_cell_buttons.size(); bi++) {
+						if (e.data_cell_buttons[bi] && e.data_cell_buttons[bi]->get_focus_mode() != FOCUS_NONE && e.data_cell_buttons[bi]->is_visible_in_tree()) {
+							e.data_cell_buttons[bi]->grab_focus();
+							focused_ok = true;
+							break;
+						}
 					}
 				}
 			}
-			TypedArray<Node> btns = e.root->find_children("*", "Button", true, false);
-			for (int bi = 0; bi < btns.size(); bi++) {
-				Button *b = Object::cast_to<Button>(btns[bi]);
-				if (b && b->get_focus_mode() != FOCUS_NONE && b->is_visible_in_tree() && !b->is_disabled()) {
-					b->grab_focus();
-					return true;
+			if (!focused_ok) {
+				TypedArray<Node> btns = e.root->find_children("*", "Button", true, false);
+				for (int bi = 0; bi < btns.size(); bi++) {
+					Button *b = Object::cast_to<Button>(btns[bi]);
+					if (b && b->get_focus_mode() != FOCUS_NONE && b->is_visible_in_tree() && !b->is_disabled()) {
+						b->grab_focus();
+						focused_ok = true;
+						break;
+					}
 				}
 			}
 		} else if (e.type == "radial" && e.content_root) {
@@ -5875,16 +6209,18 @@ bool ClockGearsUiDesignLayer::focus_container(const String &p_elem_id) {
 					fo->release_focus();
 				}
 			}
+			update_cursor_for_button(nullptr);
 		} else {
 			TypedArray<Node> btns = e.root->find_children("*", "Button", true, false);
 			for (int bi = 0; bi < btns.size(); bi++) {
 				Button *b = Object::cast_to<Button>(btns[bi]);
 				if (b && b->get_focus_mode() != FOCUS_NONE && b->is_visible_in_tree() && !b->is_disabled()) {
 					b->grab_focus();
-					return true;
+					break;
 				}
 			}
 		}
+		_update_container_focus_visuals();
 		return true;
 	}
 	return false;

@@ -744,6 +744,18 @@ private:
 	String capturing_input_ctx; // "" = none, "elem" | "screen"
 	int capturing_input_binding_idx = -1;
 
+	// Navegación y foco entre contenedores (BotW 2/2 Punto 4)
+	VBoxContainer *prop_focus_nav_box = nullptr;
+	OptionButton *prop_focus_left_opt = nullptr;
+	OptionButton *prop_focus_right_opt = nullptr;
+	OptionButton *prop_focus_up_opt = nullptr;
+	OptionButton *prop_focus_down_opt = nullptr;
+	OptionButton *prop_focus_cursor_mode_opt = nullptr;
+	ColorPickerButton *prop_focus_cursor_col_btn = nullptr;
+	SpinBox *prop_focus_cursor_w_spin = nullptr;
+	CheckBox *prop_dim_unfocused_chk = nullptr;
+	SpinBox *prop_unfocused_opacity_spin = nullptr;
+
 	// Diálogos auxiliares, Asistente 3 pasos (4A) y Galería de Plantillas (4B)
 	FileDialog *import_image_dialog = nullptr;
 	int image_import_target = 0; // 0=elemento, 1=fondo menu, 2=fuente TTF, 10..13=estados boton
@@ -894,6 +906,8 @@ private:
 	void _on_input_binding_clear_trigs_pressed(const String &p_ctx_prefix, int p_idx);
 	void _on_input_binding_focus_toggled(bool p_req, const String &p_ctx_prefix, int p_idx);
 	void _on_input_binding_add_action_pressed(const String &p_ctx_prefix, int p_idx, ObjectID p_opt_id);
+	void _refresh_focus_nav_inspector(const Dictionary &p_el);
+	void _on_prop_focus_nav_changed();
 	Dictionary _get_active_radial_layout(bool *r_is_elem = nullptr) const;
 	void _commit_active_radial_layout(const Dictionary &p_lay, bool p_push_undo = true, bool p_refresh_inspector = true);
 	void _refresh_radial_inspector();

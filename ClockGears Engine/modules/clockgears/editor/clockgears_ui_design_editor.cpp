@@ -4926,6 +4926,61 @@ void ClockGearsUiDesignEditor::_build_ui() {
 		_register_prop_filter_row(in_wrap, "entradas tecla mando foco contenedor atajo", false, "container,radial,pager,pager_page,frame,widget,button");
 	}
 
+	// Sección 9: Foco y navegación entre contenedores (BotW 2/2 Punto 4)
+	add_prop_section(props_fields_box, String::utf8("Foco y navegación"), false, prop_focus_nav_box);
+	{
+		auto make_dir_opt = [&](const String &p_lbl, OptionButton *&r_opt) {
+			r_opt = memnew(OptionButton);
+			r_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			r_opt->set_fit_to_longest_item(false);
+			r_opt->set_clip_text(true);
+			r_opt->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			r_opt->set_custom_minimum_size(Size2(72.0f * EDSCALE, 30.0f * EDSCALE));
+			r_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_focus_nav_changed).unbind(1));
+			make_prop_row(prop_focus_nav_box, p_lbl, String::utf8("Elemento al que salta el foco desde el borde en esa dirección."), "foco navegacion enlace izq der arr ab", false, r_opt, "container,radial,pager,button");
+		};
+		make_dir_opt("Al ir izq.:", prop_focus_left_opt);
+		make_dir_opt("Al ir der.:", prop_focus_right_opt);
+		make_dir_opt("Al ir arriba:", prop_focus_up_opt);
+		make_dir_opt("Al ir abajo:", prop_focus_down_opt);
+
+		HBoxContainer *fcur_hb = memnew(HBoxContainer);
+		fcur_hb->add_theme_constant_override("separation", int(4 * EDSCALE));
+		prop_focus_cursor_mode_opt = memnew(OptionButton);
+		prop_focus_cursor_mode_opt->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		prop_focus_cursor_mode_opt->set_fit_to_longest_item(false);
+		prop_focus_cursor_mode_opt->set_clip_text(true);
+		prop_focus_cursor_mode_opt->add_item("Borde brillante", 0); prop_focus_cursor_mode_opt->set_item_metadata(0, "theme_border");
+		prop_focus_cursor_mode_opt->add_item("Anillo animado", 1); prop_focus_cursor_mode_opt->set_item_metadata(1, "ring");
+		prop_focus_cursor_mode_opt->add_item("Ninguno", 2); prop_focus_cursor_mode_opt->set_item_metadata(2, "none");
+		prop_focus_cursor_mode_opt->connect("item_selected", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_focus_nav_changed).unbind(1));
+		fcur_hb->add_child(prop_focus_cursor_mode_opt);
+
+		prop_focus_cursor_col_btn = memnew(ColorPickerButton);
+		prop_focus_cursor_col_btn->set_edit_alpha(true);
+		prop_focus_cursor_col_btn->set_custom_minimum_size(Size2(38 * EDSCALE, 28 * EDSCALE));
+		prop_focus_cursor_col_btn->connect("color_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_focus_nav_changed).unbind(1));
+		fcur_hb->add_child(prop_focus_cursor_col_btn);
+
+		prop_focus_cursor_w_spin = memnew(SpinBox);
+		prop_focus_cursor_w_spin->set_min(1); prop_focus_cursor_w_spin->set_max(8); prop_focus_cursor_w_spin->set_suffix(" px");
+		prop_focus_cursor_w_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_focus_nav_changed).unbind(1));
+		fcur_hb->add_child(prop_focus_cursor_w_spin);
+		make_prop_row(prop_focus_nav_box, "Marco foco:", String::utf8("Resalte visual del contenedor que tiene el foco."), "marco foco cursor color grosor", false, fcur_hb, "container,radial,pager");
+
+		HBoxContainer *dim_hb = memnew(HBoxContainer);
+		dim_hb->add_theme_constant_override("separation", int(6 * EDSCALE));
+		prop_dim_unfocused_chk = memnew(CheckBox("Atenuar"));
+		prop_dim_unfocused_chk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_focus_nav_changed).unbind(1));
+		dim_hb->add_child(prop_dim_unfocused_chk);
+		prop_unfocused_opacity_spin = memnew(SpinBox);
+		prop_unfocused_opacity_spin->set_min(15); prop_unfocused_opacity_spin->set_max(100); prop_unfocused_opacity_spin->set_step(5); prop_unfocused_opacity_spin->set_suffix(" %");
+		prop_unfocused_opacity_spin->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		prop_unfocused_opacity_spin->connect("value_changed", callable_mp(this, &ClockGearsUiDesignEditor::_on_prop_focus_nav_changed).unbind(1));
+		dim_hb->add_child(prop_unfocused_opacity_spin);
+		make_prop_row(prop_focus_nav_box, "Sin foco:", String::utf8("Oscurece o atenúa este contenedor cuando el foco está en otro."), "atenuar opacidad sin foco", false, dim_hb, "container,radial,pager");
+	}
+
 	// --- Sección contextual consolidada: Ajustes de la pantalla (9B Corr Punto 5) ---
 	screen_settings_box = memnew(VBoxContainer);
 	screen_settings_box->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -5178,7 +5233,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 	if (props_sel_lbl) {
 		props_sel_lbl->set_custom_minimum_size(Size2(0, 0));
 	}
-	for (OptionButton *pg_opt : { prop_pager_page_opt, prop_pager_enter_add_act_opt, prop_pager_ind_mode_opt, prop_pager_ind_pos_opt, prop_pager_trans_type_opt, prop_pager_trans_curve_opt }) {
+	for (OptionButton *pg_opt : { prop_pager_page_opt, prop_pager_enter_add_act_opt, prop_pager_ind_mode_opt, prop_pager_ind_pos_opt, prop_pager_trans_type_opt, prop_pager_trans_curve_opt,
+			prop_focus_left_opt, prop_focus_right_opt, prop_focus_up_opt, prop_focus_down_opt, prop_focus_cursor_mode_opt }) {
 		if (pg_opt) {
 			pg_opt->set_fit_to_longest_item(false);
 			pg_opt->set_clip_text(true);
@@ -5186,7 +5242,8 @@ void ClockGearsUiDesignEditor::_build_ui() {
 			pg_opt->set_custom_minimum_size(Size2(72.0f * EDSCALE, 30.0f * EDSCALE));
 		}
 	}
-	for (Control *pg_ed : { static_cast<Control *>(prop_pager_page_name_edit), static_cast<Control *>(prop_pager_page_icon_edit), static_cast<Control *>(prop_pager_sound_edit), static_cast<Control *>(prop_pager_ind_size_spin), static_cast<Control *>(prop_pager_trans_dur_spin) }) {
+	for (Control *pg_ed : { static_cast<Control *>(prop_pager_page_name_edit), static_cast<Control *>(prop_pager_page_icon_edit), static_cast<Control *>(prop_pager_sound_edit), static_cast<Control *>(prop_pager_ind_size_spin), static_cast<Control *>(prop_pager_trans_dur_spin),
+			static_cast<Control *>(prop_focus_cursor_w_spin), static_cast<Control *>(prop_unfocused_opacity_spin) }) {
 		if (pg_ed) {
 			pg_ed->set_custom_minimum_size(Size2(72.0f * EDSCALE, 32.0f * EDSCALE));
 		}
@@ -7878,6 +7935,7 @@ void ClockGearsUiDesignEditor::_refresh_properties_panel() {
 		_refresh_pager_inspector(el);
 	}
 	_refresh_elem_inputs_inspector(el);
+	_refresh_focus_nav_inspector(el);
 
 	updating_ui = prev_upd;
 	_apply_properties_filter();
@@ -11941,6 +11999,10 @@ void ClockGearsUiDesignEditor::_populate_input_bindings_list(VBoxContainer *p_vb
 
 		if (p_allow_focus_chk) {
 			CheckBox *fchk = memnew(CheckBox(String::utf8("Solo si el contenedor tiene el foco")));
+			fchk->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+			fchk->set_clip_text(true);
+			fchk->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+			fchk->set_tooltip_text(String::utf8("Solo si el contenedor tiene el foco."));
 			fchk->set_pressed(bool(bd.get("require_focus", false)));
 			fchk->connect("toggled", callable_mp(this, &ClockGearsUiDesignEditor::_on_input_binding_focus_toggled).bind(p_ctx_prefix, i), CONNECT_DEFERRED);
 			card->add_child(fchk);
@@ -11979,6 +12041,87 @@ void ClockGearsUiDesignEditor::_refresh_elem_inputs_inspector(const Dictionary &
 	if (!prop_inputs_list_vbox) return;
 	Array ins = p_el.has("inputs") && p_el["inputs"].get_type() == Variant::ARRAY ? Array(p_el["inputs"]) : Array();
 	_populate_input_bindings_list(prop_inputs_list_vbox, ins, "elem", true, prop_inputs_conflict_lbl);
+}
+
+void ClockGearsUiDesignEditor::_refresh_focus_nav_inspector(const Dictionary &p_el) {
+	Array scr_elems = get_effective_screen_elements();
+	String cur_id = String(p_el.get("id", ""));
+	auto pop_dir = [&](OptionButton *p_opt, const String &p_key) {
+		if (!p_opt) return;
+		p_opt->clear();
+		p_opt->add_item(String::utf8("Automático (espacial)"), 0);
+		p_opt->set_item_metadata(0, String());
+		int idx = 1;
+		for (int i = 0; i < scr_elems.size(); i++) {
+			if (scr_elems[i].get_type() != Variant::DICTIONARY) continue;
+			Dictionary ed = scr_elems[i];
+			String eid = String(ed.get("id", ""));
+			if (eid.is_empty() || eid == cur_id) continue;
+			String et = String(ed.get("type", "")).to_lower();
+			if (et != "container" && et != "radial" && et != "button" && et != "pager") continue;
+			String ename = String(ed.get("name", eid));
+			p_opt->add_item(ename + " (" + eid + ")", idx);
+			p_opt->set_item_metadata(idx, eid);
+			idx++;
+		}
+		s_select_option_meta(p_opt, String(p_el.get(p_key, "")));
+	};
+	pop_dir(prop_focus_left_opt, "focus_next_left");
+	pop_dir(prop_focus_right_opt, "focus_next_right");
+	pop_dir(prop_focus_up_opt, "focus_next_up");
+	pop_dir(prop_focus_down_opt, "focus_next_down");
+
+	if (prop_focus_cursor_mode_opt) {
+		s_select_option_meta(prop_focus_cursor_mode_opt, String(p_el.get("focus_cursor_mode", "theme_border")));
+	}
+	if (prop_focus_cursor_col_btn) {
+		String hc = String(p_el.get("focus_cursor_color", "#f5bc54ff"));
+		if (Color::html_is_valid(hc)) prop_focus_cursor_col_btn->set_pick_color(Color::html(hc));
+	}
+	if (prop_focus_cursor_w_spin) {
+		prop_focus_cursor_w_spin->set_value(CLAMP(int(p_el.get("focus_cursor_width", 2)), 1, 8));
+	}
+	if (prop_dim_unfocused_chk) {
+		prop_dim_unfocused_chk->set_pressed(bool(p_el.get("dim_unfocused", false)));
+	}
+	if (prop_unfocused_opacity_spin) {
+		prop_unfocused_opacity_spin->set_value(CLAMP(int(p_el.get("unfocused_opacity", 65)), 15, 100));
+	}
+}
+
+void ClockGearsUiDesignEditor::_on_prop_focus_nav_changed() {
+	if (updating_ui || selected_elem_id.is_empty()) return;
+	ClockGearsDataManager *dm = ClockGearsDataManager::get_singleton();
+	Dictionary el = _get_selected_element_copy();
+	if (!dm || el.is_empty()) return;
+	auto read_dir = [&](OptionButton *p_opt, const String &p_key) {
+		if (!p_opt || p_opt->get_selected() < 0) return;
+		String v = String(p_opt->get_item_metadata(p_opt->get_selected()));
+		if (v.is_empty()) el.erase(p_key);
+		else el[p_key] = v;
+	};
+	read_dir(prop_focus_left_opt, "focus_next_left");
+	read_dir(prop_focus_right_opt, "focus_next_right");
+	read_dir(prop_focus_up_opt, "focus_next_up");
+	read_dir(prop_focus_down_opt, "focus_next_down");
+	if (prop_focus_cursor_mode_opt && prop_focus_cursor_mode_opt->get_selected() >= 0) {
+		el["focus_cursor_mode"] = String(prop_focus_cursor_mode_opt->get_item_metadata(prop_focus_cursor_mode_opt->get_selected()));
+	}
+	if (prop_focus_cursor_col_btn) {
+		el["focus_cursor_color"] = "#" + prop_focus_cursor_col_btn->get_pick_color().to_html(true);
+	}
+	if (prop_focus_cursor_w_spin) {
+		el["focus_cursor_width"] = int(Math::round(prop_focus_cursor_w_spin->get_value()));
+	}
+	if (prop_dim_unfocused_chk) {
+		el["dim_unfocused"] = prop_dim_unfocused_chk->is_pressed();
+	}
+	if (prop_unfocused_opacity_spin) {
+		el["unfocused_opacity"] = int(Math::round(prop_unfocused_opacity_spin->get_value()));
+	}
+	ensure_screen_customizable_for_edit(false);
+	dm->update_ui_element(current_screen_id, selected_elem_id, el, true);
+	_notify_data_mutated(true);
 }
 
 void ClockGearsUiDesignEditor::_on_input_binding_add_pressed(const String &p_ctx_prefix) {
@@ -13044,6 +13187,16 @@ Dictionary ClockGearsUiDesignEditor::get_ui_handles() const {
 	out["ss_inputs_add_btn"] = ss_inputs_add_btn;
 	out["ss_inputs_list_vbox"] = ss_inputs_list_vbox;
 	out["ss_inputs_conflict_lbl"] = ss_inputs_conflict_lbl;
+	out["prop_focus_nav_box"] = prop_focus_nav_box;
+	out["prop_focus_left_opt"] = prop_focus_left_opt;
+	out["prop_focus_right_opt"] = prop_focus_right_opt;
+	out["prop_focus_up_opt"] = prop_focus_up_opt;
+	out["prop_focus_down_opt"] = prop_focus_down_opt;
+	out["prop_focus_cursor_mode_opt"] = prop_focus_cursor_mode_opt;
+	out["prop_focus_cursor_col_btn"] = prop_focus_cursor_col_btn;
+	out["prop_focus_cursor_w_spin"] = prop_focus_cursor_w_spin;
+	out["prop_dim_unfocused_chk"] = prop_dim_unfocused_chk;
+	out["prop_unfocused_opacity_spin"] = prop_unfocused_opacity_spin;
 	return out;
 }
 
