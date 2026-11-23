@@ -1,147 +1,226 @@
-⚙️ ClockGears Engine:
-⚠️ AVISO IMPORTANTE SOBRE GRATUIDAD Y ESTAFAS ClockGears Engine es completamente gratuito. Se creó para que cualquiera pueda desarrollar videojuegos RPG sin pagar licencias ni suscripciones. Solo existe una opción voluntaria de donaciones, fuera del programa. Si alguien te cobró por este motor, has sido estafado. La única vía oficial de descarga es este GitHub.
-📖 ¿Qué es ClockGears Engine?
-ClockGears Engine es un motor de videojuegos 2D para RPG por rejillas, con un editor visual inspirado en RPG Maker MZ. Está construido en C++ modificando directamente el código fuente de Godot Engine, y avanza fase a fase para convertirse en un motor con identidad propia.
-Su objetivo es que puedas crear un RPG completo sin programar los sistemas desde cero y sin pagar: mapas, eventos, combates, base de datos, animaciones y pruebas de juego vienen integrados en el mismo programa, con una interfaz pensada para no estorbar.
-✅ ¿Ya se puede usar?
-Sí. En su estado actual (Alpha 0.0.3), el motor ya permite hacer RPG y ARPG sencillos de principio a fin: diseñar los mapas, programar la historia con eventos, definir personajes, objetos y enemigos, combatir por turnos, probar el juego con F5 y exportarlo. Al ser una versión Alpha, todavía hay cosas por pulir y funciones por llegar (consulta la hoja de ruta), así que conviene guardar copias de tus proyectos.
-✨ Qué incluye
-🗺️ Mapas y editor
-Flujo de trabajo estilo RPG Maker MZ: árbol de mapas, propiedades de mapa y edición directa sobre cuadrícula.
-Paleta de tiles con autotiles: pintado por capas, tilesets importables y creación de mapas eligiendo su tileset.
-Pasabilidad de tiles: marca cada tile como transitable, bloqueado o dibujado por encima del jugador.
-Pruebas rápidas con F5, con punto de inicio del jugador configurable.
-🎬 Eventos
-Editor de eventos integrado, sin escribir código: varias páginas por evento, condiciones por interruptores (Switches) y variables, rutas de movimiento, diálogos, elecciones, teletransportes y control de flujo.
-Efectos de pantalla: mostrar imágenes, tintes de color y temblor de pantalla.
-⚔️ Combate por turnos
-Comando de evento "Iniciar Batalla" con tropa, fondo y condiciones de victoria, derrota y huida.
-Orden de turnos por AGI, con los comandos Atacar, Habilidad, Objeto, Defender y Huir.
-Fórmulas de daño, estados alterados, 10 elementos con debilidades y resistencias, EXP, oro, drops y subidas de nivel.
-Panel de depuración (F3) para revisar la batalla en tiempo real.
-Editor de tropas con vista previa 16:9, arrastre de enemigos, fondo y suelo ajustables, escala por enemigo y prueba de batalla directamente desde el editor.
-🗃️ Base de datos
-Gestión centralizada de actores, clases, habilidades, objetos, armas, armaduras, accesorios, enemigos, tropas, estados, animaciones, tilesets, flora, fauna y eventos comunes, además de tipos, vocabulario y ajustes del sistema.
-Organizada por capítulos, con ventana redimensionable y sin cortes ni scroll horizontal.
-🎞️ Animaciones de sprites
-Editor de animaciones por ranuras con nombre: Idle, Ataque, Daño, Muerte y Buff, más lanzamientos libres ligados a un elemento.
-Corte de spritesheets en celdas, orden de frames, FPS, bucle, orden aleatorio y botón de prueba.
-🎨 Identidad visual propia
-Iconos de pixel art dibujados a mano para el editor y la base de datos, escalados en múltiplos enteros y sin filtros.
-Interfaz oscura con esquinas redondeadas, pensada para dar aire y mantener cada herramienta legible.
-🚀 Rendimiento
-Nativo en C++: ligero, rápido y compatible con gráficas integradas y dedicadas mediante OpenGL 3 / Vulkan.
-📥 Descarga
-Si solo quieres usar el motor, descarga el ejecutable desde la sección de Releases. No necesitas instalar nada más.
-🛠️ Cómo compilar el motor
-Compilar el motor es posible, siempre dentro de lo que permite la licencia. Necesitas Python 3.8+, SCons (pip install scons) y un compilador C++ (MSVC o MinGW-w64):
-bash
-scons platform=windows target=editor arch=x86_64 -j8
-📜 Licencia
-ClockGears Engine tiene una licencia propia para lo creado por ClockGears Studio, y conserva la licencia MIT del código de Godot Engine.
-✅ Permitido, sin pedir permiso:
-Usar el editor para crear juegos y distribuirlos, venderlos o publicarlos, incluido el runtime que forma parte de las exportaciones.
-Sin regalías, sin pagos y sin suscripciones a ClockGears Studio. Los juegos pertenecen a sus creadores.
-⛔ No permitido sin permiso escrito de Kris'ZtS:
-Copiar, redistribuir, vender, sublicenciar o publicar el editor ClockGears Engine, su código fuente o versiones modificadas, en todo o en parte de lo creado por ClockGears Studio.
-🧩 Código de Godot Engine:
-Todo lo que proviene de Godot sigue bajo la licencia MIT, con su aviso de copyright original (© 2014-presente Godot Engine contributors, © 2007-2014 Juan Linietsky, Ariel Manzur). Esto no limita los derechos sobre el código de Godot.
-El texto completo está en el archivo de licencia del repositorio, y también dentro del editor, en Ayuda → Acerca de → Licencia. Las licencias de las librerías de terceros aparecen en la pestaña Licencia de Terceros.
-© 2026 Kris'ZtS / ClockGears Studio. Todos los derechos reservados sobre las modificaciones y el código original de ClockGears Studio.
-🤝 Estado del proyecto y créditos
-Creado por Kris'ZtS (ClockGears Studio), sobre la base de código de Godot Engine.
-Hoja de ruta: el desarrollo avanza por fases hacia la versión 1.0, y puede cambiar, ampliarse o reajustarse sobre la marcha.
-GitHub oficial: https://github.com/krisztsa/ClockGears-Engine
-Canal de YouTube: https://www.youtube.com/@KrisZtS
-Creado en 2026.
-ClockGears Engine es gratuito y solo tiene una opción voluntaria de donaciones, fuera del programa.
-**Leyenda:** ✅ Hecha · 🔧 En curso · ⏳ Planeada · 🚀 **Update** (hito grande con mejoras masivas)
----
-## Arco 1: Núcleo del motor (Fases 1–11)
-| # | Fase | Qué trae |
-|---|------|----------|
-| 1 | Base y rebranding ✅ | Rebranding completo a ClockGears Engine · créditos de Kris'ZtS en "Acerca de" · icono propio del ejecutable · compilación aislada en un solo exe · banderas de compilación reducidas |
-| 2 | Interfaz MZ y tema Dark ✅ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos SVG pixel art · selectores (pickers) · validación en vivo |
-| 3 | Mapas y rejilla ✅ | Rejillas de 16, 32 y 48 · "Salir de la casilla" (colocación libre) · importar imágenes al mapa · árbol de mapas · deshacer y rehacer · herramientas de dibujo |
-| 4 | Eventos sin código ✅ | Editor de eventos estilo MZ · páginas, condiciones y disparadores · lista de comandos editable · interruptores y variables · pestaña Code opcional |
-| 5 | Base de datos ✅ | Actores, clases, habilidades, objetos, armas, armaduras y accesorios · enemigos, tropas y estados · importar y exportar assets · selectores con pestañas y búsqueda |
-| 6 | Tilesets y colisiones ✅ | 9 ranuras (A1–A5, B, C, D, E) · máscara ○ pasable, × bloqueado, ★ pasa por detrás · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7 · selector de tileset por mapa · paleta por pestañas |
-| 7 | Sistema narrativo ✅ | Ventana de mensajes · códigos de escape · retratos con expresiones · caja de nombre · opciones y entrada de número · historial · modos AUTO y SALTAR · vista previa en vivo |
-| 8 | Combate por turnos, iconos y animaciones ✅ | **Combate:** comando "Iniciar Batalla" · orden de turnos por AGI · Atacar, Habilidad, Objeto, Defender y Huir · fórmulas de daño, estados, EXP, oro y drops · subidas de nivel y resumen de recompensas · panel de depuración F3<br>**Enemigos:** nivel, parámetros, drops, debilidades y resistencias por tasa elemental con 10 elementos fijos (agua, fuego, hielo, electricidad, viento, luz, oscuridad, astral, tierra y naturaleza) · rasgos y patrones de acción<br>**Animaciones:** editor de sprites con ranuras fijas (Idle, Ataque, Daño, Muerte y Buff) y lanzamientos libres por elemento · corte en celdas, orden de frames, FPS, bucle, orden aleatorio y prueba · migración automática de datos antiguos<br>**Tropas:** vista previa de colocación 16:9 con arrastre y rejilla de 32 px · fondo y suelo por tropa con ventana "Ajustar" (Cubrir, Ajustar, Estirar y Mosaico, escala entera para pixel art) · escala por enemigo de x1 a x6 con menú contextual · Alinear, franja del panel de combate y prueba de batalla desde el editor<br>**Base de Datos nueva:** capítulos en pestañas y dos columnas, sin cortes ni scroll horizontal · ventana al 90% de la pantalla, redimensionable y que recuerda su tamaño · OK y Aplicar · icono de cada elemento con su propio gráfico · selector de tiles que guarda la celda<br>**Identidad visual:** iconos de pixel art dibujados a mano para el editor y la Base de Datos, escalados en múltiplos enteros según la pantalla · tema con botones y pestañas redondeados · todo pensado para alejar al motor de sus cimientos y darle una identidad propia |
-| 9A | Combate en tiempo real (ARPG) ✅ | Sistema de combate por proyecto y por mapa (Heredar / Por turnos / ARPG), con el combate por turnos conviviendo para jefes y escenas · movimiento en 4 u 8 direcciones a elegir, con diagonal normalizada que no roza esquinas y 8 miradas por personaje · sprite estándar de 4 filas con hoja de 8 opcional · animaciones por ranuras con nombre (mover, correr, idle con idle direccional opcional, atacar, bloquear, esquivar, golpeado, morir), cada una con su spritesheet, corte en celdas, frames, FPS y duración por frame, sin espejo automático · acciones registrables para añadir nuevas (como saltar) · controles de ratón y teclado (clic izquierdo ataca, clic derecho bloquea, dirección por WASD o por hacia donde mira) · moverse mientras atacas o bloqueas con velocidad configurable · velocidad de caminar, correr y atacar en actores y en todas las entidades · esquivar con voltereta (invulnerabilidad breve) o dash, configurable · bloqueo que reduce el daño frontal · invulnerabilidad tras recibir daño · editor de formas con maniquí de referencia (tamaño configurable, no se exporta) · formas de Godot (círculo, rectángulo, cápsula y polígono) editables visualmente · hitboxes y hurtboxes por frame con multiplicadores de daño, retroceso, pausa de impacto y punto de anclaje del arma · un golpe daña una vez por swing · copiar formas entre direcciones · categoría NPC en Personajes · capítulo Action RPG con Enemigos ARPG, NPC ARPG, Armas, Armaduras, Escudos y Accesorios ARPG · pestaña Evento con el editor de eventos del mapa y comportamiento de evento (NPC, NPC ARPG, Enemigo ARPG) · Enemigos ARPG con stats propias (HP, ATK, DEF, MAT, MDF, LUK), nivel, EXP, oro, 3 drops, debilidades y resistencias (físico y 10 elementos), copiar desde enemigo y reaparición por mapa (al volver, nunca o tras X minutos) · cuerpos con colisión (con tiles y entre entidades, con casilla atravesable) · movimiento de enemigos (quieto, vagar, patrulla, persigue y ataca, huye, a distancia) y de NPC (quieto, vagar, ruta por puntos, seguir al jugador) · búsqueda de ruta A* que rodea muros · zonas de detección ajustables visualmente con disparadores (al entrar, al salir, mientras dentro) y acciones (perseguir, huir, volver al puesto, mirar, detenerse, ejecutar evento, activar interruptor, poner variable, atacar) · equipo ARPG con huecos de Arma, Armadura, Escudo y Accesorios 1 y 2, piezas dibujadas como capas sobre el cuerpo con orden configurable y modo Completo o Simple · comando de evento Cambiar equipo ARPG · daño con la misma fórmula que los turnos (elementos, crítico, varianza), retroceso, muerte con EXP, oro y drops directos al inventario · números de daño flotantes, barra de vida flotante de enemigos, parpadeo de invulnerabilidad y aviso de drops · herramientas (hacha, pico, pala, azada) con etiqueta de objetivo (árbol, roca, tierra), casilla de enfrente y botón que rota entre las equipadas · habilidades físicas con recurso propio (Ki, Energía o Aguante, con nombre y color) que aplican estados y modifican atributos · opciones de prueba en F3 (equipo, HP, números de daño, cuerpos y zonas) · interfaz adaptada a cualquier pantalla 16:9 |
-| 9B | Menús del juego y menú principal 🔧 | Pantalla de título con Nueva partida, Continuar (si existe una partida), Opciones, Créditos y Salir, con entradas activables, renombrables y reordenables · fondo, título (texto o imagen) y música de título personalizables · opciones de música, efectos, brillo y pantalla completa, guardadas aparte de las partidas · guardado y carga con espacios que muestran mapa, fecha y tiempo jugado · título del proyecto y nombre visible de la moneda elegible por el creador · estilos de ventana con bordes rectos, redondeados, sin bordes o con imagen (9 porciones), sliders de grosor, radio, opacidad y margen, colores, botones en 4 estados, estilos incluidos y duplicables, asignación por tipo de ventana (mensajes, elecciones, paneles de batalla, título, opciones, menú del juego) · menú del juego con Objetos (usar y tirar), Equipo (normal y ARPG, con comparación antes y después), Estado, Guardar, Opciones y Salir al título, con tarjeta de moneda y tiempo jugado, fondos importables por pantalla, inventario básico y entrada reservada para la magia · iconos del inventario recortados con la celda elegida en el selector de tiles en todas las pantallas (Objetos, Equipo, Estado, HUD y avisos de drops) · vista previa de objeto al pasar el ratón o moverse con el teclado, con un recuadro de icono ampliado girable en pixel perfect, columna de cantidad y rectángulo de descripción con salto de línea automático, para objetos, armas, armaduras, escudos y accesorios, configurable (activar, posición, elementos mostrados, tamaño del icono, rotación y paso, estilo de cada recuadro) · créditos con secciones, roles, texto, imágenes, fondo, música, velocidad y alineación, con vista previa y evento Mostrar créditos · pantalla de Game Over con fondo, texto, música y botones Reintentar y Volver al menú renombrables, y comando de evento Mostrar Game Over · eventos nuevos (Abrir menú del juego, Bloquear o Permitir el menú, Ir a la pantalla de título, Abrir guardado, Cambiar estilo de ventana, Mostrar u Ocultar el HUD) · HUD con barra de valor (HP, MP, EXP o variable), corazones con tamaño automático y fondo transparente con opción de mostrarlo, contador de monedas, contador de objetos que lee el inventario, texto o variable, imágenes y botones interactivos en pantalla (como un botón de Menú visible en el HUD con su propia forma, tamaño, imagen, bordes y acciones), con anclajes, modo libre desanclado, capas y visibilidad por interruptor · menús propios ilimitados: crear, nombrar, duplicar, ordenar y borrar, con los menús de sistema rediseñables por completo y "Restaurar plantilla original" · apertura de cada menú por tecla, botón de mando o botón de ratón (varias entradas), con contexto (solo en el mapa, mapa y combate, o cualquier pantalla), pausa del juego al abrir, aviso de conflictos y respeto de Bloquear o Permitir menú, y comando de evento Abrir menú con selector de cualquier menú · botones (en menús y en el HUD) con apartado de Acciones estilo eventos en secuencia (abrir menú o submenú, volver, cerrar, abrir pantalla de sistema, nueva partida, continuar, cargar, guardar, opciones, salir al título, salir del juego, ejecutar evento común, cambiar interruptor o variable, reproducir sonido, mostrar u ocultar el HUD, usar, equipar y tirar), con visibilidad y estado activo por interruptor, atajo de teclado o mando y sonidos de mover, aceptar y cancelar · distribuciones de contenedor: lista vertical y horizontal, cuadrícula (paginada o con scroll), pestañas, carrusel y rueda radial (N ranuras sobre un círculo o un arco, centro con título, descripción o icono grande, ranura seleccionada que se agranda, animación de apertura y navegación por teclas, mando y ratón por ángulo, cada ranura con su icono y sus acciones) · formas y estilo por elemento (rectángulo, redondeado, píldora, círculo, elipse y marco con imagen), con recorte del contenido y relleno, degradado, imagen, borde, sombra y brillo · imágenes en cualquier elemento (fondo de pantalla, relleno de panel y botón con imagen para sus 4 estados) con escala (estirar, ajustar, rellenar, 9 porciones y escala entera), filtro Pixelado o Suave, importación con miniaturas y arrastrando archivos al lienzo · fondo de cada menú con color, degradado, imagen o imagen con desplazamiento en bucle, fondo del juego desenfocado con intensidad y velo de color, y animaciones de entrada y salida (aparecer, deslizar, escalar, abrir radial con giro) con duración y curva · marcos editables por elemento con selector de estilos de ventana y editor de estilo (tipo, grosor, radio, color, sombra y brillo) · navegación con foco automático por posición o enlazado a mano y cursor configurable (imagen, forma o animación) · editor visual (WYSIWYG) de interfaz con una pestaña propia por sistema (Menú de inicio, Opciones, Partidas, Menú del juego, Inventario, Equipo, Estado, Créditos, Game Over, HUD, Mensajes y batalla y Estilos de ventana), cada una con su árbol de diseños y submenús (por ejemplo, en Inventario: Armas, Armaduras, Consumibles y Materiales), panel izquierdo con árbol jerárquico de capas, carpetas y botones estilo programa de dibujo (anidar elementos dentro de carpetas o contenedores, reordenar, mostrar, ocultar y bloquear, de modo que al mover una carpeta se desplaza en bloque todo su contenido manteniendo sus posiciones relativas), ventana flotante de configuración al hacer doble clic sobre cualquier capa, botón o carpeta del árbol (para elegir nombre, forma y tamaño —cuadrado, redondo, rectangular, etc.—, imagen, bordes, estilo visual y su apartado de Acciones tipo eventos), lienzo 16:9 con zoom estrictamente manual elegido por el creador (sin auto-zoom ni saltos o retracciones automáticas al tocar o seleccionar elementos), arrastrar, redimensionar, anclas, capas, alinear y distribuir, rejilla de tamaño elegible, imán y guías, copiar entre pantallas, deshacer, rehacer y restablecer, propiedades en modo Simple y Avanzado con buscador y selectores visuales (imagen, color, fuente TTF importable, icono, sonido y tecla), edición directa en lienzo (doble clic para editar texto y menú contextual), enlaces de datos y botón Probar que abre el diseño real en el juego con datos de prueba y selector de tamaño de vista previa (960x540 a 2560x1440) · plantillas y asistente "+ Nuevo diseño" de 3 pasos, con biblioteca de miniaturas (Clásico JRPG, Anillo radial, Rueda rápida, Cuadrícula de inventario, Pestañas a pantalla completa, Lateral deslizante, Minimalista, Cartas o carrusel, Pausa rápida, Título clásico, Título con logo grande y HUD de esquina), componentes (botón redondo, panel con marco, barra circular, lista de objetos y ranura con icono), "Guardar como mi plantilla" y exportar e importar plantillas y paquetes de interfaz completos en un solo archivo con sus imágenes · pantalla de título, opciones, guardar y cargar, créditos y los cuadros de mensajes y paneles de batalla totalmente diseñables con este mismo sistema · capas con nombre: menú Capas con hasta 16 capas personalizadas (nombre, orden, mostrar, ocultar y bloquear) junto a las capas 1 a 4, y capa actual nítida con las demás atenuadas (interruptor y porcentaje en Preferencias) · barra superior del editor en píldoras con marco, menús Archivo y Editar simplificados y tema ClockGears Latón seleccionable en Preferencias · textos con acentos y símbolos en UTF-8 en todo el motor, con reparación automática de datos antiguos con codificación rota y copia de seguridad · optimización medida de los editores y de los menús · todo con imágenes importables y adaptado a cualquier pantalla 16:9 y 21:9 además de soporte futuro a 4:3 y 5:3 |
-| 9B | Menús del juego y menú principal 🔧 | Pantalla de título con Nueva partida, Continuar (si existe una partida), Opciones, Créditos y Salir, con entradas activables, renombrables y reordenables · fondo, título (texto o imagen) y música de título personalizables · opciones de música, efectos, brillo y pantalla completa, guardadas aparte de las partidas · guardado y carga con espacios que muestran mapa, fecha y tiempo jugado · título del proyecto y nombre visible de la moneda elegible por el creador · estilos de ventana con bordes rectos, redondeados, sin bordes o con imagen (9 porciones), sliders de grosor, radio, opacidad y margen, colores, botones en 4 estados, estilos incluidos y duplicables, asignación por tipo de ventana (mensajes, elecciones, paneles de batalla, título, opciones, menú del juego) · menú del juego con Objetos (usar y tirar), Equipo (normal y ARPG, con comparación antes y después), Estado, Guardar, Opciones y Salir al título, con tarjeta de moneda y tiempo jugado, fondos importables por pantalla, inventario básico y entrada reservada para la magia · iconos del inventario recortados con la celda elegida en el selector de tiles en todas las pantallas (Objetos, Equipo, Estado, HUD y avisos de drops) · vista previa de objeto al pasar el ratón o moverse con el teclado, con un recuadro de icono ampliado girable en pixel perfect, columna de cantidad y rectángulo de descripción con salto de línea automático, para objetos, armas, armaduras, escudos y accesorios, configurable (activar, posición, elementos mostrados, tamaño del icono, rotación y paso, estilo de cada recuadro) · créditos con secciones, roles, texto, imágenes, fondo, música, velocidad y alineación, con vista previa y evento Mostrar créditos · pantalla de Game Over con fondo, texto, música y botones Reintentar y Volver al menú renombrables, y comando de evento Mostrar Game Over · eventos nuevos (Abrir menú del juego, Bloquear o Permitir el menú, Ir a la pantalla de título, Abrir guardado, Cambiar estilo de ventana, Mostrar u Ocultar el HUD) · HUD con barra de valor (HP, MP, EXP o variable), corazones con tamaño automático y fondo transparente con opción de mostrarlo, contador de monedas, contador de objetos que lee el inventario, texto o variable, imágenes y botones interactivos en pantalla (como un botón de Menú visible en el HUD con su propia forma, tamaño, imagen, bordes y acciones), con anclajes, modo libre desanclado, capas y visibilidad por interruptor · menús propios ilimitados: crear, nombrar, duplicar, ordenar y borrar, con los menús de sistema rediseñables por completo y "Restaurar plantilla original" · apertura de cada menú por tecla, botón de mando o botón de ratón (varias entradas), con contexto (solo en el mapa, mapa y combate, o cualquier pantalla), pausa del juego al abrir, aviso de conflictos y respeto de Bloquear o Permitir menú, y comando de evento Abrir menú con selector de cualquier menú · botones (en menús y en el HUD) con apartado de Acciones estilo eventos en secuencia (abrir menú o submenú, volver, cerrar, abrir pantalla de sistema, nueva partida, continuar, cargar, guardar, opciones, salir al título, salir del juego, ejecutar evento común, cambiar interruptor o variable, reproducir sonido, mostrar u ocultar el HUD, usar, equipar y tirar), con visibilidad y estado activo por interruptor, atajo de teclado o mando y sonidos de mover, aceptar y cancelar · distribuciones de contenedor: lista vertical y horizontal, cuadrícula (paginada o con scroll), pestañas, carrusel y rueda radial (N ranuras sobre un círculo o un arco, centro con título, descripción o icono grande, ranura seleccionada que se agranda, animación de apertura y navegación por teclas, mando y ratón por ángulo, cada ranura con su icono y sus acciones) · formas y estilo por elemento (rectángulo, redondeado, píldora, círculo, elipse y marco con imagen), con recorte del contenido y relleno, degradado, imagen, borde, sombra y brillo · imágenes en cualquier elemento (fondo de pantalla, relleno de panel y botón con imagen para sus 4 estados) con escala (estirar, ajustar, rellenar, 9 porciones y escala entera), filtro Pixelado o Suave, importación con miniaturas y arrastrando archivos al lienzo · fondo de cada menú con color, degradado, imagen o imagen con desplazamiento en bucle, fondo del juego desenfocado con intensidad y velo de color, y animaciones de entrada y salida (aparecer, deslizar, escalar, abrir radial con giro) con duración y curva · marcos editables por elemento con selector de estilos de ventana y editor de estilo (tipo, grosor, radio, color, sombra y brillo) · navegación con foco automático por posición o enlazado a mano y cursor configurable (imagen, forma o animación) · editor visual (WYSIWYG) de interfaz con una pestaña propia por sistema (Menú de inicio, Opciones, Partidas, Menú del juego, Inventario, Equipo, Estado, Créditos, Game Over, HUD, Mensajes y batalla y Estilos de ventana), cada una con su árbol de diseños y submenús (por ejemplo, en Inventario: Armas, Armaduras, Consumibles y Materiales), panel izquierdo con árbol jerárquico de capas, carpetas y botones estilo programa de dibujo (anidar elementos dentro de carpetas o contenedores, reordenar, mostrar, ocultar y bloquear, de modo que al mover una carpeta se desplaza en bloque todo su contenido manteniendo sus posiciones relativas), ventana flotante de configuración al hacer doble clic sobre cualquier capa, botón o carpeta del árbol (para elegir nombre, forma y tamaño —cuadrado, redondo, rectangular, etc.—, imagen, bordes, estilo visual y su apartado de Acciones tipo eventos), lienzo 16:9 con zoom estrictamente manual elegido por el creador (sin auto-zoom ni saltos o retracciones automáticas al tocar o seleccionar elementos), arrastrar, redimensionar, anclas, capas, alinear y distribuir, rejilla de tamaño elegible, imán y guías, copiar entre pantallas, deshacer, rehacer y restablecer, propiedades en modo Simple y Avanzado con buscador y selectores visuales (imagen, color, fuente TTF importable, icono, sonido y tecla), edición directa en lienzo (doble clic para editar texto y menú contextual), enlaces de datos y botón Probar que abre el diseño real en el juego con datos de prueba y selector de tamaño de vista previa (960x540 a 2560x1440) · plantillas y asistente "+ Nuevo diseño" de 3 pasos, con biblioteca de miniaturas (Clásico JRPG, Anillo radial, Rueda rápida, Cuadrícula de inventario, Pestañas a pantalla completa, Lateral deslizante, Minimalista, Cartas o carrusel, Pausa rápida, Título clásico, Título con logo grande y HUD de esquina), componentes (botón redondo, panel con marco, barra circular, lista de objetos y ranura con icono), "Guardar como mi plantilla" y exportar e importar plantillas y paquetes de interfaz completos en un solo archivo con sus imágenes · pantalla de título, opciones, guardar y cargar, créditos y los cuadros de mensajes y paneles de batalla totalmente diseñables con este mismo sistema · capas con nombre: menú Capas con hasta 16 capas personalizadas (nombre, orden, mostrar, ocultar y bloquear) junto a las capas 1 a 4, y capa actual nítida con las demás atenuadas (interruptor y porcentaje en Preferencias) · barra superior del editor en píldoras con marco, menús Archivo y Editar simplificados y tema ClockGears Latón seleccionable en Preferencias · textos con acentos y símbolos en UTF-8 en todo el motor, con reparación automática de datos antiguos con codificación rota y copia de seguridad · optimización medida de los editores y de los menús · identidad visual propia: icono nuevo de pixel art que sustituye al antiguo en todo el motor (ejecutable de Windows con .ico de varios tamaños, todas las ventanas y la barra de tareas, proyectos nuevos y juegos exportados, Administrador de proyectos y Acerca de), versión única Alpha-0.0.4 visible en todas partes y en las propiedades del ejecutable, e iconos de pixel art dibujados a mano para las categorías de la Base de Datos (Actores, NPC, Clases, Armaduras, Enemigos, Escudos, Eventos comunes, Interruptores, Flora, Fauna, Tilesets, Tropas y más) y para la barra superior (cortar, copiar, pegar y pincel de sombra), escalados solo en múltiplos enteros y sin filtro · pantalla de carga a pantalla completa y adaptable a cualquier resolución, con fondo de engranajes y líneas de circuito, icono con halo, créditos "Created by Kris'ZtS (ClockGears Studio)", etiqueta de versión, barra de progreso con etapas reales de arranque, brillo de la barra con partículas de pixel art, destello final con "Listo" y desvanecimiento sin parpadeo, sin alargar el arranque · nuevo Administrador de proyectos con cabecera con icono y buscador, Crear, Importar, orden y vista de lista o cuadrícula, tarjetas con favorito, icono, ruta, insignia de versión, etiquetas y marca de proyecto faltante, panel de Acciones de Proyecto (Editar, Ejecutar o Probar, Renombrar, Duplicar, Administrar etiquetas, Ver en carpeta, Eliminar de la lista y Eliminar faltantes), estados vacíos y pie de modo sin conexión · estilo Neón Cobre en el tema oscuro y en el Latón: bordes cobrizos en la barra superior, paneles, lienzo y barras de pestañas, listas hundidas más oscuras, estados con halo dorado-cobre y punto de luz en lo seleccionado, campos numéricos con stepper integrado, cabeceras de panel con línea degradada, barra de estado, opción "Efectos de brillo" (Desactivado, Suave o Intenso) y sin animaciones continuas, todo definido en variables del tema · todo con imágenes importables y adaptado a cualquier pantalla 16:9 y 21:9 además de soporte futuro a 4:3 y 5:3 |
-| 10 | Magic Update: magia, grimorios, báculos, prefabs y estructuras ⏳ | Propiedades fijas con nombre visible editable e identificador interno fijo: 10 elementos (agua, fuego, hielo, electricidad, viento, luz, oscuridad, astral, tierra y naturaleza) y 8 estados (parálisis, veneno, sueño, quemadura, congelación, silencio, ceguera y confusión) · hechizos con daño, propiedades (uno o varios elementos o estados), coste de MP, recarga (en segundos en tiempo real y en turnos en el combate por turnos) y efectos modulares que aplican estados y modifican atributos · los hechizos no se lanzan solos: necesitan un canalizador, y un hechizo con hielo y viento lo acepta cualquier grimorio de hielo o de viento · grimorios como arma con un tipo (elemental o de estado) que solo filtra qué hechizos admiten, con el nivel de personaje al que se desbloquea cada hechizo dentro del grimorio, casilla Universal para admitir todos y sin aportar daño ni elemento propio · báculos como arma Universal por defecto, sin niveles, con una penalización de potencia configurable por báculo (con valor por defecto) · objetos canalizadores en el inventario, como una poción, con el botón Activar canalizador que abre una lista donde se añaden hechizos con "+", y que funcionan como un báculo · equipo: grimorios con grimorios o báculos con báculos (al equipar el otro tipo se desequipa el anterior), casilla en Sistema para llevar ambos a la vez con las listas sumadas sin duplicados, y número de huecos de arma elegido por el creador en Sistema · combate por turnos con el comando Grimorio, que muestra los grimorios equipados y, al elegir uno, sus hechizos ya desbloqueados · combate en tiempo real (ARPG) con barra de acceso rápido de 1 a 9 y asignación libre, donde cada grimorio recuerda su propia barra (con opción en Sistema para recordarla por combinación de grimorios equipados) · reglas: Silencio bloquea los hechizos y no las habilidades físicas, el nivel de desbloqueo es el del personaje que usa el hechizo y la recarga es por hechizo y no por grimorio · capítulo Magia en la Base de Datos con Hechizos, Grimorios y Báculos · modo de prueba en F3 con nivel 100 o con el nivel que escribas (de 1 a 100), solo para la sesión de prueba · sistema de prefabs para eventos (de registro manual explícito, sin guardado automático) accesible desde el menú contextual al hacer clic derecho en el mapa en modo evento, ubicado debajo de Generar entidad... · sistema de generación de estructuras con eventos integrados (lógica propia, temporizadores, elementos de UI en pantalla y barras de estado/vida), incluyendo su propio modo dedicado de colocación y edición en el editor · buscador integrado de eventos por nombre en el editor de mapas · pulidos generales de la interfaz del motor |
-| 11 | Exportación multiplataforma, editor de inputs y Port Nativo a Android ⏳ | Exportación directa desde el editor a Windows, Linux, Web y Android, con presets de exportación guardables por plataforma (nombre, versión, icono y pantalla de carga), gestión de las plantillas de exportación desde el propio editor, empaquetado del juego con todos sus recursos, exportación con un clic y botón para probar el resultado, y el aviso de licencia de Godot incluido en cada exportación · exportación a Android con APK y AAB firmados (almacén de claves), permisos, orientación, iconos y versión, y prueba en dispositivo o emulador · exportación Web con servidor local de prueba · Port Nativo del motor (CGE) a Android para crear tus juegos desde ésta plataforma sin necesidad de PC. Los juegos exportado se ejecuta en el móvil con su render, audio, guardado y entrada táctil, con el ciclo de vida de la app (pausar y reanudar) y pantalla horizontal 16:9 y 21:9 · reestructuración masiva de todo el panel original de Godot: paneles, menús y diálogos heredados (inspector, sistema de archivos, ajustes del proyecto, ajustes del editor, importación, salida, depurador y perfilador, entre otros) rediseñados con bordes redondeados y el tema de ClockGears, quitando o sustituyendo lo que no sirve, con textos en español claro y acciones más directas · editor de inputs: crear, nombrar, renombrar y borrar acciones de entrada propias, con varias entradas por acción (teclado, botón de ratón, mando y táctil), captura con "pulsa una tecla", aviso de conflictos, valores por defecto, desde lo mínimo (moverse) hasta lo complejo (interactuar, correr, atacar, bloquear, esquivar, abrir el menú o el inventario directamente), uso de las acciones en eventos, botones de interfaz y menús, y reasignación por el jugador desde Opciones · apartado Android System en la Base de Datos: controles táctiles y botones táctiles predefinidos (joystick, clic izquierdo, clic derecho, interactuar, correr y demás), vinculados a las acciones del editor de inputs, donde el creador elige cuáles se muestran, los coloca, cambia su tamaño y su opacidad, y asigna a cada botón un sprite propio · todo con interfaz redondeada y adaptado a cualquier pantalla 16:9 |
+<div align="center">
 
-## Arco 2: RPG completo (Fases 12–25)
-| # | Fase | Qué trae |
-|---|------|----------|
-| 12 | Animaciones II y cierre de combate | Duración por frame y orden aleatorio · triggers de ataque, daño y muerte en Actores y Enemigos · sonidos y flashes por fotograma · tropas con varios enemigos y posiciones · regresión completa del combate |
-| 13 | Eventos II | Ramas anidadas (elecciones y condiciones) · bucles, etiquetas y saltos · copiar, pegar y buscar comandos · comentarios · eventos comunes |
-| 14 | Eventos III | Rutas de movimiento · seguidores del grupo · control de cámara y scroll · tintes, sacudidas y flashes · imágenes en pantalla |
-| 15 | Mapas II | Autotiles A1–A4 completos · regiones · capas de tiles y eventos · copiar y exportar mapas · transiciones y teletransportes |
-| 16 | Combate II | Resistencias y debilidades por elemento y estado · críticos, evasión y fallo · objetivos múltiples y aleatorios · estados avanzados · editor de fórmulas con validación |
-| 17 | Combate III | Costes, recargas y tipos de habilidad · pasivas y rasgos · habilidades encadenadas · invocaciones · contraataque y cobertura · IA enemiga por patrones y condiciones |
-| 18 | Combate IV | Jefes con fases · eventos dentro de la batalla · emboscadas y huida configurables · vistas frontal y lateral · fondos por mapa o región · recompensas especiales |
-| 19 | 🚀 **Cronómetro Update** | Sistemas de turno a elegir (clásico, ATB, ticks) · simulador de batallas con balance automático · curvas de nivel y dificultad · cola de turnos visual · auto-batalla |
-| 20 | Progresión | Clases y multiclase · árboles de habilidades · slots de equipo configurables · curvas de EXP por actor · ascensos |
-| 21 | Inventario y economía | Tiendas y su editor · crafteo con recetas · peso y límites · objetos clave · monedas múltiples |
-| 22 | Sistema de juego | Menú principal editable · estado, formación y equipo · guardado en ranuras con captura · opciones de dificultad · créditos |
-| 23 | Misiones y diario | Misiones con objetivos · diario y bestiario · enciclopedia de objetos · marcadores en el mapa · recompensas |
-| 24 | Automatización | Presets de movimiento en 2, 4, 6 y 8 direcciones · puertas, cofres y teletransportes listos · NPC con ruta · plantillas de eventos comunes · auto-conexión sin configurar inputs |
-| 25 | 🚀 **Crónicas Update** | Ciclo de día y noche · clima por mapa · calendario y tiempo del mundo · horarios de NPC · afinidad con personajes · logros |
+# ⚙️ ClockGears Engine
+
+**Motor de videojuegos 2D para RPG y ARPG por rejillas — Gratuito, nativo en C++ y sin regalías.**
+
+[![Última versión](https://img.shields.io/github/v/release/krisztsa/ClockGears-Engine?include_prereleases&label=Versión&color=d97706)](https://github.com/krisztsa/ClockGears-Engine/releases)
+[![Descargas](https://img.shields.io/github/downloads/krisztsa/ClockGears-Engine/total?label=Descargas&color=b45309)](https://github.com/krisztsa/ClockGears-Engine/releases)
+[![Precio](https://img.shields.io/badge/Precio-100%25%20Gratuito-16a34a)](https://github.com/krisztsa/ClockGears-Engine/releases)
+[![Base](https://img.shields.io/badge/Base-C%2B%2B%20%2F%20Godot%20Fork-478cbf)](https://godotengine.org)
+[![Progreso](https://img.shields.io/badge/Hoja%20de%20Ruta-Fase%209B%20%2F%2055-c2410c)](#-hoja-de-ruta)
+[![YouTube](https://img.shields.io/badge/YouTube-@KrisZtS-dc2626?logo=youtube&logoColor=white)](https://www.youtube.com/@KrisZtS)
+
+<br>
+
+[📥 Descargar](#-descarga) • [✨ Qué incluye](#-qué-incluye) • [🗺️ Hoja de Ruta](#-hoja-de-ruta) • [🛠️ Compilar](#️-cómo-compilar) • [📜 Licencia](#-licencia)
+
+</div>
+
 ---
-## Arco 3: Motor visual (Fases 26–40)
-| # | Fase | Qué trae |
-|---|------|----------|
-| 26 | Render base | Orden por Y y capas de profundidad · sombras de tiles · luces 2D puntuales · mapas de normales · máscaras de luz |
-| 27 | Partículas I | Editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo · importar y exportar |
-| 28 | Partículas II | Comando de evento "Mostrar partículas" · partículas en combate y habilidades · colisión con tiles · estelas y sub-emisores · límites de rendimiento |
-| 29 | 🚀 **Péndulo Update** | Biblioteca de efectos prehechos · lluvia, nieve y niebla · hechizos con partículas y luz · shaders listos · editor de efectos unificado |
-| 30 | Post-proceso | Bloom · viñeta y aberración cromática · grano y pixelado · corrección de color con LUT · pila de efectos por mapa |
-| 31 | Cámara 2.5D | Perspectiva inclinada · rotación por pasos de 90° · sprites billboard · zoom y seguimiento suave · presets de cámara |
-| 32 | Mapas 2.5D | Tiles con altura · escaleras y desniveles · techos que se ocultan · objetos 3D low poly (glTF) · parallax en capas |
-| 33 | Luz y sombras | Sombras proyectadas de sprites · luces dinámicas y emisivos · reflejos en agua · día y noche con luz coherente · lightmaps horneados opcionales |
-| 34 | Profundidad de campo | DoF y tilt-shift · bokeh · enfoque controlado por eventos · cámara cinematográfica · desenfoque de fondo en diálogos |
-| 35 | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla lista · presets de cámara, luz y DoF · partículas integradas · mapa demo |
-| 36 | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · salida a pantallas HDR · calibración dentro del juego |
-| 37 | FSR | Escalado FSR · resolución interna ajustable · selector de calidad · nitidez ajustable · alternativa sin soporte |
-| 38 | DLSS y XeSS | DLSS mediante el SDK de NVIDIA · XeSS de Intel · detección de hardware · desactivación automática si no hay soporte · ajustes en el menú |
-| 39 | Rendimiento | Perfilador integrado · culling y batching · atlas de texturas · presets Bajo, Medio y Alto · límite de FPS y VSync |
-| 40 | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura y grabación · paquete final de shaders |
+
+> [!WARNING]
+> **AVISO SOBRE GRATUIDAD Y ESTAFAS:** ClockGears Engine es **completamente gratuito**. Se creó para que cualquiera pueda desarrollar videojuegos RPG sin pagar licencias ni suscripciones. Solo existe una opción voluntaria de donaciones fuera del programa. **Si alguien te cobró por este motor, has sido estafado.** La única vía oficial de descarga es este repositorio de GitHub.
+
+## 📖 ¿Qué es ClockGears Engine?
+
+**ClockGears Engine** es un motor 2D para RPG por rejillas con un editor visual inspirado en RPG Maker MZ, construido en **C++** modificando directamente el código fuente de Godot Engine. Su objetivo es que puedas crear un RPG completo sin programar sistemas desde cero y sin pagar: mapas, eventos, combates, base de datos, animaciones y pruebas de juego integrados en un solo ejecutable.
+
+* **Estado actual (`Alpha 0.0.3`):** Ya permite crear RPG y ARPG sencillos de principio a fin (mapas, eventos, personajes, combates, pruebas rápidas con `F5` y exportación). Al ser una versión Alpha, conviene guardar copias de seguridad de tus proyectos.
+
 ---
-## Arco 4: Interfaz y editor (Fases 41–47)
-| # | Fase | Qué trae |
-|---|------|----------|
-| 41 | HUD I | Editor WYSIWYG con arrastrar y soltar · barras de vida y MP · ventanas con anclas · rejillas y alineación · vista previa en varias resoluciones |
-| 42 | HUD II | Skins de ventana 9-patch · fuentes bitmap · animaciones de UI · cursores y sonidos de menú · estados (normal, hover, presionado) |
-| 43 | HUD III | Plantillas de título, menú, tienda y batalla · widgets reutilizables · enlaces a datos del juego · pantallas modales · pruebas de resolución |
-| 44 | Personalización del editor | Paleta de 8 colores de acento · tema Retro Pixelart · tema Dark OLED · tema Classic JRPG Blue · preferencias guardadas |
-| 45 | Identidad y editor reorganizado | Iconos SVG y tipografía propios · logo, splash discreto e icono de ejecutable · paneles acoplables · búsqueda global · interfaz en español e inglés |
-| 46 | Accesibilidad y aprendizaje | Tamaño de fuente y modos para daltonismo · remapeo de controles y mando · tutorial interactivo · documentación dentro del editor · plantillas comentadas |
-| 47 | 🚀 **Relojería Update** | Limpieza visual casi total del origen Godot · nombres internos y menús propios · tema final · modo ventana pequeña · revisión de cada pantalla |
+
+## 📥 Descarga
+
+No necesitas instalar nada más. Descarga el ejecutable compilado directamente desde la pestaña de **Releases**:
+
+[![Descargar última versión](https://img.shields.io/badge/📥_Descargar_ClockGears_Engine-GitHub_Releases-d97706?style=for-the-badge)](https://github.com/krisztsa/ClockGears-Engine/releases)
+
 ---
-## Arco 5: Audio, código y cine (Fases 48–50)
-| # | Fase | Qué trae |
-|---|------|----------|
-| 48 | Audio | Editor de BGM, BGS, ME y SE · bucles con puntos y crossfade · buses y volúmenes por categoría · sonido posicional y reverb por mapa · música adaptativa y ducking en diálogos |
-| 49 | Código y datos | Pestaña Code con API estable · hooks y plugins · importar y exportar JSON y CSV · localización de textos · migraciones y copias de seguridad |
-| 50 | 🚀 **Telón Update** | Editor de cinemáticas con línea de tiempo · pistas de cámara, diálogo, partículas y audio · cortes y transiciones · reproducción dentro del juego · exportar a vídeo |
+
+## ✨ Qué incluye
+
+| Módulo | Funciones principales |
+| :--- | :--- |
+| 🗺️ **Mapas y editor** | Flujo estilo RPG Maker MZ, árbol de mapas, capas con autotiles, pasabilidad (`○` / `×` / `★`), punto de inicio y prueba rápida con `F5`. |
+| 🎬 **Eventos sin código** | Múltiples páginas por evento, interruptores, variables, rutas de movimiento, diálogos, elecciones, teletransportes y efectos de pantalla (imágenes, tintes y temblor). |
+| ⚔️ **Combate** | **Por turnos** (AGI, 10 elementos, estados, EXP/oro/drops, editor de tropas 16:9 y panel `F3`) y **ARPG en tiempo real** (4/8 direcciones, hitboxes por frame, esquiva, bloqueo, IA con A* y equipo por capas). |
+| 🗃️ **Base de datos** | Actores, clases, habilidades, objetos, equipo, enemigos, tropas, estados, animaciones, tilesets, flora, fauna y eventos comunes en ventana redimensionable por capítulos. |
+| 🎞️ **Animaciones** | Editor por ranuras (`Idle`, `Ataque`, `Daño`, `Muerte`, `Buff` y lanzamientos por elemento) con corte en celdas, FPS, bucle, orden aleatorio y prueba en vivo. |
+| 🎨 **Identidad y rendimiento** | Iconos pixel art dibujados a mano con escalado entero, tema oscuro redondeado y ejecución nativa en **C++** compatible con OpenGL 3 / Vulkan. |
+
 ---
-## Arco 6: Plataformas (Fases 51–53)
+
+## 🗺️ Hoja de Ruta
+
+El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 1.0 (sujeta a cambios y ajustes sobre la marcha).
+
+**Leyenda:** ✅ Hecha · 🔧 En curso · ⏳ Planeada · 🚀 **Update grande**
+
+| Arco | Fases | Enfoque | Estado |
+| :--- | :---: | :--- | :---: |
+| **Arco 1** | 1 – 11 | Núcleo del motor, ARPG, Menús, Magia y Exportación | 🔧 En curso (`9B`) |
+| **Arco 2** | 12 – 25 | RPG completo (Combate avanzado, Misiones, Clima y Ciclo día/noche) | ⏳ Planeado |
+| **Arco 3** | 26 – 40 | Motor visual (Iluminación, Partículas, Diorama 2.5D, HDR, FSR/DLSS) | ⏳ Planeado |
+| **Arco 4** | 41 – 47 | Interfaz, personalización del editor y limpieza visual total | ⏳ Planeado |
+| **Arco 5** | 48 – 50 | Audio avanzado, API de código y editor de cinemáticas | ⏳ Planeado |
+| **Arco 6** | 51 – 53 | Exportación dedicada a PC, Android, Web, macOS y consolas | ⏳ Planeado |
+| **Arco 7** | 54 – 55 | Calidad, beta y lanzamiento **Maestro Relojero 1.0** | ⏳ Planeado |
+
+<details>
+<summary><b>📂 Ver Arco 1: Núcleo del motor (Fases 1–11) — 🔧 En curso</b></summary>
+<br>
+
 | # | Fase | Qué trae |
-|---|------|----------|
-| 51 | Exportación PC | Windows y Linux en 1 o 2 clics · instalador · ejecutable con icono propio · compresión de assets · licencias incluidas en el paquete |
-| 52 | Android | SDK y keystore automáticos · controles táctiles · pantalla adaptable · APK y AAB · pruebas en dispositivo |
-| 53 | Web, macOS e integraciones | Build web · build macOS · paquete base para consolas · Steam e itch.io · guardado en la nube |
----
-## Arco 7: Cierre (Fases 54–55)
+| :---: | :--- | :--- |
+| **1** | Base y rebranding ✅ | Rebranding completo a ClockGears Engine · créditos de Kris'ZtS · icono propio · compilación aislada en un solo `.exe`. |
+| **2** | Interfaz MZ y tema Dark ✅ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos pixel art · selectores y validación en vivo. |
+| **3** | Mapas y rejilla ✅ | Rejillas de 16, 32 y 48 · colocación libre · importar imágenes · árbol de mapas · deshacer/rehacer y herramientas de dibujo. |
+| **4** | Eventos sin código ✅ | Editor estilo MZ · páginas, condiciones y disparadores · interruptores y variables · pestaña Code opcional. |
+| **5** | Base de datos ✅ | Actores, clases, habilidades, objetos, equipo, enemigos, tropas y estados · importar/exportar assets y búsqueda. |
+| **6** | Tilesets y colisiones ✅ | 9 ranuras (`A1–A5`, `B–E`) · máscara `○` / `×` / `★` · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7. |
+| **7** | Sistema narrativo ✅ | Ventana de mensajes · códigos de escape · retratos con expresiones · historial · modos AUTO y SALTAR · vista previa en vivo. |
+| **8** | Combate por turnos, iconos y animaciones ✅ | Combate por turnos con AGI, 10 elementos fijos y panel `F3` · editor de animaciones por ranuras · editor de tropas 16:9 con escala x1–x6 y prueba directa · nueva Base de Datos en dos columnas · iconos pixel art hechos a mano. |
+| **9A** | Combate en tiempo real (ARPG) ✅ | Modo Por turnos / ARPG por proyecto o mapa · 4/8 direcciones · animaciones por acción · ratón y teclado · esquiva, bloqueo e invulnerabilidad · editor visual de hitboxes/hurtboxes por frame · IA con búsqueda de ruta A* y zonas de detección · equipo ARPG por capas · herramientas (hacha, pico, pala, azada) · habilidades físicas con recurso propio · depuración `F3`. |
+| **9B** | Menús del juego y menú principal 🔧 | Pantalla de título, opciones, guardado/carga, créditos y Game Over personalizables · estilos de ventana (9-patch, bordes, opacidad) · HUD interactivo y menús ilimitados (listas, cuadrículas, carrusel, rueda radial) · editor visual WYSIWYG con capas, carpetas, acciones tipo eventos, zoom manual y plantillas · capas con nombre en mapas · temas Dark/Latón con estilo Neón Cobre · nuevo icono, versión `Alpha-0.0.4`, pantalla de carga y Administrador de proyectos · soporte UTF-8 y pantallas 16:9 / 21:9. |
+| **10** | Magic Update ⏳ | Hechizos modulares con 10 elementos y 8 estados · sistema de canalizadores (Grimorios por elemento/estado con desbloqueo por nivel, Báculos universales y objetos canalizadores) · barra rápida 1–9 en ARPG y comando Grimorio en turnos · sistema de prefabs de eventos · generador de estructuras con lógica y UI propia · buscador de eventos por nombre. |
+| **11** | Exportación, inputs y Port Nativo a Android ⏳ | Exportación a Windows, Linux, Web y Android (APK/AAB) con presets · **Port Nativo del editor CGE a Android** · reestructuración visual de paneles heredados de Godot · editor de inputs (teclado, ratón, mando y táctil) · apartado Android System para configurar controles táctiles con sprites propios. |
+
+</details>
+
+<details>
+<summary><b>📂 Ver Arco 2: RPG completo (Fases 12–25)</b></summary>
+<br>
+
 | # | Fase | Qué trae |
-|---|------|----------|
-| 54 | Calidad y beta | Pruebas automáticas por pantalla · proyectos de prueba y de rendimiento · informe de regresión · manual completo · sistema de reportes con captura |
-| 55 | 🚀 **Maestro Relojero 1.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · web y página de descarga · lanzamiento |
+| :---: | :--- | :--- |
+| **12** | Animaciones II y cierre de combate | Duración por frame y orden aleatorio · triggers por acción · sonidos/flashes por fotograma · tropas múltiples. |
+| **13** | Eventos II | Ramas anidadas · bucles, etiquetas y saltos · copiar/pegar/buscar comandos · comentarios · eventos comunes. |
+| **14** | Eventos III | Rutas de movimiento · seguidores del grupo · control de cámara y scroll · tintes, sacudidas y flashes · imágenes en pantalla. |
+| **15** | Mapas II | Autotiles A1–A4 completos · regiones · capas de tiles y eventos · copiar/exportar mapas · transiciones. |
+| **16** | Combate II | Resistencias/debilidades por elemento y estado · críticos, evasión y fallo · objetivos múltiples · editor de fórmulas. |
+| **17** | Combate III | Costes, recargas, pasivas, habilidades encadenadas, invocaciones, contraataque, cobertura e IA por patrones. |
+| **18** | Combate IV | Jefes con fases · eventos dentro de batalla · emboscadas · vistas frontal y lateral · fondos por mapa/región. |
+| **19** | 🚀 **Cronómetro Update** | Turnos a elegir (clásico, ATB, ticks) · simulador de balance · curvas de dificultad · cola visual · auto-batalla. |
+| **20** | Progresión | Clases y multiclase · árboles de habilidades · slots configurables · curvas de EXP · ascensos. |
+| **21** | Inventario y economía | Tiendas y editor · crafteo con recetas · peso y límites · objetos clave · monedas múltiples. |
+| **22** | Sistema de juego | Menú principal editable · formación y equipo · guardado con captura · dificultad · créditos. |
+| **23** | Misiones y diario | Misiones con objetivos · diario y bestiario · enciclopedia · marcadores en mapa · recompensas. |
+| **24** | Automatización | Presets de movimiento (2/4/6/8 dir.) · puertas, cofres y teletransportes listos · NPC con ruta · plantillas. |
+| **25** | 🚀 **Crónicas Update** | Ciclo día/noche · clima por mapa · calendario y tiempo · horarios de NPC · afinidad · logros. |
+
+</details>
+
+<details>
+<summary><b>📂 Ver Arco 3: Motor visual (Fases 26–40)</b></summary>
+<br>
+
+| # | Fase | Qué trae |
+| :---: | :--- | :--- |
+| **26** | Render base | Orden por Y y capas de profundidad · sombras de tiles · luces 2D puntuales · mapas de normales · máscaras de luz. |
+| **27** | Partículas I | Editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo. |
+| **28** | Partículas II | Comando "Mostrar partículas" · partículas en combate · colisión con tiles · estelas y sub-emisores. |
+| **29** | 🚀 **Péndulo Update** | Biblioteca de efectos · lluvia, nieve y niebla · hechizos con partículas y luz · shaders listos · editor unificado. |
+| **30** | Post-proceso | Bloom · viñeta · aberración cromática · grano y pixelado · LUTs de color · pila de efectos por mapa. |
+| **31** | Cámara 2.5D | Perspectiva inclinada · rotación en pasos de 90° · sprites billboard · zoom y seguimiento suave. |
+| **32** | Mapas 2.5D | Tiles con altura · escaleras y desniveles · techos ocultables · objetos 3D low poly (`glTF`) · parallax. |
+| **33** | Luz y sombras | Sombras proyectadas · luces dinámicas y emisivos · reflejos en agua · luz coherente día/noche · lightmaps. |
+| **34** | Profundidad de campo | DoF y tilt-shift · bokeh · enfoque por eventos · cámara cinematográfica · desenfoque en diálogos. |
+| **35** | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla, presets y mapa demo. |
+| **36** | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · calibración en juego. |
+| **37** | FSR | Escalado FSR · resolución interna, calidad y nitidez ajustables. |
+| **38** | DLSS y XeSS | Integración NVIDIA DLSS e Intel XeSS con detección de hardware y ajustes en menú. |
+| **39** | Rendimiento | Perfilador · culling y batching · atlas de texturas · presets Bajo/Medio/Alto · límite de FPS y VSync. |
+| **40** | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura/grabación · paquete final de shaders. |
+
+</details>
+
+<details>
+<summary><b>📂 Ver Arco 4: Interfaz y editor (Fases 41–47)</b></summary>
+<br>
+
+| # | Fase | Qué trae |
+| :---: | :--- | :--- |
+| **41** | HUD I | Editor WYSIWYG · barras de HP/MP · ventanas con anclas · rejillas y vista previa multiresolución. |
+| **42** | HUD II | Skins 9-patch · fuentes bitmap · animaciones de UI · cursores, sonidos y estados de botón. |
+| **43** | HUD III | Plantillas de título, menú, tienda y batalla · widgets reutilizables · enlaces de datos · modales. |
+| **44** | Personalización | 8 colores de acento · temas Retro Pixelart, Dark OLED y Classic JRPG Blue. |
+| **45** | Identidad reorganizada | Iconos SVG y tipografía propios · paneles acoplables · búsqueda global · español e inglés. |
+| **46** | Accesibilidad y aprendizaje | Tamaño de fuente y modos daltonismo · remapeo · tutorial interactivo · documentación integrada. |
+| **47** | 🚀 **Relojería Update** | Limpieza visual casi total del origen Godot · tema final · modo ventana pequeña · revisión general. |
+
+</details>
+
+<details>
+<summary><b>📂 Ver Arco 5: Audio, código y cine (Fases 48–50)</b></summary>
+<br>
+
+| # | Fase | Qué trae |
+| :---: | :--- | :--- |
+| **48** | Audio | Editor de BGM, BGS, ME y SE · bucles con crossfade · buses · sonido posicional, reverb y ducking. |
+| **49** | Código y datos | Pestaña Code con API estable · hooks y plugins · importar/exportar JSON y CSV · localización. |
+| **50** | 🚀 **Telón Update** | Editor de cinemáticas con línea de tiempo (cámara, diálogo, partículas, audio) y exportación a vídeo. |
+
+</details>
+
+<details>
+<summary><b>📂 Ver Arco 6: Plataformas (Fases 51–53)</b></summary>
+<br>
+
+| # | Fase | Qué trae |
+| :---: | :--- | :--- |
+| **51** | Exportación PC | Windows y Linux en 1–2 clics · instalador · compresión de assets · licencias incluidas. |
+| **52** | Android | SDK y keystore automáticos · controles táctiles · APK y AAB · pruebas en dispositivo. |
+| **53** | Web, macOS e integraciones | Build Web y macOS · paquete base para consolas · Steam e itch.io · guardado en la nube. |
+
+</details>
+
+<details>
+<summary><b>📂 Ver Arco 7: Cierre (Fases 54–55)</b></summary>
+<br>
+
+| # | Fase | Qué trae |
+| :---: | :--- | :--- |
+| **54** | Calidad y beta | Pruebas automáticas · informe de regresión · manual completo · sistema de reportes. |
+| **55** | 🚀 **Maestro Relojero 1.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · lanzamiento oficial 1.0. |
+
+</details>
+
 ---
-## Notas
-- **Estilo Diorama 2.5D:** es una técnica visual propia (pixel art sobre escenarios 3D). No se usan nombres, assets ni iconografía de otros juegos.
-- **Licencia:** las modificaciones y el código original son de Kris'ZtS · ClockGears Studio (ver `LICENSE-CLOCKGEARS.txt`). El código de [Godot Engine](https://godotengine.org) que contiene se mantiene bajo su licencia MIT, con sus avisos originales conservados. Los juegos creados con el motor son de sus creadores, sin regalías ni suscripciones.
+
+## 🛠️ Cómo compilar
+
+<details>
+<summary><b>Ver requisitos y comando de compilación (Windows)</b></summary>
+<br>
+
+Compilar el motor es posible siempre dentro de los términos de la licencia. Necesitas **Python 3.8+**, **SCons** (`pip install scons`) y un compilador de C++ (**MSVC** o **MinGW-w64**):
+
+```bash
+scons platform=windows target=editor arch=x86_64 -j8
+```
+
+</details>
+
+---
+
+## 📜 Licencia
+
+ClockGears Engine cuenta con una **licencia propia** para las modificaciones y el código original de **ClockGears Studio**, y conserva la **licencia MIT** del código base de [Godot Engine](https://godotengine.org).
+
+* ✅ **Permitido sin pedir permiso:** Usar el editor para crear, distribuir, publicar o vender tus juegos (incluyendo el runtime exportado). **Sin regalías, sin pagos y sin suscripciones.** Tus juegos te pertenecen.
+* ⛔ **No permitido sin permiso escrito de Kris'ZtS:** Copiar, redistribuir, vender, sublicenciar o publicar el editor ClockGears Engine, su código fuente o versiones modificadas, en todo o en parte de lo creado por ClockGears Studio.
+* 🧩 **Código de Godot Engine:** Mantiene su licencia MIT y sus avisos de copyright originales (`© 2014-presente Godot Engine contributors`, `© 2007-2014 Juan Linietsky, Ariel Manzur`).
+
+Consulta el texto completo en [`LICENSE-CLOCKGEARS.txt`](./LICENSE-CLOCKGEARS.txt) o desde el editor en **Ayuda → Acerca de → Licencia**.
+
+---
+
+<div align="center">
+
+**Creado por Kris'ZtS · ClockGears Studio (2026)**
+
+[![GitHub](https://img.shields.io/badge/GitHub-ClockGears--Engine-181717?logo=github)](https://github.com/krisztsa/ClockGears-Engine)
+[![YouTube](https://img.shields.io/badge/YouTube-Kris'ZtS-dc2626?logo=youtube&logoColor=white)](https://www.youtube.com/@KrisZtS)
+
+</div>
