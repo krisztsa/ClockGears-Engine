@@ -5584,15 +5584,16 @@ void ClockGearsUiDesignLayer::_rebuild_pager_indicator(ElementEntry &r_entry, fl
 		sb->set_border_color(p_active ? Color(0.96f, 0.74f, 0.32f, 1.0f) : Color(0.45f, 0.48f, 0.56f, 0.55f));
 		sb->set_border_width_all(MAX(1, int(Math::round((p_active ? 2.0f : 1.0f) * p_scale))));
 		sb->set_corner_radius_all(MAX(4, int(Math::round(6.0f * p_scale))));
-		sb->set_content_margin(SIDE_LEFT, 8.0f * p_scale);
-		sb->set_content_margin(SIDE_RIGHT, 8.0f * p_scale);
+		sb->set_content_margin(SIDE_LEFT, 5.0f * p_scale);
+		sb->set_content_margin(SIDE_RIGHT, 5.0f * p_scale);
 		sb->set_content_margin(SIDE_TOP, 3.0f * p_scale);
 		sb->set_content_margin(SIDE_BOTTOM, 3.0f * p_scale);
 		p_b->add_theme_style_override("normal", sb);
 		p_b->add_theme_style_override("hover", sb);
 		p_b->add_theme_style_override("pressed", sb);
 		p_b->add_theme_color_override("font_color", p_active ? Color(1.0f, 0.90f, 0.62f, 1.0f) : Color(0.78f, 0.82f, 0.90f, 0.9f));
-		p_b->add_theme_font_size_override("font_size", MAX(10, int(Math::round(13.0f * p_scale))));
+		int ind_fsz = (r_entry.pager_page_ids.size() >= 5) ? MAX(9, int(Math::round(11.5f * p_scale))) : MAX(10, int(Math::round(13.0f * p_scale)));
+		p_b->add_theme_font_size_override("font_size", ind_fsz);
 	};
 
 	if (im == "arrows") {

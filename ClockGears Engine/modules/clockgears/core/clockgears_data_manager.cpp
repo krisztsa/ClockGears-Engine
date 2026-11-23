@@ -10986,6 +10986,335 @@ Array ClockGearsDataManager::get_builtin_menu_templates() {
 		out.push_back(_cg_make_tpl_meta("battle_classic", String::utf8("Batalla clásico"), "battle", String::utf8("Comandos tácticos, panel del grupo, enemigos y aviso de batalla."), bat_tpl, "battle,battle_party,battle_enemies,battle_notice,battle_submenu,battle_target"));
 	}
 
+	// 15. Inventario por categorías estilo Zelda BotW (construido 100% con componentes genéricos: Paginador + Grid filtrado + Detalle rotatorio)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary bg;
+		bg["type"] = "solid";
+		bg["color"] = "#0f131df5";
+		d["background"] = bg;
+		Dictionary sl;
+		sl["mode"] = "free";
+		d["layout"] = sl;
+		Array els;
+
+		auto push_text = [&](const String &p_id, const String &p_name, const String &p_txt, const String &p_bind, int p_x, int p_y, int p_w, int p_h, int p_fsz, const String &p_col, const String &p_al, int p_layer) {
+			Dictionary t = make_default_ui_element("text", "game_menu_items");
+			t["id"] = p_id;
+			t["name"] = p_name;
+			t["text"] = p_txt;
+			t["anchor"] = "top_left";
+			t["offset_x"] = p_x;
+			t["offset_y"] = p_y;
+			t["width"] = p_w;
+			t["height"] = p_h;
+			t["data_binding"] = p_bind;
+			t["font_size"] = p_fsz;
+			t["font_color"] = p_col;
+			t["align"] = p_al;
+			t["layer_order"] = p_layer;
+			t["show_background"] = false;
+			t["window_style_id"] = "";
+			els.push_back(t);
+		};
+		auto push_frame = [&](const String &p_id, const String &p_name, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+			Dictionary f;
+			f["id"] = p_id;
+			f["name"] = p_name;
+			f["type"] = "frame";
+			f["anchor"] = "top_left";
+			f["offset_x"] = p_x;
+			f["offset_y"] = p_y;
+			f["width"] = p_w;
+			f["height"] = p_h;
+			f["window_style_id"] = "rounded";
+			f["opacity"] = 0.94;
+			f["layer_order"] = p_layer;
+			els.push_back(f);
+		};
+
+		push_text("botw_title", String::utf8("Título"), "Alforja", "none", 24, 16, 240, 38, 24, "#f5bc54ff", "left", 3);
+		push_text("botw_hint", "Controles", String::utf8("Q / E · L1 / R1: Cambiar categoría"), "none", 270, 20, 380, 30, 13, "#a8b8d0ff", "center", 3);
+		push_text("botw_gold", "Oro", "", "gold", 666, 20, 146, 30, 15, "#f5d784ff", "right", 3);
+		Dictionary bback = _cg_make_tpl_btn("botw_btn_back", "Volver", "back", 826, 16, 110, 36, "top_left", "rounded", 8);
+		bback["layer_order"] = 4;
+		els.push_back(bback);
+
+		Dictionary pgr;
+		pgr["id"] = "botw_cat_pager";
+		pgr["name"] = String::utf8("Categorías (Paginador)");
+		pgr["type"] = "pager";
+		pgr["anchor"] = "top_left";
+		pgr["offset_x"] = 20;
+		pgr["offset_y"] = 66;
+		pgr["width"] = 588;
+		pgr["height"] = 456;
+		pgr["layer_order"] = 2;
+		Dictionary pg_cfg = make_default_pager_config();
+		pg_cfg["indicator_mode"] = "tabs";
+		pg_cfg["indicator_pos"] = "top";
+		pg_cfg["indicator_size"] = 42;
+		pg_cfg["transition_type"] = "slide";
+		pg_cfg["transition_duration"] = 0.16;
+		pg_cfg["wrap_around"] = true;
+		pg_cfg["remember_focus"] = true;
+		pg_cfg["remember_scroll"] = true;
+		pgr["pager"] = pg_cfg;
+		els.push_back(pgr);
+
+		static const struct {
+			const char *id;
+			const char *label;
+			const char *filter;
+		} k_cats[6] = {
+			{ "armas", "Armas", "weapon" },
+			{ "escudos", "Escudos", "shield" },
+			{ "armaduras", "Armaduras", "armor" },
+			{ "consumibles", "Consumibles", "consumable" },
+			{ "materiales", "Materiales", "material" },
+			{ "clave", "Clave", "key" },
+		};
+		for (int ci = 0; ci < 6; ci++) {
+			String page_id = vformat("botw_pg_%s", k_cats[ci].id);
+			Dictionary pf;
+			pf["id"] = page_id;
+			pf["name"] = String::utf8(k_cats[ci].label);
+			pf["type"] = "folder";
+			pf["parent_id"] = "botw_cat_pager";
+			pf["role"] = "pager_page";
+			pf["anchor"] = "top_left";
+			pf["offset_x"] = 0;
+			pf["offset_y"] = 0;
+			pf["width"] = 588;
+			pf["height"] = 414;
+			pf["layer_order"] = 3;
+			els.push_back(pf);
+
+			Dictionary grid;
+			grid["id"] = vformat("botw_grid_%s", k_cats[ci].id);
+			grid["name"] = String::utf8("Cuadrícula ") + String::utf8(k_cats[ci].label);
+			grid["type"] = "container";
+			grid["parent_id"] = page_id;
+			grid["anchor"] = "top_left";
+			grid["offset_x"] = 4;
+			grid["offset_y"] = 6;
+			grid["width"] = 580;
+			grid["height"] = 404;
+			grid["layout_mode"] = "grid";
+			grid["layout_columns"] = 4;
+			grid["layout_rows"] = 3;
+			grid["layout_spacing"] = 8;
+			grid["layout_spacing_y"] = 8;
+			grid["cell_padding"] = 6;
+			grid["layout_scroll"] = true;
+			grid["data_source"] = "inventory_all";
+			grid["data_filter_category"] = String(k_cats[ci].filter);
+			grid["data_show_empty"] = true;
+			grid["data_empty_count"] = 12;
+			grid["slot_action"] = "item_use";
+			grid["focus_cursor_mode"] = "theme_border";
+			grid["focus_cursor_color"] = "#f5bc54ff";
+			grid["focus_cursor_width"] = 2;
+			grid["dim_unfocused"] = true;
+			grid["unfocused_opacity"] = 72;
+			grid["focus_next_right"] = "botw_btn_use";
+			grid["layer_order"] = 4;
+			els.push_back(grid);
+		}
+
+		// Panel derecho: visor rotatorio del objeto + descripción + acciones
+		push_frame("botw_prev_frame", "Marco visor", 622, 66, 318, 174, 1);
+		Dictionary piv;
+		piv["id"] = "botw_item_preview";
+		piv["name"] = "Vista previa objeto";
+		piv["type"] = "image";
+		piv["anchor"] = "top_left";
+		piv["offset_x"] = 638;
+		piv["offset_y"] = 80;
+		piv["width"] = 286;
+		piv["height"] = 146;
+		piv["data_binding"] = "item_icon";
+		piv["rotatable"] = true;
+		piv["pixel_art"] = true;
+		piv["scale_percent"] = 100;
+		piv["layer_order"] = 4;
+		els.push_back(piv);
+
+		push_frame("botw_desc_frame", String::utf8("Marco descripción"), 622, 250, 318, 214, 1);
+		push_text("botw_item_name", "Nombre objeto", "", "item_name", 636, 260, 290, 32, 18, "#f5bc54ff", "left", 4);
+		push_text("botw_item_qty", "Cantidad objeto", "", "item_qty", 636, 294, 290, 26, 13, "#b8cce0ff", "left", 4);
+		push_text("botw_item_desc", String::utf8("Descripción objeto"), "", "item_desc", 636, 324, 290, 130, 13, "#eef2faff", "left", 4);
+
+		Dictionary buse = _cg_make_tpl_btn("botw_btn_use", "Usar", "item_use", 622, 476, 152, 44, "top_left", "rounded", 8);
+		buse["layer_order"] = 4;
+		buse["focus_next_right"] = "botw_btn_drop";
+		buse["focus_next_left"] = "botw_cat_pager";
+		els.push_back(buse);
+		Dictionary bdrop = _cg_make_tpl_btn("botw_btn_drop", "Tirar", "item_discard", 788, 476, 152, 44, "top_left", "rounded", 8);
+		bdrop["layer_order"] = 4;
+		bdrop["focus_next_left"] = "botw_btn_use";
+		els.push_back(bdrop);
+
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("botw_inventory_categories", String::utf8("Inventario por categorías"), "rpg",
+				String::utf8("Estilo Zelda BotW: paginador de categorías con Q/E y L1/R1, cuadrículas filtradas y vista previa rotatoria."),
+				d, "game_menu_items,game_menu_equip,custom"));
+	}
+
+	// 16. Rueda rápida con páginas estilo Zelda BotW (Paginador + Ruedas radiales filtradas + Detalle)
+	{
+		Dictionary d;
+		d["custom_enabled"] = true;
+		Dictionary bg;
+		bg["type"] = "solid";
+		bg["color"] = "#0c1018ec";
+		d["background"] = bg;
+		Dictionary sl;
+		sl["mode"] = "free";
+		d["layout"] = sl;
+		Array els;
+
+		auto push_text = [&](const String &p_id, const String &p_name, const String &p_txt, const String &p_bind, int p_x, int p_y, int p_w, int p_h, int p_fsz, const String &p_col, const String &p_al, int p_layer) {
+			Dictionary t = make_default_ui_element("text", "game_menu_items");
+			t["id"] = p_id;
+			t["name"] = p_name;
+			t["text"] = p_txt;
+			t["anchor"] = "top_left";
+			t["offset_x"] = p_x;
+			t["offset_y"] = p_y;
+			t["width"] = p_w;
+			t["height"] = p_h;
+			t["data_binding"] = p_bind;
+			t["font_size"] = p_fsz;
+			t["font_color"] = p_col;
+			t["align"] = p_al;
+			t["layer_order"] = p_layer;
+			t["show_background"] = false;
+			t["window_style_id"] = "";
+			els.push_back(t);
+		};
+		auto push_frame = [&](const String &p_id, const String &p_name, int p_x, int p_y, int p_w, int p_h, int p_layer) {
+			Dictionary f;
+			f["id"] = p_id;
+			f["name"] = p_name;
+			f["type"] = "frame";
+			f["anchor"] = "top_left";
+			f["offset_x"] = p_x;
+			f["offset_y"] = p_y;
+			f["width"] = p_w;
+			f["height"] = p_h;
+			f["window_style_id"] = "rounded";
+			f["opacity"] = 0.94;
+			f["layer_order"] = p_layer;
+			els.push_back(f);
+		};
+
+		push_text("botw_rad_title", String::utf8("Título"), String::utf8("Rueda rápida"), "none", 24, 16, 260, 38, 24, "#f5bc54ff", "left", 3);
+		push_text("botw_rad_hint", "Controles", String::utf8("Q / E · L1 / R1: Cambiar anillo"), "none", 300, 20, 360, 30, 13, "#a8b8d0ff", "center", 3);
+		Dictionary bclose = _cg_make_tpl_btn("botw_rad_close", "Cerrar", "close", 826, 16, 110, 36, "top_left", "rounded", 8);
+		bclose["layer_order"] = 4;
+		els.push_back(bclose);
+
+		Dictionary pgr;
+		pgr["id"] = "botw_rad_pager";
+		pgr["name"] = "Rueda paginada";
+		pgr["type"] = "pager";
+		pgr["anchor"] = "top_left";
+		pgr["offset_x"] = 24;
+		pgr["offset_y"] = 66;
+		pgr["width"] = 560;
+		pgr["height"] = 456;
+		pgr["layer_order"] = 2;
+		Dictionary pg_cfg = make_default_pager_config();
+		pg_cfg["indicator_mode"] = "tabs";
+		pg_cfg["indicator_pos"] = "top";
+		pg_cfg["indicator_size"] = 42;
+		pg_cfg["transition_type"] = "scale";
+		pg_cfg["transition_duration"] = 0.16;
+		pg_cfg["wrap_around"] = true;
+		pgr["pager"] = pg_cfg;
+		els.push_back(pgr);
+
+		static const struct {
+			const char *id;
+			const char *label;
+			const char *filter;
+		} k_rcats[3] = {
+			{ "armas", "Armas", "weapon" },
+			{ "escudos", "Escudos", "shield" },
+			{ "consumibles", "Consumibles", "consumable" },
+		};
+		for (int ci = 0; ci < 3; ci++) {
+			String page_id = vformat("botw_rpg_%s", k_rcats[ci].id);
+			Dictionary pf;
+			pf["id"] = page_id;
+			pf["name"] = String::utf8(k_rcats[ci].label);
+			pf["type"] = "folder";
+			pf["parent_id"] = "botw_rad_pager";
+			pf["role"] = "pager_page";
+			pf["anchor"] = "top_left";
+			pf["offset_x"] = 0;
+			pf["offset_y"] = 0;
+			pf["width"] = 560;
+			pf["height"] = 414;
+			pf["layer_order"] = 3;
+			els.push_back(pf);
+
+			Dictionary rad;
+			rad["id"] = vformat("botw_wheel_%s", k_rcats[ci].id);
+			rad["name"] = "Rueda " + String::utf8(k_rcats[ci].label);
+			rad["type"] = "radial";
+			rad["parent_id"] = page_id;
+			rad["anchor"] = "top_left";
+			rad["offset_x"] = 0;
+			rad["offset_y"] = 0;
+			rad["width"] = 560;
+			rad["height"] = 414;
+			rad["data_source"] = "inventory_all";
+			rad["data_filter_category"] = String(k_rcats[ci].filter);
+			rad["data_show_empty"] = true;
+			rad["data_empty_count"] = 6;
+			rad["slot_action"] = "item_use";
+			rad["focus_cursor_mode"] = "ring";
+			rad["layer_order"] = 4;
+			Dictionary rlay;
+			rlay["mode"] = "radial";
+			rlay["radial_radius"] = 124;
+			rlay["radial_slot_size"] = 58;
+			rlay["radial_slot_count"] = 6;
+			rlay["radial_selected_scale"] = 1.25;
+			rlay["radial_show_center_info"] = true;
+			rad["layout"] = rlay;
+			els.push_back(rad);
+		}
+
+		push_frame("botw_rad_det_frame", "Marco detalle", 604, 66, 336, 456, 1);
+		Dictionary rpiv;
+		rpiv["id"] = "botw_rad_item_icon";
+		rpiv["name"] = "Icono objeto";
+		rpiv["type"] = "image";
+		rpiv["anchor"] = "top_left";
+		rpiv["offset_x"] = 628;
+		rpiv["offset_y"] = 84;
+		rpiv["width"] = 288;
+		rpiv["height"] = 150;
+		rpiv["data_binding"] = "item_icon";
+		rpiv["rotatable"] = true;
+		rpiv["pixel_art"] = true;
+		rpiv["layer_order"] = 4;
+		els.push_back(rpiv);
+
+		push_text("botw_rad_item_name", "Nombre", "", "item_name", 622, 252, 300, 32, 18, "#f5bc54ff", "left", 4);
+		push_text("botw_rad_item_qty", "Cantidad", "", "item_qty", 622, 288, 300, 26, 13, "#b8cce0ff", "left", 4);
+		push_text("botw_rad_item_desc", String::utf8("Descripción"), "", "item_desc", 622, 322, 300, 178, 13, "#eef2faff", "left", 4);
+
+		d["elements"] = els;
+		out.push_back(_cg_make_tpl_meta("botw_radial_paged", String::utf8("Rueda rápida con páginas"), "radial",
+				String::utf8("Rueda radial rápida organizada en páginas de Armas, Escudos y Consumibles con Q/E y L1/R1."),
+				d, "game_menu_items,game_menu_equip,custom"));
+	}
+
 	return out;
 }
 
@@ -11054,6 +11383,28 @@ Dictionary ClockGearsDataManager::adapt_ui_template_design_for_screen(const Dict
 	String tid = String(p_tpl.get("id", "")).strip_edges().to_lower();
 	Dictionary design = Dictionary(p_tpl.get("design", Dictionary())).duplicate(true);
 	if (sid.is_empty() || sid == "game_menu_main" || sid == "custom") {
+		return design;
+	}
+	if (tid == "botw_inventory_categories" || tid == "botw_radial_paged") {
+		if (sid == "game_menu_equip" && design.has("elements") && design["elements"].get_type() == Variant::ARRAY) {
+			Array els = Array(design["elements"]).duplicate(true);
+			for (int i = 0; i < els.size(); i++) {
+				if (els[i].get_type() != Variant::DICTIONARY) continue;
+				Dictionary el = Dictionary(els[i]).duplicate(true);
+				String et = String(el.get("type", "")).to_lower();
+				if (et == "container" || et == "radial") {
+					el["slot_action"] = "equip_apply";
+				} else if (et == "button" && String(el.get("action", "")) == "item_use") {
+					el["text"] = "Equipar";
+					el["action"] = "equip_apply";
+				} else if (et == "button" && String(el.get("action", "")) == "item_discard") {
+					el["text"] = "Desequipar";
+					el["action"] = "equip_clear";
+				}
+				els[i] = el;
+			}
+			design["elements"] = els;
+		}
 		return design;
 	}
 
