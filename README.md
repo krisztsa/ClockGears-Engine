@@ -13,7 +13,7 @@
 
 <br>
 
-[📥 Descargar](#-descarga) • [✨ Qué incluye](#-qué-incluye) • [🗺️ Hoja de Ruta](#-hoja-de-ruta) • [🛠️ Compilar](#️-cómo-compilar) • [📜 Licencia](#-licencia)
+[📥 Descargar](#-descarga) • [🎯 Propósito](#-por-qué-existe-clockgears-engine) • [✨ Qué incluye](#-qué-incluye) • [🗺️ Hoja de Ruta](#-hoja-de-ruta) • [🛠️ Compilar](#️-cómo-compilar) • [📜 Licencia](#-licencia)
 
 </div>
 
@@ -27,6 +27,14 @@
 **ClockGears Engine** es un motor 2D para RPG por rejillas con un editor visual inspirado en RPG Maker MZ, construido en **C++** modificando directamente el código fuente de Godot Engine. Su objetivo es que puedas crear un RPG completo sin programar sistemas desde cero y sin pagar: mapas, eventos, combates, base de datos, animaciones y pruebas de juego integrados en un solo ejecutable.
 
 * **Estado actual (`Alpha 0.0.4`):** Ya permite crear RPG y ARPG sencillos de principio a fin (mapas, eventos, personajes, combates, pruebas rápidas con `F5` y exportación). Al ser una versión Alpha, conviene guardar copias de seguridad de tus proyectos.
+
+## 🎯 ¿Por qué existe ClockGears Engine?
+
+Ante todo, **ClockGears Engine es una herramienta hecha por y para mí (Kris'ZtS)**. Nace de una necesidad muy concreta como desarrollador independiente: tener **mi motor definitivo y principal** para construir todos mis futuros proyectos bajo ClockGears Studio sin depender de licencias, suscripciones ni herramientas ajenas que me obliguen a trabajar a contracorriente.
+
+Cada fase, cada editor visual y cada sistema que se integra en el motor está pensado para **agilizar al máximo la creación de juegos**. En lugar de perder meses reprogramando desde cero un sistema de mapas, eventos, inventarios, combates o interfaces cada vez que empiezo un proyecto nuevo, ClockGears Engine concentra todo ese trabajo en una sola base nativa en C++ hecha a medida de mi flujo de trabajo: la rapidez y comodidad de un editor visual por rejillas, respaldada por el rendimiento y la flexibilidad del código fuente de Godot.
+
+El motivo por el que este proyecto es público y completamente gratuito es simple: si el motor que estoy construyendo para hacer mis propios videojuegos también puede servirle a otros creadores para dar vida a sus RPG o ARPG sin pagar un centavo ni ceder regalías, mucho mejor. ClockGears Engine evoluciona al ritmo de las necesidades reales de desarrollo, y su meta a largo plazo es consolidarse como un entorno completo, sólido y autónomo capaz de llevar un juego desde la primera idea hasta su lanzamiento final.
 
 ---
 
@@ -80,11 +88,11 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 | **5** | Base de datos ✅ | Actores, clases, habilidades, objetos, equipo, enemigos, tropas y estados · importar/exportar assets y búsqueda. |
 | **6** | Tilesets y colisiones ✅ | 9 ranuras (`A1–A5`, `B–E`) · máscara `○` / `×` / `★` · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7. |
 | **7** | Sistema narrativo ✅ | Ventana de mensajes · códigos de escape · retratos con expresiones · historial · modos AUTO y SALTAR · vista previa en vivo. |
-| **8** | 🚀 Combate por turnos, iconos y animaciones ✅ | Combate por turnos con AGI, 10 elementos fijos y panel `F3` · editor de animaciones por ranuras · editor de tropas 16:9 con escala x1–x6 y prueba directa · nueva Base de Datos en dos columnas · iconos pixel art hechos a mano. |
+| **8** | Combate por turnos, iconos y animaciones ✅ | Combate por turnos con AGI, 10 elementos fijos y panel `F3` · editor de animaciones por ranuras · editor de tropas 16:9 con escala x1–x6 y prueba directa · nueva Base de Datos en dos columnas · iconos pixel art hechos a mano. |
 | **9A** | Combate en tiempo real (ARPG) ✅ | Modo Por turnos / ARPG por proyecto o mapa · 4/8 direcciones · animaciones por acción · ratón y teclado · esquiva, bloqueo e invulnerabilidad · editor visual de hitboxes/hurtboxes por frame · IA con búsqueda de ruta A* y zonas de detección · equipo ARPG por capas · herramientas (hacha, pico, pala, azada) · habilidades físicas con recurso propio · depuración `F3`. |
-| **9B** | 🚀 Menús del juego y menú principal ✅ | Pantalla de título, opciones, guardado/carga, créditos y Game Over personalizables · estilos de ventana (9-patch, bordes, opacidad) · HUD interactivo y menús ilimitados (listas, cuadrículas, carrusel, rueda radial) · editor visual WYSIWYG con capas, carpetas, acciones tipo eventos, zoom manual y plantillas · capas con nombre en mapas · temas Dark/Latón con estilo Neón Cobre · nuevo icono, versión `Alpha-0.0.4`, pantalla de carga y Administrador de proyectos · soporte UTF-8 y pantallas 16:9 / 21:9. |
-| **10** | 🚀 Magic Update ✅ | Hechizos modulares con 10 elementos y 8 estados · sistema de canalizadores (Grimorios por elemento/estado con desbloqueo por nivel, Báculos universales y objetos canalizadores) · barra rápida 1–9 en ARPG y comando Grimorio en turnos · sistema de prefabs de eventos · generador de estructuras con lógica y UI propia · buscador de eventos por nombre. |
-| **11** | 🚀 Exportación, inputs y Port Nativo a Android 🔧 | Exportación a Windows, Linux, Web y Android (APK/AAB) con presets · **Port Nativo del editor CGE a Android** · reestructuración visual de paneles heredados de Godot · editor de inputs (teclado, ratón, mando y táctil) · apartado Android System para configurar controles táctiles con sprites propios. |
+| **9B** | Menús del juego y menú principal 🔧 | Pantalla de título, opciones, guardado/carga, créditos y Game Over personalizables · estilos de ventana (9-patch, bordes, opacidad) · HUD interactivo y menús ilimitados (listas, cuadrículas, carrusel, rueda radial) · editor visual WYSIWYG con capas, carpetas, acciones tipo eventos, zoom manual y plantillas · capas con nombre en mapas · temas Dark/Latón con estilo Neón Cobre · nuevo icono, versión `Alpha-0.0.4`, pantalla de carga y Administrador de proyectos · soporte UTF-8 y pantallas 16:9 / 21:9. |
+| **10** | Magic Update ⏳ | Hechizos modulares con 10 elementos y 8 estados · sistema de canalizadores (Grimorios por elemento/estado con desbloqueo por nivel, Báculos universales y objetos canalizadores) · barra rápida 1–9 en ARPG y comando Grimorio en turnos · sistema de prefabs de eventos · generador de estructuras con lógica y UI propia · buscador de eventos por nombre. |
+| **11** | Exportación, inputs y Port Nativo a Android ⏳ | Exportación a Windows, Linux, Web y Android (APK/AAB) con presets · **Port Nativo del editor CGE a Android** · reestructuración visual de paneles heredados de Godot · editor de inputs (teclado, ratón, mando y táctil) · apartado Android System para configurar controles táctiles con sprites propios. |
 
 </details>
 
