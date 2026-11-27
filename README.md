@@ -8,12 +8,13 @@
 [![Descargas](https://img.shields.io/github/downloads/krisztsa/ClockGears-Engine/total?label=Descargas&color=b45309)](https://github.com/krisztsa/ClockGears-Engine/releases)
 [![Precio](https://img.shields.io/badge/Precio-100%25%20Gratuito-16a34a)](https://github.com/krisztsa/ClockGears-Engine/releases)
 [![Base](https://img.shields.io/badge/Base-C%2B%2B%20%2F%20Godot%20Fork-478cbf)](https://godotengine.org)
-[![Progreso](https://img.shields.io/badge/Hoja%20de%20Ruta-Fase%209B%20%2F%2055-c2410c)](#-hoja-de-ruta)
+[![Meta 1.0](https://img.shields.io/badge/Meta%201.0-v1.0--2D--Master%20(Arco%202)-ea580c)](#-la-meta-v10-2d-master)
+[![Progreso](https://img.shields.io/badge/Progreso-Fase%209B%20%2F%2055-c2410c)](#-hoja-de-ruta)
 [![YouTube](https://img.shields.io/badge/YouTube-@KrisZtS-dc2626?logo=youtube&logoColor=white)](https://www.youtube.com/@KrisZtS)
 
 <br>
 
-[📥 Descargar](#-descarga) • [🎯 Propósito](#-por-qué-existe-clockgears-engine) • [✨ Qué incluye](#-qué-incluye) • [🗺️ Hoja de Ruta](#-hoja-de-ruta) • [🛠️ Compilar](#️-cómo-compilar) • [📜 Licencia](#-licencia)
+[📥 Descargar](#-descarga) • [🎯 Propósito y v1.0](#-por-qué-existe-clockgears-engine) • [✨ Qué incluye](#-qué-incluye) • [🗺️ Hoja de Ruta](#-hoja-de-ruta) • [🛠️ Compilar](#️-cómo-compilar) • [📜 Licencia](#-licencia)
 
 </div>
 
@@ -24,17 +25,32 @@
 
 ## 📖 ¿Qué es ClockGears Engine?
 
-**ClockGears Engine** es un motor 2D para RPG por rejillas con un editor visual inspirado en RPG Maker MZ, construido en **C++** modificando directamente el código fuente de Godot Engine. Su objetivo es que puedas crear un RPG completo sin programar sistemas desde cero y sin pagar: mapas, eventos, combates, base de datos, animaciones y pruebas de juego integrados en un solo ejecutable.
+**ClockGears Engine** es un motor de videojuegos 2D especializado en RPG y Action RPG por rejillas con vista cenital (*top-down*). Está construido en **C++** modificando directamente el código fuente de Godot Engine, combinando la inmediatez de un editor visual clásico con el rendimiento nativo de un motor moderno.
 
-* **Estado actual (`Alpha 0.0.4`):** Ya permite crear RPG y ARPG sencillos de principio a fin (mapas, eventos, personajes, combates, pruebas rápidas con `F5` y exportación). Al ser una versión Alpha, conviene guardar copias de seguridad de tus proyectos.
+Su objetivo es que puedas diseñar y terminar un videojuego completo sin programar sistemas desde cero y sin pagar: mapas, eventos, combates por turnos y en tiempo real, base de datos, animaciones, menús y pruebas instantáneas vienen integrados de serie en un único programa.
+
+* **Estado actual (`Alpha 0.0.3`):** Ya permite crear RPG y ARPG sencillos de principio a fin (mapas, eventos, personajes, combates, pruebas rápidas con `F5` y exportación). Al ser una versión Alpha, conviene guardar copias de seguridad de tus proyectos.
+
+---
 
 ## 🎯 ¿Por qué existe ClockGears Engine?
 
-Ante todo, **ClockGears Engine es una herramienta hecha por y para mí (Kris'ZtS)**. Nace de una necesidad muy concreta como desarrollador independiente: tener **mi motor definitivo y principal** para construir todos mis futuros proyectos bajo ClockGears Studio sin depender de licencias, suscripciones ni herramientas ajenas que me obliguen a trabajar a contracorriente.
+Ante todo, **ClockGears Engine es una herramienta hecha por y para mí (Kris'ZtS)**. Nace de una necesidad muy concreta como desarrollador independiente: construir **mi motor definitivo y principal** para desarrollar todos mis futuros juegos bajo ClockGears Studio sin depender de licencias costosas, suscripciones ni herramientas ajenas que me obliguen a trabajar a contracorriente.
 
-Cada fase, cada editor visual y cada sistema que se integra en el motor está pensado para **agilizar al máximo la creación de juegos**. En lugar de perder meses reprogramando desde cero un sistema de mapas, eventos, inventarios, combates o interfaces cada vez que empiezo un proyecto nuevo, ClockGears Engine concentra todo ese trabajo en una sola base nativa en C++ hecha a medida de mi flujo de trabajo: la rapidez y comodidad de un editor visual por rejillas, respaldada por el rendimiento y la flexibilidad del código fuente de Godot.
+Durante años, cualquiera que quisiera crear un RPG 2D en pixel art se topaba con el mismo muro: herramientas tradicionales atrapadas en arquitecturas lentas de navegador, limitadas de fábrica, y que te obligaban a buscar, comprar y parchar decenas de *plugins* de terceros solo para conseguir funciones que deberían venir integradas desde el primer día (como un combate en tiempo real decente, una interfaz personalizable sin escribir código, resoluciones panorámicas reales o un rendimiento nativo sin tirones).
 
-El motivo por el que este proyecto es público y completamente gratuito es simple: si el motor que estoy construyendo para hacer mis propios videojuegos también puede servirle a otros creadores para dar vida a sus RPG o ARPG sin pagar un centavo ni ceder regalías, mucho mejor. ClockGears Engine evoluciona al ritmo de las necesidades reales de desarrollo, y su meta a largo plazo es consolidarse como un entorno completo, sólido y autónomo capaz de llevar un juego desde la primera idea hasta su lanzamiento final.
+**ClockGears Engine existe para acabar con esa fricción.** En lugar de perder meses reprogramando sistemas básicos o peleando con parches incompatibles cada vez que empiezo un proyecto nuevo, este motor concentra todo ese trabajo en una sola base nativa en C++ hecha a medida de mi flujo de trabajo.
+
+El motivo por el que el proyecto es público y completamente gratuito es simple: si la herramienta que estoy forjando para dar vida a mis propios juegos también puede servirle a otros creadores para construir los suyos sin pagar un centavo ni ceder regalías, mucho mejor.
+
+### 🏆 La meta: `v1.0-2D-Master`
+
+La **versión 1.0** de ClockGears Engine no espera al final de las 55 fases: **se alcanza al completar el Arco 2 (Fase 25)** y llevará el nombre de **`v1.0-2D-Master`**.
+
+El propósito de los dos primeros arcos es muy claro: **alcanzar la cúspide absoluta del desarrollo 2D *top-down* en pixel art**. Para cuando el Arco 2 concluya, el motor será una herramienta tan completa, pulida y autosuficiente de serie —sin necesidad de depender de complementos externos— que permitirá crear desde una aventura clásica minimalista de exploración pura hasta un RPG moderno de altísimo nivel visual y mecánico.
+
+* **Una obra maestra preservable de por vida:** `v1.0-2D-Master` está diseñada para ser una rama sólida, estable y lista para producción comercial. A partir del Arco 3 el motor se adentra en terrenos mucho más experimentales y complejos (como el renderizado 2.5D y los escenarios tridimensionales). Asegurar primero la perfección del 2D garantiza que, pase lo que pase en el futuro con los experimentos más ambiciosos, siempre existirá una versión 1.0 impecable que podrá guardarse y usarse durante años para terminar juegos sin miedo a que nada se rompa.
+* **2D puro, pero con tecnología moderna:** Que `v1.0-2D-Master` sea la cúspide del 2D no significa renunciar a los acabados visuales actuales. Incluso sin dar el salto al 2.5D, la visión del motor contempla que los juegos puramente 2D puedan aprovechar efectos de **post-procesado** y tecnologías de escalado de código abierto como **FSR**, logrando que el pixel art brille con nitidez y fluidez en cualquier pantalla moderna.
 
 ---
 
@@ -50,9 +66,9 @@ No necesitas instalar nada más. Descarga el ejecutable compilado directamente d
 
 | Módulo | Funciones principales |
 | :--- | :--- |
-| 🗺️ **Mapas y editor** | Flujo estilo RPG Maker MZ, árbol de mapas, capas con autotiles, pasabilidad (`○` / `×` / `★`), punto de inicio y prueba rápida con `F5`. |
-| 🎬 **Eventos sin código** | Múltiples páginas por evento, interruptores, variables, rutas de movimiento, diálogos, elecciones, teletransportes y efectos de pantalla (imágenes, tintes y temblor). |
-| ⚔️ **Combate** | **Por turnos** (AGI, 10 elementos, estados, EXP/oro/drops, editor de tropas 16:9 y panel `F3`) y **ARPG en tiempo real** (4/8 direcciones, hitboxes por frame, esquiva, bloqueo, IA con A* y equipo por capas). |
+| 🗺️ **Mapas y editor** | Flujo de trabajo clásico por rejillas (`16`, `32` y `48 px`) con colocación libre, árbol de mapas, capas con autotiles, pasabilidad (`○` / `×` / `★`), punto de inicio y prueba rápida con `F5`. |
+| 🎬 **Eventos sin código** | Múltiples páginas por evento, interruptores, variables, rutas de movimiento, diálogos con retratos, elecciones, teletransportes y efectos de pantalla (imágenes, tintes y temblor). |
+| ⚔️ **Combate dual nativo** | **Por turnos** (AGI, 10 elementos, estados, EXP/oro/drops, editor de tropas 16:9 y panel `F3`) y **ARPG en tiempo real** (4/8 direcciones, hitboxes por frame, esquiva, bloqueo, IA con A* y equipo por capas), conviviendo en el mismo proyecto. |
 | 🗃️ **Base de datos** | Actores, clases, habilidades, objetos, equipo, enemigos, tropas, estados, animaciones, tilesets, flora, fauna y eventos comunes en ventana redimensionable por capítulos. |
 | 🎞️ **Animaciones** | Editor por ranuras (`Idle`, `Ataque`, `Daño`, `Muerte`, `Buff` y lanzamientos por elemento) con corte en celdas, FPS, bucle, orden aleatorio y prueba en vivo. |
 | 🎨 **Identidad y rendimiento** | Iconos pixel art dibujados a mano con escalado entero, tema oscuro redondeado y ejecución nativa en **C++** compatible con OpenGL 3 / Vulkan. |
@@ -61,19 +77,21 @@ No necesitas instalar nada más. Descarga el ejecutable compilado directamente d
 
 ## 🗺️ Hoja de Ruta
 
-El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 1.0 (sujeta a cambios y ajustes sobre la marcha).
+El desarrollo avanza en **55 fases** divididas en dos grandes eras: la **Era 2D Master (Arcos 1–2)** que culmina en **`v1.0-2D-Master`**, y la **Era Post-1.0 (Arcos 3–7)** dedicada a la expansión visual 2.5D, audio avanzado, cinemáticas y ecosistema completo.
 
-**Leyenda:** ✅ Hecha · 🔧 En curso · ⏳ Planeada · 🚀 **Update grande**
+**Leyenda:** ✅ Hecha · 🔧 En curso · ⏳ Planeada · 🚀 **Update grande** · 🏆 **Hito Mayor**
 
 | Arco | Fases | Enfoque | Estado |
 | :--- | :---: | :--- | :---: |
-| **Arco 1** | 1 – 11 | Núcleo del motor, ARPG, Menús, Magia y Exportación | 🔧 En curso (`9B`) |
-| **Arco 2** | 12 – 25 | RPG completo (Combate avanzado, Misiones, Clima y Ciclo día/noche) | ⏳ Planeado |
-| **Arco 3** | 26 – 40 | Motor visual (Iluminación, Partículas, Diorama 2.5D, HDR, FSR/DLSS) | ⏳ Planeado |
-| **Arco 4** | 41 – 47 | Interfaz, personalización del editor y limpieza visual total | ⏳ Planeado |
-| **Arco 5** | 48 – 50 | Audio avanzado, API de código y editor de cinemáticas | ⏳ Planeado |
-| **Arco 6** | 51 – 53 | Exportación dedicada a PC, Android, Web, macOS y consolas | ⏳ Planeado |
-| **Arco 7** | 54 – 55 | Calidad, beta y lanzamiento **Maestro Relojero 1.0** | ⏳ Planeado |
+| **Arco 1** | 1 – 11 | Núcleo del motor, ARPG, Menús WYSIWYG, Magia y Exportación | 🔧 En curso (`9B`) |
+| **Arco 2** | 12 – 25 | 🏆 **`v1.0-2D-Master`** — Cúspide del motor 2D (Combate, Misiones, Clima, Ciclo día/noche) | ⏳ Planeado |
+| **Arco 3** | 26 – 40 | *Post-1.0:* Motor visual avanzado (Iluminación, Partículas, Post-proceso, Diorama 2.5D, HDR, FSR/DLSS) | ⏳ Planeado |
+| **Arco 4** | 41 – 47 | *Post-1.0:* Interfaz avanzada, personalización del editor y limpieza visual total | ⏳ Planeado |
+| **Arco 5** | 48 – 50 | *Post-1.0:* Audio avanzado, API de código estable y editor de cinemáticas | ⏳ Planeado |
+| **Arco 6** | 51 – 53 | *Post-1.0:* Exportación dedicada a PC, Android, Web, macOS e integraciones | ⏳ Planeado |
+| **Arco 7** | 54 – 55 | *Post-1.0:* Calidad, beta y lanzamiento **v2.0 Maestro Relojero** | ⏳ Planeado |
+
+### 🥇 Era 1.0: Camino a `v1.0-2D-Master`
 
 <details>
 <summary><b>📂 Ver Arco 1: Núcleo del motor (Fases 1–11) — 🔧 En curso</b></summary>
@@ -82,9 +100,9 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
 | **1** | Base y rebranding ✅ | Rebranding completo a ClockGears Engine · créditos de Kris'ZtS · icono propio · compilación aislada en un solo `.exe`. |
-| **2** | Interfaz MZ y tema Dark ✅ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos pixel art · selectores y validación en vivo. |
+| **2** | Interfaz clásica y tema Dark ✅ | Barra superior de accesos rápidos · tema ClockGears Dark · iconos pixel art · selectores y validación en vivo. |
 | **3** | Mapas y rejilla ✅ | Rejillas de 16, 32 y 48 · colocación libre · importar imágenes · árbol de mapas · deshacer/rehacer y herramientas de dibujo. |
-| **4** | Eventos sin código ✅ | Editor estilo MZ · páginas, condiciones y disparadores · interruptores y variables · pestaña Code opcional. |
+| **4** | Eventos sin código ✅ | Editor visual de eventos · páginas, condiciones y disparadores · interruptores y variables · pestaña Code opcional. |
 | **5** | Base de datos ✅ | Actores, clases, habilidades, objetos, equipo, enemigos, tropas y estados · importar/exportar assets y búsqueda. |
 | **6** | Tilesets y colisiones ✅ | 9 ranuras (`A1–A5`, `B–E`) · máscara `○` / `×` / `★` · 4 direcciones, arbusto, mostrador, escalera, daño y terreno 0–7. |
 | **7** | Sistema narrativo ✅ | Ventana de mensajes · códigos de escape · retratos con expresiones · historial · modos AUTO y SALTAR · vista previa en vivo. |
@@ -97,7 +115,7 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 2: RPG completo (Fases 12–25)</b></summary>
+<summary><b>📂 Ver Arco 2: RPG completo y lanzamiento 🏆 v1.0-2D-Master (Fases 12–25)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
@@ -115,12 +133,14 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 | **22** | Sistema de juego | Menú principal editable · formación y equipo · guardado con captura · dificultad · créditos. |
 | **23** | Misiones y diario | Misiones con objetivos · diario y bestiario · enciclopedia · marcadores en mapa · recompensas. |
 | **24** | Automatización | Presets de movimiento (2/4/6/8 dir.) · puertas, cofres y teletransportes listos · NPC con ruta · plantillas. |
-| **25** | 🚀 **Crónicas Update** | Ciclo día/noche · clima por mapa · calendario y tiempo · horarios de NPC · afinidad · logros. |
+| **25** | 🏆 **Crónicas Update (`v1.0-2D-Master`)** | Ciclo día/noche · clima por mapa · calendario y tiempo · horarios de NPC · afinidad · logros · **cierre y congelación estable de la versión 1.0 definitiva para 2D**. |
 
 </details>
 
+### 🌌 Era Post-1.0: Expansión Visual 2.5D y Evolución (Fases 26–55)
+
 <details>
-<summary><b>📂 Ver Arco 3: Motor visual (Fases 26–40)</b></summary>
+<summary><b>📂 Ver Arco 3: Motor visual, Post-proceso, FSR y Diorama 2.5D (Fases 26–40)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
@@ -129,15 +149,15 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 | **27** | Partículas I | Editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo. |
 | **28** | Partículas II | Comando "Mostrar partículas" · partículas en combate · colisión con tiles · estelas y sub-emisores. |
 | **29** | 🚀 **Péndulo Update** | Biblioteca de efectos · lluvia, nieve y niebla · hechizos con partículas y luz · shaders listos · editor unificado. |
-| **30** | Post-proceso | Bloom · viñeta · aberración cromática · grano y pixelado · LUTs de color · pila de efectos por mapa. |
+| **30** | Post-proceso | Bloom · viñeta · aberración cromática · grano y pixelado · LUTs de color · pila de efectos por mapa (compatible con 2D puro). |
 | **31** | Cámara 2.5D | Perspectiva inclinada · rotación en pasos de 90° · sprites billboard · zoom y seguimiento suave. |
 | **32** | Mapas 2.5D | Tiles con altura · escaleras y desniveles · techos ocultables · objetos 3D low poly (`glTF`) · parallax. |
 | **33** | Luz y sombras | Sombras proyectadas · luces dinámicas y emisivos · reflejos en agua · luz coherente día/noche · lightmaps. |
 | **34** | Profundidad de campo | DoF y tilt-shift · bokeh · enfoque por eventos · cámara cinematográfica · desenfoque en diálogos. |
 | **35** | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla, presets y mapa demo. |
 | **36** | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · calibración en juego. |
-| **37** | FSR | Escalado FSR · resolución interna, calidad y nitidez ajustables. |
-| **38** | XeSS | Intel XeSS con detección de hardware y ajustes en menú. |
+| **37** | FSR | Escalado abierto FSR · resolución interna, calidad y nitidez ajustables (aprovechable también en proyectos 2D). |
+| **38** | DLSS y XeSS | Integración NVIDIA DLSS e Intel XeSS con detección de hardware y ajustes en menú. |
 | **39** | Rendimiento | Perfilador · culling y batching · atlas de texturas · presets Bajo/Medio/Alto · límite de FPS y VSync. |
 | **40** | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura/grabación · paquete final de shaders. |
 
@@ -184,13 +204,13 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 7: Cierre (Fases 54–55)</b></summary>
+<summary><b>📂 Ver Arco 7: Cierre Post-1.0 (Fases 54–55)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
 | **54** | Calidad y beta | Pruebas automáticas · informe de regresión · manual completo · sistema de reportes. |
-| **55** | 🚀 **Maestro Relojero 1.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · lanzamiento oficial 1.0. |
+| **55** | 🏆 **Maestro Relojero 2.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · lanzamiento oficial de la era completa. |
 
 </details>
 
