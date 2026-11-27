@@ -137,7 +137,7 @@ El desarrollo avanza en **55 fases** divididas en **7 arcos** hacia la versión 
 | **35** | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla, presets y mapa demo. |
 | **36** | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · calibración en juego. |
 | **37** | FSR | Escalado FSR · resolución interna, calidad y nitidez ajustables. |
-| **38** | DLSS y XeSS | Integración NVIDIA DLSS e Intel XeSS con detección de hardware y ajustes en menú. |
+| **38** | XeSS | Intel XeSS con detección de hardware y ajustes en menú. |
 | **39** | Rendimiento | Perfilador · culling y batching · atlas de texturas · presets Bajo/Medio/Alto · límite de FPS y VSync. |
 | **40** | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura/grabación · paquete final de shaders. |
 
