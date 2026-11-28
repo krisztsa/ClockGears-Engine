@@ -9,7 +9,7 @@
 [![Precio](https://img.shields.io/badge/Precio-100%25%20Gratuito-16a34a)](https://github.com/krisztsa/ClockGears-Engine/releases)
 [![Base](https://img.shields.io/badge/Base-C%2B%2B%20%2F%20Godot%20Fork-478cbf)](https://godotengine.org)
 [![Meta 1.0](https://img.shields.io/badge/Meta%201.0-v1.0--2D--Master%20(Arco%202)-ea580c)](#-la-meta-v10-2d-master)
-[![Progreso](https://img.shields.io/badge/Progreso-Fase%209B%20%2F%2055-c2410c)](#-hoja-de-ruta)
+[![Progreso](https://img.shields.io/badge/Progreso-Fase%209B%20%2F%2050-c2410c)](#-hoja-de-ruta)
 [![YouTube](https://img.shields.io/badge/YouTube-@KrisZtS-dc2626?logo=youtube&logoColor=white)](https://www.youtube.com/@KrisZtS)
 
 <br>
@@ -47,7 +47,7 @@ El motivo por el que este motor es público y **100% gratuito, sin regalías ni 
 
 ### 🏆 La meta: `v1.0-2D-Master`
 
-La **versión 1.0** de ClockGears Engine no espera al final de las 55 fases: **se alcanza al completar el Arco 2 (Fase 25)** y llevará el nombre de **`v1.0-2D-Master`**.
+La **versión 1.0** de ClockGears Engine no espera al final de las 50 fases: **se alcanza al completar el Arco 2 (Fase 20)** y llevará el nombre de **`v1.0-2D-Master`**.
 
 El propósito de los dos primeros arcos es ambicioso y cristalino: **alcanzar la cúspide absoluta del desarrollo 2D *top-down* en pixel art**. Cuando el Arco 2 concluya, el motor será una herramienta tan completa, estable y autosuficiente de serie que permitirá crear desde una aventura clásica minimalista de exploración pura hasta un RPG moderno de altísimo nivel visual y mecánico.
 
@@ -79,7 +79,7 @@ No necesitas instalar nada más. Descarga el ejecutable compilado directamente d
 
 ## 🗺️ Hoja de Ruta
 
-El desarrollo avanza en **55 fases** divididas en dos grandes eras: la **Era 2D Master (Arcos 1–2)** que culmina en **`v1.0-2D-Master`**, y la **Era Post-1.0 (Arcos 3–7)** dedicada a la expansión visual 2.5D, audio avanzado, cinemáticas y ecosistema completo.
+El desarrollo avanza en **50 fases** divididas en dos grandes eras: la **Era 2D Master (Arcos 1–2)** que culmina en **`v1.0-2D-Master`**, y la **Era Post-1.0 (Arcos 3–7)** dedicada a la expansión visual 2.5D, audio avanzado, cinemáticas y ecosistema completo.
 
 > [!NOTE]
 > **Hoja de ruta viva:** El orden de las fases es orientativo. Cualquier función de los Arcos 3–7 que mejore el flujo de trabajo 2D (como post-procesado, FSR o mejoras del editor) puede **adelantarse e incluirse antes de lo previsto en `v1.0-2D-Master`**.
@@ -89,12 +89,12 @@ El desarrollo avanza en **55 fases** divididas en dos grandes eras: la **Era 2D 
 | Arco | Fases | Enfoque | Estado |
 | :--- | :---: | :--- | :---: |
 | **Arco 1** | 1 – 11 | Núcleo del motor, ARPG, Menús WYSIWYG, Magia y Exportación | 🔧 En curso (`9B`) |
-| **Arco 2** | 12 – 25 | 🏆 **`v1.0-2D-Master`** — Cúspide del motor 2D (Combate, Misiones, Clima, Ciclo día/noche) | ⏳ Planeado |
-| **Arco 3** | 26 – 40 | *Post-1.0:* Motor visual avanzado (Iluminación, Partículas, Post-proceso, Diorama 2.5D, HDR, FSR/DLSS) | ⏳ Planeado |
-| **Arco 4** | 41 – 47 | *Post-1.0:* Interfaz avanzada, personalización del editor y limpieza visual total | ⏳ Planeado |
-| **Arco 5** | 48 – 50 | *Post-1.0:* Audio avanzado, API de código estable y editor de cinemáticas | ⏳ Planeado |
-| **Arco 6** | 51 – 53 | *Post-1.0:* Exportación dedicada a PC, Android, Web, macOS e integraciones | ⏳ Planeado |
-| **Arco 7** | 54 – 55 | *Post-1.0:* Calidad, beta y lanzamiento **v2.0 Maestro Relojero** | ⏳ Planeado |
+| **Arco 2** | 12 – 20 | 🏆 **`v1.0-2D-Master`** — Cúspide del motor 2D, fase `Plugins?`, Clima y Ciclo día/noche | ⏳ Planeado |
+| **Arco 3** | 21 – 35 | *Post-1.0:* Motor visual avanzado (Iluminación, Partículas, Post-proceso, Diorama 2.5D, HDR, FSR/DLSS) | ⏳ Planeado |
+| **Arco 4** | 36 – 42 | *Post-1.0:* Interfaz avanzada, personalización del editor y limpieza visual total | ⏳ Planeado |
+| **Arco 5** | 43 – 45 | *Post-1.0:* Audio avanzado, API de código estable y editor de cinemáticas | ⏳ Planeado |
+| **Arco 6** | 46 – 48 | *Post-1.0:* Exportación dedicada a PC, Android, Web, macOS e integraciones | ⏳ Planeado |
+| **Arco 7** | 49 – 50 | *Post-1.0:* Calidad, beta y lanzamiento **v2.0 Maestro Relojero** | ⏳ Planeado |
 
 ### 🥇 Era 1.0: Camino a `v1.0-2D-Master`
 
@@ -113,8 +113,8 @@ El desarrollo avanza en **55 fases** divididas en dos grandes eras: la **Era 2D 
 | **7** | Sistema narrativo ✅ | Ventana de mensajes · códigos de escape · retratos con expresiones · historial · modos AUTO y SALTAR · vista previa en vivo. |
 | **8** | Combate por turnos, iconos y animaciones ✅ | Combate por turnos con AGI, 10 elementos fijos y panel `F3` · editor de animaciones por ranuras · editor de tropas 16:9 con escala x1–x6 y prueba directa · nueva Base de Datos en dos columnas · iconos pixel art hechos a mano. |
 | **9A** | Combate en tiempo real (ARPG) ✅ | Modo Por turnos / ARPG por proyecto o mapa · 4/8 direcciones · animaciones por acción · ratón y teclado · esquiva, bloqueo e invulnerabilidad · editor visual de hitboxes/hurtboxes por frame · IA con búsqueda de ruta A* y zonas de detección · equipo ARPG por capas · herramientas (hacha, pico, pala, azada) · habilidades físicas con recurso propio · depuración `F3`. |
-| **9B** | Menús del juego y menú principal ✅ | Pantalla de título, opciones, guardado/carga, créditos y Game Over personalizables · estilos de ventana (9-patch, bordes, opacidad) · HUD interactivo y menús ilimitados (listas, cuadrículas, carrusel, rueda radial) · editor visual WYSIWYG con capas, carpetas, acciones tipo eventos, zoom manual y plantillas · capas con nombre en mapas · temas Dark/Latón con estilo Neón Cobre · nuevo icono, versión `Alpha-0.0.4`, pantalla de carga y Administrador de proyectos · soporte UTF-8 y pantallas 16:9 / 21:9. |
-| **10** | Magic Update 🔧 | Hechizos modulares con 10 elementos y 8 estados · sistema de canalizadores (Grimorios por elemento/estado con desbloqueo por nivel, Báculos universales y objetos canalizadores) · barra rápida 1–9 en ARPG y comando Grimorio en turnos · sistema de prefabs de eventos · generador de estructuras con lógica y UI propia · buscador de eventos por nombre. |
+| **9B** | Menús del juego y menú principal 🔧 | Pantalla de título, opciones, guardado/carga, créditos y Game Over personalizables · estilos de ventana (9-patch, bordes, opacidad) · HUD interactivo y menús ilimitados (listas, cuadrículas, carrusel, rueda radial) · editor visual WYSIWYG con capas, carpetas, acciones tipo eventos, zoom manual y plantillas · capas con nombre en mapas · temas Dark/Latón con estilo Neón Cobre · nuevo icono, versión `Alpha-0.0.4`, pantalla de carga y Administrador de proyectos · soporte UTF-8 y pantallas 16:9 / 21:9. |
+| **10** | Magic Update ⏳ | Hechizos modulares con 10 elementos y 8 estados · sistema de canalizadores (Grimorios por elemento/estado con desbloqueo por nivel, Báculos universales y objetos canalizadores) · barra rápida 1–9 en ARPG y comando Grimorio en turnos · sistema de prefabs de eventos · generador de estructuras con lógica y UI propia · buscador de eventos por nombre. |
 | **11** | Exportación, inputs y Port Nativo a Android ⏳ | Exportación a Windows, Linux, Web y Android (APK/AAB) con presets · **Port Nativo del editor CGE a Android** · reestructuración visual de paneles heredados de Godot · editor de inputs (teclado, ratón, mando y táctil) · apartado Android System para configurar controles táctiles con sprites propios. |
 
 </details>
@@ -137,80 +137,80 @@ El desarrollo avanza en **55 fases** divididas en dos grandes eras: la **Era 2D 
 
 </details>
 
-### 🌌 Era Post-1.0: Expansión Visual 2.5D y Evolución (Fases 26–55)
+### 🌌 Era Post-1.0: Expansión Visual 2.5D y Evolución (Fases 21–50)
 
 <details>
-<summary><b>📂 Ver Arco 3: Motor visual, Post-proceso, FSR y Diorama 2.5D (Fases 26–40)</b></summary>
+<summary><b>📂 Ver Arco 3: Motor visual, Post-proceso, FSR y Diorama 2.5D (Fases 21–35)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
-| **26** | Render base | Orden por Y y capas de profundidad · sombras de tiles · luces 2D puntuales · mapas de normales · máscaras de luz. |
-| **27** | Partículas I | Editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo. |
-| **28** | Partículas II | Comando "Mostrar partículas" · partículas en combate · colisión con tiles · estelas y sub-emisores. |
-| **29** | 🚀 **Péndulo Update** | Biblioteca de efectos · lluvia, nieve y niebla · hechizos con partículas y luz · shaders listos · editor unificado. |
-| **30** | Post-proceso | Bloom · viñeta · aberración cromática · grano y pixelado · LUTs de color · pila de efectos por mapa (candidata a adelantarse a 1.0). |
-| **31** | Cámara 2.5D | Perspectiva inclinada · rotación en pasos de 90° · sprites billboard · zoom y seguimiento suave. |
-| **32** | Mapas 2.5D | Tiles con altura · escaleras y desniveles · techos ocultables · objetos 3D low poly (`glTF`) · parallax. |
-| **33** | Luz y sombras | Sombras proyectadas · luces dinámicas y emisivos · reflejos en agua · luz coherente día/noche · lightmaps. |
-| **34** | Profundidad de campo | DoF y tilt-shift · bokeh · enfoque por eventos · cámara cinematográfica · desenfoque en diálogos. |
-| **35** | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla, presets y mapa demo. |
-| **36** | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · calibración en juego. |
-| **37** | FSR | Escalado abierto FSR · resolución interna, calidad y nitidez ajustables (candidata a adelantarse a 1.0). |
-| **38** | DLSS y XeSS | Integración NVIDIA DLSS e Intel XeSS con detección de hardware y ajustes en menú. |
-| **39** | Rendimiento | Perfilador · culling y batching · atlas de texturas · presets Bajo/Medio/Alto · límite de FPS y VSync. |
-| **40** | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura/grabación · paquete final de shaders. |
+| **21** | Render base | Orden por Y y capas de profundidad · sombras de tiles · luces 2D puntuales · mapas de normales · máscaras de luz. |
+| **22** | Partículas I | Editor visual WYSIWYG · curvas y gradientes · presets (fuego, chispas, humo, magia) · vista previa en vivo. |
+| **23** | Partículas II | Comando "Mostrar partículas" · partículas en combate · colisión con tiles · estelas y sub-emisores. |
+| **24** | 🚀 **Péndulo Update** | Biblioteca de efectos · lluvia, nieve y niebla · hechizos con partículas y luz · shaders listos · editor unificado. |
+| **25** | Post-proceso | Bloom · viñeta · aberración cromática · grano y pixelado · LUTs de color · pila de efectos por mapa (candidata a adelantarse a 1.0). |
+| **26** | Cámara 2.5D | Perspectiva inclinada · rotación en pasos de 90° · sprites billboard · zoom y seguimiento suave. |
+| **27** | Mapas 2.5D | Tiles con altura · escaleras y desniveles · techos ocultables · objetos 3D low poly (`glTF`) · parallax. |
+| **28** | Luz y sombras | Sombras proyectadas · luces dinámicas y emisivos · reflejos en agua · luz coherente día/noche · lightmaps. |
+| **29** | Profundidad de campo | DoF y tilt-shift · bokeh · enfoque por eventos · cámara cinematográfica · desenfoque en diálogos. |
+| **30** | 🚀 **Diorama Update** | Estilo propio **Diorama 2.5D** (pixel art sobre escenarios 3D) · plantilla, presets y mapa demo. |
+| **31** | HDR | Pipeline HDR · tonemapping (ACES, Filmic) · exposición automática · calibración en juego. |
+| **32** | FSR | Escalado abierto FSR · resolución interna, calidad y nitidez ajustables (candidata a adelantarse a 1.0). |
+| **33** | DLSS y XeSS | Integración NVIDIA DLSS e Intel XeSS con detección de hardware y ajustes en menú. |
+| **34** | Rendimiento | Perfilador · culling y batching · atlas de texturas · presets Bajo/Medio/Alto · límite de FPS y VSync. |
+| **35** | 🚀 **Cristal de Cuarzo Update** | Panel único de calidad gráfica · benchmark automático · modo foto · captura/grabación · paquete final de shaders. |
 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 4: Interfaz y editor (Fases 41–47)</b></summary>
+<summary><b>📂 Ver Arco 4: Interfaz y editor (Fases 36–42)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
-| **41** | HUD I | Editor WYSIWYG · barras de HP/MP · ventanas con anclas · rejillas y vista previa multiresolución. |
-| **42** | HUD II | Skins 9-patch · fuentes bitmap · animaciones de UI · cursores, sonidos y estados de botón. |
-| **43** | HUD III | Plantillas de título, menú, tienda y batalla · widgets reutilizables · enlaces de datos · modales. |
-| **44** | Personalización | 8 colores de acento · temas Retro Pixelart, Dark OLED y Classic JRPG Blue. |
-| **45** | Identidad reorganizada | Iconos SVG y tipografía propios · paneles acoplables · búsqueda global · español e inglés. |
-| **46** | Accesibilidad y aprendizaje | Tamaño de fuente y modos daltonismo · remapeo · tutorial interactivo · documentación integrada. |
-| **47** | 🚀 **Relojería Update** | Limpieza visual casi total del origen Godot · tema final · modo ventana pequeña · revisión general. |
+| **36** | HUD I | Editor WYSIWYG · barras de HP/MP · ventanas con anclas · rejillas y vista previa multiresolución. |
+| **37** | HUD II | Skins 9-patch · fuentes bitmap · animaciones de UI · cursores, sonidos y estados de botón. |
+| **38** | HUD III | Plantillas de título, menú, tienda y batalla · widgets reutilizables · enlaces de datos · modales. |
+| **39** | Personalización | 8 colores de acento · temas Retro Pixelart, Dark OLED y Classic JRPG Blue. |
+| **40** | Identidad reorganizada | Iconos SVG y tipografía propios · paneles acoplables · búsqueda global · español e inglés. |
+| **41** | Accesibilidad y aprendizaje | Tamaño de fuente y modos daltonismo · remapeo · tutorial interactivo · documentación integrada. |
+| **42** | 🚀 **Relojería Update** | Limpieza visual casi total del origen Godot · tema final · modo ventana pequeña · revisión general. |
 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 5: Audio, código y cine (Fases 48–50)</b></summary>
+<summary><b>📂 Ver Arco 5: Audio, código y cine (Fases 43–45)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
-| **48** | Audio | Editor de BGM, BGS, ME y SE · bucles con crossfade · buses · sonido posicional, reverb y ducking. |
-| **49** | Código y datos | Pestaña Code con API estable · hooks y plugins · importar/exportar JSON y CSV · localización. |
-| **50** | 🚀 **Telón Update** | Editor de cinemáticas con línea de tiempo (cámara, diálogo, partículas, audio) y exportación a vídeo. |
+| **43** | Audio | Editor de BGM, BGS, ME y SE · bucles con crossfade · buses · sonido posicional, reverb y ducking. |
+| **44** | Código y datos | Pestaña Code con API estable · hooks y plugins · importar/exportar JSON y CSV · localización. |
+| **45** | 🚀 **Telón Update** | Editor de cinemáticas con línea de tiempo (cámara, diálogo, partículas, audio) y exportación a vídeo. |
 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 6: Plataformas (Fases 51–53)</b></summary>
+<summary><b>📂 Ver Arco 6: Plataformas (Fases 46–48)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
-| **51** | Exportación PC | Windows y Linux en 1–2 clics · instalador · compresión de assets · licencias incluidas. |
-| **52** | Android | SDK y keystore automáticos · controles táctiles · APK y AAB · pruebas en dispositivo. |
-| **53** | Web, macOS e integraciones | Build Web y macOS · paquete base para consolas · Steam e itch.io · guardado en la nube. |
+| **46** | Exportación PC | Windows y Linux en 1–2 clics · instalador · compresión de assets · licencias incluidas. |
+| **47** | Android | SDK y keystore automáticos · controles táctiles · APK y AAB · pruebas en dispositivo. |
+| **48** | Web, macOS e integraciones | Build Web y macOS · paquete base para consolas · Steam e itch.io · guardado en la nube. |
 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 7: Cierre Post-1.0 (Fases 54–55)</b></summary>
+<summary><b>📂 Ver Arco 7: Cierre Post-1.0 (Fases 49–50)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
-| **54** | Calidad y beta | Pruebas automáticas · informe de regresión · manual completo · sistema de reportes. |
-| **55** | 🏆 **Maestro Relojero 2.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · lanzamiento oficial de la era completa. |
+| **49** | Calidad y beta | Pruebas automáticas · informe de regresión · manual completo · sistema de reportes. |
+| **50** | 🏆 **Maestro Relojero 2.0 Update** | API congelada · documentación final · proyecto de ejemplo completo · lanzamiento oficial de la era completa. |
 
 </details>
 
