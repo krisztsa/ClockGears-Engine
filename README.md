@@ -120,25 +120,20 @@ El desarrollo avanza en **55 fases** divididas en dos grandes eras: la **Era 2D 
 </details>
 
 <details>
-<summary><b>📂 Ver Arco 2: RPG completo y lanzamiento 🏆 v1.0-2D-Master (Fases 12–25)</b></summary>
+<summary><b>📂 Ver Arco 2: RPG completo, "Plugins?" y lanzamiento 🏆 v1.0-2D-Master (Fases 12–20)</b></summary>
 <br>
 
 | # | Fase | Qué trae |
 | :---: | :--- | :--- |
-| **12** | Animaciones II y cierre de combate | Duración por frame y orden aleatorio · triggers por acción · sonidos/flashes por fotograma · tropas múltiples. |
-| **13** | Eventos II | Ramas anidadas · bucles, etiquetas y saltos · copiar/pegar/buscar comandos · comentarios · eventos comunes. |
-| **14** | Eventos III | Rutas de movimiento · seguidores del grupo · control de cámara y scroll · tintes, sacudidas y flashes · imágenes en pantalla. |
-| **15** | Mapas II | Autotiles A1–A4 completos · regiones · capas de tiles y eventos · copiar/exportar mapas · transiciones. |
-| **16** | Combate II | Resistencias/debilidades por elemento y estado · críticos, evasión y fallo · objetivos múltiples · editor de fórmulas. |
-| **17** | Combate III | Costes, recargas, pasivas, habilidades encadenadas, invocaciones, contraataque, cobertura e IA por patrones. |
-| **18** | Combate IV | Jefes con fases · eventos dentro de batalla · emboscadas · vistas frontal y lateral · fondos por mapa/región. |
-| **19** | 🚀 **Cronómetro Update** | Turnos a elegir (clásico, ATB, ticks) · simulador de balance · curvas de dificultad · cola visual · auto-batalla. |
-| **20** | Progresión | Clases y multiclase · árboles de habilidades · slots configurables · curvas de EXP · ascensos. |
-| **21** | Inventario y economía | Tiendas y editor · crafteo con recetas · peso y límites · objetos clave · monedas múltiples. |
-| **22** | Sistema de juego | Menú principal editable · formación y equipo · guardado con captura · dificultad · créditos. |
-| **23** | Misiones y diario | Misiones con objetivos · diario y bestiario · enciclopedia · marcadores en mapa · recompensas. |
-| **24** | Automatización | Presets de movimiento (2/4/6/8 dir.) · puertas, cofres y teletransportes listos · NPC con ruta · plantillas. |
-| **25** | 🏆 **Crónicas Update (`v1.0-2D-Master`)** | Ciclo día/noche · clima por mapa · calendario y tiempo · horarios de NPC · afinidad · logros · **cierre y congelación estable de la versión 1.0 definitiva para 2D**. |
+| **12** | Eventos y Mapas Avanzados | **Eventos:** ramas anidadas, bucles, etiquetas y saltos · copiar, pegar y buscar comandos · comentarios · eventos comunes avanzados · seguidores del grupo · control de cámara y scroll.<br>**Mapas:** autotiles A1–A4 completos · regiones · capas de tiles y eventos · copiar y exportar mapas · transiciones entre mapas. |
+| **13** | Combate Profundo y Animaciones II | **Animaciones:** duración por frame, orden aleatorio, triggers de ataque/daño/muerte, sonidos y flashes por fotograma.<br>**Combate:** editor de fórmulas con validación · críticos, evasión, fallo y objetivos múltiples · costes, recargas, pasivas, habilidades encadenadas, invocaciones, contraataque y cobertura · IA enemiga por patrones · jefes con fases, eventos dentro de batalla, emboscadas, vistas frontal/lateral y fondos por mapa o región. |
+| **14** | 🚀 **Cronómetro Update** | Sistemas de turno a elegir (clásico, ATB, ticks/CTB) · simulador de batallas con balance automático · curvas de nivel y dificultad · cola de turnos visual · auto-batalla. |
+| **15** | Progresión y Clases | Clases, subclases y multiclase · árboles de habilidades · slots de equipo configurables · curvas de EXP por actor · ascensos y promociones. |
+| **16** | Inventario, Crafteo y Economía | Tiendas y su editor · crafteo con recetas · peso y límites de carga · objetos clave · monedas múltiples y economías dinámicas. |
+| **17** | Misiones, Diario y Sistema | Misiones con objetivos y seguimiento · diario, bestiario y enciclopedia de objetos · marcadores en el mapa · recompensas · formación del grupo, guardado con captura, selector de dificultad y créditos avanzados. |
+| **18** | Automatización y Plantillas | Presets de movimiento (2, 4, 6 y 8 direcciones) · puertas, cofres y teletransportes listos en un clic · NPC con ruta · plantillas de eventos comunes · auto-conexión sin configurar inputs. |
+| **19** | 🚀 **Plugins?** | **Todo lo que normalmente exige decenas de complementos de pago, integrado de forma nativa:**<br>**• Exploración y mapa:** sonido de pisadas según terreno/región (con cadencia y volumen) · huellas, polvo y salpicaduras al caminar · niebla de guerra (*Fog of War*) · minimapa dinámico y brújula de proximidad · colisión por píxeles opcional · puzles de empujar bloques, interruptores de peso, trepar y saltar · globos de diálogo flotantes sobre NPCs y etiquetas de nombre · indicadores visuales de interacción · sombras dinámicas bajo personajes y reflejos en agua/espejos · viaje rápido (*Fast Travel*) y vehículos/monturas personalizables.<br>**• Combate cinemático:** secuencias de acción visuales (*Action Sequences*: acercarse, saltar, cámara lenta, poses, sacudidas) · cámara dinámica en combate (zoom al atacante, paneos y seguimiento) · transiciones de batalla personalizables (cristal roto, espiral, barrido, zoom) · sistema de Ruptura y Escudos de debilidad (*Break Shield*) · barra de Límite / Overdrive · ataques combinados entre aliados (*Dual/Triple Techs*) · vista previa de daño y orden de turnos al apuntar · cambio de personajes en mitad del combate (*Party Switch*) · robo de objetos y aprendizaje de habilidades enemigas (*Blue Mage*) · campos/terrenos de batalla con efectos pasivos.<br>**• Artefactos, reliquias y equipo especial:** artefactos/reliquias pasivas que alteran reglas del juego · ranuras de gemas, runas y encantamientos incrustables (*Sockets*) · durabilidad y reparación · mejora/forja por niveles (`+1`, `+2`, ...) · sets de armadura con bonificación por piezas equipadas · aprendizaje de habilidades por maestría/AP al usar un equipo · cofres y botín con tablas de rareza.<br>**• Narrativa, minijuegos y extras:** voces de texto por personaje (*bip* con tono y cadencia) · animación de letras (onda, temblor, arcoíris) y salto de línea automático (*Word Wrap*) · elecciones con iconos, colores y temporizador · minijuegos integrados (pesca, ganzúas, QTEs de barra de precisión) · sistema de reputación/facciones · notificaciones emergentes (*toasts*) · galería de arte y reproductor de música (*Jukebox*) desbloqueables · *New Game+* y selector de capítulos. |
+| **20** | 🏆 **Crónicas Update (`v1.0-2D-Master`)** | Ciclo de día y noche · clima por mapa · calendario y tiempo del mundo · horarios de NPC · afinidad con personajes · logros · **cierre y congelación estable de la versión 1.0 definitiva para 2D**. |
 
 </details>
 
